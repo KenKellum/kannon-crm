@@ -5,22 +5,22 @@ const SUPABASE_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
 
 // GMAIL OAUTH CONFIG
-const GOOGLE_OAUTH_CLIENT_ID = 'PASTE_CLIENT_ID_HERE';
-const APPS_SCRIPT_URL        = 'PASTE_APPS_SCRIPT_URL_HERE';
+const GOOGLE_OAUTH_CLIENT_ID = '500395306800-26vlgl3b34p83t8ik3b4u0hcrk7qq0u8.apps.googleusercontent.com';
+const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDoulf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 
-// GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
+// GMAIL OAUTH CONFIG?fill these in after Google Cloud setup
 const GOOGLE_OAUTH_CLIENT_ID = 'PASTE_CLIENT_ID_HERE';
 const APPS_SCRIPT_URL        = 'PASTE_APPS_SCRIPT_URL_HERE';
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
-  'agent-insured': { name: 'Agent Recruiting — Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
-  'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
+  'agent-insured': { name: 'Agent Recruiting ? Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
+  'agent-kannon': { name: 'Agent Recruiting ? Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
 
-const CONTACT_TYPES = ['Group/Employer','Individual & Family','Agent — Insured America','Agent — Kannon Financial'];
+const CONTACT_TYPES = ['Group/Employer','Individual & Family','Agent ? Insured America','Agent ? Kannon Financial'];
 
 let supabaseClient = null;
 let currentUser = null;
@@ -73,7 +73,7 @@ async function loadAgentProfile() {
     .maybeSingle();
 
   if (!agent) {
-    // First login — link by email
+    // First login ? link by email
     const { data: byEmail } = await supabaseClient
       .from('agents')
       .select('*, agencies(name)')
@@ -165,7 +165,7 @@ async function showApp() {
     window.history.replaceState({}, '', window.location.pathname);
     currentAgent.gmail_connected = true;
     renderDashboard();
-    showToast('✓ Gmail connected!');
+    showToast('? Gmail connected!');
   } else if (currentAgent.role === 'agent' && !currentAgent.gmail_connected) {
     setTimeout(() => showGmailSetup(false), 500);
   }
@@ -186,7 +186,7 @@ function showPage(page) {
 }
 
 // ============================================================
-// DATA — role-filtered
+// DATA ? role-filtered
 // ============================================================
 async function loadData() {
   let cq = supabaseClient.from('contacts').select('*');
@@ -276,8 +276,8 @@ function renderDashboard() {
             : notStarted.map(c => `
               <div class="action-item">
                 <div class="action-item-info">
-                  <div class="action-item-name">${c.name || '—'}</div>
-                  <div class="action-item-sub">${c.company || c.email || '—'}</div>
+                  <div class="action-item-name">${c.name || '?'}</div>
+                  <div class="action-item-sub">${c.company || c.email || '?'}</div>
                 </div>
                 <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
               </div>`).join('')}
@@ -294,13 +294,13 @@ function renderDashboard() {
             <span class="badge badge-active">&#10003; Active</span>
           </div>
           <div class="action-item">
-            <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am • Two-way</div></div>
+            <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am ? Two-way</div></div>
             <span class="badge badge-active">&#10003; Active</span>
             <div class="action-item">
             <div class="action-item-info">
               <div class="action-item-name">Your Gmail</div>
-              <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — replies not tracked'}</div>
-              <div class="action-item"><div class="action-item-info"><div class="action-item-name">Your Gmail</div><div class="action-item-sub">${currentAgent.gmail_connected?(currentAgent.gmail_email||'Connected'):'Not connected — replies not tracked'}</div></div>${currentAgent.gmail_connected?'<span class="badge badge-active">Connected</span>':'<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}</div>
+              <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected ? replies not tracked'}</div>
+              <div class="action-item"><div class="action-item-info"><div class="action-item-name">Your Gmail</div><div class="action-item-sub">${currentAgent.gmail_connected?(currentAgent.gmail_email||'Connected'):'Not connected ? replies not tracked'}</div></div>${currentAgent.gmail_connected?'<span class="badge badge-active">Connected</span>':'<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}</div>
         </div>
             ${currentAgent.gmail_connected ? '<span class="badge badge-active">&#10003; Connected</span>' : '<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}
           </div>
@@ -310,9 +310,9 @@ function renderDashboard() {
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="dash-card">
           <div class="dash-card-title">&#128140; Outreach Sequence Status</div>
-          <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up (Day 3)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call (Day 7)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 1 ? Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 2 ? Follow-up (Day 3)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 3 ? Book a Call (Day 7)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
           <div class="seq-row"><div><div class="seq-label" style="color:#5b21b6;font-weight:700;">Replied / Interested &#127881;</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#5b21b6;">${replied}</div></div>
           <div style="margin-top:12px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>
         </div>
@@ -365,13 +365,13 @@ function showGmailSetup(isManual) {
   ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;';
   const fn = (currentAgent.name || '').split(' ')[0] || 'there';
   ov.innerHTML = '<div style="background:white;border-radius:16px;padding:40px 36px;max-width:480px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,0.28);text-align:center;">' +
-    '<div style="font-size:52px;margin-bottom:14px;">📧</div>' +
+    '<div style="font-size:52px;margin-bottom:14px;">?</div>' +
     '<h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">' + (isManual ? 'Connect Your Gmail' : 'One last step, ' + fn + '!') + '</h2>' +
     '<p style="font-size:14px;color:#64748b;line-height:1.65;margin-bottom:6px;">Connect your Gmail so outreach emails come <strong>from your address</strong> and replies land <strong>in your inbox</strong>.</p>' +
     '<p style="font-size:13px;color:#94a3b8;margin-bottom:24px;">The CRM auto-marks contacts as "Replied" when they write back.</p>' +
-    '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">✓ Gmail connected! Refreshing...</div>' +
+    '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">? Gmail connected! Refreshing...</div>' +
     '<button onclick="connectGmail()" id="gmail-connect-btn" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">Connect Gmail</button>' +
-    '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">⏳ Waiting for authorization...</div>' +
+    '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">? Waiting for authorization...</div>' +
     (isManual ? '<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();window.removeEventListener(\'message\',handleGmailMessage);" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Close</button>'
               : '<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Skip for now</button>') +
     '</div>';
@@ -403,7 +403,7 @@ function onGmailConnected(email) {
   currentAgent.gmail_connected = true; currentAgent.gmail_email = email;
   const el = document.getElementById('gmail-setup-status'); if (el) el.style.display = 'block';
   window.removeEventListener('message', handleGmailMessage);
-  setTimeout(() => { const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove(); renderDashboard(); showToast('✓ Gmail connected! Sending from ' + (email || 'your Gmail')); }, 1800);
+  setTimeout(() => { const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove(); renderDashboard(); showToast('? Gmail connected! Sending from ' + (email || 'your Gmail')); }, 1800);
 }
 function dismissGmailSetup() {
   const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove();
@@ -414,7 +414,7 @@ function dismissGmailSetup() {
 // ============================================================
 // GMAIL OAUTH CONNECT
 // ============================================================
-function showGmailSetup(isManual){const ex=document.getElementById("gmail-setup-overlay");if(ex)ex.remove();const ov=document.createElement("div");ov.id="gmail-setup-overlay";ov.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;";const fn=(currentAgent.name||"").split(" ")[0]||"there";ov.innerHTML='<div style="background:white;border-radius:16px;padding:40px;max-width:480px;width:90%;text-align:center;"><div style="font-size:52px;">📧</div><h2>'+(isManual?"Connect Your Gmail":"One last step, "+fn+"!")+'</h2><p style="color:#64748b;margin:12px 0;">Connect your Gmail so outreach emails come from your address and replies land in your inbox. The CRM auto-marks contacts as Replied.</p><div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;color:#065f46;font-weight:600;">Connected! Refreshing...</div><button onclick="connectGmail()" id="gmail-connect-btn" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">Connect Gmail</button><div id="gmail-waiting-indicator" style="display:none;padding:14px;background:#f8fafc;color:#64748b;border-radius:10px;margin-bottom:12px;">Waiting...</div>'+(isManual?'<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();" style="width:100%;padding:10px;background:none;border:none;color:#94a3b8;cursor:pointer;">Close</button>':'<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;color:#94a3b8;cursor:pointer;">Skip for now</button>')+'</div>';document.body.appendChild(ov);window.addEventListener("message",handleGmailMessage);}
+function showGmailSetup(isManual){const ex=document.getElementById("gmail-setup-overlay");if(ex)ex.remove();const ov=document.createElement("div");ov.id="gmail-setup-overlay";ov.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;";const fn=(currentAgent.name||"").split(" ")[0]||"there";ov.innerHTML='<div style="background:white;border-radius:16px;padding:40px;max-width:480px;width:90%;text-align:center;"><div style="font-size:52px;">?</div><h2>'+(isManual?"Connect Your Gmail":"One last step, "+fn+"!")+'</h2><p style="color:#64748b;margin:12px 0;">Connect your Gmail so outreach emails come from your address and replies land in your inbox. The CRM auto-marks contacts as Replied.</p><div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;color:#065f46;font-weight:600;">Connected! Refreshing...</div><button onclick="connectGmail()" id="gmail-connect-btn" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">Connect Gmail</button><div id="gmail-waiting-indicator" style="display:none;padding:14px;background:#f8fafc;color:#64748b;border-radius:10px;margin-bottom:12px;">Waiting...</div>'+(isManual?'<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();" style="width:100%;padding:10px;background:none;border:none;color:#94a3b8;cursor:pointer;">Close</button>':'<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;color:#94a3b8;cursor:pointer;">Skip for now</button>')+'</div>';document.body.appendChild(ov);window.addEventListener("message",handleGmailMessage);}
 function connectGmail(){if(!GOOGLE_OAUTH_CLIENT_ID||GOOGLE_OAUTH_CLIENT_ID==="PASTE_CLIENT_ID_HERE"){alert("Gmail OAuth not configured yet. Contact Ken.");return;}const url="https://accounts.google.com/o/oauth2/auth?client_id="+GOOGLE_OAUTH_CLIENT_ID+"&redirect_uri="+encodeURIComponent(APPS_SCRIPT_URL)+"&scope="+encodeURIComponent(GMAIL_SCOPES)+"&response_type=code&access_type=offline&prompt=consent&state="+encodeURIComponent(currentAgent.id);window.open(url,"gmail-oauth","width=520,height=640");const cb=document.getElementById("gmail-connect-btn");const wb=document.getElementById("gmail-waiting-indicator");if(cb)cb.style.display="none";if(wb)wb.style.display="block";pollGmailConnection();}
 async function pollGmailConnection(){let n=0;const tick=async()=>{if(++n>60)return;const{data}=await supabaseClient.from("agents").select("gmail_connected,gmail_email").eq("id",currentAgent.id).single();if(data&&data.gmail_connected)onGmailConnected(data.gmail_email||"");else setTimeout(tick,3000);};setTimeout(tick,3000);}
 function handleGmailMessage(e){if(e.data&&e.data.type==="gmail-connected")onGmailConnected(e.data.gmail_email||"");}
@@ -441,9 +441,9 @@ async function renderOpens() {
     const initials = oName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
     return `<tr class="opens-row" onclick="viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">
       <td style="white-space:nowrap;"><span class="contact-avatar" style="width:30px;height:30px;font-size:11px;">${initials}</span><strong>${oName}</strong></td>
-      <td style="color:var(--muted);font-size:13px;">${oEmail||'—'}</td>
-      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'…':''):'—'}</td>
-      <td><span class="badge badge-group">${o.sequence_track||'—'}</span></td>
+      <td style="color:var(--muted);font-size:13px;">${oEmail||'?'}</td>
+      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'?':''):'?'}</td>
+      <td><span class="badge badge-group">${o.sequence_track||'?'}</span></td>
       <td style="font-size:12px;color:var(--muted);white-space:nowrap;">${formatTimeAgo(o.opened_at)}</td>
       <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">View &rarr;</button></td>
     </tr>`;
@@ -464,7 +464,7 @@ async function renderOpens() {
 }
 
 function formatTimeAgo(dateStr) {
-  if (!dateStr) return '—';
+  if (!dateStr) return '?';
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 2) return 'just now';
@@ -504,7 +504,7 @@ async function viewContact(contactId, email) {
       <div class="panel-header-info">
         <div class="panel-avatar">${initials}</div>
         <div>
-          <div class="panel-name">${c.name||'—'}</div>
+          <div class="panel-name">${c.name||'?'}</div>
           ${c.type ? `<span class="badge ${badgeClass}" style="font-size:11px;">${c.type}</span>` : ''}
           ${companyBadges ? `<div style="margin-top:4px;">${companyBadges}</div>` : ''}
         </div>
@@ -536,7 +536,7 @@ async function viewContact(contactId, email) {
       <div class="panel-section">
         <div class="panel-label">Email Opens (${opensCount})</div>
         ${opensCount > 0
-          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.track||'—'}</span><div class="panel-open-subject">${o.subject?o.subject.substring(0,55)+(o.subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
+          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.track||'?'}</span><div class="panel-open-subject">${o.subject?o.subject.substring(0,55)+(o.subject.length>55?'?':''):'?'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
           : '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No email opens recorded yet.</div>'}
       </div>
     </div>
@@ -611,11 +611,11 @@ async function drop(e, stage) {
 function openAddDeal(stage = '') {
   const pipeline = PIPELINES[currentPipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} ? ${c.company||c.email||''}</option>`).join('');
   showModal('Add New Deal', `
     <label>Deal / Opportunity Name *</label><input type="text" id="deal-title" placeholder="e.g. Acme Corp Benefits Package" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label><select id="deal-contact"><option value="">? No contact ?</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" placeholder="0" min="0" />
     <label>Notes</label><textarea id="deal-notes" placeholder="Key details, next steps..."></textarea>
   `, async () => {
@@ -631,11 +631,11 @@ function editDeal(id) {
   const deal = deals.find(d => d.id === id); if (!deal) return;
   const pipeline = PIPELINES[deal.pipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===deal.stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}" ${c.id===deal.contact_id?'selected':''}>${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c => `<option value="${c.id}" ${c.id===deal.contact_id?'selected':''}>${c.name} ? ${c.company||c.email||''}</option>`).join('');
   showModal('Edit Deal', `
     <label>Deal Name *</label><input type="text" id="deal-title" value="${deal.title}" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label><select id="deal-contact"><option value="">? No contact ?</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" value="${deal.value||''}" min="0" />
     <label>Notes</label><textarea id="deal-notes">${deal.notes||''}</textarea>
   `, async () => {
@@ -673,12 +673,12 @@ function renderContacts() {
     const seqStatus = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
     return `<tr>
-      <td style="cursor:pointer;" onclick="viewContact('${c.id}','')"><div style="display:flex;align-items:center;"><span class="contact-avatar">${initials}</span><span style="font-weight:600;">${c.name||'—'}</span></div></td>
-      <td style="font-size:13px;">${c.email||'—'}</td>
-      <td style="font-size:13px;">${c.company||'—'}</td>
-      <td>${c.type?`<span class="badge ${badgeClass}">${c.type}</span>`:'—'}</td>
+      <td style="cursor:pointer;" onclick="viewContact('${c.id}','')"><div style="display:flex;align-items:center;"><span class="contact-avatar">${initials}</span><span style="font-weight:600;">${c.name||'?'}</span></div></td>
+      <td style="font-size:13px;">${c.email||'?'}</td>
+      <td style="font-size:13px;">${c.company||'?'}</td>
+      <td>${c.type?`<span class="badge ${badgeClass}">${c.type}</span>`:'?'}</td>
       <td><span class="badge ${seqClass[seqStatus]||'badge-agent'}">${seqStatus}</span></td>
-      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>` : ''}
+      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'?'}</td>` : ''}
       <td>
         <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
         <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editContact('${c.id}')">Edit</button>
@@ -705,7 +705,7 @@ function openAddContact() {
   // Agent picker for agency_owner and system_owner
   const canAssign = currentAgent.role !== 'agent';
   const agentOptions = canAssign
-    ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
+    ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} ? ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
 
   showModal('Add Contact', `
@@ -713,7 +713,7 @@ function openAddContact() {
     <label>Email</label><input type="email" id="con-email" placeholder="jane@company.com" />
     <label>Phone</label><input type="tel" id="con-phone" placeholder="(555) 555-5555" />
     <label>Company / Employer</label><input type="text" id="con-company" placeholder="Acme Corp" />
-    <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Type</label><select id="con-type"><option value="">? Select type ?</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes" placeholder="Any relevant notes..."></textarea>
   `, async () => {
@@ -750,14 +750,14 @@ function editContact(id) {
   const typeOptions = CONTACT_TYPES.map(t => `<option value="${t}" ${t===c.type?'selected':''}>${t}</option>`).join('');
   const canAssign = currentAgent.role !== 'agent';
   const agentOptions = canAssign
-    ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
+    ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} ? ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
   showModal('Edit Contact', `
     <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
     <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
     <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
     <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
-    <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Type</label><select id="con-type"><option value="">? Select type ?</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
   `, async () => {
@@ -798,7 +798,7 @@ async function renderAdmin() {
 
   const pendingAgentSection = pendingAgents.length > 0 ? `
     <div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-      <div style="font-weight:700;font-size:14px;color:#b45309;margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} — Awaiting Approval</div>
+      <div style="font-weight:700;font-size:14px;color:#b45309;margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} ? Awaiting Approval</div>
       ${pendingAgents.map(a => {
         const recruiter = allAgents.find(x => x.id === a.recruited_by);
         const niprBadge = a.nipr_result
@@ -821,7 +821,7 @@ async function renderAdmin() {
     </div>` : '';
 
   const agentRows = activeAgents.map(a => {
-    const agencyName = a.agencies?.name || '—';
+    const agencyName = a.agencies?.name || '?';
     const roleBadge = a.role === 'system_owner' ? 'badge-sys' : a.role === 'agency_owner' ? 'badge-owner' : 'badge-agent';
     const roleLabel = { system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' }[a.role] || a.role;
     return `<div class="agent-row">
@@ -938,7 +938,7 @@ async function recruitContact(contactId) {
     <label>Recruiting Agent</label>
     <select id="rec-recruiter">${recruiterOptions}</select>
     <label>Assign to Agency (optional)</label>
-    <select id="rec-agency"><option value="">— No agency yet —</option>${agencyOptions}</select>
+    <select id="rec-agency"><option value="">? No agency yet ?</option>${agencyOptions}</select>
     <label>Role</label>
     <select id="rec-role">
       <option value="agent">Agent</option>
@@ -991,7 +991,7 @@ async function rejectAgent(agentId) {
 }
 
 function openAddAgent() {
-  const agencyOptions = allAgencies.map(a => `<option value="${a.id}">${a.name} — ${a.companies?.name||''}</option>`).join('');
+  const agencyOptions = allAgencies.map(a => `<option value="${a.id}">${a.name} ? ${a.companies?.name||''}</option>`).join('');
   const companyCheckboxes = allCompanies.map(c => `
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-weight:400;">
       <input type="checkbox" id="co-${c.id}" value="${c.id}" style="width:auto;" /> ${c.name}
@@ -1006,7 +1006,7 @@ function openAddAgent() {
       <option value="system_owner">System Owner</option>
     </select>
     <label>Agency</label>
-    <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
+    <select id="ag-agency"><option value="">? No agency ?</option>${agencyOptions}</select>
     <label>Companies</label>
     ${companyCheckboxes}
   `, async () => {
@@ -1032,7 +1032,7 @@ function openAddAgent() {
 
 function editAgent(id) {
   const a = allAgents.find(x => x.id === id); if (!a) return;
-  const agencyOptions = allAgencies.map(ag => `<option value="${ag.id}" ${ag.id===a.agency_id?'selected':''}>${ag.name} — ${ag.companies?.name||''}</option>`).join('');
+  const agencyOptions = allAgencies.map(ag => `<option value="${ag.id}" ${ag.id===a.agency_id?'selected':''}>${ag.name} ? ${ag.companies?.name||''}</option>`).join('');
   showModal('Edit Agent', `
     <label>Full Name *</label><input type="text" id="ag-name" value="${a.name}" />
     <label>Email *</label><input type="email" id="ag-email" value="${a.email}" />
@@ -1043,7 +1043,7 @@ function editAgent(id) {
       <option value="system_owner" ${a.role==='system_owner'?'selected':''}>System Owner</option>
     </select>
     <label>Agency</label>
-    <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
+    <select id="ag-agency"><option value="">? No agency ?</option>${agencyOptions}</select>
   `, async () => {
     const name = document.getElementById('ag-name').value.trim();
     const email = document.getElementById('ag-email').value.trim();
@@ -1115,7 +1115,7 @@ async function syncGoogleContacts() {
     await fetch(url, { mode: 'no-cors' });
     showToast('&#128257; Sync triggered! Google Contacts will update in ~30 seconds.');
   } catch(e) {
-    showToast('Sync sent — check Apps Script logs if issues arise.');
+    showToast('Sync sent ? check Apps Script logs if issues arise.');
   }
 }
 
@@ -1157,7 +1157,7 @@ async function approveApplication(id) {
   if (idx >= 0) applications[idx] = { ...applications[idx], status: 'approved', agent_id: newAgent.id };
   allAgents.push(newAgent);
 
-  showToast('✓ ' + app.first_name + ' ' + app.last_name + ' approved! Create their Google Workspace account in Admin Console.');
+  showToast('? ' + app.first_name + ' ' + app.last_name + ' approved! Create their Google Workspace account in Admin Console.');
   renderAdmin();
 }
 
@@ -1209,18 +1209,18 @@ const GOOGLE_OAUTH_CLIENT_ID = 'PASTE_CLIENT_ID_HERE';
 const APPS_SCRIPT_URL        = 'PASTE_APPS_SCRIPT_URL_HERE';
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 
-// GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
+// GMAIL OAUTH CONFIG?fill these in after Google Cloud setup
 const GOOGLE_OAUTH_CLIENT_ID = 'PASTE_CLIENT_ID_HERE';
 const APPS_SCRIPT_URL        = 'PASTE_APPS_SCRIPT_URL_HERE';
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
-  'agent-insured': { name: 'Agent Recruiting — Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
-  'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
+  'agent-insured': { name: 'Agent Recruiting ? Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
+  'agent-kannon': { name: 'Agent Recruiting ? Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
 
-const CONTACT_TYPES = ['Group/Employer','Individual & Family','Agent — Insured America','Agent — Kannon Financial'];
+const CONTACT_TYPES = ['Group/Employer','Individual & Family','Agent ? Insured America','Agent ? Kannon Financial'];
 
 let supabaseClient = null;
 let currentUser = null;
@@ -1273,7 +1273,7 @@ async function loadAgentProfile() {
     .maybeSingle();
 
   if (!agent) {
-    // First login — link by email
+    // First login ? link by email
     const { data: byEmail } = await supabaseClient
       .from('agents')
       .select('*, agencies(name)')
@@ -1365,7 +1365,7 @@ async function showApp() {
     window.history.replaceState({}, '', window.location.pathname);
     currentAgent.gmail_connected = true;
     renderDashboard();
-    showToast('✓ Gmail connected!');
+    showToast('? Gmail connected!');
   } else if (currentAgent.role === 'agent' && !currentAgent.gmail_connected) {
     setTimeout(() => showGmailSetup(false), 500);
   }
@@ -1386,7 +1386,7 @@ function showPage(page) {
 }
 
 // ============================================================
-// DATA — role-filtered
+// DATA ? role-filtered
 // ============================================================
 async function loadData() {
   let cq = supabaseClient.from('contacts').select('*');
@@ -1476,8 +1476,8 @@ function renderDashboard() {
             : notStarted.map(c => `
               <div class="action-item">
                 <div class="action-item-info">
-                  <div class="action-item-name">${c.name || '—'}</div>
-                  <div class="action-item-sub">${c.company || c.email || '—'}</div>
+                  <div class="action-item-name">${c.name || '?'}</div>
+                  <div class="action-item-sub">${c.company || c.email || '?'}</div>
                 </div>
                 <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
               </div>`).join('')}
@@ -1494,12 +1494,12 @@ function renderDashboard() {
             <span class="badge badge-active">&#10003; Active</span>
           </div>
           <div class="action-item">
-            <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am • Two-way</div></div>
+            <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am ? Two-way</div></div>
             <span class="badge badge-active">&#10003; Active</span>
             <div class="action-item">
             <div class="action-item-info">
               <div class="action-item-name">Your Gmail</div>
-              <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — replies not tracked'}</div>
+              <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected ? replies not tracked'}</div>
             </div>
             ${currentAgent.gmail_connected ? '<span class="badge badge-active">&#10003; Connected</span>' : '<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}
           </div>
@@ -1509,9 +1509,9 @@ function renderDashboard() {
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="dash-card">
           <div class="dash-card-title">&#128140; Outreach Sequence Status</div>
-          <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up (Day 3)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call (Day 7)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 1 ? Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 2 ? Follow-up (Day 3)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 3 ? Book a Call (Day 7)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
           <div class="seq-row"><div><div class="seq-label" style="color:#5b21b6;font-weight:700;">Replied / Interested &#127881;</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#5b21b6;">${replied}</div></div>
           <div style="margin-top:12px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>
         </div>
@@ -1564,13 +1564,13 @@ function showGmailSetup(isManual) {
   ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;';
   const fn = (currentAgent.name || '').split(' ')[0] || 'there';
   ov.innerHTML = '<div style="background:white;border-radius:16px;padding:40px 36px;max-width:480px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,0.28);text-align:center;">' +
-    '<div style="font-size:52px;margin-bottom:14px;">📧</div>' +
+    '<div style="font-size:52px;margin-bottom:14px;">?</div>' +
     '<h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">' + (isManual ? 'Connect Your Gmail' : 'One last step, ' + fn + '!') + '</h2>' +
     '<p style="font-size:14px;color:#64748b;line-height:1.65;margin-bottom:6px;">Connect your Gmail so outreach emails come <strong>from your address</strong> and replies land <strong>in your inbox</strong>.</p>' +
     '<p style="font-size:13px;color:#94a3b8;margin-bottom:24px;">The CRM auto-marks contacts as "Replied" when they write back.</p>' +
-    '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">✓ Gmail connected! Refreshing...</div>' +
+    '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">? Gmail connected! Refreshing...</div>' +
     '<button onclick="connectGmail()" id="gmail-connect-btn" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">Connect Gmail</button>' +
-    '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">⏳ Waiting for authorization...</div>' +
+    '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">? Waiting for authorization...</div>' +
     (isManual ? '<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();window.removeEventListener(\'message\',handleGmailMessage);" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Close</button>'
               : '<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Skip for now</button>') +
     '</div>';
@@ -1602,7 +1602,7 @@ function onGmailConnected(email) {
   currentAgent.gmail_connected = true; currentAgent.gmail_email = email;
   const el = document.getElementById('gmail-setup-status'); if (el) el.style.display = 'block';
   window.removeEventListener('message', handleGmailMessage);
-  setTimeout(() => { const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove(); renderDashboard(); showToast('✓ Gmail connected! Sending from ' + (email || 'your Gmail')); }, 1800);
+  setTimeout(() => { const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove(); renderDashboard(); showToast('? Gmail connected! Sending from ' + (email || 'your Gmail')); }, 1800);
 }
 function dismissGmailSetup() {
   const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove();
@@ -1630,9 +1630,9 @@ async function renderOpens() {
     const initials = oName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
     return `<tr class="opens-row" onclick="viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">
       <td style="white-space:nowrap;"><span class="contact-avatar" style="width:30px;height:30px;font-size:11px;">${initials}</span><strong>${oName}</strong></td>
-      <td style="color:var(--muted);font-size:13px;">${oEmail||'—'}</td>
-      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'…':''):'—'}</td>
-      <td><span class="badge badge-group">${o.sequence_track||'—'}</span></td>
+      <td style="color:var(--muted);font-size:13px;">${oEmail||'?'}</td>
+      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'?':''):'?'}</td>
+      <td><span class="badge badge-group">${o.sequence_track||'?'}</span></td>
       <td style="font-size:12px;color:var(--muted);white-space:nowrap;">${formatTimeAgo(o.opened_at)}</td>
       <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">View &rarr;</button></td>
     </tr>`;
@@ -1653,7 +1653,7 @@ async function renderOpens() {
 }
 
 function formatTimeAgo(dateStr) {
-  if (!dateStr) return '—';
+  if (!dateStr) return '?';
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 2) return 'just now';
@@ -1693,7 +1693,7 @@ async function viewContact(contactId, email) {
       <div class="panel-header-info">
         <div class="panel-avatar">${initials}</div>
         <div>
-          <div class="panel-name">${c.name||'—'}</div>
+          <div class="panel-name">${c.name||'?'}</div>
           ${c.type ? `<span class="badge ${badgeClass}" style="font-size:11px;">${c.type}</span>` : ''}
           ${companyBadges ? `<div style="margin-top:4px;">${companyBadges}</div>` : ''}
         </div>
@@ -1725,7 +1725,7 @@ async function viewContact(contactId, email) {
       <div class="panel-section">
         <div class="panel-label">Email Opens (${opensCount})</div>
         ${opensCount > 0
-          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.track||'—'}</span><div class="panel-open-subject">${o.subject?o.subject.substring(0,55)+(o.subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
+          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.track||'?'}</span><div class="panel-open-subject">${o.subject?o.subject.substring(0,55)+(o.subject.length>55?'?':''):'?'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
           : '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No email opens recorded yet.</div>'}
       </div>
     </div>
@@ -1800,11 +1800,11 @@ async function drop(e, stage) {
 function openAddDeal(stage = '') {
   const pipeline = PIPELINES[currentPipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} ? ${c.company||c.email||''}</option>`).join('');
   showModal('Add New Deal', `
     <label>Deal / Opportunity Name *</label><input type="text" id="deal-title" placeholder="e.g. Acme Corp Benefits Package" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label><select id="deal-contact"><option value="">? No contact ?</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" placeholder="0" min="0" />
     <label>Notes</label><textarea id="deal-notes" placeholder="Key details, next steps..."></textarea>
   `, async () => {
@@ -1820,11 +1820,11 @@ function editDeal(id) {
   const deal = deals.find(d => d.id === id); if (!deal) return;
   const pipeline = PIPELINES[deal.pipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===deal.stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}" ${c.id===deal.contact_id?'selected':''}>${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c => `<option value="${c.id}" ${c.id===deal.contact_id?'selected':''}>${c.name} ? ${c.company||c.email||''}</option>`).join('');
   showModal('Edit Deal', `
     <label>Deal Name *</label><input type="text" id="deal-title" value="${deal.title}" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label><select id="deal-contact"><option value="">? No contact ?</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" value="${deal.value||''}" min="0" />
     <label>Notes</label><textarea id="deal-notes">${deal.notes||''}</textarea>
   `, async () => {
@@ -1862,12 +1862,12 @@ function renderContacts() {
     const seqStatus = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
     return `<tr>
-      <td style="cursor:pointer;" onclick="viewContact('${c.id}','')"><div style="display:flex;align-items:center;"><span class="contact-avatar">${initials}</span><span style="font-weight:600;">${c.name||'—'}</span></div></td>
-      <td style="font-size:13px;">${c.email||'—'}</td>
-      <td style="font-size:13px;">${c.company||'—'}</td>
-      <td>${c.type?`<span class="badge ${badgeClass}">${c.type}</span>`:'—'}</td>
+      <td style="cursor:pointer;" onclick="viewContact('${c.id}','')"><div style="display:flex;align-items:center;"><span class="contact-avatar">${initials}</span><span style="font-weight:600;">${c.name||'?'}</span></div></td>
+      <td style="font-size:13px;">${c.email||'?'}</td>
+      <td style="font-size:13px;">${c.company||'?'}</td>
+      <td>${c.type?`<span class="badge ${badgeClass}">${c.type}</span>`:'?'}</td>
       <td><span class="badge ${seqClass[seqStatus]||'badge-agent'}">${seqStatus}</span></td>
-      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>` : ''}
+      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'?'}</td>` : ''}
       <td>
         <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
         <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editContact('${c.id}')">Edit</button>
@@ -1894,7 +1894,7 @@ function openAddContact() {
   // Agent picker for agency_owner and system_owner
   const canAssign = currentAgent.role !== 'agent';
   const agentOptions = canAssign
-    ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
+    ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} ? ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
 
   showModal('Add Contact', `
@@ -1902,7 +1902,7 @@ function openAddContact() {
     <label>Email</label><input type="email" id="con-email" placeholder="jane@company.com" />
     <label>Phone</label><input type="tel" id="con-phone" placeholder="(555) 555-5555" />
     <label>Company / Employer</label><input type="text" id="con-company" placeholder="Acme Corp" />
-    <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Type</label><select id="con-type"><option value="">? Select type ?</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes" placeholder="Any relevant notes..."></textarea>
   `, async () => {
@@ -1939,14 +1939,14 @@ function editContact(id) {
   const typeOptions = CONTACT_TYPES.map(t => `<option value="${t}" ${t===c.type?'selected':''}>${t}</option>`).join('');
   const canAssign = currentAgent.role !== 'agent';
   const agentOptions = canAssign
-    ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
+    ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} ? ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
   showModal('Edit Contact', `
     <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
     <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
     <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
     <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
-    <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Type</label><select id="con-type"><option value="">? Select type ?</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
   `, async () => {
@@ -1987,7 +1987,7 @@ async function renderAdmin() {
 
   const pendingAgentSection = pendingAgents.length > 0 ? `
     <div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-      <div style="font-weight:700;font-size:14px;color:#b45309;margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} — Awaiting Approval</div>
+      <div style="font-weight:700;font-size:14px;color:#b45309;margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} ? Awaiting Approval</div>
       ${pendingAgents.map(a => {
         const recruiter = allAgents.find(x => x.id === a.recruited_by);
         const niprBadge = a.nipr_result
@@ -2010,7 +2010,7 @@ async function renderAdmin() {
     </div>` : '';
 
   const agentRows = activeAgents.map(a => {
-    const agencyName = a.agencies?.name || '—';
+    const agencyName = a.agencies?.name || '?';
     const roleBadge = a.role === 'system_owner' ? 'badge-sys' : a.role === 'agency_owner' ? 'badge-owner' : 'badge-agent';
     const roleLabel = { system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' }[a.role] || a.role;
     return `<div class="agent-row">
@@ -2127,7 +2127,7 @@ async function recruitContact(contactId) {
     <label>Recruiting Agent</label>
     <select id="rec-recruiter">${recruiterOptions}</select>
     <label>Assign to Agency (optional)</label>
-    <select id="rec-agency"><option value="">— No agency yet —</option>${agencyOptions}</select>
+    <select id="rec-agency"><option value="">? No agency yet ?</option>${agencyOptions}</select>
     <label>Role</label>
     <select id="rec-role">
       <option value="agent">Agent</option>
@@ -2180,7 +2180,7 @@ async function rejectAgent(agentId) {
 }
 
 function openAddAgent() {
-  const agencyOptions = allAgencies.map(a => `<option value="${a.id}">${a.name} — ${a.companies?.name||''}</option>`).join('');
+  const agencyOptions = allAgencies.map(a => `<option value="${a.id}">${a.name} ? ${a.companies?.name||''}</option>`).join('');
   const companyCheckboxes = allCompanies.map(c => `
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-weight:400;">
       <input type="checkbox" id="co-${c.id}" value="${c.id}" style="width:auto;" /> ${c.name}
@@ -2195,7 +2195,7 @@ function openAddAgent() {
       <option value="system_owner">System Owner</option>
     </select>
     <label>Agency</label>
-    <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
+    <select id="ag-agency"><option value="">? No agency ?</option>${agencyOptions}</select>
     <label>Companies</label>
     ${companyCheckboxes}
   `, async () => {
@@ -2221,7 +2221,7 @@ function openAddAgent() {
 
 function editAgent(id) {
   const a = allAgents.find(x => x.id === id); if (!a) return;
-  const agencyOptions = allAgencies.map(ag => `<option value="${ag.id}" ${ag.id===a.agency_id?'selected':''}>${ag.name} — ${ag.companies?.name||''}</option>`).join('');
+  const agencyOptions = allAgencies.map(ag => `<option value="${ag.id}" ${ag.id===a.agency_id?'selected':''}>${ag.name} ? ${ag.companies?.name||''}</option>`).join('');
   showModal('Edit Agent', `
     <label>Full Name *</label><input type="text" id="ag-name" value="${a.name}" />
     <label>Email *</label><input type="email" id="ag-email" value="${a.email}" />
@@ -2232,7 +2232,7 @@ function editAgent(id) {
       <option value="system_owner" ${a.role==='system_owner'?'selected':''}>System Owner</option>
     </select>
     <label>Agency</label>
-    <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
+    <select id="ag-agency"><option value="">? No agency ?</option>${agencyOptions}</select>
   `, async () => {
     const name = document.getElementById('ag-name').value.trim();
     const email = document.getElementById('ag-email').value.trim();
@@ -2304,7 +2304,7 @@ async function syncGoogleContacts() {
     await fetch(url, { mode: 'no-cors' });
     showToast('&#128257; Sync triggered! Google Contacts will update in ~30 seconds.');
   } catch(e) {
-    showToast('Sync sent — check Apps Script logs if issues arise.');
+    showToast('Sync sent ? check Apps Script logs if issues arise.');
   }
 }
 
@@ -2346,7 +2346,7 @@ async function approveApplication(id) {
   if (idx >= 0) applications[idx] = { ...applications[idx], status: 'approved', agent_id: newAgent.id };
   allAgents.push(newAgent);
 
-  showToast('✓ ' + app.first_name + ' ' + app.last_name + ' approved! Create their Google Workspace account in Admin Console.');
+  showToast('? ' + app.first_name + ' ' + app.last_name + ' approved! Create their Google Workspace account in Admin Console.');
   renderAdmin();
 }
 
