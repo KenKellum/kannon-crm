@@ -336,20 +336,22 @@ async function renderOpens() {
   if (error) { document.getElementById('page-opens').innerHTML = `<div class="empty-state"><div class="emoji">&#9888;&#65039;</div><p>Error loading: ${error.message}</p></div>`; return; }
   const all = opens || [];
   const total = all.length;
-  const email1 = all.filter(o => o.track === 'email_1').length;
-  const email2 = all.filter(o => o.track === 'email_2').length;
-  const email3 = all.filter(o => o.track === 'email_3').length;
+  const email1 = all.filter(o => o.sequence_track === 'email_1').length;
+  const email2 = all.filter(o => o.sequence_track === 'email_2').length;
+  const email3 = all.filter(o => o.sequence_track === 'email_3').length;
   const rows = all.map(o => {
-    const contact = contacts.find(c => c.email === o.email);
+    const oEmail = o.contact_email || '';
+    const oName  = o.contact_name  || '?';
+    const contact = contacts.find(c => c.email && c.email.toLowerCase() === oEmail.toLowerCase());
     const contactId = contact ? contact.id : '';
-    const initials = (o.name || '?').split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
-    return `<tr class="opens-row" onclick="viewContact('${contactId}','${(o.email||'').replace(/'/g,"\\'")}')">
-      <td style="white-space:nowrap;"><span class="contact-avatar" style="width:30px;height:30px;font-size:11px;">${initials}</span><strong>${o.name||'—'}</strong></td>
-      <td style="color:var(--muted);font-size:13px;">${o.email||'—'}</td>
-      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.subject?o.subject.substring(0,60)+(o.subject.length>60?'…':''):'—'}</td>
-      <td><span class="badge badge-group">${o.track||'—'}</span></td>
+    const initials = oName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
+    return `<tr class="opens-row" onclick="viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">
+      <td style="white-space:nowrap;"><span class="contact-avatar" style="width:30px;height:30px;font-size:11px;">${initials}</span><strong>${oName}</strong></td>
+      <td style="color:var(--muted);font-size:13px;">${oEmail||'—'}</td>
+      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'…':''):'—'}</td>
+      <td><span class="badge badge-group">${o.sequence_track||'—'}</span></td>
       <td style="font-size:12px;color:var(--muted);white-space:nowrap;">${formatTimeAgo(o.opened_at)}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewContact('${contactId}','${(o.email||'').replace(/'/g,"\\'")}')">View &rarr;</button></td>
+      <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">View &rarr;</button></td>
     </tr>`;
   }).join('');
   document.getElementById('page-opens').innerHTML = `
@@ -385,10 +387,10 @@ function formatTimeAgo(dateStr) {
 // ============================================================
 async function viewContact(contactId, email) {
   let c = contactId ? contacts.find(x => x.id === contactId) : null;
-  if (!c && email) c = contacts.find(x => x.email === email);
+  if (!c && email) c = contacts.find(x => x.email && x.email.toLowerCase() === email.toLowerCase());
   if (!c) { showToast('Contact not found'); return; }
 
-  const { data: opens } = await supabaseClient.from('email_opens').select('*').eq('email', c.email).order('opened_at', { ascending: false });
+  const { data: opens } = await supabaseClient.from('email_opens').select('*').eq('contact_email', c.email).order('opened_at', { ascending: false });
   const { data: cc } = await supabaseClient.from('contact_companies').select('companies(name,slug)').eq('contact_id', c.id);
   const contactCompanies = (cc || []).map(r => r.companies);
 
