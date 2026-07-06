@@ -4,6 +4,11 @@
 const SUPABASE_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
 
+
+// GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
+const GOOGLE_OAUTH_CLIENT_ID = 'PASTE_CLIENT_ID_HERE';
+const APPS_SCRIPT_URL        = 'PASTE_APPS_SCRIPT_URL_HERE';
+const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
@@ -150,6 +155,16 @@ async function showApp() {
 
   await loadData();
   renderDashboard();
+
+  const _urlParams = new URLSearchParams(window.location.search);
+  if (_urlParams.get('gmail') === 'connected') {
+    window.history.replaceState({}, '', window.location.pathname);
+    currentAgent.gmail_connected = true;
+    renderDashboard();
+    showToast('✓ Gmail connected!');
+  } else if (currentAgent.role === 'agent' && !currentAgent.gmail_connected) {
+    setTimeout(() => showGmailSetup(false), 500);
+  }
 }
 
 function showPage(page) {
@@ -277,7 +292,14 @@ function renderDashboard() {
           <div class="action-item">
             <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am • Two-way</div></div>
             <span class="badge badge-active">&#10003; Active</span>
+            <div class="action-item">
+            <div class="action-item-info">
+              <div class="action-item-name">Your Gmail</div>
+              <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — replies not tracked'}</div>
+            </div>
+            ${currentAgent.gmail_connected ? '<span class="badge badge-active">&#10003; Connected</span>' : '<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}
           </div>
+        </div>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;">
@@ -325,6 +347,63 @@ function shareBookingLink() {
       }
     }
   });
+}
+
+// ============================================================
+// GMAIL OAUTH CONNECT
+// ============================================================
+function showGmailSetup(isManual) {
+  const ex = document.getElementById('gmail-setup-overlay');
+  if (ex) ex.remove();
+  const ov = document.createElement('div');
+  ov.id = 'gmail-setup-overlay';
+  ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const fn = (currentAgent.name || '').split(' ')[0] || 'there';
+  ov.innerHTML = '<div style="background:white;border-radius:16px;padding:40px 36px;max-width:480px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,0.28);text-align:center;">' +
+    '<div style="font-size:52px;margin-bottom:14px;">📧</div>' +
+    '<h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">' + (isManual ? 'Connect Your Gmail' : 'One last step, ' + fn + '!') + '</h2>' +
+    '<p style="font-size:14px;color:#64748b;line-height:1.65;margin-bottom:6px;">Connect your Gmail so outreach emails come <strong>from your address</strong> and replies land <strong>in your inbox</strong>.</p>' +
+    '<p style="font-size:13px;color:#94a3b8;margin-bottom:24px;">The CRM auto-marks contacts as "Replied" when they write back.</p>' +
+    '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">✓ Gmail connected! Refreshing...</div>' +
+    '<button onclick="connectGmail()" id="gmail-connect-btn" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">Connect Gmail</button>' +
+    '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">⏳ Waiting for authorization...</div>' +
+    (isManual ? '<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();window.removeEventListener(\'message\',handleGmailMessage);" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Close</button>'
+              : '<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Skip for now</button>') +
+    '</div>';
+  document.body.appendChild(ov);
+  window.addEventListener('message', handleGmailMessage);
+}
+function connectGmail() {
+  if (!GOOGLE_OAUTH_CLIENT_ID || GOOGLE_OAUTH_CLIENT_ID === 'PASTE_CLIENT_ID_HERE') { alert('Gmail OAuth not configured yet. Contact Ken.'); return; }
+  const url = 'https://accounts.google.com/o/oauth2/auth?client_id=' + GOOGLE_OAUTH_CLIENT_ID + '&redirect_uri=' + encodeURIComponent(APPS_SCRIPT_URL) + '&scope=' + encodeURIComponent(GMAIL_SCOPES) + '&response_type=code&access_type=offline&prompt=consent&state=' + encodeURIComponent(currentAgent.id);
+  window.open(url, 'gmail-oauth', 'width=520,height=640,left=200,top=80');
+  const cb = document.getElementById('gmail-connect-btn');
+  const wb = document.getElementById('gmail-waiting-indicator');
+  if (cb) cb.style.display = 'none';
+  if (wb) wb.style.display = 'block';
+  pollGmailConnection();
+}
+async function pollGmailConnection() {
+  let n = 0;
+  const tick = async () => {
+    if (++n > 60) { const b = document.getElementById('gmail-connect-btn'); if (b) b.style.display = 'flex'; return; }
+    const { data } = await supabaseClient.from('agents').select('gmail_connected,gmail_email').eq('id', currentAgent.id).single();
+    if (data && data.gmail_connected) onGmailConnected(data.gmail_email || '');
+    else setTimeout(tick, 3000);
+  };
+  setTimeout(tick, 3000);
+}
+function handleGmailMessage(e) { if (e.data && e.data.type === 'gmail-connected') onGmailConnected(e.data.gmail_email || ''); }
+function onGmailConnected(email) {
+  currentAgent.gmail_connected = true; currentAgent.gmail_email = email;
+  const el = document.getElementById('gmail-setup-status'); if (el) el.style.display = 'block';
+  window.removeEventListener('message', handleGmailMessage);
+  setTimeout(() => { const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove(); renderDashboard(); showToast('✓ Gmail connected! Sending from ' + (email || 'your Gmail')); }, 1800);
+}
+function dismissGmailSetup() {
+  const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove();
+  window.removeEventListener('message', handleGmailMessage);
+  showToast('Connect Gmail anytime from your dashboard.');
 }
 
 // ============================================================
