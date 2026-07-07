@@ -16,7 +16,7 @@ const PIPELINES = {
   'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
 
-const CONTACT_TYPES = ['Group/Employer','Individual & Family','Agent — Insured America','Agent — Kannon Financial'];
+const CONTACT_TYPES = ['Group/Employer','Individual & Family','Recruit','Agent — Insured America','Agent — Kannon Financial'];
 
 let supabaseClient = null;
 let currentUser = null;
@@ -168,17 +168,18 @@ async function showApp() {
 }
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','admin'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','admin'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
     if (nav) nav.classList.toggle('active', p === page);
   });
-  if (page === 'dashboard') renderDashboard();
-  if (page === 'pipelines') renderPipelines();
-  if (page === 'contacts') renderContacts();
-  if (page === 'opens') renderOpens();
-  if (page === 'admin') renderAdmin();
+  if (page === 'dashboard')  renderDashboard();
+  if (page === 'pipelines')  renderPipelines();
+  if (page === 'contacts')   renderContacts();
+  if (page === 'opens')      renderOpens();
+  if (page === 'campaigns')  renderCampaigns();
+  if (page === 'admin')      renderAdmin();
 }
 
 // ============================================================
@@ -533,6 +534,117 @@ function dismissGmailSetup() {
 }
 
 // ============================================================
+// CAMPAIGNS — drip content library + stats
+// ============================================================
+async function renderCampaigns() {
+  document.getElementById('page-campaigns').innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading campaigns...</div>`;
+
+  const [{ data: content }, { data: sends }, { data: dripContacts }] = await Promise.all([
+    supabaseClient.from('drip_content').select('*').order('segment').order('display_order'),
+    supabaseClient.from('drip_sends').select('drip_content_id, opened'),
+    supabaseClient.from('contacts').select('id,name,sequence_status,type').eq('sequence_status', 'Drip')
+  ]);
+
+  const allContent = content || [];
+  const allSends   = sends   || [];
+  const drip       = dripContacts || [];
+
+  // Build send stats per content ID
+  const stats = {};
+  allSends.forEach(s => {
+    if (!stats[s.drip_content_id]) stats[s.drip_content_id] = { sent: 0, opened: 0 };
+    stats[s.drip_content_id].sent++;
+    if (s.opened) stats[s.drip_content_id].opened++;
+  });
+
+  const segLabel = { b2b: '🏢 B2B Client', b2c: '👤 B2C Client', recruit: '🤝 Recruit' };
+  const segOrder = ['b2b','b2c','recruit'];
+
+  const dripB2b     = drip.filter(c => c.type === 'Group/Employer').length;
+  const dripB2c     = drip.filter(c => c.type === 'Individual & Family').length;
+  const dripRecruit = drip.filter(c => c.type === 'Recruit').length;
+
+  let segSections = segOrder.map(seg => {
+    const segItems = allContent.filter(c => c.segment === seg);
+    if (segItems.length === 0) return '';
+    const rows = segItems.map(item => {
+      const s = stats[item.id] || { sent: 0, opened: 0 };
+      const openRate = s.sent > 0 ? Math.round(s.opened / s.sent * 100) : 0;
+      const ctaBadge = item.cta_type === 'cta'
+        ? `<span class="badge badge-replied" style="font-size:10px;padding:2px 6px;">CTA</span>`
+        : `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;padding:2px 6px;">EDU</span>`;
+      const monthMap = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
+      const monthBadge = item.awareness_month
+        ? `<span style="font-size:11px;color:#c8a84b;margin-left:6px;">📅 ${monthMap[item.awareness_month]}</span>` : '';
+      return `<tr>
+        <td style="font-size:13px;font-weight:600;max-width:280px;">${item.subject}</td>
+        <td style="font-size:12px;color:var(--muted);">${item.topic}</td>
+        <td>${ctaBadge}${monthBadge}</td>
+        <td style="text-align:center;font-size:13px;">${s.sent}</td>
+        <td style="text-align:center;font-size:13px;color:${openRate>20?'#16a34a':'var(--muted)'};">${s.sent>0?openRate+'%':'—'}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="previewDripContent(${JSON.stringify(item).replace(/"/g,'&quot;')})">Preview</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${item.is_active?'#16a34a':'#dc2626'};" onclick="toggleDripContent('${item.id}',${item.is_active})">${item.is_active?'Active':'Paused'}</button>
+        </td>
+      </tr>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:32px;">
+        <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin:0 0 12px 0;">${segLabel[seg] || seg}</h3>
+        <table class="data-table" style="width:100%;">
+          <thead><tr>
+            <th>Subject</th><th>Topic</th><th>Type</th>
+            <th style="text-align:center;">Sent</th><th style="text-align:center;">Open Rate</th><th>Actions</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+
+  document.getElementById('page-campaigns').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h2 class="section-title" style="margin:0;">&#128247; Drip Campaigns</h2>
+    </div>
+
+    <div class="opens-stats" style="margin-bottom:28px;">
+      <div class="opens-stat"><div class="num">${drip.length}</div><div class="lbl">In Drip</div></div>
+      <div class="opens-stat" style="border-left-color:#1a3a5c;"><div class="num">${dripB2b}</div><div class="lbl">B2B Clients</div></div>
+      <div class="opens-stat" style="border-left-color:#16a34a;"><div class="num">${dripB2c}</div><div class="lbl">B2C Clients</div></div>
+      <div class="opens-stat" style="border-left-color:#c8a84b;"><div class="num">${dripRecruit}</div><div class="lbl">Recruits</div></div>
+      <div class="opens-stat" style="border-left-color:#8b5cf6;"><div class="num">${allSends.length}</div><div class="lbl">Drip Emails Sent</div></div>
+    </div>
+
+    <div style="background:#fff8e7;border:1px solid #c8a84b;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#92400e;line-height:1.6;">
+      <strong>How it works:</strong> Contacts automatically enter the drip after their 3-email outreach sequence with no reply.
+      B2B contacts get B2B content, B2C get B2C content, Recruits get recruiting content.
+      Cadence: every <strong>5 days</strong> for the first 60 days, then <strong>weekly</strong>.
+      Run <code style="background:#fef3c7;padding:2px 5px;border-radius:3px;">runDripCampaign()</code> daily via Apps Script trigger.
+    </div>
+
+    ${segSections}
+  `;
+}
+
+async function toggleDripContent(id, currentlyActive) {
+  const { error } = await supabaseClient.from('drip_content').update({ is_active: !currentlyActive }).eq('id', id);
+  if (!error) renderCampaigns();
+}
+
+function previewDripContent(item) {
+  const monthMap = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
+  const body = `
+    <div style="margin-bottom:12px;">
+      <strong>Subject:</strong> ${item.subject}<br>
+      <strong>Segment:</strong> ${item.segment} &nbsp;|&nbsp; <strong>Type:</strong> ${item.cta_type} &nbsp;|&nbsp; <strong>Topic:</strong> ${item.topic}
+      ${item.awareness_month ? `&nbsp;|&nbsp; <strong>Month:</strong> ${monthMap[item.awareness_month]}` : ''}
+    </div>
+    <div style="border:1px solid #e2e8f0;border-radius:6px;padding:16px;background:#f8fafc;font-size:13px;line-height:1.7;max-height:320px;overflow-y:auto;">
+      ${item.body_html.replace(/{firstName}/g,'[First Name]').replace(/{agentName}/g,'[Agent Name]')}
+    </div>`;
+  showModal('📧 Preview: ' + item.subject.substring(0,50), body, null, { hideConfirm: true });
+}
+
+// ============================================================
 // EMAIL OPENS
 // ============================================================
 async function renderOpens() {
@@ -775,7 +887,7 @@ function renderContacts() {
     return matchSearch && matchType;
   });
   const typeClass = { 'Group/Employer': 'badge-group', 'Individual & Family': 'badge-individual' };
-  const seqClass = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Not Started': 'badge-agent' };
+  const seqClass = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Drip': 'badge-group', 'Not Started': 'badge-agent' };
   const typeFilterBtns = ['', ...CONTACT_TYPES].map(t => `<button class="pipeline-tab ${contactTypeFilter===t?'active':''}" onclick="contactTypeFilter='${t}';renderContacts();">${t||'All Types'}</button>`).join('');
   const showOwnerCol = currentAgent.role !== 'agent';
   const rows = filtered.map(c => {
