@@ -19,6 +19,8 @@ const PIPELINES = {
 const CONTACT_TYPES = ['Group/Employer','Individual & Family','Recruit','Agent — Insured America','Agent — Kannon Financial'];
 
 let supabaseClient = null;
+let campaignTab = 'drip';
+let campaignItemsMap = {};
 let currentUser = null;
 let currentAgent = null;        // agents table row
 let currentAgentCompanies = []; // company names agent belongs to
@@ -539,90 +541,143 @@ function dismissGmailSetup() {
 async function renderCampaigns() {
   document.getElementById('page-campaigns').innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading campaigns...</div>`;
 
-  const [{ data: content }, { data: sends }, { data: dripContacts }] = await Promise.all([
+  const [{ data: dripContent }, { data: seqContent }, { data: sends }, { data: dripContacts }] = await Promise.all([
     supabaseClient.from('drip_content').select('*').order('segment').order('display_order'),
+    supabaseClient.from('sequence_content').select('*').order('segment').order('email_num'),
     supabaseClient.from('drip_sends').select('drip_content_id, opened'),
     supabaseClient.from('contacts').select('id,name,sequence_status,type').eq('sequence_status', 'Drip')
   ]);
 
-  const allContent = content || [];
-  const allSends   = sends   || [];
-  const drip       = dripContacts || [];
+  const allDrip  = dripContent || [];
+  const allSeq   = seqContent  || [];
+  const allSends = sends       || [];
+  const drip     = dripContacts || [];
 
-  // Build send stats per content ID
-  const stats = {};
+  // Store all items in global map for onclick access
+  campaignItemsMap = {};
+  [...allDrip, ...allSeq].forEach(item => { campaignItemsMap[item.id] = item; });
+
+  // Build send stats per drip content ID
+  const sendStats = {};
   allSends.forEach(s => {
-    if (!stats[s.drip_content_id]) stats[s.drip_content_id] = { sent: 0, opened: 0 };
-    stats[s.drip_content_id].sent++;
-    if (s.opened) stats[s.drip_content_id].opened++;
+    if (!sendStats[s.drip_content_id]) sendStats[s.drip_content_id] = { sent: 0, opened: 0 };
+    sendStats[s.drip_content_id].sent++;
+    if (s.opened) sendStats[s.drip_content_id].opened++;
   });
-
-  const segLabel = { b2b: '🏢 B2B Client', b2c: '👤 B2C Client', recruit: '🤝 Recruit' };
-  const segOrder = ['b2b','b2c','recruit'];
 
   const dripB2b     = drip.filter(c => c.type === 'Group/Employer').length;
   const dripB2c     = drip.filter(c => c.type === 'Individual & Family').length;
   const dripRecruit = drip.filter(c => c.type === 'Recruit').length;
+  const monthMap    = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
 
-  let segSections = segOrder.map(seg => {
-    const segItems = allContent.filter(c => c.segment === seg);
-    if (segItems.length === 0) return '';
-    const rows = segItems.map(item => {
-      const s = stats[item.id] || { sent: 0, opened: 0 };
+  // ── DRIP sections ───────────────────────────────────────────
+  const dripSegLabel = { b2b:'🏢 B2B Client', b2c:'👤 B2C Client', recruit:'🤝 Recruit' };
+  const dripSections = ['b2b','b2c','recruit'].map(seg => {
+    const items = allDrip.filter(c => c.segment === seg);
+    if (!items.length) return '';
+    const rows = items.map(item => {
+      const s = sendStats[item.id] || { sent: 0, opened: 0 };
       const openRate = s.sent > 0 ? Math.round(s.opened / s.sent * 100) : 0;
       const ctaBadge = item.cta_type === 'cta'
         ? `<span class="badge badge-replied" style="font-size:10px;padding:2px 6px;">CTA</span>`
         : `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;padding:2px 6px;">EDU</span>`;
-      const monthMap = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
-      const monthBadge = item.awareness_month
-        ? `<span style="font-size:11px;color:#c8a84b;margin-left:6px;">📅 ${monthMap[item.awareness_month]}</span>` : '';
+      const monthBadge = item.awareness_month ? `<span style="font-size:11px;color:#c8a84b;margin-left:6px;">📅 ${monthMap[item.awareness_month]}</span>` : '';
+      const activeColor = item.is_active ? '#16a34a' : '#dc2626';
       return `<tr>
-        <td style="font-size:13px;font-weight:600;max-width:280px;">${item.subject}</td>
+        <td style="font-size:13px;font-weight:600;max-width:240px;">${item.subject}</td>
         <td style="font-size:12px;color:var(--muted);">${item.topic}</td>
         <td>${ctaBadge}${monthBadge}</td>
         <td style="text-align:center;font-size:13px;">${s.sent}</td>
         <td style="text-align:center;font-size:13px;color:${openRate>20?'#16a34a':'var(--muted)'};">${s.sent>0?openRate+'%':'—'}</td>
-        <td>
-          <button class="btn btn-outline btn-sm" onclick="previewDripContent(${JSON.stringify(item).replace(/"/g,'&quot;')})">Preview</button>
-          <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${item.is_active?'#16a34a':'#dc2626'};" onclick="toggleDripContent('${item.id}',${item.is_active})">${item.is_active?'Active':'Paused'}</button>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline btn-sm" onclick="previewEmailContent('${item.id}')">Preview</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('drip_content','${item.id}')">✏️ Edit</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${activeColor};" onclick="toggleDripContent('${item.id}',${item.is_active})">${item.is_active?'Active':'Paused'}</button>
         </td>
       </tr>`;
     }).join('');
-    return `
-      <div style="margin-bottom:32px;">
-        <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin:0 0 12px 0;">${segLabel[seg] || seg}</h3>
-        <table class="data-table" style="width:100%;">
-          <thead><tr>
-            <th>Subject</th><th>Topic</th><th>Type</th>
-            <th style="text-align:center;">Sent</th><th style="text-align:center;">Open Rate</th><th>Actions</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
+    return `<div style="margin-bottom:32px;">
+      <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin:0 0 12px 0;">${dripSegLabel[seg]||seg}</h3>
+      <table class="data-table" style="width:100%;"><thead><tr>
+        <th>Subject</th><th>Topic</th><th>Type</th>
+        <th style="text-align:center;">Sent</th><th style="text-align:center;">Open Rate</th><th>Actions</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
   }).join('');
 
+  // ── SEQUENCE sections ────────────────────────────────────────
+  const seqSegLabel = {
+    'b2b':'🏢 B2B Outreach',
+    'b2c':'👤 B2C Outreach',
+    'recruit-standard':'🤝 Recruit (Standard)',
+    'recruit-statefarm':'🚗 Recruit (State Farm)'
+  };
+  const seqSections = ['b2b','b2c','recruit-standard','recruit-statefarm'].map(seg => {
+    const items = allSeq.filter(s => s.segment === seg).sort((a,b) => a.email_num - b.email_num);
+    if (!items.length) return '';
+    const rows = items.map(item => {
+      const stateBadge = item.state
+        ? `<span class="badge" style="background:#eff6ff;color:#1d4ed8;font-size:10px;padding:2px 6px;">${item.state}</span>`
+        : `<span style="color:var(--muted);font-size:12px;">All states</span>`;
+      const activeColor = item.is_active ? '#16a34a' : '#dc2626';
+      const activeLabel = item.is_active ? 'Active' : 'Inactive';
+      return `<tr>
+        <td style="text-align:center;font-size:13px;font-weight:700;color:var(--primary);">#${item.email_num}</td>
+        <td style="font-size:13px;font-weight:600;max-width:260px;">${item.subject}</td>
+        <td style="text-align:center;">${stateBadge}</td>
+        <td style="text-align:center;"><span class="badge ${item.is_active?'badge-active':'badge-completed'}" style="font-size:10px;">${activeLabel}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline btn-sm" onclick="previewEmailContent('${item.id}')">Preview</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('sequence_content','${item.id}')">✏️ Edit</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${activeColor};" onclick="toggleSeqContent('${item.id}',${item.is_active})">${activeLabel}</button>
+        </td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:32px;">
+      <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin:0 0 12px 0;">${seqSegLabel[seg]||seg}</h3>
+      <table class="data-table" style="width:100%;"><thead><tr>
+        <th style="text-align:center;">#</th><th>Subject</th>
+        <th style="text-align:center;">State</th><th style="text-align:center;">Status</th><th>Actions</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }).join('');
+
+  const tabDrip = (campaignTab === 'drip');
   document.getElementById('page-campaigns').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h2 class="section-title" style="margin:0;">&#128247; Drip Campaigns</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+      <h2 class="section-title" style="margin:0;">📧 Email Campaigns</h2>
+      <button class="btn btn-primary" onclick="aiSuggestEmail()">✨ AI Suggest New Email</button>
     </div>
 
-    <div class="opens-stats" style="margin-bottom:28px;">
-      <div class="opens-stat"><div class="num">${drip.length}</div><div class="lbl">In Drip</div></div>
-      <div class="opens-stat" style="border-left-color:#1a3a5c;"><div class="num">${dripB2b}</div><div class="lbl">B2B Clients</div></div>
-      <div class="opens-stat" style="border-left-color:#16a34a;"><div class="num">${dripB2c}</div><div class="lbl">B2C Clients</div></div>
-      <div class="opens-stat" style="border-left-color:#c8a84b;"><div class="num">${dripRecruit}</div><div class="lbl">Recruits</div></div>
-      <div class="opens-stat" style="border-left-color:#8b5cf6;"><div class="num">${allSends.length}</div><div class="lbl">Drip Emails Sent</div></div>
+    <div style="display:flex;gap:2px;margin-bottom:24px;border-bottom:2px solid #e2e8f0;">
+      <button onclick="switchCampaignTab('drip')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${tabDrip?'#1a3a5c':'transparent'};background:none;color:${tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">💧 Drip (${allDrip.length})</button>
+      <button onclick="switchCampaignTab('seq')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${!tabDrip?'#1a3a5c':'transparent'};background:none;color:${!tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">📬 Sequences (${allSeq.length})</button>
     </div>
 
-    <div style="background:#fff8e7;border:1px solid #c8a84b;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#92400e;line-height:1.6;">
-      <strong>How it works:</strong> Contacts automatically enter the drip after their 3-email outreach sequence with no reply.
-      B2B contacts get B2B content, B2C get B2C content, Recruits get recruiting content.
-      Cadence: every <strong>5 days</strong> for the first 60 days, then <strong>weekly</strong>.
-      Run <code style="background:#fef3c7;padding:2px 5px;border-radius:3px;">runDripCampaign()</code> daily via Apps Script trigger.
+    <div id="camp-drip" style="display:${tabDrip?'block':'none'};">
+      <div class="opens-stats" style="margin-bottom:28px;">
+        <div class="opens-stat"><div class="num">${drip.length}</div><div class="lbl">In Drip</div></div>
+        <div class="opens-stat" style="border-left-color:#1a3a5c;"><div class="num">${dripB2b}</div><div class="lbl">B2B</div></div>
+        <div class="opens-stat" style="border-left-color:#16a34a;"><div class="num">${dripB2c}</div><div class="lbl">B2C</div></div>
+        <div class="opens-stat" style="border-left-color:#c8a84b;"><div class="num">${dripRecruit}</div><div class="lbl">Recruits</div></div>
+        <div class="opens-stat" style="border-left-color:#8b5cf6;"><div class="num">${allSends.length}</div><div class="lbl">Sent</div></div>
+      </div>
+      <div style="background:#fff8e7;border:1px solid #c8a84b;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#92400e;line-height:1.6;">
+        <strong>Cadence:</strong> Every 5 days (first 60 days) → Weekly. Triggered daily via Apps Script <code style="background:#fef3c7;padding:2px 5px;border-radius:3px;">runDripCampaign()</code>.
+      </div>
+      ${dripSections}
     </div>
 
-    ${segSections}
+    <div id="camp-seq" style="display:${!tabDrip?'block':'none'};">
+      <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#1e40af;line-height:1.6;">
+        <strong>3-email outreach sequence</strong> — runs via Apps Script. B2B/B2C routes by contact type. Recruits route by <em>Outreach Track</em> (Standard or State Farm). Add state-specific rows (e.g. MT, AZ) to override generic templates.
+      </div>
+      ${seqSections}
+    </div>
   `;
+}
+
+function switchCampaignTab(tab) {
+  campaignTab = tab;
+  renderCampaigns();
 }
 
 async function toggleDripContent(id, currentlyActive) {
@@ -630,18 +685,197 @@ async function toggleDripContent(id, currentlyActive) {
   if (!error) renderCampaigns();
 }
 
-function previewDripContent(item) {
+async function toggleSeqContent(id, currentlyActive) {
+  const { error } = await supabaseClient.from('sequence_content').update({ is_active: !currentlyActive }).eq('id', id);
+  if (!error) renderCampaigns();
+}
+
+function previewEmailContent(id) {
+  const item = campaignItemsMap[id];
+  if (!item) return;
   const monthMap = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
+  const metaLine = item.cta_type !== undefined
+    ? `<strong>Segment:</strong> ${item.segment} &nbsp;|&nbsp; <strong>Type:</strong> ${item.cta_type} &nbsp;|&nbsp; <strong>Topic:</strong> ${item.topic||''}${item.awareness_month?` &nbsp;|&nbsp; <strong>Month:</strong> ${monthMap[item.awareness_month]}`:''}`
+    : `<strong>Segment:</strong> ${item.segment||''} &nbsp;|&nbsp; <strong>Email #:</strong> ${item.email_num||''} ${item.state?`&nbsp;|&nbsp; <strong>State:</strong> ${item.state}`:''}`;
   const body = `
-    <div style="margin-bottom:12px;">
-      <strong>Subject:</strong> ${item.subject}<br>
-      <strong>Segment:</strong> ${item.segment} &nbsp;|&nbsp; <strong>Type:</strong> ${item.cta_type} &nbsp;|&nbsp; <strong>Topic:</strong> ${item.topic}
-      ${item.awareness_month ? `&nbsp;|&nbsp; <strong>Month:</strong> ${monthMap[item.awareness_month]}` : ''}
-    </div>
-    <div style="border:1px solid #e2e8f0;border-radius:6px;padding:16px;background:#f8fafc;font-size:13px;line-height:1.7;max-height:320px;overflow-y:auto;">
-      ${item.body_html.replace(/{firstName}/g,'[First Name]').replace(/{agentName}/g,'[Agent Name]')}
+    <div style="margin-bottom:12px;font-size:13px;">${metaLine}</div>
+    <div style="margin-bottom:6px;font-size:13px;"><strong>Subject:</strong> ${item.subject}</div>
+    <div style="border:1px solid #e2e8f0;border-radius:6px;padding:16px;background:#f8fafc;font-size:13px;line-height:1.7;max-height:360px;overflow-y:auto;">
+      ${(item.body_html||'').replace(/{firstName}/g,'[First Name]').replace(/{agentName}/g,'[Agent Name]').replace(/{state}/g,'[State]').replace(/{city}/g,'[City]')}
     </div>`;
-  showModal('📧 Preview: ' + item.subject.substring(0,50), body, null, { hideConfirm: true });
+  showModal('📧 Preview: ' + (item.subject||'').substring(0,50), body, null, { hideConfirm: true });
+}
+
+function editEmailContent(table, id) {
+  const item = campaignItemsMap[id];
+  if (!item) return;
+  const isDrip = table === 'drip_content';
+  const extraFields = isDrip ? `
+    <div style="margin-top:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic</label>
+      <input id="ec-topic" class="form-input" value="${(item.topic||'').replace(/"/g,'&quot;')}" style="width:100%;">
+    </div>` : `
+    <div style="margin-top:12px;display:flex;gap:12px;">
+      <div style="flex:1;">
+        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Email # in Sequence</label>
+        <input id="ec-num" class="form-input" type="number" value="${item.email_num||1}" style="width:100%;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">State Override (blank = all states)</label>
+        <input id="ec-state" class="form-input" value="${item.state||''}" placeholder="MT, AZ…" style="width:100%;text-transform:uppercase;" maxlength="2">
+      </div>
+    </div>`;
+
+  const safeSubject = (item.subject||'').replace(/"/g,'&quot;');
+  const body = `
+    <div style="margin-bottom:8px;font-size:12px;color:var(--muted);">
+      <strong>Table:</strong> ${table} &nbsp;|&nbsp; <strong>Segment:</strong> ${item.segment}
+    </div>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Subject Line</label>
+    <input id="ec-subject" class="form-input" value="${safeSubject}" style="width:100%;margin-bottom:4px;">
+    ${extraFields}
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Body HTML &nbsp;<span style="font-weight:400;color:var(--muted);">(tokens: {firstName} {agentName} {state} {city})</span></label>
+    <textarea id="ec-body" class="form-input" rows="10" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${item.body_html||''}</textarea>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Plain Text (optional)</label>
+    <textarea id="ec-plain" class="form-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${item.body_plain||''}</textarea>`;
+
+  showModal('✏️ Edit Email', body, async () => {
+    const updates = {
+      subject:   document.getElementById('ec-subject').value.trim(),
+      body_html: document.getElementById('ec-body').value,
+      body_plain: document.getElementById('ec-plain').value
+    };
+    if (isDrip) {
+      updates.topic = document.getElementById('ec-topic').value.trim();
+    } else {
+      updates.email_num = parseInt(document.getElementById('ec-num').value) || item.email_num;
+      const sv = document.getElementById('ec-state').value.trim().toUpperCase();
+      updates.state = sv || null;
+    }
+    if (!updates.subject || !updates.body_html) { showToast('Subject and body are required.'); return false; }
+    const { error } = await supabaseClient.from(table).update(updates).eq('id', id);
+    if (error) { showToast('Save failed: ' + error.message); return false; }
+    showToast('✅ Email updated!');
+    campaignItemsMap[id] = { ...item, ...updates };
+    renderCampaigns();
+  });
+}
+
+function aiSuggestEmail() {
+  const body = `
+    <div style="margin-bottom:16px;font-size:14px;color:var(--muted);line-height:1.6;">
+      Tell the AI what kind of email to write. It will generate a complete draft you can review, edit, and save.
+    </div>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Segment / Track</label>
+    <select id="ai-seg" class="form-input" style="width:100%;margin-bottom:12px;">
+      <option value="b2b|drip_content">B2B — Drip</option>
+      <option value="b2c|drip_content">B2C — Drip</option>
+      <option value="recruit|drip_content">Recruit — Drip</option>
+      <option value="b2b|sequence_content">B2B — Outreach Sequence</option>
+      <option value="b2c|sequence_content">B2C — Outreach Sequence</option>
+      <option value="recruit-standard|sequence_content">Recruit — Outreach (Standard)</option>
+      <option value="recruit-statefarm|sequence_content">Recruit — Outreach (State Farm)</option>
+    </select>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Tone</label>
+    <select id="ai-tone" class="form-input" style="width:100%;margin-bottom:12px;">
+      <option value="professional and warm">Professional &amp; Warm</option>
+      <option value="direct and punchy">Direct &amp; Punchy</option>
+      <option value="conversational and friendly">Conversational &amp; Friendly</option>
+      <option value="urgency-driven">Urgency-Driven</option>
+    </select>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic / Angle — what should this email be about?</label>
+    <textarea id="ai-topic" class="form-input" rows="3" placeholder="e.g. Introduce our Medicare supplement options and explain how we compare to other carriers on pricing" style="width:100%;resize:vertical;"></textarea>
+    <div id="ai-status" style="margin-top:12px;font-size:13px;color:var(--muted);min-height:20px;"></div>`;
+
+  showModal('✨ AI — Suggest New Email', body, async () => {
+    const segVal   = document.getElementById('ai-seg').value;
+    const tone     = document.getElementById('ai-tone').value;
+    const topic    = document.getElementById('ai-topic').value.trim();
+    const statusEl = document.getElementById('ai-status');
+    if (!topic) { showToast('Please describe what the email should be about.'); return false; }
+
+    const [segment, table] = segVal.split('|');
+    statusEl.innerHTML = '<em>⏳ Generating… this usually takes 10–15 seconds.</em>';
+
+    let result;
+    try {
+      const resp = await fetch(SUPABASE_URL + '/functions/v1/suggest-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ segment, table, tone, topic })
+      });
+      if (!resp.ok) { const t = await resp.text(); throw new Error(t); }
+      result = await resp.json();
+    } catch (err) {
+      statusEl.innerHTML = '';
+      showToast('AI generation failed: ' + err.message);
+      return false;
+    }
+
+    closeModal();
+    openAiReviewModal(table, segment, result);
+    return false;
+  }, { confirmLabel: '✨ Generate' });
+}
+
+function openAiReviewModal(table, segment, result) {
+  const isDrip = table === 'drip_content';
+  const extraFields = isDrip ? `
+    <div style="margin-top:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic (for library display)</label>
+      <input id="ec-topic" class="form-input" value="${(result.topic||'AI Generated').replace(/"/g,'&quot;')}" style="width:100%;">
+    </div>
+    <div style="margin-top:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Display Order (position within segment)</label>
+      <input id="ec-order" class="form-input" type="number" value="99" style="width:100%;">
+    </div>` : `
+    <div style="margin-top:12px;display:flex;gap:12px;">
+      <div style="flex:1;">
+        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Email # in Sequence</label>
+        <input id="ec-num" class="form-input" type="number" value="${result.email_num||1}" style="width:100%;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">State Override (blank = all states)</label>
+        <input id="ec-state" class="form-input" value="" placeholder="MT, AZ…" style="text-transform:uppercase;" maxlength="2">
+      </div>
+    </div>`;
+
+  const safeSubject = (result.subject||'').replace(/"/g,'&quot;');
+  const body = `
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#166534;">
+      ✨ AI draft for <strong>${segment}</strong>. Review and edit, then click <strong>Save &amp; Activate</strong>.
+    </div>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Subject Line</label>
+    <input id="ec-subject" class="form-input" value="${safeSubject}" style="width:100%;margin-bottom:4px;">
+    ${extraFields}
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Body HTML</label>
+    <textarea id="ec-body" class="form-input" rows="10" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${result.body_html||''}</textarea>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Plain Text</label>
+    <textarea id="ec-plain" class="form-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${result.body_plain||''}</textarea>`;
+
+  showModal('✨ Review AI Draft', body, async () => {
+    const insertData = {
+      segment,
+      subject:    document.getElementById('ec-subject').value.trim(),
+      body_html:  document.getElementById('ec-body').value,
+      body_plain: document.getElementById('ec-plain').value,
+      is_active:  true
+    };
+    if (!insertData.subject || !insertData.body_html) { showToast('Subject and body required.'); return false; }
+    if (isDrip) {
+      insertData.topic         = document.getElementById('ec-topic').value.trim() || 'AI Generated';
+      insertData.cta_type      = 'edu';
+      insertData.display_order = parseInt(document.getElementById('ec-order').value) || 99;
+    } else {
+      insertData.email_num = parseInt(document.getElementById('ec-num').value) || 1;
+      const sv = document.getElementById('ec-state').value.trim().toUpperCase();
+      insertData.state = sv || null;
+    }
+    const { error } = await supabaseClient.from(table).insert([insertData]);
+    if (error) { showToast('Save failed: ' + error.message); return false; }
+    showToast('✅ New email saved and activated!');
+    renderCampaigns();
+  }, { confirmLabel: '💾 Save & Activate' });
 }
 
 // ============================================================
@@ -1298,9 +1532,10 @@ async function deleteAgent(id) {
 // MODAL
 // ============================================================
 function showModal(title, bodyHtml, onSave, opts = {}) {
+  const confirmLabel = opts.confirmLabel || 'Save';
   const footer = opts.hideConfirm
     ? `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`
-    : `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="handleModalSave()">Save</button></div>`;
+    : `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="handleModalSave()">${confirmLabel}</button></div>`;
   document.getElementById('modal-container').innerHTML = `
     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
       <div class="modal">
