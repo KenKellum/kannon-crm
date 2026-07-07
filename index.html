@@ -33,16 +33,34 @@
     .auth-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--muted); font-size: 13px; }
     .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-    /* LAYOUT */
-    #app { display: none; flex-direction: column; min-height: 100vh; }
-    header { background: var(--primary); color: white; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-    header .logo-text { font-size: 18px; font-weight: 700; color: var(--accent); white-space: nowrap; }
-    header nav { display: flex; gap: 4px; }
-    header nav button { background: none; border: none; color: rgba(255,255,255,0.7); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
-    header nav button:hover, header nav button.active { background: rgba(255,255,255,0.15); color: white; }
-    header .user-area { display: flex; align-items: center; gap: 10px; font-size: 13px; color: rgba(255,255,255,0.7); white-space: nowrap; }
-    .user-badge { background: rgba(200,168,75,0.25); border: 1px solid rgba(200,168,75,0.4); color: var(--accent); padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-    header .user-area button { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    /* LAYOUT — sidebar + content */
+    #app { display: none; flex-direction: row; min-height: 100vh; }
+
+    /* SIDEBAR */
+    .crm-sidebar { width: 210px; min-width: 210px; background: var(--primary); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; z-index: 100; overflow: hidden; flex-shrink: 0; }
+    .sidebar-brand { padding: 16px 14px 14px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .sidebar-brand .logo-text { font-size: 16px; font-weight: 700; color: var(--accent); line-height: 1; }
+    .sidebar-brand-sub { font-size: 10px; color: rgba(255,255,255,0.38); margin-top: 2px; }
+    .sidebar-nav { flex: 1; overflow-y: auto; padding: 6px 8px 0; }
+    .sidebar-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; color: rgba(255,255,255,0.32); padding: 12px 8px 4px; }
+    .sidebar-nav button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 8px; border: none; background: none; color: rgba(255,255,255,0.62); font-size: 13px; font-weight: 400; cursor: pointer; text-align: left; margin-bottom: 1px; transition: all 0.15s; }
+    .sidebar-nav button:hover { background: rgba(255,255,255,0.09); color: white; }
+    .sidebar-nav button.active { background: rgba(200,168,75,0.22); color: var(--accent); font-weight: 600; }
+    .sidebar-nav button .nav-icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+    .sidebar-footer { padding: 12px; border-top: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; }
+    .sidebar-user-info { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: rgba(200,168,75,0.28); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+    .sidebar-user-name { font-size: 12px; font-weight: 600; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+    .sidebar-user-role { font-size: 10px; color: rgba(255,255,255,0.42); }
+    .sidebar-signout-btn { width: 100%; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); color: rgba(255,255,255,0.55); border-radius: 6px; padding: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+    .sidebar-signout-btn:hover { background: rgba(255,255,255,0.14); color: white; }
+
+    /* MAIN CONTENT */
+    .crm-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 100vh; background: var(--bg); }
+    .crm-topbar { height: 52px; background: white; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; gap: 12px; position: sticky; top: 0; z-index: 50; flex-shrink: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+    .topbar-title { font-size: 16px; font-weight: 700; color: var(--primary); }
+    .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .user-badge { background: rgba(200,168,75,0.18); border: 1px solid rgba(200,168,75,0.4); color: var(--accent); padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
     main { flex: 1; padding: 24px; }
 
     /* FORMS & INPUTS */
@@ -210,7 +228,14 @@
 
     @media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } .admin-grid { grid-template-columns: 1fr; } }
     @media (max-width: 768px) {
-      header nav button span { display: none; }
+      .crm-sidebar { width: 56px; min-width: 56px; }
+      .crm-sidebar .sidebar-brand-sub, .crm-sidebar .sidebar-section-label,
+      .crm-sidebar .sidebar-nav button span:not(.nav-icon),
+      .crm-sidebar .sidebar-user-name, .crm-sidebar .sidebar-user-role,
+      .crm-sidebar .sidebar-signout-btn { display: none; }
+      .crm-sidebar .sidebar-nav button { justify-content: center; padding: 10px; }
+      .crm-sidebar .sidebar-footer { padding: 8px; }
+      .crm-sidebar .sidebar-user-info { justify-content: center; }
       main { padding: 16px; }
       .kanban-board { gap: 8px; }
       .kanban-col { min-width: 180px; }
@@ -247,32 +272,48 @@
 
 <!-- MAIN APP -->
 <div id="app">
-  <header>
-    <div class="logo-text">&#9889; KFG</div>
-    <nav>
-      <button class="active" onclick="showPage('dashboard')" id="nav-dashboard">&#127968; <span>Dashboard</span></button>
-      <button onclick="showPage('pipelines')" id="nav-pipelines">&#128202; <span>Pipelines</span></button>
-      <button onclick="showPage('contacts')" id="nav-contacts">&#128101; <span>Contacts</span></button>
-      <button onclick="showPage('opens')" id="nav-opens">&#128140; <span>Email Opens</span></button>
-      <button onclick="showPage('campaigns')" id="nav-campaigns">&#128247; <span>Campaigns</span></button>
-      <button onclick="showPage('compliance')" id="nav-compliance">&#128737;&#65039; <span>Compliance</span></button>
-      <button onclick="showPage('admin')" id="nav-admin" style="display:none;">&#9881;&#65039; <span>Admin</span></button>
-    </nav>
-    <div class="user-area">
-      <span class="user-badge" id="user-role-badge"></span>
-      <span id="user-name-display" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;"></span>
-      <button onclick="signOut()">Sign Out</button>
+  <!-- SIDEBAR -->
+  <aside class="crm-sidebar">
+    <div class="sidebar-brand">
+      <div>
+        <div class="logo-text">&#9889; KFG</div>
+        <div class="sidebar-brand-sub">Kannon Financial CRM</div>
+      </div>
     </div>
-  </header>
-  <main>
-    <div id="page-dashboard"></div>
-    <div id="page-pipelines" style="display:none;"></div>
-    <div id="page-contacts" style="display:none;"></div>
-    <div id="page-opens" style="display:none;"></div>
-    <div id="page-campaigns" style="display:none;"></div>
-    <div id="page-compliance" style="display:none;"></div>
-    <div id="page-admin" style="display:none;"></div>
-  </main>
+    <nav class="sidebar-nav" id="sidebar-nav-container">
+      <!-- Rendered by renderSidebarNav() based on role -->
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user-info">
+        <div class="sidebar-avatar" id="sidebar-avatar">?</div>
+        <div style="flex:1;min-width:0;">
+          <div class="sidebar-user-name" id="sidebar-user-name">Loading...</div>
+          <div class="sidebar-user-role" id="sidebar-user-role"></div>
+        </div>
+      </div>
+      <button class="sidebar-signout-btn" onclick="signOut()">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <div class="crm-main">
+    <div class="crm-topbar">
+      <div class="topbar-title" id="topbar-page-title">Dashboard</div>
+      <div class="topbar-right">
+        <span class="user-badge" id="user-role-badge"></span>
+        <span id="user-name-display" style="font-size:13px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      </div>
+    </div>
+    <main>
+      <div id="page-dashboard"></div>
+      <div id="page-pipelines" style="display:none;"></div>
+      <div id="page-contacts" style="display:none;"></div>
+      <div id="page-opens" style="display:none;"></div>
+      <div id="page-campaigns" style="display:none;"></div>
+      <div id="page-compliance" style="display:none;"></div>
+      <div id="page-admin" style="display:none;"></div>
+    </main>
+  </div>
 </div>
 
 <div id="panel-overlay" onclick="closeContactPanel()"></div>

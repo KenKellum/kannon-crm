@@ -149,16 +149,24 @@ async function showApp() {
   document.getElementById('app').style.display = 'flex';
 
   const roleLabels = { system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' };
-  document.getElementById('user-name-display').textContent = currentAgent.name;
-  document.getElementById('user-role-badge').textContent = roleLabels[currentAgent.role] || currentAgent.role;
+  const roleLabel = roleLabels[currentAgent.role] || currentAgent.role;
 
-  // Show admin nav for system_owner and agency_owner
-  if (currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner') {
-    document.getElementById('nav-admin').style.display = '';
-  }
+  // Topbar user info
+  document.getElementById('user-name-display').textContent = currentAgent.name;
+  document.getElementById('user-role-badge').textContent = roleLabel;
+
+  // Sidebar user info
+  const nameParts = (currentAgent.name || '').trim().split(' ');
+  const initials = ((nameParts[0] || '')[0] || '') + ((nameParts[1] || '')[0] || '');
+  document.getElementById('sidebar-avatar').textContent = initials.toUpperCase() || '?';
+  document.getElementById('sidebar-user-name').textContent = currentAgent.name;
+  document.getElementById('sidebar-user-role').textContent = roleLabel;
+
+  // Render role-based sidebar nav
+  renderSidebarNav();
 
   await loadData();
-  renderDashboard();
+  showPage('dashboard');
 
   const _urlParams = new URLSearchParams(window.location.search);
   if (_urlParams.get('gmail') === 'connected') {
@@ -171,6 +179,11 @@ async function showApp() {
   }
 }
 
+const PAGE_TITLES = {
+  dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
+  opens: 'Email Opens', campaigns: 'Campaigns', compliance: 'Compliance', admin: 'Admin'
+};
+
 function showPage(page) {
   ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin'].forEach(p => {
     const el = document.getElementById('page-' + p);
@@ -178,6 +191,8 @@ function showPage(page) {
     const nav = document.getElementById('nav-' + p);
     if (nav) nav.classList.toggle('active', p === page);
   });
+  const titleEl = document.getElementById('topbar-page-title');
+  if (titleEl) titleEl.textContent = PAGE_TITLES[page] || page;
   if (page === 'dashboard')  renderDashboard();
   if (page === 'pipelines')  renderPipelines();
   if (page === 'contacts')   renderContacts();
@@ -185,6 +200,74 @@ function showPage(page) {
   if (page === 'campaigns')  renderCampaigns();
   if (page === 'compliance') renderCompliance();
   if (page === 'admin')      renderAdmin();
+}
+
+// ============================================================
+// SIDEBAR NAV — role-adaptive
+// ============================================================
+function renderSidebarNav() {
+  const container = document.getElementById('sidebar-nav-container');
+  if (!container) return;
+  const role = currentAgent.role;
+
+  const navConfig = {
+    system_owner: [
+      { label: 'Overview', items: [
+        { icon: '🏠', text: 'Dashboard',         page: 'dashboard' },
+      ]},
+      { label: 'Manage', items: [
+        { icon: '👥', text: 'All contacts',       page: 'contacts'  },
+        { icon: '📊', text: 'Pipelines',          page: 'pipelines' },
+        { icon: '📧', text: 'Email opens',        page: 'opens'     },
+        { icon: '📨', text: 'Campaigns',          page: 'campaigns' },
+      ]},
+      { label: 'Agency & team', items: [
+        { icon: '⚙️', text: 'Agencies & agents',  page: 'admin'     },
+      ]},
+      { label: 'System', items: [
+        { icon: '🛡️', text: 'Compliance',         page: 'compliance'},
+      ]},
+    ],
+    agency_owner: [
+      { label: 'My agency', items: [
+        { icon: '🏠', text: 'Dashboard',          page: 'dashboard' },
+        { icon: '👥', text: 'Contacts',           page: 'contacts'  },
+        { icon: '📊', text: 'Pipelines',          page: 'pipelines' },
+      ]},
+      { label: 'Campaigns', items: [
+        { icon: '📨', text: 'My campaigns',       page: 'campaigns' },
+        { icon: '📧', text: 'Email opens',        page: 'opens'     },
+      ]},
+      { label: 'Team', items: [
+        { icon: '⚙️', text: 'Agents & hiring',    page: 'admin'     },
+        { icon: '🛡️', text: 'Compliance',         page: 'compliance'},
+      ]},
+    ],
+    agent: [
+      { label: 'My work', items: [
+        { icon: '🏠', text: 'Dashboard',          page: 'dashboard' },
+        { icon: '👥', text: 'My contacts',        page: 'contacts'  },
+        { icon: '📊', text: 'My pipeline',        page: 'pipelines' },
+      ]},
+      { label: 'Outreach', items: [
+        { icon: '📧', text: 'Email opens',        page: 'opens'     },
+        { icon: '📨', text: 'Campaigns',          page: 'campaigns' },
+      ]},
+      { label: 'Compliance', items: [
+        { icon: '🛡️', text: 'Compliance',         page: 'compliance'},
+      ]},
+    ],
+  };
+
+  const sections = navConfig[role] || navConfig.agent;
+  container.innerHTML = sections.map(sec => `
+    <div class="sidebar-section-label">${sec.label}</div>
+    ${sec.items.map(item => `
+      <button id="nav-${item.page}" onclick="showPage('${item.page}')">
+        <span class="nav-icon">${item.icon}</span>${item.text}
+      </button>
+    `).join('')}
+  `).join('');
 }
 
 // ============================================================
