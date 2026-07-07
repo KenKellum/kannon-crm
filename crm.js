@@ -767,7 +767,13 @@ function editContact(id) {
 }
 
 async function deleteContact(id) {
-  if (!confirm('Delete this contact? Their deals will remain.')) return;
+  if (!confirm('Delete this contact and all their associated data (deals, email opens)?')) return;
+  const contact = contacts.find(c => c.id === id);
+  await Promise.all([
+    supabaseClient.from('contact_companies').delete().eq('contact_id', id),
+    supabaseClient.from('deals').delete().eq('contact_id', id),
+    contact?.email ? supabaseClient.from('email_opens').delete().eq('contact_email', contact.email) : Promise.resolve()
+  ]);
   await supabaseClient.from('contacts').delete().eq('id', id);
   contacts = contacts.filter(c => c.id !== id); renderContacts(); showToast('Contact deleted');
 }
