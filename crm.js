@@ -170,7 +170,7 @@ async function showApp() {
 }
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','admin'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -181,6 +181,7 @@ function showPage(page) {
   if (page === 'contacts')   renderContacts();
   if (page === 'opens')      renderOpens();
   if (page === 'campaigns')  renderCampaigns();
+  if (page === 'compliance') renderCompliance();
   if (page === 'admin')      renderAdmin();
 }
 
@@ -1112,6 +1113,103 @@ async function deleteDeal(id) {
 }
 
 // ============================================================
+// COMPLIANCE — bounced, opted-out, DNC contacts
+// ============================================================
+async function renderCompliance() {
+  const pg = document.getElementById('page-compliance');
+  pg.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading compliance data...</div>`;
+
+  const { data: all } = await supabaseClient
+    .from('contacts')
+    .select('id,name,email,phone,type,email_status,opt_out_email,opt_out_at,opt_out_reason,do_not_call,email_bounced_at,sequence_status,agent_id')
+    .or('email_status.neq.valid,opt_out_email.eq.true,do_not_call.eq.true')
+    .order('created_at', { ascending: false });
+
+  const list = all || [];
+  const bounced   = list.filter(c => c.email_status === 'bounced');
+  const optedOut  = list.filter(c => c.opt_out_email && c.email_status !== 'bounced');
+  const dnc       = list.filter(c => c.do_not_call);
+
+  function complianceRow(c, action) {
+    const ownerAgent = allAgents.find(a => a.id === c.agent_id);
+    return `<tr>
+      <td style="font-weight:600;font-size:13px;">${c.name||'—'}</td>
+      <td style="font-size:12px;">${c.email||'—'}</td>
+      <td style="font-size:12px;">${c.phone||'—'}</td>
+      <td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>
+      <td style="white-space:nowrap;">${action}</td>
+    </tr>`;
+  }
+
+  const bouncedRows = bounced.map(c => complianceRow(c,
+    `<button class="btn btn-outline btn-sm" onclick="editContact('${c.id}')">✏️ Fix Email</button>
+     <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="deleteContact('${c.id}')">Delete</button>`
+  )).join('');
+
+  const optOutRows = optedOut.map(c => complianceRow(c,
+    `<span style="font-size:11px;color:var(--muted);">${c.opt_out_reason||'Manual / reply'}</span>
+     <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="clearOptOut('${c.id}')">Restore</button>`
+  )).join('');
+
+  const dncRows = dnc.map(c => complianceRow(c,
+    `<button class="btn btn-outline btn-sm" onclick="clearDnc('${c.id}')">Remove DNC</button>`
+  )).join('');
+
+  const tableHtml = (rows, emptyMsg) => rows
+    ? `<table class="data-table" style="width:100%;"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Owner</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<div style="color:var(--muted);font-size:13px;padding:16px 0;">${emptyMsg}</div>`;
+
+  pg.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+      <h2 class="section-title" style="margin:0;">🛡️ Compliance Center</h2>
+      <div style="font-size:13px;color:var(--muted);">Bounced and opted-out contacts are automatically skipped by all sequences and drip campaigns.</div>
+    </div>
+
+    <div class="opens-stats" style="margin-bottom:28px;">
+      <div class="opens-stat" style="border-left-color:#dc2626;"><div class="num" style="color:#dc2626;">${bounced.length}</div><div class="lbl">⚠️ Bounced</div></div>
+      <div class="opens-stat" style="border-left-color:#d97706;"><div class="num" style="color:#d97706;">${optedOut.length}</div><div class="lbl">🚫 Opted Out</div></div>
+      <div class="opens-stat" style="border-left-color:#9d174d;"><div class="num" style="color:#9d174d;">${dnc.length}</div><div class="lbl">📵 Do Not Call</div></div>
+      <div class="opens-stat"><div class="num">${list.length}</div><div class="lbl">Total Issues</div></div>
+    </div>
+
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#991b1b;line-height:1.6;">
+      <strong>⚠️ Bounced Emails (${bounced.length})</strong> — These addresses were rejected by the mail server. Fix the email or delete the contact.
+    </div>
+    ${tableHtml(bouncedRows, '✅ No bounced email addresses.')}
+
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#92400e;line-height:1.6;">
+      <strong>🚫 Opted Out (${optedOut.length})</strong> — These contacts replied asking to unsubscribe. Do not re-enroll without their explicit permission.
+    </div>
+    ${tableHtml(optOutRows, '✅ No opted-out contacts.')}
+
+    <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#6b21a8;line-height:1.6;">
+      <strong>📵 Do Not Call (${dnc.length})</strong> — These contacts are flagged for no phone outreach.
+    </div>
+    ${tableHtml(dncRows, '✅ No Do Not Call contacts.')}
+  `;
+}
+
+async function clearOptOut(id) {
+  if (!confirm('Remove opt-out and restore email outreach for this contact?')) return;
+  const { error } = await supabaseClient.from('contacts').update({
+    opt_out_email: false, email_status: 'valid', opt_out_at: null, opt_out_reason: null
+  }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('✅ Opt-out cleared');
+  await loadData();
+  renderCompliance();
+}
+
+async function clearDnc(id) {
+  if (!confirm('Remove Do Not Call flag for this contact?')) return;
+  const { error } = await supabaseClient.from('contacts').update({ do_not_call: false }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('✅ DNC flag removed');
+  await loadData();
+  renderCompliance();
+}
+
+// ============================================================
 // CONTACTS
 // ============================================================
 function renderContacts() {
@@ -1129,10 +1227,16 @@ function renderContacts() {
     const badgeClass = typeClass[c.type] || 'badge-agent';
     const seqStatus = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
-    return `<tr>
+    const emailBadge = c.email_status === 'bounced'
+      ? `<span title="Bounced — bad email address" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">⚠️ BOUNCE</span>`
+      : c.email_status === 'opted_out' || c.opt_out_email
+      ? `<span title="Opted out of emails" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">🚫 OPT-OUT</span>`
+      : '';
+    const dncBadge = c.do_not_call ? `<span title="Do Not Call" style="margin-left:4px;background:#fce7f3;color:#9d174d;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">📵 DNC</span>` : '';
+    return `<tr${c.email_status === 'bounced' ? ' style="opacity:0.7;"' : ''}>
       <td style="cursor:pointer;" onclick="viewContact('${c.id}','')"><div style="display:flex;align-items:center;"><span class="contact-avatar">${initials}</span><span style="font-weight:600;">${c.name||'—'}</span></div></td>
-      <td style="font-size:13px;">${c.email||'—'}</td>
-      <td style="font-size:13px;">${c.company||'—'}</td>
+      <td style="font-size:13px;">${c.email||'—'}${emailBadge}</td>
+      <td style="font-size:13px;">${c.company||'—'}${dncBadge}</td>
       <td>${c.type?`<span class="badge ${badgeClass}">${c.type}</span>`:'—'}</td>
       <td><span class="badge ${seqClass[seqStatus]||'badge-agent'}">${seqStatus}</span></td>
       ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>` : ''}
@@ -1210,7 +1314,13 @@ function editContact(id) {
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
   const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
+  const emailStatusNote = c.email_status === 'bounced'
+    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">⚠️ <strong>Bounced</strong> — this email address was rejected. Correct it below to re-enable outreach.</div>`
+    : c.email_status === 'opted_out'
+    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">🚫 <strong>Opted Out</strong> — this contact requested removal. Uncheck below to restore (only if they ask to re-subscribe).</div>`
+    : '';
   showModal('Edit Contact', `
+    ${emailStatusNote}
     <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
     <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
     <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
@@ -1221,12 +1331,31 @@ function editContact(id) {
     <label>Outreach Track <span style="font-size:11px;color:var(--muted);">(Recruit contacts only)</span></label><select id="con-track">${trackOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
+    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Compliance</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="con-optout" ${c.opt_out_email?'checked':''} style="width:16px;height:16px;">
+        <span>🚫 Opted Out of Emails</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px;">
+        <input type="checkbox" id="con-dnc" ${c.do_not_call?'checked':''} style="width:16px;height:16px;">
+        <span>📵 Do Not Call</span>
+      </label>
+    </div>
   `, async () => {
     const name = document.getElementById('con-name').value.trim();
     if (!name) { showToast('Name is required'); return false; }
     const assignedAgentId = canAssign ? (document.getElementById('con-agent').value || c.agent_id) : c.agent_id;
     const assignedAgent = allAgents.find(a => a.id === assignedAgentId) || currentAgent;
-    const updates = { name, email: document.getElementById('con-email').value.trim()||null, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null };
+    const newOptOut  = document.getElementById('con-optout').checked;
+    const newDnc     = document.getElementById('con-dnc').checked;
+    const newEmail   = document.getElementById('con-email').value.trim() || null;
+    // If email was bounced and a new email was entered, clear the bounce status
+    const newEmailStatus = (c.email_status === 'bounced' && newEmail && newEmail !== c.email) ? 'valid'
+      : newOptOut ? 'opted_out'
+      : (c.email_status === 'opted_out' && !newOptOut) ? 'valid'
+      : c.email_status || 'valid';
+    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
