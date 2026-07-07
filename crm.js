@@ -16,11 +16,9 @@ const PIPELINES = {
   'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
 
-const CONTACT_TYPES = ['Group/Employer','Individual & Family','Recruit','Agent — Insured America','Agent — Kannon Financial'];
+const CONTACT_TYPES = ['Group/Employer','Individual & Family','Agent — Insured America','Agent — Kannon Financial'];
 
 let supabaseClient = null;
-let campaignTab = 'drip';
-let campaignItemsMap = {};
 let currentUser = null;
 let currentAgent = null;        // agents table row
 let currentAgentCompanies = []; // company names agent belongs to
@@ -170,19 +168,17 @@ async function showApp() {
 }
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','admin'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
     if (nav) nav.classList.toggle('active', p === page);
   });
-  if (page === 'dashboard')  renderDashboard();
-  if (page === 'pipelines')  renderPipelines();
-  if (page === 'contacts')   renderContacts();
-  if (page === 'opens')      renderOpens();
-  if (page === 'campaigns')  renderCampaigns();
-  if (page === 'compliance') renderCompliance();
-  if (page === 'admin')      renderAdmin();
+  if (page === 'dashboard') renderDashboard();
+  if (page === 'pipelines') renderPipelines();
+  if (page === 'contacts') renderContacts();
+  if (page === 'opens') renderOpens();
+  if (page === 'admin') renderAdmin();
 }
 
 // ============================================================
@@ -201,7 +197,7 @@ async function loadData() {
   if (currentAgent.role === 'agent') dq = dq.eq('user_id', currentUser.id);
 
   const queries = [
-    cq.order('created_at', { ascending: false }).limit(5000),
+    cq.order('created_at', { ascending: false }).limit(10000),
     dq.order('created_at', { ascending: false })
   ];
   if (currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner') {
@@ -296,8 +292,7 @@ function renderDashboard() {
           <div class="action-item">
             <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am • Two-way</div></div>
             <span class="badge badge-active">&#10003; Active</span>
-          </div>
-          <div class="action-item">
+            <div class="action-item">
             <div class="action-item-info">
               <div class="action-item-name">Your Gmail</div>
               <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — replies not tracked'}</div>
@@ -333,149 +328,24 @@ function renderDashboard() {
   `;
 }
 
-function shareBookingLink() { manageBookingTypes(); }
-
-function manageBookingTypes() {
-  const typeLabels   = { client: 'Client', recruit: 'Recruit' };
-  const contextColors = { client: '#1a3a5c', recruit: '#7c3aed' };
-  const myUrl = `${window.location.origin}/book.html?agent=${currentAgent.id}`;
-
-  function renderTypeRows() {
-    const rows = currentAgent.booking_types || [];
-    if (!rows.length) return '<p style="font-size:13px;color:var(--muted);padding:8px 0;">No booking types yet. Add one below.</p>';
-    return rows.map((t, i) => `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f8fafc;border-radius:6px;margin-bottom:8px;">
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:600;color:#1e293b;">${t.label}</div>
-          <div style="font-size:11px;color:var(--muted);">&#9201; ${t.duration} &nbsp;&middot;&nbsp;
-            <span style="color:${contextColors[t.context]||'#64748b'};font-weight:600;">${typeLabels[t.context]||t.context}</span>
-          </div>
-        </div>
-        <button onclick="editBookingType(${i})" style="border:1px solid #e2e8f0;background:#fff;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;">Edit</button>
-        <button onclick="removeBookingType(${i})" style="border:none;background:none;color:#ef4444;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
-      </div>`).join('');
-  }
-
-  showModal('&#128197; Booking Types', `
-    <div style="margin-bottom:18px;">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:6px;">Your booking page (client-facing):</p>
-      <div style="display:flex;gap:8px;">
-        <input id="booking-page-url" readonly value="${myUrl}&context=client"
-          style="flex:1;font-size:12px;color:#1a3a5c;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:7px 10px;" />
-        <button onclick="navigator.clipboard.writeText(document.getElementById('booking-page-url').value).then(()=>showToast('Copied!'))"
-          style="border:none;background:#1a3a5c;color:#fff;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;white-space:nowrap;">Copy</button>
-      </div>
-    </div>
-
-    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Appointment Types</div>
-    <div id="booking-type-list">${renderTypeRows()}</div>
-
-    <div style="border-top:1px solid #e2e8f0;margin-top:16px;padding-top:16px;">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Add New Type</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-        <div>
-          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Label *</label>
-          <input id="bt-label" placeholder="Group Benefits Review" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-        </div>
-        <div>
-          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Duration *</label>
-          <input id="bt-duration" placeholder="20 min" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-        <div>
-          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Context</label>
-          <select id="bt-context" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;">
-            <option value="client">Client (insurance/benefits)</option>
-            <option value="recruit">Recruit (career opportunity)</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Description</label>
-          <input id="bt-desc" placeholder="Optional" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-        </div>
-      </div>
-      <div style="margin-bottom:12px;">
-        <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Google Calendar Link *</label>
-        <input id="bt-link" placeholder="https://calendar.app.google/..." style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-      </div>
-      <button onclick="addBookingType()" style="background:#1a3a5c;color:#fff;border:none;border-radius:5px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;">+ Add Type</button>
-    </div>
-  `, null, { hideConfirm: true });
-}
-
-async function addBookingType() {
-  const label    = document.getElementById('bt-label')?.value.trim();
-  const duration = document.getElementById('bt-duration')?.value.trim();
-  const context  = document.getElementById('bt-context')?.value || 'client';
-  const desc     = document.getElementById('bt-desc')?.value.trim();
-  const link     = document.getElementById('bt-link')?.value.trim();
-  if (!label || !duration || !link) { showToast('Label, duration, and Google Calendar link are required.'); return; }
-  const typeKey = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-  const types = [...(currentAgent.booking_types || []), { type: typeKey, label, description: desc || '', duration, context, link }];
-  const { error } = await supabaseClient.from('agents').update({ booking_types: types }).eq('id', currentAgent.id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  currentAgent.booking_types = types;
-  showToast('Appointment type added!');
-  closeModal();
-  manageBookingTypes();
-}
-
-async function removeBookingType(index) {
-  const types = [...(currentAgent.booking_types || [])];
-  if (!confirm(`Remove "${types[index]?.label}"?`)) return;
-  types.splice(index, 1);
-  const { error } = await supabaseClient.from('agents').update({ booking_types: types }).eq('id', currentAgent.id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  currentAgent.booking_types = types;
-  showToast('Removed.');
-  closeModal();
-  manageBookingTypes();
-}
-
-function editBookingType(index) {
-  const t = (currentAgent.booking_types || [])[index];
-  if (!t) return;
-  showModal(`Edit: ${t.label}`, `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div>
-        <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Label</label>
-        <input id="ebt-label" value="${t.label}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-      </div>
-      <div>
-        <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Duration</label>
-        <input id="ebt-duration" value="${t.duration}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-      </div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Context</label>
-      <select id="ebt-context" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;">
-        <option value="client" ${t.context==='client'?'selected':''}>Client (insurance/benefits)</option>
-        <option value="recruit" ${t.context==='recruit'?'selected':''}>Recruit (career opportunity)</option>
-      </select>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Description</label>
-      <input id="ebt-desc" value="${t.description||''}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-    </div>
-    <div>
-      <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Google Calendar Link</label>
-      <input id="ebt-link" value="${t.link}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
-    </div>
+function shareBookingLink() {
+  const saved = currentAgent.booking_link || '';
+  showModal('&#128197; Google Calendar Booking Link', `
+    <p style="font-size:14px;color:var(--muted);margin-bottom:16px;">Save your Google Calendar booking page URL so you can share it with prospects.</p>
+    <label>Your Booking Link</label>
+    <input type="url" id="booking-url" value="${saved}" placeholder="https://calendar.google.com/calendar/appointments/..." />
   `, async () => {
-    const types = [...(currentAgent.booking_types || [])];
-    types[index] = {
-      type:        types[index].type,
-      label:       document.getElementById('ebt-label').value.trim()    || t.label,
-      description: document.getElementById('ebt-desc').value.trim(),
-      duration:    document.getElementById('ebt-duration').value.trim() || t.duration,
-      context:     document.getElementById('ebt-context').value,
-      link:        document.getElementById('ebt-link').value.trim()     || t.link
-    };
-    const { error } = await supabaseClient.from('agents').update({ booking_types: types }).eq('id', currentAgent.id);
-    if (error) { showToast('Error: ' + error.message); return false; }
-    currentAgent.booking_types = types;
-    showToast('Updated!');
+    const url = document.getElementById('booking-url').value.trim();
+    if (url) {
+      const { error } = await supabaseClient.from('agents').update({ booking_link: url }).eq('id', currentAgent.id);
+      if (!error) {
+        currentAgent.booking_link = url;
+        navigator.clipboard.writeText(url).then(() => showToast('Booking link saved and copied!')).catch(() => showToast('Booking link saved!'));
+      } else {
+        showToast('Error saving: ' + error.message);
+        return false;
+      }
+    }
   });
 }
 
@@ -534,349 +404,6 @@ function dismissGmailSetup() {
   const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove();
   window.removeEventListener('message', handleGmailMessage);
   showToast('Connect Gmail anytime from your dashboard.');
-}
-
-// ============================================================
-// CAMPAIGNS — drip content library + stats
-// ============================================================
-async function renderCampaigns() {
-  document.getElementById('page-campaigns').innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading campaigns...</div>`;
-
-  const [{ data: dripContent }, { data: seqContent }, { data: sends }, { data: dripContacts }] = await Promise.all([
-    supabaseClient.from('drip_content').select('*').order('segment').order('display_order'),
-    supabaseClient.from('sequence_content').select('*').order('segment').order('email_num'),
-    supabaseClient.from('drip_sends').select('drip_content_id, opened'),
-    supabaseClient.from('contacts').select('id,name,sequence_status,type').eq('sequence_status', 'Drip')
-  ]);
-
-  const allDrip  = dripContent || [];
-  const allSeq   = seqContent  || [];
-  const allSends = sends       || [];
-  const drip     = dripContacts || [];
-
-  // Store all items in global map for onclick access
-  campaignItemsMap = {};
-  [...allDrip, ...allSeq].forEach(item => { campaignItemsMap[item.id] = item; });
-
-  // Build send stats per drip content ID
-  const sendStats = {};
-  allSends.forEach(s => {
-    if (!sendStats[s.drip_content_id]) sendStats[s.drip_content_id] = { sent: 0, opened: 0 };
-    sendStats[s.drip_content_id].sent++;
-    if (s.opened) sendStats[s.drip_content_id].opened++;
-  });
-
-  const dripB2b     = drip.filter(c => c.type === 'Group/Employer').length;
-  const dripB2c     = drip.filter(c => c.type === 'Individual & Family').length;
-  const dripRecruit = drip.filter(c => c.type === 'Recruit').length;
-  const monthMap    = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
-
-  // ── DRIP sections ───────────────────────────────────────────
-  const dripSegLabel = { b2b:'🏢 B2B Client', b2c:'👤 B2C Client', recruit:'🤝 Recruit' };
-  const dripSections = ['b2b','b2c','recruit'].map(seg => {
-    const items = allDrip.filter(c => c.segment === seg);
-    if (!items.length) return '';
-    const rows = items.map(item => {
-      const s = sendStats[item.id] || { sent: 0, opened: 0 };
-      const openRate = s.sent > 0 ? Math.round(s.opened / s.sent * 100) : 0;
-      const ctaBadge = item.cta_type === 'cta'
-        ? `<span class="badge badge-replied" style="font-size:10px;padding:2px 6px;">CTA</span>`
-        : `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;padding:2px 6px;">EDU</span>`;
-      const monthBadge = item.awareness_month ? `<span style="font-size:11px;color:#c8a84b;margin-left:6px;">📅 ${monthMap[item.awareness_month]}</span>` : '';
-      const activeColor = item.is_active ? '#16a34a' : '#dc2626';
-      return `<tr>
-        <td style="font-size:13px;font-weight:600;max-width:240px;">${item.subject}</td>
-        <td style="font-size:12px;color:var(--muted);">${item.topic}</td>
-        <td>${ctaBadge}${monthBadge}</td>
-        <td style="text-align:center;font-size:13px;">${s.sent}</td>
-        <td style="text-align:center;font-size:13px;color:${openRate>20?'#16a34a':'var(--muted)'};">${s.sent>0?openRate+'%':'—'}</td>
-        <td style="white-space:nowrap;">
-          <button class="btn btn-outline btn-sm" onclick="previewEmailContent('${item.id}')">Preview</button>
-          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('drip_content','${item.id}')">✏️ Edit</button>
-          <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${activeColor};" onclick="toggleDripContent('${item.id}',${item.is_active})">${item.is_active?'Active':'Paused'}</button>
-        </td>
-      </tr>`;
-    }).join('');
-    return `<div style="margin-bottom:32px;">
-      <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin:0 0 12px 0;">${dripSegLabel[seg]||seg}</h3>
-      <table class="data-table" style="width:100%;"><thead><tr>
-        <th>Subject</th><th>Topic</th><th>Type</th>
-        <th style="text-align:center;">Sent</th><th style="text-align:center;">Open Rate</th><th>Actions</th>
-      </tr></thead><tbody>${rows}</tbody></table></div>`;
-  }).join('');
-
-  // ── SEQUENCE sections ────────────────────────────────────────
-  const seqSegLabel = {
-    'b2b':'🏢 B2B Outreach',
-    'b2c':'👤 B2C Outreach',
-    'recruit-standard':'🤝 Recruit (Standard)',
-    'recruit-statefarm':'🚗 Recruit (State Farm)'
-  };
-  const seqSections = ['b2b','b2c','recruit-standard','recruit-statefarm'].map(seg => {
-    const items = allSeq.filter(s => s.segment === seg).sort((a,b) => a.email_num - b.email_num);
-    if (!items.length) return '';
-    const rows = items.map(item => {
-      const stateBadge = item.state
-        ? `<span class="badge" style="background:#eff6ff;color:#1d4ed8;font-size:10px;padding:2px 6px;">${item.state}</span>`
-        : `<span style="color:var(--muted);font-size:12px;">All states</span>`;
-      const activeColor = item.is_active ? '#16a34a' : '#dc2626';
-      const activeLabel = item.is_active ? 'Active' : 'Inactive';
-      return `<tr>
-        <td style="text-align:center;font-size:13px;font-weight:700;color:var(--primary);">#${item.email_num}</td>
-        <td style="font-size:13px;font-weight:600;max-width:260px;">${item.subject}</td>
-        <td style="text-align:center;">${stateBadge}</td>
-        <td style="text-align:center;"><span class="badge ${item.is_active?'badge-active':'badge-completed'}" style="font-size:10px;">${activeLabel}</span></td>
-        <td style="white-space:nowrap;">
-          <button class="btn btn-outline btn-sm" onclick="previewEmailContent('${item.id}')">Preview</button>
-          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('sequence_content','${item.id}')">✏️ Edit</button>
-          <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${activeColor};" onclick="toggleSeqContent('${item.id}',${item.is_active})">${activeLabel}</button>
-        </td>
-      </tr>`;
-    }).join('');
-    return `<div style="margin-bottom:32px;">
-      <h3 style="font-size:15px;font-weight:700;color:var(--primary);margin:0 0 12px 0;">${seqSegLabel[seg]||seg}</h3>
-      <table class="data-table" style="width:100%;"><thead><tr>
-        <th style="text-align:center;">#</th><th>Subject</th>
-        <th style="text-align:center;">State</th><th style="text-align:center;">Status</th><th>Actions</th>
-      </tr></thead><tbody>${rows}</tbody></table></div>`;
-  }).join('');
-
-  const tabDrip = (campaignTab === 'drip');
-  document.getElementById('page-campaigns').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <h2 class="section-title" style="margin:0;">📧 Email Campaigns</h2>
-      <button class="btn btn-primary" onclick="aiSuggestEmail()">✨ AI Suggest New Email</button>
-    </div>
-
-    <div style="display:flex;gap:2px;margin-bottom:24px;border-bottom:2px solid #e2e8f0;">
-      <button onclick="switchCampaignTab('drip')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${tabDrip?'#1a3a5c':'transparent'};background:none;color:${tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">💧 Drip (${allDrip.length})</button>
-      <button onclick="switchCampaignTab('seq')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${!tabDrip?'#1a3a5c':'transparent'};background:none;color:${!tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">📬 Sequences (${allSeq.length})</button>
-    </div>
-
-    <div id="camp-drip" style="display:${tabDrip?'block':'none'};">
-      <div class="opens-stats" style="margin-bottom:28px;">
-        <div class="opens-stat"><div class="num">${drip.length}</div><div class="lbl">In Drip</div></div>
-        <div class="opens-stat" style="border-left-color:#1a3a5c;"><div class="num">${dripB2b}</div><div class="lbl">B2B</div></div>
-        <div class="opens-stat" style="border-left-color:#16a34a;"><div class="num">${dripB2c}</div><div class="lbl">B2C</div></div>
-        <div class="opens-stat" style="border-left-color:#c8a84b;"><div class="num">${dripRecruit}</div><div class="lbl">Recruits</div></div>
-        <div class="opens-stat" style="border-left-color:#8b5cf6;"><div class="num">${allSends.length}</div><div class="lbl">Sent</div></div>
-      </div>
-      <div style="background:#fff8e7;border:1px solid #c8a84b;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#92400e;line-height:1.6;">
-        <strong>Cadence:</strong> Every 5 days (first 60 days) → Weekly. Triggered daily via Apps Script <code style="background:#fef3c7;padding:2px 5px;border-radius:3px;">runDripCampaign()</code>.
-      </div>
-      ${dripSections}
-    </div>
-
-    <div id="camp-seq" style="display:${!tabDrip?'block':'none'};">
-      <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#1e40af;line-height:1.6;">
-        <strong>3-email outreach sequence</strong> — runs via Apps Script. B2B/B2C routes by contact type. Recruits route by <em>Outreach Track</em> (Standard or State Farm). Add state-specific rows (e.g. MT, AZ) to override generic templates.
-      </div>
-      ${seqSections}
-    </div>
-  `;
-}
-
-function switchCampaignTab(tab) {
-  campaignTab = tab;
-  renderCampaigns();
-}
-
-async function toggleDripContent(id, currentlyActive) {
-  const { error } = await supabaseClient.from('drip_content').update({ is_active: !currentlyActive }).eq('id', id);
-  if (!error) renderCampaigns();
-}
-
-async function toggleSeqContent(id, currentlyActive) {
-  const { error } = await supabaseClient.from('sequence_content').update({ is_active: !currentlyActive }).eq('id', id);
-  if (!error) renderCampaigns();
-}
-
-function previewEmailContent(id) {
-  const item = campaignItemsMap[id];
-  if (!item) return;
-  const monthMap = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
-  const metaLine = item.cta_type !== undefined
-    ? `<strong>Segment:</strong> ${item.segment} &nbsp;|&nbsp; <strong>Type:</strong> ${item.cta_type} &nbsp;|&nbsp; <strong>Topic:</strong> ${item.topic||''}${item.awareness_month?` &nbsp;|&nbsp; <strong>Month:</strong> ${monthMap[item.awareness_month]}`:''}`
-    : `<strong>Segment:</strong> ${item.segment||''} &nbsp;|&nbsp; <strong>Email #:</strong> ${item.email_num||''} ${item.state?`&nbsp;|&nbsp; <strong>State:</strong> ${item.state}`:''}`;
-  const body = `
-    <div style="margin-bottom:12px;font-size:13px;">${metaLine}</div>
-    <div style="margin-bottom:6px;font-size:13px;"><strong>Subject:</strong> ${item.subject}</div>
-    <div style="border:1px solid #e2e8f0;border-radius:6px;padding:16px;background:#f8fafc;font-size:13px;line-height:1.7;max-height:360px;overflow-y:auto;">
-      ${(item.body_html||'').replace(/{firstName}/g,'[First Name]').replace(/{agentName}/g,'[Agent Name]').replace(/{state}/g,'[State]').replace(/{city}/g,'[City]')}
-    </div>`;
-  showModal('📧 Preview: ' + (item.subject||'').substring(0,50), body, null, { hideConfirm: true });
-}
-
-function editEmailContent(table, id) {
-  const item = campaignItemsMap[id];
-  if (!item) return;
-  const isDrip = table === 'drip_content';
-  const extraFields = isDrip ? `
-    <div style="margin-top:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic</label>
-      <input id="ec-topic" class="form-input" value="${(item.topic||'').replace(/"/g,'&quot;')}" style="width:100%;">
-    </div>` : `
-    <div style="margin-top:12px;display:flex;gap:12px;">
-      <div style="flex:1;">
-        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Email # in Sequence</label>
-        <input id="ec-num" class="form-input" type="number" value="${item.email_num||1}" style="width:100%;">
-      </div>
-      <div style="flex:1;">
-        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">State Override (blank = all states)</label>
-        <input id="ec-state" class="form-input" value="${item.state||''}" placeholder="MT, AZ…" style="width:100%;text-transform:uppercase;" maxlength="2">
-      </div>
-    </div>`;
-
-  const safeSubject = (item.subject||'').replace(/"/g,'&quot;');
-  const body = `
-    <div style="margin-bottom:8px;font-size:12px;color:var(--muted);">
-      <strong>Table:</strong> ${table} &nbsp;|&nbsp; <strong>Segment:</strong> ${item.segment}
-    </div>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Subject Line</label>
-    <input id="ec-subject" class="form-input" value="${safeSubject}" style="width:100%;margin-bottom:4px;">
-    ${extraFields}
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Body HTML &nbsp;<span style="font-weight:400;color:var(--muted);">(tokens: {firstName} {agentName} {state} {city})</span></label>
-    <textarea id="ec-body" class="form-input" rows="10" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${item.body_html||''}</textarea>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Plain Text (optional)</label>
-    <textarea id="ec-plain" class="form-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${item.body_plain||''}</textarea>`;
-
-  showModal('✏️ Edit Email', body, async () => {
-    const updates = {
-      subject:   document.getElementById('ec-subject').value.trim(),
-      body_html: document.getElementById('ec-body').value,
-      body_plain: document.getElementById('ec-plain').value
-    };
-    if (isDrip) {
-      updates.topic = document.getElementById('ec-topic').value.trim();
-    } else {
-      updates.email_num = parseInt(document.getElementById('ec-num').value) || item.email_num;
-      const sv = document.getElementById('ec-state').value.trim().toUpperCase();
-      updates.state = sv || null;
-    }
-    if (!updates.subject || !updates.body_html) { showToast('Subject and body are required.'); return false; }
-    const { error } = await supabaseClient.from(table).update(updates).eq('id', id);
-    if (error) { showToast('Save failed: ' + error.message); return false; }
-    showToast('✅ Email updated!');
-    campaignItemsMap[id] = { ...item, ...updates };
-    renderCampaigns();
-  });
-}
-
-function aiSuggestEmail() {
-  const body = `
-    <div style="margin-bottom:16px;font-size:14px;color:var(--muted);line-height:1.6;">
-      Tell the AI what kind of email to write. It will generate a complete draft you can review, edit, and save.
-    </div>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Segment / Track</label>
-    <select id="ai-seg" class="form-input" style="width:100%;margin-bottom:12px;">
-      <option value="b2b|drip_content">B2B — Drip</option>
-      <option value="b2c|drip_content">B2C — Drip</option>
-      <option value="recruit|drip_content">Recruit — Drip</option>
-      <option value="b2b|sequence_content">B2B — Outreach Sequence</option>
-      <option value="b2c|sequence_content">B2C — Outreach Sequence</option>
-      <option value="recruit-standard|sequence_content">Recruit — Outreach (Standard)</option>
-      <option value="recruit-statefarm|sequence_content">Recruit — Outreach (State Farm)</option>
-    </select>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Tone</label>
-    <select id="ai-tone" class="form-input" style="width:100%;margin-bottom:12px;">
-      <option value="professional and warm">Professional &amp; Warm</option>
-      <option value="direct and punchy">Direct &amp; Punchy</option>
-      <option value="conversational and friendly">Conversational &amp; Friendly</option>
-      <option value="urgency-driven">Urgency-Driven</option>
-    </select>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic / Angle — what should this email be about?</label>
-    <textarea id="ai-topic" class="form-input" rows="3" placeholder="e.g. Introduce our Medicare supplement options and explain how we compare to other carriers on pricing" style="width:100%;resize:vertical;"></textarea>
-    <div id="ai-status" style="margin-top:12px;font-size:13px;color:var(--muted);min-height:20px;"></div>`;
-
-  showModal('✨ AI — Suggest New Email', body, async () => {
-    const segVal   = document.getElementById('ai-seg').value;
-    const tone     = document.getElementById('ai-tone').value;
-    const topic    = document.getElementById('ai-topic').value.trim();
-    const statusEl = document.getElementById('ai-status');
-    if (!topic) { showToast('Please describe what the email should be about.'); return false; }
-
-    const [segment, table] = segVal.split('|');
-    statusEl.innerHTML = '<em>⏳ Generating… this usually takes 10–15 seconds.</em>';
-
-    let result;
-    try {
-      const resp = await fetch(SUPABASE_URL + '/functions/v1/suggest-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
-        body: JSON.stringify({ segment, table, tone, topic })
-      });
-      if (!resp.ok) { const t = await resp.text(); throw new Error(t); }
-      result = await resp.json();
-    } catch (err) {
-      statusEl.innerHTML = '';
-      showToast('AI generation failed: ' + err.message);
-      return false;
-    }
-
-    closeModal();
-    openAiReviewModal(table, segment, result);
-    return false;
-  }, { confirmLabel: '✨ Generate' });
-}
-
-function openAiReviewModal(table, segment, result) {
-  const isDrip = table === 'drip_content';
-  const extraFields = isDrip ? `
-    <div style="margin-top:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic (for library display)</label>
-      <input id="ec-topic" class="form-input" value="${(result.topic||'AI Generated').replace(/"/g,'&quot;')}" style="width:100%;">
-    </div>
-    <div style="margin-top:12px;">
-      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Display Order (position within segment)</label>
-      <input id="ec-order" class="form-input" type="number" value="99" style="width:100%;">
-    </div>` : `
-    <div style="margin-top:12px;display:flex;gap:12px;">
-      <div style="flex:1;">
-        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Email # in Sequence</label>
-        <input id="ec-num" class="form-input" type="number" value="${result.email_num||1}" style="width:100%;">
-      </div>
-      <div style="flex:1;">
-        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">State Override (blank = all states)</label>
-        <input id="ec-state" class="form-input" value="" placeholder="MT, AZ…" style="text-transform:uppercase;" maxlength="2">
-      </div>
-    </div>`;
-
-  const safeSubject = (result.subject||'').replace(/"/g,'&quot;');
-  const body = `
-    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#166534;">
-      ✨ AI draft for <strong>${segment}</strong>. Review and edit, then click <strong>Save &amp; Activate</strong>.
-    </div>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Subject Line</label>
-    <input id="ec-subject" class="form-input" value="${safeSubject}" style="width:100%;margin-bottom:4px;">
-    ${extraFields}
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Body HTML</label>
-    <textarea id="ec-body" class="form-input" rows="10" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${result.body_html||''}</textarea>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Plain Text</label>
-    <textarea id="ec-plain" class="form-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${result.body_plain||''}</textarea>`;
-
-  showModal('✨ Review AI Draft', body, async () => {
-    const insertData = {
-      segment,
-      subject:    document.getElementById('ec-subject').value.trim(),
-      body_html:  document.getElementById('ec-body').value,
-      body_plain: document.getElementById('ec-plain').value,
-      is_active:  true
-    };
-    if (!insertData.subject || !insertData.body_html) { showToast('Subject and body required.'); return false; }
-    if (isDrip) {
-      insertData.topic         = document.getElementById('ec-topic').value.trim() || 'AI Generated';
-      insertData.cta_type      = 'edu';
-      insertData.display_order = parseInt(document.getElementById('ec-order').value) || 99;
-    } else {
-      insertData.email_num = parseInt(document.getElementById('ec-num').value) || 1;
-      const sv = document.getElementById('ec-state').value.trim().toUpperCase();
-      insertData.state = sv || null;
-    }
-    const { error } = await supabaseClient.from(table).insert([insertData]);
-    if (error) { showToast('Save failed: ' + error.message); return false; }
-    showToast('✅ New email saved and activated!');
-    renderCampaigns();
-  }, { confirmLabel: '💾 Save & Activate' });
 }
 
 // ============================================================
@@ -994,7 +521,7 @@ async function viewContact(contactId, email) {
       <div class="panel-section">
         <div class="panel-label">Email Opens (${opensCount})</div>
         ${opensCount > 0
-          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.sequence_track||'—'}</span><div class="panel-open-subject">${o.email_subject?o.email_subject.substring(0,55)+(o.email_subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
+          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.track||'—'}</span><div class="panel-open-subject">${o.subject?o.subject.substring(0,55)+(o.subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
           : '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No email opens recorded yet.</div>'}
       </div>
     </div>
@@ -1113,130 +640,50 @@ async function deleteDeal(id) {
 }
 
 // ============================================================
-// COMPLIANCE — bounced, opted-out, DNC contacts
-// ============================================================
-async function renderCompliance() {
-  const pg = document.getElementById('page-compliance');
-  pg.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading compliance data...</div>`;
-
-  const { data: all } = await supabaseClient
-    .from('contacts')
-    .select('id,name,email,phone,type,email_status,opt_out_email,opt_out_at,opt_out_reason,do_not_call,email_bounced_at,sequence_status,agent_id')
-    .or('email_status.neq.valid,opt_out_email.eq.true,do_not_call.eq.true')
-    .order('created_at', { ascending: false });
-
-  const list = all || [];
-  const bounced   = list.filter(c => c.email_status === 'bounced');
-  const optedOut  = list.filter(c => c.opt_out_email && c.email_status !== 'bounced');
-  const dnc       = list.filter(c => c.do_not_call);
-
-  function complianceRow(c, action) {
-    const ownerAgent = allAgents.find(a => a.id === c.agent_id);
-    return `<tr>
-      <td style="font-weight:600;font-size:13px;">${c.name||'—'}</td>
-      <td style="font-size:12px;">${c.email||'—'}</td>
-      <td style="font-size:12px;">${c.phone||'—'}</td>
-      <td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>
-      <td style="white-space:nowrap;">${action}</td>
-    </tr>`;
-  }
-
-  const bouncedRows = bounced.map(c => complianceRow(c,
-    `<button class="btn btn-outline btn-sm" onclick="editContact('${c.id}')">✏️ Fix Email</button>
-     <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="deleteContact('${c.id}')">Delete</button>`
-  )).join('');
-
-  const optOutRows = optedOut.map(c => complianceRow(c,
-    `<span style="font-size:11px;color:var(--muted);">${c.opt_out_reason||'Manual / reply'}</span>
-     <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="clearOptOut('${c.id}')">Restore</button>`
-  )).join('');
-
-  const dncRows = dnc.map(c => complianceRow(c,
-    `<button class="btn btn-outline btn-sm" onclick="clearDnc('${c.id}')">Remove DNC</button>`
-  )).join('');
-
-  const tableHtml = (rows, emptyMsg) => rows
-    ? `<table class="data-table" style="width:100%;"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Owner</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`
-    : `<div style="color:var(--muted);font-size:13px;padding:16px 0;">${emptyMsg}</div>`;
-
-  pg.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <h2 class="section-title" style="margin:0;">🛡️ Compliance Center</h2>
-      <div style="font-size:13px;color:var(--muted);">Bounced and opted-out contacts are automatically skipped by all sequences and drip campaigns.</div>
-    </div>
-
-    <div class="opens-stats" style="margin-bottom:28px;">
-      <div class="opens-stat" style="border-left-color:#dc2626;"><div class="num" style="color:#dc2626;">${bounced.length}</div><div class="lbl">⚠️ Bounced</div></div>
-      <div class="opens-stat" style="border-left-color:#d97706;"><div class="num" style="color:#d97706;">${optedOut.length}</div><div class="lbl">🚫 Opted Out</div></div>
-      <div class="opens-stat" style="border-left-color:#9d174d;"><div class="num" style="color:#9d174d;">${dnc.length}</div><div class="lbl">📵 Do Not Call</div></div>
-      <div class="opens-stat"><div class="num">${list.length}</div><div class="lbl">Total Issues</div></div>
-    </div>
-
-    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#991b1b;line-height:1.6;">
-      <strong>⚠️ Bounced Emails (${bounced.length})</strong> — These addresses were rejected by the mail server. Fix the email or delete the contact.
-    </div>
-    ${tableHtml(bouncedRows, '✅ No bounced email addresses.')}
-
-    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#92400e;line-height:1.6;">
-      <strong>🚫 Opted Out (${optedOut.length})</strong> — These contacts replied asking to unsubscribe. Do not re-enroll without their explicit permission.
-    </div>
-    ${tableHtml(optOutRows, '✅ No opted-out contacts.')}
-
-    <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#6b21a8;line-height:1.6;">
-      <strong>📵 Do Not Call (${dnc.length})</strong> — These contacts are flagged for no phone outreach.
-    </div>
-    ${tableHtml(dncRows, '✅ No Do Not Call contacts.')}
-  `;
-}
-
-async function clearOptOut(id) {
-  if (!confirm('Remove opt-out and restore email outreach for this contact?')) return;
-  const { error } = await supabaseClient.from('contacts').update({
-    opt_out_email: false, email_status: 'valid', opt_out_at: null, opt_out_reason: null
-  }).eq('id', id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  showToast('✅ Opt-out cleared');
-  await loadData();
-  renderCompliance();
-}
-
-async function clearDnc(id) {
-  if (!confirm('Remove Do Not Call flag for this contact?')) return;
-  const { error } = await supabaseClient.from('contacts').update({ do_not_call: false }).eq('id', id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  showToast('✅ DNC flag removed');
-  await loadData();
-  renderCompliance();
-}
-
-// ============================================================
 // CONTACTS
 // ============================================================
-function renderContacts() {
-  const filtered = contacts.filter(c => {
-    const matchSearch = !contactSearch || c.name?.toLowerCase().includes(contactSearch.toLowerCase()) || c.email?.toLowerCase().includes(contactSearch.toLowerCase()) || c.company?.toLowerCase().includes(contactSearch.toLowerCase());
-    const matchType = !contactTypeFilter || c.type === contactTypeFilter;
-    return matchSearch && matchType;
-  });
+async function renderContacts() {
+  const pg = document.getElementById('page-contacts');
   const typeClass = { 'Group/Employer': 'badge-group', 'Individual & Family': 'badge-individual' };
-  const seqClass = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Drip': 'badge-group', 'Not Started': 'badge-agent' };
+  const seqClass  = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Not Started': 'badge-agent' };
   const typeFilterBtns = ['', ...CONTACT_TYPES].map(t => `<button class="pipeline-tab ${contactTypeFilter===t?'active':''}" onclick="contactTypeFilter='${t}';renderContacts();">${t||'All Types'}</button>`).join('');
+
+  // Show shell immediately so tabs render while data loads
+  pg.innerHTML = `
+    <div class="contacts-toolbar">
+      <input type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}" oninput="contactSearch=this.value;renderContacts();" style="max-width:280px;" />
+      <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
+      <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
+    </div>
+    <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
+    <div class="contacts-table" id="contacts-table-body"><div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading contacts...</div></div>`;
+
+  // Query directly from Supabase — bypasses any in-memory limit
+  let q = supabaseClient.from('contacts').select('*');
+  if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
+  if (contactTypeFilter) q = q.eq('type', contactTypeFilter);
+  if (contactSearch) {
+    q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%`);
+  }
+  q = q.order('created_at', { ascending: false }).limit(500);
+  const { data: filtered, error } = await q;
+
+  if (error) {
+    document.getElementById('contacts-table-body').innerHTML = `<div class="empty-state"><div class="emoji">&#9888;&#65039;</div><p>Error loading contacts: ${error.message}</p></div>`;
+    return;
+  }
+
+  const shown = filtered || [];
   const showOwnerCol = currentAgent.role !== 'agent';
-  const rows = filtered.map(c => {
-    const initials = (c.name||'?').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+  const rows = shown.map(c => {
+    const initials  = (c.name||'?').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
     const badgeClass = typeClass[c.type] || 'badge-agent';
-    const seqStatus = c.sequence_status || 'Not Started';
+    const seqStatus  = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
-    const emailBadge = c.email_status === 'bounced'
-      ? `<span title="Bounced — bad email address" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">⚠️ BOUNCE</span>`
-      : c.email_status === 'opted_out' || c.opt_out_email
-      ? `<span title="Opted out of emails" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">🚫 OPT-OUT</span>`
-      : '';
-    const dncBadge = c.do_not_call ? `<span title="Do Not Call" style="margin-left:4px;background:#fce7f3;color:#9d174d;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">📵 DNC</span>` : '';
-    return `<tr${c.email_status === 'bounced' ? ' style="opacity:0.7;"' : ''}>
+    return `<tr>
       <td style="cursor:pointer;" onclick="viewContact('${c.id}','')"><div style="display:flex;align-items:center;"><span class="contact-avatar">${initials}</span><span style="font-weight:600;">${c.name||'—'}</span></div></td>
-      <td style="font-size:13px;">${c.email||'—'}${emailBadge}</td>
-      <td style="font-size:13px;">${c.company||'—'}${dncBadge}</td>
+      <td style="font-size:13px;">${c.email||'—'}</td>
+      <td style="font-size:13px;">${c.company||'—'}</td>
       <td>${c.type?`<span class="badge ${badgeClass}">${c.type}</span>`:'—'}</td>
       <td><span class="badge ${seqClass[seqStatus]||'badge-agent'}">${seqStatus}</span></td>
       ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>` : ''}
@@ -1247,18 +694,13 @@ function renderContacts() {
       </td>
     </tr>`;
   }).join('');
-  document.getElementById('page-contacts').innerHTML = `
-    <div class="contacts-toolbar">
-      <input type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}" oninput="contactSearch=this.value;renderContacts();" style="max-width:280px;" />
-      <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
-      <span style="font-size:13px;color:var(--muted);margin-left:auto;">${filtered.length} of ${contacts.length} contacts</span>
-    </div>
-    <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
-    <div class="contacts-table">
-      ${filtered.length === 0
-        ? `<div class="empty-state"><div class="emoji">&#128101;</div><p>${contactSearch||contactTypeFilter?'No contacts match your filter.':'No contacts yet. Add your first one!'}</p></div>`
-        : `<table><thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>${showOwnerCol?'<th>Owner</th>':''}<th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`}
-    </div>`;
+
+  document.getElementById('contacts-count').textContent = shown.length < 500
+    ? `${shown.length} contacts`
+    : `500 of many — use search to narrow`;
+  document.getElementById('contacts-table-body').innerHTML = shown.length === 0
+    ? `<div class="empty-state"><div class="emoji">&#128101;</div><p>${contactSearch||contactTypeFilter?'No contacts match your filter.':'No contacts yet. Add your first one!'}</p></div>`
+    : `<table><thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>${showOwnerCol?'<th>Owner</th>':''}<th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function openAddContact() {
@@ -1313,49 +755,20 @@ function editContact(id) {
   const agentOptions = canAssign
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
-  const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
-  const emailStatusNote = c.email_status === 'bounced'
-    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">⚠️ <strong>Bounced</strong> — this email address was rejected. Correct it below to re-enable outreach.</div>`
-    : c.email_status === 'opted_out'
-    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">🚫 <strong>Opted Out</strong> — this contact requested removal. Uncheck below to restore (only if they ask to re-subscribe).</div>`
-    : '';
   showModal('Edit Contact', `
-    ${emailStatusNote}
     <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
     <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
     <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
     <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
-    <label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
-    <label>State</label><input type="text" id="con-state" value="${c.state||''}" placeholder="e.g. MT" maxlength="2" style="width:80px;" />
     <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
-    <label>Outreach Track <span style="font-size:11px;color:var(--muted);">(Recruit contacts only)</span></label><select id="con-track">${trackOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
-    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Compliance</div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-        <input type="checkbox" id="con-optout" ${c.opt_out_email?'checked':''} style="width:16px;height:16px;">
-        <span>🚫 Opted Out of Emails</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px;">
-        <input type="checkbox" id="con-dnc" ${c.do_not_call?'checked':''} style="width:16px;height:16px;">
-        <span>📵 Do Not Call</span>
-      </label>
-    </div>
   `, async () => {
     const name = document.getElementById('con-name').value.trim();
     if (!name) { showToast('Name is required'); return false; }
     const assignedAgentId = canAssign ? (document.getElementById('con-agent').value || c.agent_id) : c.agent_id;
     const assignedAgent = allAgents.find(a => a.id === assignedAgentId) || currentAgent;
-    const newOptOut  = document.getElementById('con-optout').checked;
-    const newDnc     = document.getElementById('con-dnc').checked;
-    const newEmail   = document.getElementById('con-email').value.trim() || null;
-    // If email was bounced and a new email was entered, clear the bounce status
-    const newEmailStatus = (c.email_status === 'bounced' && newEmail && newEmail !== c.email) ? 'valid'
-      : newOptOut ? 'opted_out'
-      : (c.email_status === 'opted_out' && !newOptOut) ? 'valid'
-      : c.email_status || 'valid';
-    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus };
+    const updates = { name, email: document.getElementById('con-email').value.trim()||null, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, type: document.getElementById('con-type').value||null, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -1366,18 +779,12 @@ function editContact(id) {
       if (ac && ac.length > 0) await supabaseClient.from('contact_companies').insert(ac.map(r => ({ contact_id: id, company_id: r.company_id })));
     }
 
-    Object.assign(c, updates); showToast('Contact updated!'); renderContacts(); closeContactPanel();
+    Object.assign(c, updates); showToast('Contact updated!'); renderContacts();
   });
 }
 
 async function deleteContact(id) {
-  if (!confirm('Delete this contact and all their associated data (deals, email opens)?')) return;
-  const contact = contacts.find(c => c.id === id);
-  await Promise.all([
-    supabaseClient.from('contact_companies').delete().eq('contact_id', id),
-    supabaseClient.from('deals').delete().eq('contact_id', id),
-    contact?.email ? supabaseClient.from('email_opens').delete().eq('contact_email', contact.email) : Promise.resolve()
-  ]);
+  if (!confirm('Delete this contact? Their deals will remain.')) return;
   await supabaseClient.from('contacts').delete().eq('id', id);
   contacts = contacts.filter(c => c.id !== id); renderContacts(); showToast('Contact deleted');
 }
@@ -1660,17 +1067,13 @@ async function deleteAgent(id) {
 // ============================================================
 // MODAL
 // ============================================================
-function showModal(title, bodyHtml, onSave, opts = {}) {
-  const confirmLabel = opts.confirmLabel || 'Save';
-  const footer = opts.hideConfirm
-    ? `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`
-    : `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="handleModalSave()">${confirmLabel}</button></div>`;
+function showModal(title, bodyHtml, onSave) {
   document.getElementById('modal-container').innerHTML = `
     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
       <div class="modal">
         <div class="modal-header"><h2>${title}</h2><button class="modal-close" onclick="closeModal()">&times;</button></div>
         <div class="modal-body">${bodyHtml}</div>
-        ${footer}
+        <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="handleModalSave()">Save</button></div>
       </div>
     </div>`;
   window._modalSaveHandler = onSave;
@@ -1764,26 +1167,4 @@ async function approveApplication(id) {
 async function denyApplication(id) {
   const app = applications.find(a => a.id === id);
   if (!app) return;
-  const reason = prompt(`Deny ${app.first_name} ${app.last_name}?\n\nOptional reason (for internal notes):`, '');
-  if (reason === null) return; // cancelled
-
-  const { error } = await supabaseClient.from('agent_applications').update({
-    status: 'denied',
-    reviewed_by: currentAgent.id,
-    reviewed_at: new Date().toISOString(),
-    review_notes: reason || null
-  }).eq('id', id);
-
-  if (error) { showToast('Error: ' + error.message); return; }
-
-  const idx = applications.findIndex(a => a.id === id);
-  if (idx >= 0) applications[idx] = { ...applications[idx], status: 'denied' };
-
-  showToast('Application denied.');
-  renderAdmin();
-}
-
-// ============================================================
-// BOOT
-// ============================================================
-init();
+  const reason = prompt
