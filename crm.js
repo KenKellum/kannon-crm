@@ -170,6 +170,7 @@ async function showApp() {
 
   await loadData();
   showPage('dashboard');
+  showAIBubble();
 
   const _urlParams = new URLSearchParams(window.location.search);
   if (_urlParams.get('gmail') === 'connected') {
@@ -2429,6 +2430,172 @@ async function denyApplication(id) {
 
   showToast('Application denied.');
   renderAdmin();
+}
+
+// ============================================================
+// AI ASSISTANT
+// ============================================================
+let aiHistory = [];      // { role: 'user'|'assistant', content: string }[]
+let aiPanelOpen = false;
+let aiThinking = false;
+
+const AI_SUGGESTIONS = [
+  'Who are my hottest leads?',
+  'Summarize pipeline health',
+  'Which contacts haven\'t been touched yet?',
+  'How many deals are in each stage?',
+  'What should I focus on today?',
+];
+
+function showAIBubble() {
+  const bubble = document.getElementById('ai-bubble');
+  if (bubble) bubble.style.display = 'flex';
+}
+
+function toggleAIPanel() {
+  aiPanelOpen = !aiPanelOpen;
+  const panel = document.getElementById('ai-panel');
+  const bubble = document.getElementById('ai-bubble');
+  if (panel) panel.classList.toggle('open', aiPanelOpen);
+  if (bubble) bubble.classList.toggle('open', aiPanelOpen);
+  if (aiPanelOpen) {
+    if (aiHistory.length === 0) renderAISuggestions();
+    setTimeout(() => document.getElementById('ai-input')?.focus(), 100);
+  }
+}
+
+function renderAISuggestions() {
+  const el = document.getElementById('ai-suggestions');
+  if (!el) return;
+  el.innerHTML = AI_SUGGESTIONS.map(s =>
+    `<button class="ai-suggestion-chip" onclick="sendAIMessage('${s.replace(/'/g, "\\'")}')">${s}</button>`
+  ).join('');
+}
+
+function buildCRMContext() {
+  const role = currentAgent?.role || 'agent';
+  const name = currentAgent?.name || 'User';
+  const now = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+  // Contact stats
+  const total = totalContactCountFull || contacts.length;
+  const replied = contacts.filter(c => c.sequence_status === 'Replied').length;
+  const active = contacts.filter(c => c.sequence_status === 'Active').length;
+  const notStarted = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started').length;
+
+  // Pipeline stats
+  const dealsByStage = {};
+  deals.forEach(d => { dealsByStage[d.stage] = (dealsByStage[d.stage] || 0) + 1; });
+  const stageLines = Object.entries(dealsByStage).map(([s, n]) => `  ${s}: ${n}`).join('\n');
+
+  // Recent contacts (last 5 by created_at)
+  const recent = [...contacts]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5)
+    .map(c => `  - ${c.name} (${c.type || 'Contact'}) — ${c.sequence_status || 'Not started'} — ${c.email || 'no email'}`)
+    .join('\n');
+
+  // Hot leads (replied)
+  const hotLeads = contacts.filter(c => c.sequence_status === 'Replied').slice(0, 5)
+    .map(c => `  - ${c.name}${c.company ? ' @ ' + c.company : ''} — ${c.phone || c.email || ''}`)
+    .join('\n') || '  (none)';
+
+  return `Date: ${now}
+User: ${name} (${role})
+
+CONTACTS:
+  Total: ${total}
+  Replied / Hot: ${replied}
+  Active in sequence: ${active}
+  Not yet contacted: ${notStarted}
+
+HOT LEADS (replied):
+${hotLeads}
+
+RECENT ADDITIONS:
+${recent || '  (none)'}
+
+PIPELINE (deals by stage):
+${stageLines || '  (no deals)'}
+Total deals: ${deals.length}`;
+}
+
+async function sendAIMessage(overrideText) {
+  const input = document.getElementById('ai-input');
+  const message = (overrideText || input?.value || '').trim();
+  if (!message || aiThinking) return;
+
+  if (input) input.value = '';
+
+  // Hide suggestions once chat starts
+  const suggEl = document.getElementById('ai-suggestions');
+  if (suggEl) suggEl.innerHTML = '';
+
+  // Append user message
+  aiHistory.push({ role: 'user', content: message });
+  renderAIMessages();
+
+  // Show thinking indicator
+  aiThinking = true;
+  const sendBtn = document.getElementById('ai-send-btn');
+  if (sendBtn) sendBtn.disabled = true;
+  appendAIThinking();
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/functions/v1/ai-assistant`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY,
+        },
+        body: JSON.stringify({
+          message,
+          context: buildCRMContext(),
+          history: aiHistory.slice(0, -1), // exclude the message we just appended
+        }),
+      }
+    );
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    aiHistory.push({ role: 'assistant', content: data.text });
+  } catch (e) {
+    aiHistory.push({ role: 'assistant', content: `⚠️ Error: ${e.message}` });
+  } finally {
+    aiThinking = false;
+    if (sendBtn) sendBtn.disabled = false;
+    renderAIMessages();
+    setTimeout(() => document.getElementById('ai-input')?.focus(), 50);
+  }
+}
+
+function appendAIThinking() {
+  const container = document.getElementById('ai-messages');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = 'ai-msg assistant thinking';
+  el.id = 'ai-thinking-indicator';
+  el.textContent = '✦ Thinking…';
+  container.appendChild(el);
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderAIMessages() {
+  const container = document.getElementById('ai-messages');
+  if (!container) return;
+  container.innerHTML = aiHistory.map(msg => {
+    const text = msg.content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+    return `<div class="ai-msg ${msg.role}">${text}</div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
 }
 
 // ============================================================
