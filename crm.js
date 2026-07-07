@@ -9,7 +9,7 @@ const GOOGLE_OAUTH_CLIENT_ID = '500395306800-26vlgl3b34p83t8ik3b4u0hcrk7qq0u8.ap
 const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 
-const PIPELINES = {h
+const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
   'agent-insured': { name: 'Agent Recruiting ? Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
@@ -292,11 +292,11 @@ function renderDashboard() {
           <div class="action-item">
             <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am ? Two-way</div></div>
             <span class="badge badge-active">&#10003; Active</span>
-          </div>
-          <div class="action-item">
+            <div class="action-item">
             <div class="action-item-info">
               <div class="action-item-name">Your Gmail</div>
               <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected ? replies not tracked'}</div>
+              <div class="action-item"><div class="action-item-info"><div class="action-item-name">Your Gmail</div><div class="action-item-sub">${currentAgent.gmail_connected?(currentAgent.gmail_email||'Connected'):'Not connected ? replies not tracked'}</div></div>${currentAgent.gmail_connected?'<span class="badge badge-active">Connected</span>':'<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}</div>
         </div>
             ${currentAgent.gmail_connected ? '<span class="badge badge-active">&#10003; Connected</span>' : '<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}
           </div>
