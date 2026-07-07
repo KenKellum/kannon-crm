@@ -329,24 +329,149 @@ function renderDashboard() {
   `;
 }
 
-function shareBookingLink() {
-  const saved = currentAgent.booking_link || '';
-  showModal('&#128197; Google Calendar Booking Link', `
-    <p style="font-size:14px;color:var(--muted);margin-bottom:16px;">Save your Google Calendar booking page URL so you can share it with prospects.</p>
-    <label>Your Booking Link</label>
-    <input type="url" id="booking-url" value="${saved}" placeholder="https://calendar.google.com/calendar/appointments/..." />
+function shareBookingLink() { manageBookingTypes(); }
+
+function manageBookingTypes() {
+  const typeLabels   = { client: 'Client', recruit: 'Recruit' };
+  const contextColors = { client: '#1a3a5c', recruit: '#7c3aed' };
+  const myUrl = `${window.location.origin}/book.html?agent=${currentAgent.id}`;
+
+  function renderTypeRows() {
+    const rows = currentAgent.booking_types || [];
+    if (!rows.length) return '<p style="font-size:13px;color:var(--muted);padding:8px 0;">No booking types yet. Add one below.</p>';
+    return rows.map((t, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f8fafc;border-radius:6px;margin-bottom:8px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:#1e293b;">${t.label}</div>
+          <div style="font-size:11px;color:var(--muted);">&#9201; ${t.duration} &nbsp;&middot;&nbsp;
+            <span style="color:${contextColors[t.context]||'#64748b'};font-weight:600;">${typeLabels[t.context]||t.context}</span>
+          </div>
+        </div>
+        <button onclick="editBookingType(${i})" style="border:1px solid #e2e8f0;background:#fff;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;">Edit</button>
+        <button onclick="removeBookingType(${i})" style="border:none;background:none;color:#ef4444;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+      </div>`).join('');
+  }
+
+  showModal('&#128197; Booking Types', `
+    <div style="margin-bottom:18px;">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:6px;">Your booking page (client-facing):</p>
+      <div style="display:flex;gap:8px;">
+        <input id="booking-page-url" readonly value="${myUrl}&context=client"
+          style="flex:1;font-size:12px;color:#1a3a5c;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:7px 10px;" />
+        <button onclick="navigator.clipboard.writeText(document.getElementById('booking-page-url').value).then(()=>showToast('Copied!'))"
+          style="border:none;background:#1a3a5c;color:#fff;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;white-space:nowrap;">Copy</button>
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Appointment Types</div>
+    <div id="booking-type-list">${renderTypeRows()}</div>
+
+    <div style="border-top:1px solid #e2e8f0;margin-top:16px;padding-top:16px;">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Add New Type</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Label *</label>
+          <input id="bt-label" placeholder="Group Benefits Review" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Duration *</label>
+          <input id="bt-duration" placeholder="20 min" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Context</label>
+          <select id="bt-context" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;">
+            <option value="client">Client (insurance/benefits)</option>
+            <option value="recruit">Recruit (career opportunity)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Description</label>
+          <input id="bt-desc" placeholder="Optional" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+        </div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Google Calendar Link *</label>
+        <input id="bt-link" placeholder="https://calendar.app.google/..." style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+      </div>
+      <button onclick="addBookingType()" style="background:#1a3a5c;color:#fff;border:none;border-radius:5px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;">+ Add Type</button>
+    </div>
+  `, null, { hideConfirm: true });
+}
+
+async function addBookingType() {
+  const label    = document.getElementById('bt-label')?.value.trim();
+  const duration = document.getElementById('bt-duration')?.value.trim();
+  const context  = document.getElementById('bt-context')?.value || 'client';
+  const desc     = document.getElementById('bt-desc')?.value.trim();
+  const link     = document.getElementById('bt-link')?.value.trim();
+  if (!label || !duration || !link) { showToast('Label, duration, and Google Calendar link are required.'); return; }
+  const typeKey = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const types = [...(currentAgent.booking_types || []), { type: typeKey, label, description: desc || '', duration, context, link }];
+  const { error } = await supabaseClient.from('agents').update({ booking_types: types }).eq('id', currentAgent.id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  currentAgent.booking_types = types;
+  showToast('Appointment type added!');
+  closeModal();
+  manageBookingTypes();
+}
+
+async function removeBookingType(index) {
+  const types = [...(currentAgent.booking_types || [])];
+  if (!confirm(`Remove "${types[index]?.label}"?`)) return;
+  types.splice(index, 1);
+  const { error } = await supabaseClient.from('agents').update({ booking_types: types }).eq('id', currentAgent.id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  currentAgent.booking_types = types;
+  showToast('Removed.');
+  closeModal();
+  manageBookingTypes();
+}
+
+function editBookingType(index) {
+  const t = (currentAgent.booking_types || [])[index];
+  if (!t) return;
+  showModal(`Edit: ${t.label}`, `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Label</label>
+        <input id="ebt-label" value="${t.label}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Duration</label>
+        <input id="ebt-duration" value="${t.duration}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+      </div>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Context</label>
+      <select id="ebt-context" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;">
+        <option value="client" ${t.context==='client'?'selected':''}>Client (insurance/benefits)</option>
+        <option value="recruit" ${t.context==='recruit'?'selected':''}>Recruit (career opportunity)</option>
+      </select>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Description</label>
+      <input id="ebt-desc" value="${t.description||''}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+    </div>
+    <div>
+      <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Google Calendar Link</label>
+      <input id="ebt-link" value="${t.link}" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;" />
+    </div>
   `, async () => {
-    const url = document.getElementById('booking-url').value.trim();
-    if (url) {
-      const { error } = await supabaseClient.from('agents').update({ booking_link: url }).eq('id', currentAgent.id);
-      if (!error) {
-        currentAgent.booking_link = url;
-        navigator.clipboard.writeText(url).then(() => showToast('Booking link saved and copied!')).catch(() => showToast('Booking link saved!'));
-      } else {
-        showToast('Error saving: ' + error.message);
-        return false;
-      }
-    }
+    const types = [...(currentAgent.booking_types || [])];
+    types[index] = {
+      type:        types[index].type,
+      label:       document.getElementById('ebt-label').value.trim()    || t.label,
+      description: document.getElementById('ebt-desc').value.trim(),
+      duration:    document.getElementById('ebt-duration').value.trim() || t.duration,
+      context:     document.getElementById('ebt-context').value,
+      link:        document.getElementById('ebt-link').value.trim()     || t.link
+    };
+    const { error } = await supabaseClient.from('agents').update({ booking_types: types }).eq('id', currentAgent.id);
+    if (error) { showToast('Error: ' + error.message); return false; }
+    currentAgent.booking_types = types;
+    showToast('Updated!');
   });
 }
 
@@ -1056,13 +1181,16 @@ async function deleteAgent(id) {
 // ============================================================
 // MODAL
 // ============================================================
-function showModal(title, bodyHtml, onSave) {
+function showModal(title, bodyHtml, onSave, opts = {}) {
+  const footer = opts.hideConfirm
+    ? `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`
+    : `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="handleModalSave()">Save</button></div>`;
   document.getElementById('modal-container').innerHTML = `
     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
       <div class="modal">
         <div class="modal-header"><h2>${title}</h2><button class="modal-close" onclick="closeModal()">&times;</button></div>
         <div class="modal-body">${bodyHtml}</div>
-        <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="handleModalSave()">Save</button></div>
+        ${footer}
       </div>
     </div>`;
   window._modalSaveHandler = onSave;
