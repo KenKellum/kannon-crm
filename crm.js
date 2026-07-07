@@ -33,6 +33,7 @@ let draggedDeal = null;
 let currentPipeline = 'group-employer';
 let contactSearch = '';
 let contactTypeFilter = '';
+let contactPage = 0;
 let applications = [];
 
 // ============================================================
@@ -1211,35 +1212,65 @@ async function clearDnc(id) {
 
 // ============================================================
 // CONTACTS
-// ============================================================
-function renderContacts() {
-  const filtered = contacts.filter(c => {
-    const matchSearch = !contactSearch || c.name?.toLowerCase().includes(contactSearch.toLowerCase()) || c.email?.toLowerCase().includes(contactSearch.toLowerCase()) || c.company?.toLowerCase().includes(contactSearch.toLowerCase());
-    const matchType = !contactTypeFilter || c.type === contactTypeFilter;
-    return matchSearch && matchType;
-  });
-  const typeClass = { 'Group/Employer': 'badge-group', 'Individual & Family': 'badge-individual' };
-  const seqClass = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Drip': 'badge-group', 'Not Started': 'badge-agent' };
-  const typeFilterBtns = ['', ...CONTACT_TYPES].map(t => `<button class="pipeline-tab ${contactTypeFilter===t?'active':''}" onclick="contactTypeFilter='${t}';renderContacts();">${t||'All Types'}</button>`).join('');
+// ========================================async function renderContacts() {
+  const pg = document.getElementById('page-contacts');
+  const typeClass  = { 'Group/Employer': 'badge-group', 'Individual & Family': 'badge-individual' };
+  const seqClass   = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Not Started': 'badge-agent' };
   const showOwnerCol = currentAgent.role !== 'agent';
-  const rows = filtered.map(c => {
-    const initials = (c.name||'?').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+
+  const typeFilterBtns = ['', ...CONTACT_TYPES].map(t =>
+    `<button class="pipeline-tab ${contactTypeFilter === t ? 'active' : ''}" onclick="contactTypeFilter='${t}';contactPage=0;renderContacts();">${t || 'All Types'}</button>`
+  ).join('');
+
+  // Render shell immediately so tabs are visible while data loads
+  pg.innerHTML = `
+    <div class="contacts-toolbar">
+      <input type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}"
+             oninput="contactSearch=this.value;contactPage=0;renderContacts();" style="max-width:280px;" />
+      <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
+      <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
+    </div>
+    <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
+    <div class="contacts-table" id="contacts-table-body">
+      <div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading...</div>
+    </div>`;
+
+  // Always query Supabase directly — no in-memory row-limit issues
+  let q = supabaseClient.from('contacts').select('*');
+  if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
+  if (contactTypeFilter) q = q.eq('type', contactTypeFilter);
+  if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%`);
+  const offset = (contactPage || 0) * 1000;
+  q = q.order('created_at', { ascending: false }).range(offset, offset + 999);
+
+  const { data: shown, error } = await q;
+  if (error) {
+    document.getElementById('contacts-table-body').innerHTML =
+      `<div class="empty-state"><div class="emoji">&#9888;&#65039;</div><p>Error loading contacts: ${error.message}</p></div>`;
+    return;
+  }
+
+  // Merge into in-memory contacts so viewContact() can still find them
+  const fetchedIds = new Set((shown || []).map(c => c.id));
+  contacts = [...(shown || []), ...contacts.filter(c => !fetchedIds.has(c.id))];
+
+  const rows = (shown || []).map(c => {
+    const initials   = (c.name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
     const badgeClass = typeClass[c.type] || 'badge-agent';
-    const seqStatus = c.sequence_status || 'Not Started';
+    const seqStatus  = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
-    const emailBadge = c.email_status === 'bounced'
-      ? `<span title="Bounced — bad email address" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">⚠️ BOUNCE</span>`
-      : c.email_status === 'opted_out' || c.opt_out_email
-      ? `<span title="Opted out of emails" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">🚫 OPT-OUT</span>`
-      : '';
-    const dncBadge = c.do_not_call ? `<span title="Do Not Call" style="margin-left:4px;background:#fce7f3;color:#9d174d;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">📵 DNC</span>` : '';
-    return `<tr${c.email_status === 'bounced' ? ' style="opacity:0.7;"' : ''}>
-      <td style="cursor:pointer;" onclick="viewContact('${c.id}','')"><div style="display:flex;align-items:center;"><span class="contact-avatar">${initials}</span><span style="font-weight:600;">${c.name||'—'}</span></div></td>
-      <td style="font-size:13px;">${c.email||'—'}${emailBadge}</td>
-      <td style="font-size:13px;">${c.company||'—'}${dncBadge}</td>
-      <td>${c.type?`<span class="badge ${badgeClass}">${c.type}</span>`:'—'}</td>
-      <td><span class="badge ${seqClass[seqStatus]||'badge-agent'}">${seqStatus}</span></td>
-      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>` : ''}
+    return `<tr>
+      <td style="cursor:pointer;" onclick="viewContact('${c.id}','')">
+        <div style="display:flex;align-items:center;">
+          <span class="contact-avatar">${initials}</span>
+          <span style="font-weight:600;">${c.name || '—'}</span>
+        </div>
+      </td>
+      <td style="font-size:13px;">${c.email || '—'}</td>
+      <td style="font-size:13px;">${c.company || '—'}</td>
+      <td>${c.type ? `<span class="badge ${badgeClass}">${c.type}</span>` : '—'}</td>
+      <td><span class="badge ${seqClass[seqStatus] || 'badge-agent'}">${seqStatus}</span></td>
+      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent ? ownerAgent.name : '—'}</td>` : ''}
       <td>
         <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
         <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editContact('${c.id}')">Edit</button>
@@ -1247,17 +1278,30 @@ function renderContacts() {
       </td>
     </tr>`;
   }).join('');
-  document.getElementById('page-contacts').innerHTML = `
-    <div class="contacts-toolbar">
-      <input type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}" oninput="contactSearch=this.value;renderContacts();" style="max-width:280px;" />
-      <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
-      <span style="font-size:13px;color:var(--muted);margin-left:auto;">${filtered.length} of ${contacts.length} contacts</span>
-    </div>
-    <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
-    <div class="contacts-table">
-      ${filtered.length === 0
-        ? `<div class="empty-state"><div class="emoji">&#128101;</div><p>${contactSearch||contactTypeFilter?'No contacts match your filter.':'No contacts yet. Add your first one!'}</p></div>`
-        : `<table><thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>${showOwnerCol?'<th>Owner</th>':''}<th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`}
+
+  const hasNext = (shown || []).length === 1000;
+  const hasPrev = (contactPage || 0) > 0;
+  const pageNav = (hasNext || hasPrev) ? `
+    <div style="display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid var(--border);">
+      ${hasPrev ? `<button class="btn btn-outline btn-sm" onclick="contactPage--;renderContacts();">&#8592; Prev 1,000</button>` : ''}
+      <span style="font-size:13px;color:var(--muted);">Page ${(contactPage || 0) + 1}</span>
+      ${hasNext ? `<button class="btn btn-outline btn-sm" onclick="contactPage++;renderContacts();">Next 1,000 &#8594;</button>` : ''}
+    </div>` : '';
+
+  const shown_count = (shown || []).length;
+  const countLabel = hasNext
+    ? `Showing ${offset + 1}–${offset + shown_count} · use Next to see more`
+    : `${shown_count} contact${shown_count !== 1 ? 's' : ''}${(contactPage || 0) > 0 ? ` (page ${(contactPage || 0) + 1})` : ''}`;
+
+  document.getElementById('contacts-count').textContent = countLabel;
+  document.getElementById('contacts-table-body').innerHTML = shown_count === 0
+    ? `<div class="empty-state"><div class="emoji">&#128101;</div><p>${contactSearch || contactTypeFilter ? 'No contacts match your filter.' : 'No contacts yet. Add your first one!'}</p></div>`
+    : `<table><thead><tr>
+        <th>Name</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>
+        ${showOwnerCol ? '<th>Owner</th>' : ''}<th>Actions</th>
+      </tr></thead><tbody>${rows}</tbody></table>${pageNav}`;
+}
+le>`}
     </div>`;
 }
 
