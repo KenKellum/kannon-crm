@@ -201,7 +201,7 @@ async function loadData() {
   if (currentAgent.role === 'agent') dq = dq.eq('user_id', currentUser.id);
 
   const queries = [
-    cq.order('created_at', { ascending: false }),
+    cq.order('created_at', { ascending: false }).limit(5000),
     dq.order('created_at', { ascending: false })
   ];
   if (currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner') {
