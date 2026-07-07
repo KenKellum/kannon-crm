@@ -34,6 +34,7 @@ let currentPipeline = 'group-employer';
 let contactSearch = '';
 let contactTypeFilter = '';
 let contactPage = 0;
+let contactSort = 'created_at_desc';
 let applications = [];
 
 // ============================================================
@@ -1229,6 +1230,15 @@ async function renderContacts() {
     <div class="contacts-toolbar">
       <input type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}"
              oninput="contactSearch=this.value;contactPage=0;renderContacts();" style="max-width:280px;" />
+      <select onchange="contactSort=this.value;contactPage=0;renderContacts();"
+              style="padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;color:#1e293b;background:#fff;cursor:pointer;">
+        <option value="created_at_desc" ${contactSort==='created_at_desc'?'selected':''}>&#128197; Newest First</option>
+        <option value="created_at_asc"  ${contactSort==='created_at_asc'?'selected':''}>&#128197; Oldest First</option>
+        <option value="name_asc"        ${contactSort==='name_asc'?'selected':''}>A&#8594;Z Name</option>
+        <option value="name_desc"       ${contactSort==='name_desc'?'selected':''}>Z&#8594;A Name</option>
+        <option value="company_asc"     ${contactSort==='company_asc'?'selected':''}>A&#8594;Z Company</option>
+        <option value="sequence_status_asc" ${contactSort==='sequence_status_asc'?'selected':''}>Sequence Status</option>
+      </select>
       <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
       <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
     </div>
@@ -1237,6 +1247,17 @@ async function renderContacts() {
       <div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading...</div>
     </div>`;
 
+  // Sort options
+  const sortMap = {
+    'created_at_desc':     { col: 'created_at',     asc: false },
+    'created_at_asc':      { col: 'created_at',     asc: true  },
+    'name_asc':            { col: 'name',            asc: true  },
+    'name_desc':           { col: 'name',            asc: false },
+    'company_asc':         { col: 'company',         asc: true  },
+    'sequence_status_asc': { col: 'sequence_status', asc: true  }
+  };
+  const sortOpt = sortMap[contactSort] || sortMap['created_at_desc'];
+
   // Query Supabase directly — bypasses PostgREST row cap entirely
   let q = supabaseClient.from('contacts').select('*');
   if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
@@ -1244,7 +1265,7 @@ async function renderContacts() {
   if (contactTypeFilter) q = q.eq('type', contactTypeFilter);
   if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%`);
   const offset = (contactPage || 0) * PAGE_SIZE;
-  q = q.order('created_at', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+  q = q.order(sortOpt.col, { ascending: sortOpt.asc }).range(offset, offset + PAGE_SIZE - 1);
 
   const { data: shown, error } = await q;
   if (error) {
@@ -1307,7 +1328,7 @@ async function renderContacts() {
   document.getElementById('contacts-count').textContent = countLabel;
   document.getElementById('contacts-table-body').innerHTML = shown_count === 0
     ? `<div class="empty-state"><div class="emoji">&#128101;</div><p>${contactSearch || contactTypeFilter ? 'No contacts match your filter.' : 'No contacts yet. Add your first one!'}</p></div>`
-    : `<table><thead><tr>
+    : `${pageNav}<table><thead><tr>
         <th>Name</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>
         ${showOwnerCol ? '<th>Owner</th>' : ''}<th>Actions</th>
       </tr></thead><tbody>${rows}</tbody></table>${pageNav}`;
