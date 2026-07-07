@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // CONFIG & STATE
 // ============================================================
 const SUPABASE_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
@@ -6,8 +6,8 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 
 // GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
-const GOOGLE_OAUTH_CLIENT_ID = '500395306800-26vlgl3b34p83t8ik3b4u0hcrk7qq0u8.apps.googleusercontent.com';
-const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+const GOOGLE_OAUTH_CLIENT_ID = 'PASTE_CLIENT_ID_HERE';
+const APPS_SCRIPT_URL        = 'PASTE_APPS_SCRIPT_URL_HERE';
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
@@ -522,7 +522,7 @@ async function viewContact(contactId, email) {
       <div class="panel-section">
         <div class="panel-label">Email Opens (${opensCount})</div>
         ${opensCount > 0
-          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.track||'—'}</span><div class="panel-open-subject">${o.subject?o.subject.substring(0,55)+(o.subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
+          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.sequence_track||'—'}</span><div class="panel-open-subject">${o.email_subject?o.email_subject.substring(0,55)+(o.email_subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
           : '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No email opens recorded yet.</div>'}
       </div>
     </div>
