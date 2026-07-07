@@ -211,59 +211,66 @@ function showPage(page) {
 // ============================================================
 // SIDEBAR NAV — role-adaptive
 // ============================================================
+function getNavBadges() {
+  const notStarted = contacts.filter(c => !c.sequence_status || c.sequence_status === 'not_started').length;
+  const inactiveAgents = allAgents ? allAgents.filter(a => a.status !== 'active').length : 0;
+  return { notStarted, inactiveAgents };
+}
+
 function renderSidebarNav() {
   const container = document.getElementById('sidebar-nav-container');
   if (!container) return;
   const role = currentAgent.role;
+  const b = getNavBadges();
 
   const navConfig = {
     system_owner: [
       { label: 'Overview', items: [
-        { icon: '🏠', text: 'Dashboard',         page: 'dashboard' },
+        { icon: 'ti-layout-dashboard', text: 'Dashboard',        page: 'dashboard' },
       ]},
       { label: 'Manage', items: [
-        { icon: '👥', text: 'All contacts',       page: 'contacts'  },
-        { icon: '📊', text: 'Pipelines',          page: 'pipelines' },
-        { icon: '📧', text: 'Email opens',        page: 'opens'     },
-        { icon: '📨', text: 'Campaigns',          page: 'campaigns' },
-        { icon: '⚡', text: 'Work my leads',      page: 'dialer'    },
+        { icon: 'ti-users',            text: 'All contacts',      page: 'contacts'  },
+        { icon: 'ti-layout-kanban',    text: 'Pipelines',         page: 'pipelines' },
+        { icon: 'ti-mail-opened',      text: 'Email opens',       page: 'opens',    badge: null },
+        { icon: 'ti-send',             text: 'Campaigns',         page: 'campaigns' },
+        { icon: 'ti-bolt',             text: 'Work my leads',     page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
       ]},
       { label: 'Agency & team', items: [
-        { icon: '⚙️', text: 'Agencies & agents',  page: 'admin'     },
+        { icon: 'ti-building-community', text: 'Agencies & agents', page: 'admin',  badge: b.inactiveAgents || null, badgeType: 'red' },
       ]},
       { label: 'System', items: [
-        { icon: '🛡️', text: 'Compliance',         page: 'compliance'},
+        { icon: 'ti-shield-check',     text: 'Compliance',        page: 'compliance'},
       ]},
     ],
     agency_owner: [
       { label: 'My agency', items: [
-        { icon: '🏠', text: 'Dashboard',          page: 'dashboard' },
-        { icon: '👥', text: 'Contacts',           page: 'contacts'  },
-        { icon: '📊', text: 'Pipelines',          page: 'pipelines' },
-        { icon: '⚡', text: 'Work my leads',      page: 'dialer'    },
+        { icon: 'ti-layout-dashboard', text: 'Dashboard',         page: 'dashboard' },
+        { icon: 'ti-users',            text: 'Contacts',          page: 'contacts'  },
+        { icon: 'ti-layout-kanban',    text: 'Pipelines',         page: 'pipelines' },
+        { icon: 'ti-bolt',             text: 'Work my leads',     page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
       ]},
       { label: 'Campaigns', items: [
-        { icon: '📨', text: 'My campaigns',       page: 'campaigns' },
-        { icon: '📧', text: 'Email opens',        page: 'opens'     },
+        { icon: 'ti-send',             text: 'My campaigns',      page: 'campaigns' },
+        { icon: 'ti-mail-opened',      text: 'Email opens',       page: 'opens',    badge: null },
       ]},
       { label: 'Team', items: [
-        { icon: '⚙️', text: 'Agents & hiring',    page: 'admin'     },
-        { icon: '🛡️', text: 'Compliance',         page: 'compliance'},
+        { icon: 'ti-building-community', text: 'Agents & hiring', page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
+        { icon: 'ti-shield-check',     text: 'Compliance',        page: 'compliance'},
       ]},
     ],
     agent: [
       { label: 'My work', items: [
-        { icon: '🏠', text: 'Dashboard',          page: 'dashboard' },
-        { icon: '⚡', text: 'Work my leads',      page: 'dialer'    },
-        { icon: '👥', text: 'My contacts',        page: 'contacts'  },
-        { icon: '📊', text: 'My pipeline',        page: 'pipelines' },
+        { icon: 'ti-layout-dashboard', text: 'Dashboard',         page: 'dashboard' },
+        { icon: 'ti-bolt',             text: 'Work my leads',     page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
+        { icon: 'ti-users',            text: 'My contacts',       page: 'contacts'  },
+        { icon: 'ti-layout-kanban',    text: 'My pipeline',       page: 'pipelines' },
       ]},
       { label: 'Outreach', items: [
-        { icon: '📧', text: 'Email opens',        page: 'opens'     },
-        { icon: '📨', text: 'Campaigns',          page: 'campaigns' },
+        { icon: 'ti-mail-opened',      text: 'Email opens',       page: 'opens',    badge: null },
+        { icon: 'ti-send',             text: 'Campaigns',         page: 'campaigns' },
       ]},
       { label: 'Compliance', items: [
-        { icon: '🛡️', text: 'Compliance',         page: 'compliance'},
+        { icon: 'ti-shield-check',     text: 'Compliance',        page: 'compliance'},
       ]},
     ],
   };
@@ -273,7 +280,8 @@ function renderSidebarNav() {
     <div class="sidebar-section-label">${sec.label}</div>
     ${sec.items.map(item => `
       <button id="nav-${item.page}" onclick="showPage('${item.page}')">
-        <span class="nav-icon">${item.icon}</span>${item.text}
+        <i class="ti ${item.icon} nav-icon"></i>${item.text}
+        ${item.badge ? `<span class="${item.badgeType === 'green' ? 'nav-badge-green' : 'nav-badge'}">${item.badge}</span>` : ''}
       </button>
     `).join('')}
   `).join('');
