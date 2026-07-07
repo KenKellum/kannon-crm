@@ -36,6 +36,9 @@ let contactTypeFilter = '';
 let contactPage = 0;
 let contactSort = 'created_at_desc';
 let applications = [];
+let dialerQueue = [];
+let dialerIndex = 0;
+let totalContactCountFull = 0; // True DB count bypassing 1000-row cap
 
 // ============================================================
 // INIT
@@ -181,11 +184,12 @@ async function showApp() {
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
-  opens: 'Email Opens', campaigns: 'Campaigns', compliance: 'Compliance', admin: 'Admin'
+  opens: 'Email Opens', campaigns: 'Campaigns', compliance: 'Compliance',
+  admin: 'Admin', dialer: 'Work My Leads'
 };
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -200,6 +204,7 @@ function showPage(page) {
   if (page === 'campaigns')  renderCampaigns();
   if (page === 'compliance') renderCompliance();
   if (page === 'admin')      renderAdmin();
+  if (page === 'dialer')     renderDialer();
 }
 
 // ============================================================
@@ -220,6 +225,7 @@ function renderSidebarNav() {
         { icon: '📊', text: 'Pipelines',          page: 'pipelines' },
         { icon: '📧', text: 'Email opens',        page: 'opens'     },
         { icon: '📨', text: 'Campaigns',          page: 'campaigns' },
+        { icon: '⚡', text: 'Work my leads',      page: 'dialer'    },
       ]},
       { label: 'Agency & team', items: [
         { icon: '⚙️', text: 'Agencies & agents',  page: 'admin'     },
@@ -233,6 +239,7 @@ function renderSidebarNav() {
         { icon: '🏠', text: 'Dashboard',          page: 'dashboard' },
         { icon: '👥', text: 'Contacts',           page: 'contacts'  },
         { icon: '📊', text: 'Pipelines',          page: 'pipelines' },
+        { icon: '⚡', text: 'Work my leads',      page: 'dialer'    },
       ]},
       { label: 'Campaigns', items: [
         { icon: '📨', text: 'My campaigns',       page: 'campaigns' },
@@ -246,6 +253,7 @@ function renderSidebarNav() {
     agent: [
       { label: 'My work', items: [
         { icon: '🏠', text: 'Dashboard',          page: 'dashboard' },
+        { icon: '⚡', text: 'Work my leads',      page: 'dialer'    },
         { icon: '👥', text: 'My contacts',        page: 'contacts'  },
         { icon: '📊', text: 'My pipeline',        page: 'pipelines' },
       ]},
@@ -296,6 +304,13 @@ async function loadData() {
   contacts = results[0].data || [];
   deals = results[1].data || [];
   applications = (results[2] && results[2].data) || [];
+
+  // Get true total count for system_owner (bypasses PostgREST 1000-row cap)
+  if (currentAgent.role === 'system_owner') {
+    const { count } = await supabaseClient
+      .from('contacts').select('*', { count: 'exact', head: true });
+    totalContactCountFull = count || 0;
+  }
 }
 
 // ============================================================
@@ -323,7 +338,7 @@ function renderDashboardOwner() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
 
-  const totalContacts = contacts.length;
+  const totalContacts = totalContactCountFull || contacts.length;
   const inSequence  = contacts.filter(c => c.sequence_status === 'Active').length;
   const replied     = contacts.filter(c => c.sequence_status === 'Replied').length;
   const bounced     = contacts.filter(c => c.email_status === 'bounced').length;
@@ -517,7 +532,7 @@ function renderDashboardAgent() {
         <div style="font-size:15px;font-weight:700;color:white;">${hotLeads.length > 0 ? '&#128293; ' + hotLeads.length + ' lead' + (hotLeads.length > 1 ? 's' : '') + ' replied — follow up now!' : '&#9889; ' + notStarted.length + ' leads waiting to be contacted'}</div>
         <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:4px;">${hotLeads.length > 0 ? 'Someone responded to your outreach.' : 'Start your outreach to get the sequence running.'}</div>
       </div>
-      <button class="btn btn-accent" onclick="showPage('contacts')">Work leads &rarr;</button>
+      <button class="btn btn-accent" onclick="startDialerSession()">&#9889; Work leads &rarr;</button>
     </div>` : ''}
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">My Contacts</div></div>
@@ -687,6 +702,215 @@ function renderDashboard_UNUSED() {
 }
 
 function shareBookingLink() { manageBookingTypes(); }
+
+// ============================================================
+// WORK MY LEADS — Power Dialer
+// ============================================================
+function startDialerSession(filterType) {
+  // If no filter specified, show picker modal
+  if (!filterType) {
+    const hotCount   = contacts.filter(c => c.sequence_status === 'Replied').length;
+    const freshCount = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started').length;
+    const allCount   = contacts.length;
+    showModal('&#9889; Start a Lead Session', `
+      <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Choose which leads to work through. You can stop anytime.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${hotCount > 0 ? `<button class="btn btn-accent btn-full" onclick="closeModal();startDialerSession('replied')">
+          &#128293; Hot leads — Replied (${hotCount})
+        </button>` : ''}
+        <button class="btn btn-primary btn-full" onclick="closeModal();startDialerSession('not_started')">
+          &#128101; Fresh leads — Not yet contacted (${freshCount})
+        </button>
+        <button class="btn btn-outline btn-full" onclick="closeModal();startDialerSession('all')">
+          &#128203; All my contacts (${allCount})
+        </button>
+      </div>
+    `);
+    return;
+  }
+
+  let queue;
+  if (filterType === 'replied')     queue = contacts.filter(c => c.sequence_status === 'Replied');
+  else if (filterType === 'not_started') queue = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started');
+  else queue = [...contacts];
+
+  if (queue.length === 0) {
+    showToast('No contacts in this queue!');
+    return;
+  }
+
+  dialerQueue = queue;
+  dialerIndex = 0;
+  showPage('dialer');
+}
+
+function renderDialer() {
+  const el = document.getElementById('page-dialer');
+  if (!el) return;
+
+  if (dialerQueue.length === 0) {
+    el.innerHTML = `
+      <div style="text-align:center;padding:80px 20px;">
+        <div style="font-size:52px;margin-bottom:16px;">&#9889;</div>
+        <div style="font-size:20px;font-weight:700;color:var(--primary);margin-bottom:8px;">No session started</div>
+        <div style="font-size:14px;color:var(--muted);margin-bottom:24px;">Start a lead session from the dashboard or sidebar.</div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="startDialerSession()">&#9889; Start a session</button>
+          <button class="btn btn-outline" onclick="showPage('dashboard')">Back to dashboard</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const contact = dialerQueue[dialerIndex];
+  const initials = (contact.name || '?').split(' ').filter(Boolean).map(w => w[0]).join('').slice(0,2).toUpperCase();
+  const progress = Math.round((dialerIndex / dialerQueue.length) * 100);
+  const remaining = dialerQueue.length - dialerIndex - 1;
+  const isLast = dialerIndex === dialerQueue.length - 1;
+
+  const statusClass = contact.sequence_status === 'Replied' ? 'badge-replied'
+    : contact.sequence_status === 'Active' ? 'badge-active' : 'badge-completed';
+  const typeClass = contact.type === 'Recruit' ? 'badge-agent'
+    : contact.type === 'Group/Employer' ? 'badge-group' : 'badge-individual';
+
+  el.innerHTML = `
+    <div style="max-width:700px;margin:0 auto;">
+
+      <!-- Session progress -->
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
+        <div style="flex:1;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:5px;">
+            Lead <strong>${dialerIndex + 1}</strong> of <strong>${dialerQueue.length}</strong>
+            ${remaining > 0 ? `&nbsp;&middot;&nbsp; ${remaining} remaining` : '&nbsp;&middot;&nbsp; &#127942; Last one!'}
+          </div>
+          <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;">
+            <div style="height:5px;background:var(--accent);border-radius:3px;width:${progress}%;transition:width 0.35s ease;"></div>
+          </div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="showPage('dashboard')">End session</button>
+      </div>
+
+      <!-- Contact card -->
+      <div class="card" style="padding:28px;margin-bottom:16px;border-top:3px solid var(--accent);">
+
+        <!-- Header row -->
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
+          <div style="width:58px;height:58px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;flex-shrink:0;">${initials}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:22px;font-weight:700;color:var(--primary);margin-bottom:3px;">${contact.name || '—'}</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">${[contact.company, contact.city ? contact.city + (contact.state ? ', ' + contact.state : '') : ''].filter(Boolean).join(' &nbsp;&middot;&nbsp; ') || '&mdash;'}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <span class="badge ${typeClass}">${contact.type || 'Contact'}</span>
+              <span class="badge ${statusClass}">${contact.sequence_status || 'Not started'}</span>
+              ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Added</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:2px;">${contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</div>
+          </div>
+        </div>
+
+        <!-- Meta grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;background:#f8fafc;border-radius:10px;margin-bottom:20px;">
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Email</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;word-break:break-all;">${contact.email || '—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Phone</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.phone || '—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Company</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.company || '—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Sequence step</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">Email ${contact.sequence_step || 0} of 3</div>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+          ${contact.phone
+            ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')">&#128222; Call</button>`
+            : `<button class="btn btn-outline" disabled style="opacity:0.45;cursor:not-allowed;">&#128222; No phone</button>`}
+          <button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>
+          <button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="dialerMarkInterested('${contact.id}')">&#129309; Interested</button>
+          <button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>
+          <button class="btn btn-primary" onclick="dialerNext()">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>
+        </div>
+
+        <!-- Notes area -->
+        <div style="border-top:1px solid var(--border);padding-top:16px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Quick note</div>
+          ${contact.notes ? `<div style="font-size:13px;color:var(--text);background:#f8fafc;padding:10px 12px;border-radius:8px;margin-bottom:10px;border-left:3px solid var(--accent);">${contact.notes}</div>` : ''}
+          <div style="display:flex;gap:8px;">
+            <input id="dialer-note-input" placeholder="Log a call, leave a note..." style="flex:1;font-size:13px;" value="" />
+            <button class="btn btn-outline" onclick="dialerSaveNote('${contact.id}')">Save note</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function dialerMarkInterested(contactId) {
+  try {
+    await supabaseClient.from('contacts').update({ sequence_status: 'Replied' }).eq('id', contactId);
+    const idx = contacts.findIndex(c => c.id === contactId);
+    if (idx > -1) contacts[idx].sequence_status = 'Replied';
+    const qi = dialerQueue.findIndex(c => c.id === contactId);
+    if (qi > -1) dialerQueue[qi].sequence_status = 'Replied';
+    showToast('&#129309; Marked as Interested / Replied!');
+    dialerNext();
+  } catch (e) { showToast('Error saving — try again'); }
+}
+
+async function dialerSaveNote(contactId) {
+  const input = document.getElementById('dialer-note-input');
+  const note = input?.value?.trim();
+  if (!note) return;
+  try {
+    await supabaseClient.from('contacts').update({ notes: note }).eq('id', contactId);
+    const idx = contacts.findIndex(c => c.id === contactId);
+    if (idx > -1) contacts[idx].notes = note;
+    const qi = dialerQueue.findIndex(c => c.id === contactId);
+    if (qi > -1) dialerQueue[qi].notes = note;
+    showToast('&#10003; Note saved');
+    if (input) input.value = '';
+    renderDialer();
+  } catch (e) { showToast('Error saving note'); }
+}
+
+function dialerSkip() {
+  showToast('Skipped &rarr;');
+  dialerNext();
+}
+
+function dialerNext() {
+  if (dialerIndex < dialerQueue.length - 1) {
+    dialerIndex++;
+    renderDialer();
+    window.scrollTo(0, 0);
+  } else {
+    const el = document.getElementById('page-dialer');
+    if (el) el.innerHTML = `
+      <div style="text-align:center;padding:80px 20px;max-width:480px;margin:0 auto;">
+        <div style="font-size:64px;margin-bottom:16px;">&#127942;</div>
+        <div style="font-size:24px;font-weight:800;color:var(--primary);margin-bottom:8px;">Session complete!</div>
+        <div style="font-size:15px;color:var(--muted);margin-bottom:8px;">You worked through all <strong>${dialerQueue.length}</strong> leads.</div>
+        <div style="font-size:14px;color:var(--muted);margin-bottom:28px;">Great work, ${(currentAgent.name || '').split(' ')[0]}!</div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="startDialerSession()">&#9889; Start another session</button>
+          <button class="btn btn-outline" onclick="showPage('dashboard')">Back to dashboard</button>
+          <button class="btn btn-outline" onclick="showPage('contacts')">View all contacts</button>
+        </div>
+      </div>`;
+    dialerQueue = [];
+    dialerIndex = 0;
+  }
+}
 
 function manageBookingTypes() {
   const typeLabels   = { client: 'Client', recruit: 'Recruit' };
