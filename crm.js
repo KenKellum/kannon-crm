@@ -209,6 +209,8 @@ async function loadData() {
   }
   const results = await Promise.all(queries);
   contacts = results[0].data || [];
+  const _r=await supabaseClient.from('contacts').select('*').neq('type','Recruit');
+  if(_r.data){const _ids=new Set(contacts.map(c=>c.id));contacts=[..._r.data.filter(c=>!_ids.has(c.id)),...contacts];}
   deals = results[1].data || [];
   applications = (results[2] && results[2].data) || [];
 }
