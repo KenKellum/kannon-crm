@@ -975,12 +975,16 @@ function editContact(id) {
   const agentOptions = canAssign
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
+  const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
   showModal('Edit Contact', `
     <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
     <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
     <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
     <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
+    <label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
+    <label>State</label><input type="text" id="con-state" value="${c.state||''}" placeholder="e.g. MT" maxlength="2" style="width:80px;" />
     <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Outreach Track <span style="font-size:11px;color:var(--muted);">(Recruit contacts only)</span></label><select id="con-track">${trackOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
   `, async () => {
@@ -988,7 +992,7 @@ function editContact(id) {
     if (!name) { showToast('Name is required'); return false; }
     const assignedAgentId = canAssign ? (document.getElementById('con-agent').value || c.agent_id) : c.agent_id;
     const assignedAgent = allAgents.find(a => a.id === assignedAgentId) || currentAgent;
-    const updates = { name, email: document.getElementById('con-email').value.trim()||null, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, type: document.getElementById('con-type').value||null, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null };
+    const updates = { name, email: document.getElementById('con-email').value.trim()||null, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -999,7 +1003,7 @@ function editContact(id) {
       if (ac && ac.length > 0) await supabaseClient.from('contact_companies').insert(ac.map(r => ({ contact_id: id, company_id: r.company_id })));
     }
 
-    Object.assign(c, updates); showToast('Contact updated!'); renderContacts();
+    Object.assign(c, updates); showToast('Contact updated!'); renderContacts(); closeContactPanel();
   });
 }
 
