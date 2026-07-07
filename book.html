@@ -250,12 +250,9 @@
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Your Name *</label>
-        <input type="text" id="field-name" placeholder="Jane Smith" autocomplete="name">
-      </div>
-      <div class="form-group">
-        <label>Company / Organization</label>
+        <label>Company Name <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
         <input type="text" id="field-company" placeholder="Big Sky Brewing Co." autocomplete="organization">
+        <p style="font-size:12px;color:#94a3b8;margin-top:5px;line-height:1.4;">If you're looking for coverage for your business or employees, enter your company name here.</p>
       </div>
       <div class="form-group">
         <label>What would you like to discuss? <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
@@ -273,9 +270,11 @@
 const SUPABASE_URL  = 'https://ilrylhseqnllmejebozq.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
 
-const params  = new URLSearchParams(window.location.search);
-const agentId = params.get('agent');
-const context = params.get('context') || 'all'; // client | recruit | all
+const params     = new URLSearchParams(window.location.search);
+const agentId    = params.get('agent');
+const context    = params.get('context') || 'all'; // client | recruit | all
+const preCompany = params.get('co')      || '';     // pre-filled company from email
+const contactId  = params.get('cid')    || '';     // contact ID for logging
 
 let selectedType = null;
 let agent = null;
@@ -339,12 +338,11 @@ function renderPage() {
 function openModal(typeObj) {
   selectedType = typeObj;
   document.getElementById('modal-title').textContent = typeObj.label;
-  document.getElementById('modal-subtitle').textContent = '⏱ ' + typeObj.duration + '  ·  Tell us a bit about yourself';
-  document.getElementById('field-name').value    = '';
-  document.getElementById('field-company').value = '';
+  document.getElementById('modal-subtitle').textContent = '⏱ ' + typeObj.duration + '  ·  One quick question before you book';
+  document.getElementById('field-company').value = preCompany; // pre-fill if from email
   document.getElementById('field-note').value    = '';
   document.getElementById('overlay').classList.add('active');
-  setTimeout(() => document.getElementById('field-name').focus(), 100);
+  setTimeout(() => document.getElementById('field-company').focus(), 100);
 }
 
 function closeModal() {
@@ -358,16 +356,8 @@ document.getElementById('overlay').addEventListener('click', function(e) {
 
 // ── Submit + redirect ─────────────────────────────────────
 async function submitAndBook() {
-  const name    = document.getElementById('field-name').value.trim();
   const company = document.getElementById('field-company').value.trim();
   const note    = document.getElementById('field-note').value.trim();
-
-  if (!name) {
-    document.getElementById('field-name').focus();
-    document.getElementById('field-name').style.borderColor = '#ef4444';
-    setTimeout(() => document.getElementById('field-name').style.borderColor = '', 2000);
-    return;
-  }
 
   const btn = document.querySelector('.btn-primary');
   btn.textContent = 'Saving...';
@@ -384,9 +374,9 @@ async function submitAndBook() {
     },
     body: JSON.stringify({
       agent_id:          agent.id,
-      contact_name:      name,
-      company:           company || null,
-      note:              note || null,
+      contact_id:        contactId || null,
+      company:           company   || null,
+      note:              note      || null,
       appointment_type:  selectedType.type,
       appointment_label: selectedType.label
     })
