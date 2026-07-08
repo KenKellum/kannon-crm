@@ -839,47 +839,46 @@ function shareBookingLink() { manageBookingTypes(); }
 async function sendBookingLinkEmail(toEmail, personalNote) {
   if (!toEmail || !toEmail.includes('@')) { showToast('Enter a valid email address.'); return; }
 
-  const bookingUrl = `${window.location.origin}/book.html?agent=${currentAgent.id}&context=client&email=${encodeURIComponent(toEmail)}`;
-  const agentName  = currentAgent.name || 'Your Agent';
-
-  // Try Apps Script HTML email first
-  if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'PASTE_APPS_SCRIPT_URL_HERE') {
-    try {
-      const url = new URL(APPS_SCRIPT_URL);
-      url.searchParams.set('action',      'send_booking_link');
-      url.searchParams.set('to',          toEmail);
-      url.searchParams.set('from_name',   agentName);
-      url.searchParams.set('booking_url', bookingUrl);
-      if (personalNote) url.searchParams.set('note', personalNote);
-
-      const res  = await fetch(url.toString());
-      const data = await res.json();
-      if (data.status === 'ok') {
-        showToast(`✓ Booking link sent to ${toEmail}`);
-        document.getElementById('booking-email-to').value   = '';
-        document.getElementById('booking-email-note').value = '';
-        return;
-      }
-    } catch(e) { /* fall through to mailto */ }
+  // Must have Gmail connected — we send through the system, not the local mail client
+  if (!currentAgent.gmail_connected) {
+    showToast('⚠️ Connect your Gmail first (Settings → Gmail Connect)', 5000);
+    return;
   }
 
-  // Fallback: open user's mail client
-  const subject = encodeURIComponent(`${agentName} — Let's Schedule a Meeting`);
-  const bodyLines = [
-    'Hi there,',
-    '',
-    personalNote || "I'd love to connect. Use the link below to pick a time that works for you:",
-    '',
-    bookingUrl,
-    '',
-    'Looking forward to speaking with you.',
-    '',
-    'Best,',
-    agentName,
-    'Kannon Financial Group'
-  ];
-  window.open(`mailto:${encodeURIComponent(toEmail)}?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`);
-  showToast('Opening your email client…');
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'PASTE_APPS_SCRIPT_URL_HERE') {
+    showToast('⚠️ Apps Script URL not configured.'); return;
+  }
+
+  const btn = document.querySelector('#booking-modal-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  try {
+    const url = new URL(APPS_SCRIPT_URL);
+    url.searchParams.set('action',    'send_booking_link');
+    url.searchParams.set('agent_id',  currentAgent.id);
+    url.searchParams.set('to',        toEmail);
+    if (personalNote) url.searchParams.set('note', personalNote);
+
+    const res  = await fetch(url.toString());
+    const data = await res.json();
+
+    if (data.status === 'ok') {
+      showToast(`✓ Booking link sent to ${toEmail} via your Gmail`);
+      document.getElementById('booking-email-to').value   = '';
+      document.getElementById('booking-email-note').value = getDefaultBookingNote();
+    } else {
+      showToast(`⚠️ Send failed: ${data.message || 'Unknown error'}`);
+    }
+  } catch(e) {
+    showToast(`⚠️ Error: ${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+  }
+}
+
+function getDefaultBookingNote() {
+  const name = currentAgent.name || 'I';
+  return `${name} wanted to personally reach out and find a time to connect. Whether you have questions about health coverage, life insurance, or just want to explore your options — I'm here to help.\n\nUse the link above to grab a time that works for you. Takes just a couple minutes to schedule and there's no obligation.\n\nLooking forward to speaking with you!`;
 }
 
 // ============================================================
@@ -1128,10 +1127,10 @@ function manageBookingTypes() {
         <input id="booking-email-to" type="email" placeholder="recipient@example.com"
           style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
       </div>
-      <textarea id="booking-email-note" rows="2" placeholder="Optional personal note — e.g. 'Great chatting with you today, here's my booking link...'"
-        style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:none;margin-bottom:6px;"></textarea>
-      <button onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-email-note').value.trim())"
-        style="background:var(--surface-3);border:0.5px solid var(--border);color:var(--text-primary);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-weight:500;"><i class="ti ti-send" style="margin-right:4px;"></i>Send</button>
+      <textarea id="booking-email-note" rows="4"
+        style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:vertical;margin-bottom:6px;box-sizing:border-box;"></textarea>
+      <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-email-note').value.trim())"
+        style="background:var(--fill-accent);border:none;color:#000;border-radius:6px;padding:7px 16px;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail</button>
     </div>
 
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Appointment Types</div>
@@ -1169,6 +1168,11 @@ function manageBookingTypes() {
       <button onclick="addBookingType()" style="background:#1a3a5c;color:#fff;border:none;border-radius:5px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;">+ Add Type</button>
     </div>
   `, null, { hideConfirm: true });
+  // Pre-populate the default email message after modal renders
+  setTimeout(() => {
+    const noteEl = document.getElementById('booking-email-note');
+    if (noteEl && !noteEl.value) noteEl.value = getDefaultBookingNote();
+  }, 50);
 }
 
 async function addBookingType() {
