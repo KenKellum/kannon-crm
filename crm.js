@@ -3607,31 +3607,30 @@ function apptDetail(id) {
 async function apptSchedule(id) {
   const appt = calAppointments.find(a=>a.id===id);
   const name  = appt ? (appt.booker_name||appt.contact_name||'this appointment') : 'this appointment';
-  // Prefer contact's stored email over what was typed at booking time
-  let email = '';
+  // Best-effort email: linked contact record → booker_email → empty
+  let bestEmail = appt?.booker_email || '';
   if (appt?.contact_id) {
-    const linkedContact = contacts.find(c => c.id === appt.contact_id);
-    email = linkedContact?.email || appt?.booker_email || '';
-  } else {
-    email = appt?.booker_email || '';
+    const linked = contacts.find(c => c.id === appt.contact_id);
+    if (linked?.email) bestEmail = linked.email;
+  }
+  if (!bestEmail) {
+    // Last resort: search contacts by name
+    const byName = contacts.find(c => c.name && c.name.toLowerCase() === name.toLowerCase());
+    if (byName?.email) bestEmail = byName.email;
   }
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(9,0,0,0);
   const pad = n => String(n).padStart(2,'0');
   const defaultDt = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-${pad(tomorrow.getDate())}T09:00`;
-  const emailNote = email
-    ? `A confirmation email will be sent to <strong>${email}</strong> automatically.`
-    : `<span style="color:var(--warning);">No email on file — confirmation email will not be sent.</span>`;
   showModal(`Schedule: ${name}`, `
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">${emailNote}</p>
-    <div style="display:flex;gap:8px;margin-bottom:16px;">
-      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s;" id="sched-lbl-confirm">
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;" id="sched-lbl-confirm">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <input type="radio" name="sched-type" value="confirm" checked onchange="document.getElementById('sched-lbl-confirm').style.borderColor='var(--accent)';document.getElementById('sched-lbl-propose').style.borderColor='var(--border)';" />
           <span style="font-size:12px;font-weight:600;">✅ Confirm this time</span>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Send confirmation email to prospect</div>
       </label>
-      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s;" id="sched-lbl-propose">
+      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;" id="sched-lbl-propose">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <input type="radio" name="sched-type" value="propose" onchange="document.getElementById('sched-lbl-propose').style.borderColor='var(--accent)';document.getElementById('sched-lbl-confirm').style.borderColor='var(--border)';" />
           <span style="font-size:12px;font-weight:600;">📧 Propose new time</span>
@@ -3639,40 +3638,43 @@ async function apptSchedule(id) {
         <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Ask prospect to confirm this time</div>
       </label>
     </div>
-    <label>Date &amp; Time <span style="color:var(--danger);">*</span></label>
+    <label>Prospect Email <span style="color:var(--danger);">*</span></label>
+    <input type="email" id="sched-email" value="${bestEmail}" placeholder="prospect@email.com" style="width:100%;box-sizing:border-box;" />
+    <label style="margin-top:12px;">Date &amp; Time <span style="color:var(--danger);">*</span></label>
     <input type="datetime-local" id="sched-dt" value="${defaultDt}" style="width:100%;box-sizing:border-box;" />
     <label style="margin-top:12px;">Notes to prospect (optional)</label>
     <input type="text" id="sched-notes" placeholder="Zoom link, phone number, location, etc." style="width:100%;box-sizing:border-box;" />
   `, async () => {
-    const dtVal = document.getElementById('sched-dt').value;
-    if (!dtVal) { showToast('Please select a date and time'); return false; }
+    const dtVal  = document.getElementById('sched-dt').value;
+    const toEmail = document.getElementById('sched-email').value.trim();
+    if (!dtVal)    { showToast('Please select a date and time'); return false; }
+    if (!toEmail)  { showToast('Please enter the prospect email'); return false; }
     const schedType = document.querySelector('input[name="sched-type"]:checked')?.value || 'confirm';
     const notes  = document.getElementById('sched-notes').value.trim();
     const parsed = new Date(dtVal);
     const isPropose = schedType === 'propose';
     const updates = {
-      status:        isPropose ? 'rescheduled' : 'scheduled',
-      scheduled_at:  parsed.toISOString(),
+      status:         isPropose ? 'rescheduled' : 'scheduled',
+      scheduled_at:   parsed.toISOString(),
       rescheduled_by: isPropose ? 'agent' : null,
+      booker_email:   toEmail,
       ...(notes ? { agent_notes: notes } : {})
     };
     const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
     // Fire-and-forget email via Apps Script
-    if (email) {
-      try {
-        const url = new URL(APPS_SCRIPT_URL);
-        url.searchParams.set('action',            isPropose ? 'appointment_reschedule' : 'appointment_confirm');
-        url.searchParams.set('agent_id',          currentAgent.id);
-        url.searchParams.set('booking_intent_id', id);
-        url.searchParams.set('to',                email);
-        url.searchParams.set('to_name',           name);
-        url.searchParams.set('datetime_iso',      parsed.toISOString());
-        if (notes) url.searchParams.set('notes', notes);
-        fetch(url.toString()); // non-blocking
-      } catch(_) {}
-    }
-    showToast(isPropose ? '📧 Reschedule proposal sent to prospect!' : '📅 Appointment confirmed!');
+    try {
+      const url = new URL(APPS_SCRIPT_URL);
+      url.searchParams.set('action',            isPropose ? 'appointment_reschedule' : 'appointment_confirm');
+      url.searchParams.set('agent_id',          currentAgent.id);
+      url.searchParams.set('booking_intent_id', id);
+      url.searchParams.set('to',                toEmail);
+      url.searchParams.set('to_name',           name);
+      url.searchParams.set('datetime_iso',      parsed.toISOString());
+      if (notes) url.searchParams.set('notes', notes);
+      fetch(url.toString()); // non-blocking
+    } catch(_) {}
+    showToast(isPropose ? '📧 Reschedule proposal sent!' : '📅 Appointment confirmed!');
     const idx = calAppointments.findIndex(a => a.id === id);
     if (idx >= 0) Object.assign(calAppointments[idx], updates);
     calDate = parsed;
