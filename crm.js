@@ -3515,26 +3515,43 @@ function _calDay() {
 function _calPending() {
   const el = document.getElementById('cal-pending');
   if (!el) return;
-  const unscheduled = calAppointments.filter(a => !a.scheduled_at && (!a.status || a.status === 'pending'));
+  // Include both unscheduled (pending) and proposals awaiting prospect reply (rescheduled)
+  const unscheduled = calAppointments.filter(a =>
+    !a.status || a.status === 'pending' || a.status === 'rescheduled'
+  );
   if (unscheduled.length === 0) { el.innerHTML = ''; el.style.marginBottom = '0'; return; }
   el.style.marginBottom = '14px';
   el.innerHTML = `
     <div style="background:rgba(251,191,36,0.05);border:0.5px solid rgba(217,119,6,0.3);border-radius:10px;padding:10px 14px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;">⏳ Unscheduled Requests</span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;">⏳ Needs Attention</span>
         <span style="background:rgba(217,119,6,0.18);color:#b45309;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">${unscheduled.length}</span>
-        <span style="font-size:11px;color:var(--text-muted);margin-left:2px;">— schedule or dismiss each one below</span>
       </div>
       <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;">
         ${unscheduled.map(a => {
           const name = a.booker_name||a.contact_name||'—';
           const received = new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-          return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #d97706;border-radius:8px;padding:9px 11px;">
+          // Status badge
+          let badge = '', borderColor = '#d97706', btnLabel = '📅 Schedule';
+          if (a.status === 'rescheduled' && a.rescheduled_by === 'agent') {
+            badge = `<div style="font-size:10px;background:rgba(234,179,8,0.15);color:#b45309;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">⏳ Awaiting prospect confirm</div>`;
+            borderColor = '#d97706'; btnLabel = '📅 Update';
+          } else if (a.status === 'rescheduled' && a.rescheduled_by === 'prospect') {
+            badge = `<div style="font-size:10px;background:rgba(139,92,246,0.15);color:#7c3aed;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">🔄 Prospect requested reschedule</div>`;
+            borderColor = '#8b5cf6'; btnLabel = '📅 New Time';
+          }
+          // Show proposed time if rescheduled
+          const proposedTime = a.scheduled_at && a.status === 'rescheduled'
+            ? `<div style="font-size:11px;color:var(--text-primary);font-weight:500;margin-bottom:5px;">🗓 ${new Date(a.scheduled_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>`
+            : '';
+          return `<div style="flex-shrink:0;width:230px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid ${borderColor};border-radius:8px;padding:9px 11px;">
+            ${badge}
             <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:1px;">${name}</div>
             ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:7px;">${a.appointment_label||a.appointment_type||'Appointment'} · ${received}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label||a.appointment_type||'Appointment'} · ${received}</div>
+            ${proposedTime}
             <div style="display:flex;gap:4px;">
-              <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">📅 Schedule</button>
+              <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">${btnLabel}</button>
               <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">✕</button>
             </div>
           </div>`;
@@ -3589,30 +3606,69 @@ function apptDetail(id) {
 // ── CRUD ACTIONS (update + refresh calendar) ──
 async function apptSchedule(id) {
   const appt = calAppointments.find(a=>a.id===id);
-  const name = appt ? (appt.booker_name||appt.contact_name||'this appointment') : 'this appointment';
-  // Pre-fill datetime-local with tomorrow 9am as a sensible default
+  const name  = appt ? (appt.booker_name||appt.contact_name||'this appointment') : 'this appointment';
+  const email = appt?.booker_email || '';
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(9,0,0,0);
   const pad = n => String(n).padStart(2,'0');
   const defaultDt = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-${pad(tomorrow.getDate())}T09:00`;
+  const emailNote = email
+    ? `A confirmation email will be sent to <strong>${email}</strong> automatically.`
+    : `<span style="color:var(--warning);">No email on file — confirmation email will not be sent.</span>`;
   showModal(`Schedule: ${name}`, `
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Choose the date and time for this appointment.</p>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">${emailNote}</p>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s;" id="sched-lbl-confirm">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <input type="radio" name="sched-type" value="confirm" checked onchange="document.getElementById('sched-lbl-confirm').style.borderColor='var(--accent)';document.getElementById('sched-lbl-propose').style.borderColor='var(--border)';" />
+          <span style="font-size:12px;font-weight:600;">✅ Confirm this time</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Send confirmation email to prospect</div>
+      </label>
+      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s;" id="sched-lbl-propose">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <input type="radio" name="sched-type" value="propose" onchange="document.getElementById('sched-lbl-propose').style.borderColor='var(--accent)';document.getElementById('sched-lbl-confirm').style.borderColor='var(--border)';" />
+          <span style="font-size:12px;font-weight:600;">📧 Propose new time</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Ask prospect to confirm this time</div>
+      </label>
+    </div>
     <label>Date &amp; Time <span style="color:var(--danger);">*</span></label>
     <input type="datetime-local" id="sched-dt" value="${defaultDt}" style="width:100%;box-sizing:border-box;" />
-    <label style="margin-top:12px;">Internal notes (optional)</label>
-    <input type="text" id="sched-notes" placeholder="Confirmed via phone, Zoom link sent, etc." style="width:100%;box-sizing:border-box;" />
+    <label style="margin-top:12px;">Notes to prospect (optional)</label>
+    <input type="text" id="sched-notes" placeholder="Zoom link, phone number, location, etc." style="width:100%;box-sizing:border-box;" />
   `, async () => {
     const dtVal = document.getElementById('sched-dt').value;
     if (!dtVal) { showToast('Please select a date and time'); return false; }
-    const notes = document.getElementById('sched-notes').value.trim();
+    const schedType = document.querySelector('input[name="sched-type"]:checked')?.value || 'confirm';
+    const notes  = document.getElementById('sched-notes').value.trim();
     const parsed = new Date(dtVal);
-    const updates = { status:'scheduled', scheduled_at:parsed.toISOString() };
-    if (notes) updates.agent_notes = notes;
-    const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
-    if (error) { showToast('Error: '+error.message); return false; }
-    showToast('📅 Scheduled!');
-    const idx = calAppointments.findIndex(a=>a.id===id);
-    if (idx>=0) Object.assign(calAppointments[idx], updates);
-    calDate = parsed; // jump calendar to scheduled date
+    const isPropose = schedType === 'propose';
+    const updates = {
+      status:        isPropose ? 'rescheduled' : 'scheduled',
+      scheduled_at:  parsed.toISOString(),
+      rescheduled_by: isPropose ? 'agent' : null,
+      ...(notes ? { agent_notes: notes } : {})
+    };
+    const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id', id);
+    if (error) { showToast('Error: ' + error.message); return false; }
+    // Fire-and-forget email via Apps Script
+    if (email) {
+      try {
+        const url = new URL(APPS_SCRIPT_URL);
+        url.searchParams.set('action',            isPropose ? 'appointment_reschedule' : 'appointment_confirm');
+        url.searchParams.set('agent_id',          currentAgent.id);
+        url.searchParams.set('booking_intent_id', id);
+        url.searchParams.set('to',                email);
+        url.searchParams.set('to_name',           name);
+        url.searchParams.set('datetime_iso',      parsed.toISOString());
+        if (notes) url.searchParams.set('notes', notes);
+        fetch(url.toString()); // non-blocking
+      } catch(_) {}
+    }
+    showToast(isPropose ? '📧 Reschedule proposal sent to prospect!' : '📅 Appointment confirmed!');
+    const idx = calAppointments.findIndex(a => a.id === id);
+    if (idx >= 0) Object.assign(calAppointments[idx], updates);
+    calDate = parsed;
     _calRenderView();
   });
 }
