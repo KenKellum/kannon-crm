@@ -39,6 +39,7 @@ let applications = [];
 let dialerQueue = [];
 let dialerIndex = 0;
 let totalContactCountFull = 0; // True DB count bypassing 1000-row cap
+let previewRole = null; // system_owner can preview other role views
 
 // ============================================================
 // INIT
@@ -168,6 +169,22 @@ async function showApp() {
   // Render role-based sidebar nav
   renderSidebarNav();
 
+  // System owner gets role-preview tabs in topbar
+  if (currentAgent.role === 'system_owner') {
+    const right = document.getElementById('topbar-page-title');
+    if (right && !document.getElementById('role-switcher')) {
+      const sw = document.createElement('div');
+      sw.id = 'role-switcher';
+      sw.style.cssText = 'display:flex;gap:2px;background:var(--surface-0);padding:2px;border-radius:8px;border:0.5px solid var(--border);margin-left:12px;';
+      sw.innerHTML = `
+        <button id="rsw-owner" onclick="switchPreviewRole('system_owner')" style="padding:4px 11px;border-radius:6px;font-size:11px;border:none;cursor:pointer;background:var(--surface-2);color:var(--text-primary);font-weight:500;">System owner</button>
+        <button id="rsw-agency" onclick="switchPreviewRole('agency_owner')" style="padding:4px 11px;border-radius:6px;font-size:11px;border:none;cursor:pointer;background:none;color:var(--text-muted);">Agency owner</button>
+        <button id="rsw-agent" onclick="switchPreviewRole('agent')" style="padding:4px 11px;border-radius:6px;font-size:11px;border:none;cursor:pointer;background:none;color:var(--text-muted);">Agent</button>
+      `;
+      right.insertAdjacentElement('afterend', sw);
+    }
+  }
+
   await loadData();
   showPage('dashboard');
   showAIBubble();
@@ -220,7 +237,7 @@ function getNavBadges() {
 function renderSidebarNav() {
   const container = document.getElementById('sidebar-nav-container');
   if (!container) return;
-  const role = currentAgent.role;
+  const role = previewRole || currentAgent.role;
   const b = getNavBadges();
 
   const navConfig = {
@@ -326,9 +343,10 @@ async function loadData() {
 // DASHBOARD — role-adaptive
 // ============================================================
 function renderDashboard() {
-  if (currentAgent.role === 'system_owner') {
+  const role = previewRole || currentAgent.role;
+  if (role === 'system_owner') {
     renderDashboardOwner();
-  } else if (currentAgent.role === 'agency_owner') {
+  } else if (role === 'agency_owner') {
     renderDashboardAgency();
   } else {
     renderDashboardAgent();
@@ -797,6 +815,21 @@ function renderDashboard_UNUSED() {
       </div>
     </div>
   `;
+}
+
+function switchPreviewRole(role) {
+  previewRole = role;
+  // Update tab highlight
+  ['owner','agency','agent'].forEach(r => {
+    const btn = document.getElementById('rsw-' + (r === 'owner' ? 'owner' : r === 'agency' ? 'agency' : 'agent'));
+    if (!btn) return;
+    const isActive = (role === 'system_owner' && r === 'owner') || (role === 'agency_owner' && r === 'agency') || (role === 'agent' && r === 'agent');
+    btn.style.background = isActive ? 'var(--surface-2)' : 'none';
+    btn.style.color = isActive ? 'var(--text-primary)' : 'var(--text-muted)';
+    btn.style.fontWeight = isActive ? '500' : '400';
+  });
+  renderSidebarNav();
+  renderDashboard();
 }
 
 function shareBookingLink() { manageBookingTypes(); }
