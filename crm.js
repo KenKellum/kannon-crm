@@ -2789,4 +2789,7 @@ function renderAIMessages() {
   if (document.getElementById('dash-ai-card')) renderDashAICard();
 }
 
-// =============
+// ============================================================
+// STARTUP
+// ============================================================
+init();
