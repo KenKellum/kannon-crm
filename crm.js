@@ -430,6 +430,7 @@ function renderDashboardOwner() {
     <div class="dash-header">
       <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr}</div></div>
       <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
         <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add Lead</button>
         <button class="btn btn-outline btn-sm" onclick="syncGoogleContacts()"><i class="ti ti-refresh"></i> Sync</button>
       </div>
@@ -520,6 +521,7 @@ function renderDashboardAgency() {
     <div class="dash-header">
       <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr} &nbsp;·&nbsp; <span style="color:var(--text-muted);">${agencyName}</span></div></div>
       <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
         <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add Lead</button>
         <button class="btn btn-outline btn-sm" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Work leads</button>
       </div>
@@ -834,6 +836,52 @@ function switchPreviewRole(role) {
 
 function shareBookingLink() { manageBookingTypes(); }
 
+async function sendBookingLinkEmail(toEmail, personalNote) {
+  if (!toEmail || !toEmail.includes('@')) { showToast('Enter a valid email address.'); return; }
+
+  const bookingUrl = `${window.location.origin}/book.html?agent=${currentAgent.id}&context=client&email=${encodeURIComponent(toEmail)}`;
+  const agentName  = currentAgent.name || 'Your Agent';
+
+  // Try Apps Script HTML email first
+  if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'PASTE_APPS_SCRIPT_URL_HERE') {
+    try {
+      const url = new URL(APPS_SCRIPT_URL);
+      url.searchParams.set('action',      'send_booking_link');
+      url.searchParams.set('to',          toEmail);
+      url.searchParams.set('from_name',   agentName);
+      url.searchParams.set('booking_url', bookingUrl);
+      if (personalNote) url.searchParams.set('note', personalNote);
+
+      const res  = await fetch(url.toString());
+      const data = await res.json();
+      if (data.status === 'ok') {
+        showToast(`✓ Booking link sent to ${toEmail}`);
+        document.getElementById('booking-email-to').value   = '';
+        document.getElementById('booking-email-note').value = '';
+        return;
+      }
+    } catch(e) { /* fall through to mailto */ }
+  }
+
+  // Fallback: open user's mail client
+  const subject = encodeURIComponent(`${agentName} — Let's Schedule a Meeting`);
+  const bodyLines = [
+    'Hi there,',
+    '',
+    personalNote || "I'd love to connect. Use the link below to pick a time that works for you:",
+    '',
+    bookingUrl,
+    '',
+    'Looking forward to speaking with you.',
+    '',
+    'Best,',
+    agentName,
+    'Kannon Financial Group'
+  ];
+  window.open(`mailto:${encodeURIComponent(toEmail)}?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`);
+  showToast('Opening your email client…');
+}
+
 // ============================================================
 // WORK MY LEADS — Power Dialer
 // ============================================================
@@ -1065,14 +1113,25 @@ function manageBookingTypes() {
   }
 
   showModal('&#128197; Booking Types', `
-    <div style="margin-bottom:18px;">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:6px;">Your booking page (client-facing):</p>
+    <div style="margin-bottom:14px;">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Your booking page (client-facing):</p>
       <div style="display:flex;gap:8px;">
         <input id="booking-page-url" readonly value="${myUrl}&context=client"
-          style="flex:1;font-size:12px;color:#1a3a5c;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:7px 10px;" />
-        <button onclick="navigator.clipboard.writeText(document.getElementById('booking-page-url').value).then(()=>showToast('Copied!'))"
-          style="border:none;background:#1a3a5c;color:#fff;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;white-space:nowrap;">Copy</button>
+          style="flex:1;font-size:12px;background:var(--surface-3);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
+        <button onclick="navigator.clipboard.writeText(document.getElementById('booking-page-url').value).then(()=>showToast('Link copied!'))"
+          style="border:none;background:var(--fill-accent);color:#000;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;white-space:nowrap;font-weight:600;">Copy</button>
       </div>
+    </div>
+    <div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px;">
+      <p style="font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:8px;"><i class="ti ti-mail" style="margin-right:4px;"></i>Send booking link by email</p>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <input id="booking-email-to" type="email" placeholder="recipient@example.com"
+          style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
+      </div>
+      <textarea id="booking-email-note" rows="2" placeholder="Optional personal note — e.g. 'Great chatting with you today, here's my booking link...'"
+        style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:none;margin-bottom:6px;"></textarea>
+      <button onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-email-note').value.trim())"
+        style="background:var(--surface-3);border:0.5px solid var(--border);color:var(--text-primary);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-weight:500;"><i class="ti ti-send" style="margin-right:4px;"></i>Send</button>
     </div>
 
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Appointment Types</div>
@@ -2730,7 +2789,4 @@ function renderAIMessages() {
   if (document.getElementById('dash-ai-card')) renderDashAICard();
 }
 
-// ============================================================
-// BOOT
-// ============================================================
-init();
+// =============

@@ -297,6 +297,14 @@
     </div>
     <div class="modal-body">
       <div class="form-group">
+        <label>Your Name <span style="color:#ef4444;">*</span></label>
+        <input type="text" id="field-name" placeholder="Jane Smith" autocomplete="name" required>
+      </div>
+      <div class="form-group">
+        <label>Your Email <span style="color:#ef4444;">*</span></label>
+        <input type="email" id="field-email" placeholder="jane@company.com" autocomplete="email" required>
+      </div>
+      <div class="form-group">
         <label>Company Name <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
         <input type="text" id="field-company" placeholder="Big Sky Brewing Co." autocomplete="organization">
         <p style="font-size:12px;color:#94a3b8;margin-top:5px;line-height:1.4;">If you're looking for coverage for your business or employees, enter your company name here.</p>
@@ -321,7 +329,8 @@ const params     = new URLSearchParams(window.location.search);
 const agentId    = params.get('agent');
 const context    = params.get('context') || 'all'; // client | recruit | all
 const preCompany = params.get('co')      || '';     // pre-filled company from email
-const contactId  = params.get('cid')    || '';     // contact ID for logging
+const preEmail   = params.get('email')   || '';     // pre-filled email (when sent via CRM)
+const contactId  = params.get('cid')     || '';     // contact ID for existing contacts
 
 let selectedType = null;
 let agent = null;
@@ -385,11 +394,13 @@ function renderPage() {
 function openModal(typeObj) {
   selectedType = typeObj;
   document.getElementById('modal-title').textContent = typeObj.label;
-  document.getElementById('modal-subtitle').textContent = '⏱ ' + typeObj.duration + '  ·  One quick question before you book';
-  document.getElementById('field-company').value = preCompany; // pre-fill if from email
+  document.getElementById('modal-subtitle').textContent = '⏱ ' + typeObj.duration + '  ·  Just a couple details before you book';
+  document.getElementById('field-name').value    = '';
+  document.getElementById('field-email').value   = preEmail;
+  document.getElementById('field-company').value = preCompany;
   document.getElementById('field-note').value    = '';
   document.getElementById('overlay').classList.add('active');
-  setTimeout(() => document.getElementById('field-company').focus(), 100);
+  setTimeout(() => document.getElementById('field-name').focus(), 100);
 }
 
 function closeModal() {
@@ -403,31 +414,94 @@ document.getElementById('overlay').addEventListener('click', function(e) {
 
 // ── Submit + redirect ─────────────────────────────────────
 async function submitAndBook() {
-  const company = document.getElementById('field-company').value.trim();
-  const note    = document.getElementById('field-note').value.trim();
+  const visitorName  = document.getElementById('field-name').value.trim();
+  const visitorEmail = document.getElementById('field-email').value.trim();
+  const company      = document.getElementById('field-company').value.trim();
+  const note         = document.getElementById('field-note').value.trim();
+
+  if (!visitorName) {
+    document.getElementById('field-name').focus();
+    document.getElementById('field-name').style.borderColor = '#ef4444';
+    return;
+  }
+  if (!visitorEmail || !visitorEmail.includes('@')) {
+    document.getElementById('field-email').focus();
+    document.getElementById('field-email').style.borderColor = '#ef4444';
+    return;
+  }
 
   const btn = document.querySelector('.btn-primary');
   btn.textContent = 'Saving...';
   btn.disabled = true;
 
-  // Save intent to Supabase (fire and forget — don't block on it)
+  // ── Resolve or create contact ──────────────────────────
+  let resolvedContactId = contactId || null;
+  try {
+    // Check if contact already exists for this agent
+    const checkRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/contacts?email=eq.${encodeURIComponent(visitorEmail)}&agent_id=eq.${agent.id}&select=id,sequence_status`,
+      { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
+    );
+    const existing = await checkRes.json();
+
+    if (existing && existing.length > 0) {
+      // Contact exists — bump to Replied so they exit cold sequences
+      resolvedContactId = existing[0].id;
+      if (existing[0].sequence_status !== 'Replied' && existing[0].sequence_status !== 'Closed') {
+        await fetch(`${SUPABASE_URL}/rest/v1/contacts?id=eq.${resolvedContactId}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
+            'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ sequence_status: 'Replied' })
+        });
+      }
+    } else {
+      // New contact — create at Replied level so they skip cold sequences
+      const contactType = (selectedType && selectedType.context === 'recruit') ? 'Recruit' : 'Individual & Family';
+      const createRes = await fetch(`${SUPABASE_URL}/rest/v1/contacts`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
+          'Content-Type': 'application/json', 'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          name:             visitorName,
+          email:            visitorEmail,
+          company:          company || null,
+          agent_id:         agent.id,
+          contact_type:     contactType,
+          sequence_status:  'Replied',
+          notes:            note ? `Booked via booking page. Note: ${note}` : 'Booked via booking page.'
+        })
+      });
+      const created = await createRes.json();
+      if (created && created.length > 0) resolvedContactId = created[0].id;
+    }
+  } catch(e) {
+    // Don't block redirect on contact errors — log and continue
+    console.error('Contact upsert error:', e);
+  }
+
+  // ── Save booking intent (fire and forget) ──────────────
   fetch(`${SUPABASE_URL}/rest/v1/booking_intents`, {
     method: 'POST',
     headers: {
-      'apikey': SUPABASE_ANON,
-      'Authorization': 'Bearer ' + SUPABASE_ANON,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal'
+      'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
+      'Content-Type': 'application/json', 'Prefer': 'return=minimal'
     },
     body: JSON.stringify({
       agent_id:          agent.id,
-      contact_id:        contactId || null,
+      contact_id:        resolvedContactId,
       company:           company   || null,
       note:              note      || null,
       appointment_type:  selectedType.type,
-      appointment_label: selectedType.label
+      appointment_label: selectedType.label,
+      booker_name:       visitorName,
+      booker_email:      visitorEmail
     })
-  }).catch(() => {}); // swallow errors — don't block redirect
+  }).catch(() => {});
 
   // Small delay so the save fires, then redirect to Google Calendar
   await new Promise(r => setTimeout(r, 400));
