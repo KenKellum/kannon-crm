@@ -963,7 +963,7 @@ async function bookingLinkLookupContact(email) {
   _bookingLookupTimer = setTimeout(async () => {
     const { data } = await supabaseClient
       .from('contacts')
-      .select('id,name')
+      .select('id,name,type,pipeline')
       .eq('email', email.toLowerCase())
       .eq('owner_id', currentAgent.id)
       .limit(1);
@@ -973,8 +973,15 @@ async function bookingLinkLookupContact(email) {
       const parts = (c.name || '').split(' ');
       if (firstEl) firstEl.value = parts[0] || '';
       if (lastEl)  lastEl.value  = parts.slice(1).join(' ') || '';
+      // Auto-fill contact type dropdown
+      const typeEl = document.getElementById('booking-contact-type');
+      if (typeEl) {
+        let dropVal = c.type || 'Individual/Family';
+        if (c.type === 'Recruit') dropVal = 'Recruit|' + (c.pipeline || 'agent-kannon');
+        typeEl.value = dropVal;
+      }
       statusEl.style.color = '#16a34a';
-      statusEl.textContent = `✓ Existing contact: ${c.name}`;
+      statusEl.textContent = `✓ Existing contact: ${c.name} (${c.type || 'Individual/Family'})`;
     } else {
       if (firstEl && !firstEl.value) firstEl.value = '';
       statusEl.style.color = 'var(--muted)';
