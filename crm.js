@@ -343,106 +343,133 @@ function _dashGreeting(name) {
   return { g, firstName, dateStr };
 }
 
+function _ctitle(icon, text) {
+  return `<div class="dash-card-title"><i class="ti ${icon}"></i>${text}</div>`;
+}
+
+function _seqTable(contacts, totalContacts) {
+  const maxStep = totalContacts || 1;
+  const step1 = contacts.filter(c => c.sequence_step >= 1).length;
+  const step2 = contacts.filter(c => c.sequence_step >= 2).length;
+  const step3 = contacts.filter(c => c.sequence_step >= 3).length;
+  const replied = contacts.filter(c => c.sequence_status === 'Replied').length;
+  return `
+    <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
+    <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
+    <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
+    <div class="seq-row"><div><div class="seq-label" style="color:#a78bfa;">Replied / Interested</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#a78bfa;">${replied}</div></div>
+    <div style="margin-top:10px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>`;
+}
+
+function renderDashAICard() {
+  const el = document.getElementById('dash-ai-card');
+  if (!el) return;
+  const msgs = aiHistory.slice(-4);
+  const msgsHtml = msgs.length === 0
+    ? `<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Hi ${(currentAgent.name||'').split(' ')[0]} — ask me anything about your CRM data, contacts, or pipeline.</div>`
+    : msgs.map(m => `<div style="background:${m.role==='user'?'var(--bg-accent)':'var(--surface-3)'};border:0.5px solid ${m.role==='user'?'rgba(200,168,75,0.25)':'var(--border)'};border-radius:7px;padding:8px 11px;font-size:12px;line-height:1.5;color:var(--text-primary);margin-bottom:5px;">${m.content.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`).join('');
+  el.innerHTML = `
+    <div style="flex:1;overflow-y:auto;margin-bottom:8px;">${msgsHtml}</div>
+    <div style="display:flex;gap:6px;">
+      <input id="dash-ai-input" type="text" placeholder="Ask me to query, fix, or explain anything…" style="flex:1;border-radius:20px;padding:7px 12px;font-size:12px;background:var(--surface-3);border-color:var(--border);" onkeydown="if(event.key==='Enter')sendDashAIMessage()" />
+      <button onclick="sendDashAIMessage()" style="width:30px;height:30px;border-radius:50%;background:var(--fill-accent);border:none;color:#000;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">&#10148;</button>
+    </div>`;
+}
+
+function sendDashAIMessage() {
+  const input = document.getElementById('dash-ai-input');
+  if (!input || !input.value.trim()) return;
+  const text = input.value.trim();
+  input.value = '';
+  sendAIMessage(text);
+  setTimeout(renderDashAICard, 200);
+}
+
 function renderDashboardOwner() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
 
   const totalContacts = totalContactCountFull || contacts.length;
-  const inSequence  = contacts.filter(c => c.sequence_status === 'Active').length;
-  const replied     = contacts.filter(c => c.sequence_status === 'Replied').length;
-  const bounced     = contacts.filter(c => c.email_status === 'bounced').length;
-  const optedOut    = contacts.filter(c => c.opt_out_email).length;
+  const inSequence   = contacts.filter(c => c.sequence_status === 'Active').length;
+  const replied      = contacts.filter(c => c.sequence_status === 'Replied').length;
+  const bounced      = contacts.filter(c => c.email_status === 'bounced').length;
+  const optedOut     = contacts.filter(c => c.opt_out_email).length;
   const activeAgents = allAgents.filter(a => a.status === 'active' || !a.status).length;
   const pendingApps  = applications.length;
-  const step1 = contacts.filter(c => c.sequence_step >= 1).length;
-  const step2 = contacts.filter(c => c.sequence_step >= 2).length;
-  const step3 = contacts.filter(c => c.sequence_step >= 3).length;
-  const maxStep = totalContacts || 1;
+  const delivPct     = totalContacts > 0 ? Math.round((1 - bounced / totalContacts) * 100) : 100;
 
   const agencyMap = {};
   contacts.forEach(c => { if (c.agency_id) agencyMap[c.agency_id] = (agencyMap[c.agency_id] || 0) + 1; });
   const agencyRows = allAgencies.map(ag => ({
     name: ag.name || 'Unknown', id: ag.id,
     contactCount: agencyMap[ag.id] || 0,
-    agentCount: allAgents.filter(a => a.agency_id === ag.id).length
+    agentCount: allAgents.filter(a => a.agency_id === ag.id).length,
+    replied: contacts.filter(c => c.agency_id === ag.id && c.sequence_status === 'Replied').length,
+    openRate: agencyMap[ag.id] > 0 ? Math.round(contacts.filter(c => c.agency_id === ag.id && c.sequence_status === 'Replied').length / (agencyMap[ag.id] || 1) * 100) : 0,
   })).sort((a, b) => b.contactCount - a.contactCount);
-
-  const agentContactMap = {}, agentRepliedMap = {};
-  contacts.forEach(c => { if (c.agent_id) agentContactMap[c.agent_id] = (agentContactMap[c.agent_id] || 0) + 1; });
-  contacts.filter(c => c.sequence_status === 'Replied').forEach(c => { if (c.agent_id) agentRepliedMap[c.agent_id] = (agentRepliedMap[c.agent_id] || 0) + 1; });
-  const topAgents = [...allAgents]
-    .map(a => ({ ...a, contactCount: agentContactMap[a.id] || 0, repliedCount: agentRepliedMap[a.id] || 0 }))
-    .sort((a, b) => b.contactCount - a.contactCount).slice(0, 8);
 
   el.innerHTML = `
     <div class="dash-header">
-      <div><div class="dash-greeting">${g}, ${firstName}! &#128075;</div><div class="dash-date">${dateStr}</div></div>
-      <button class="btn btn-outline" onclick="shareBookingLink()">&#128197; Share Booking Link</button>
+      <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr}</div></div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add Lead</button>
+        <button class="btn btn-outline btn-sm" onclick="syncGoogleContacts()"><i class="ti ti-refresh"></i> Sync</button>
+      </div>
     </div>
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total Contacts</div></div>
-      <div class="stat-card" style="border-left-color:#3b82f6;"><div class="stat-num">${inSequence}</div><div class="stat-label">In Sequence</div></div>
-      <div class="stat-card" style="border-left-color:#8b5cf6;"><div class="stat-num">${replied}</div><div class="stat-label">Replied</div></div>
-      <div class="stat-card" style="border-left-color:#10b981;"><div class="stat-num">${activeAgents}</div><div class="stat-label">Active Agents</div></div>
-      <div class="stat-card" style="border-left-color:${bounced > 0 ? '#ef4444' : '#10b981'};"><div class="stat-num">${bounced}</div><div class="stat-label">Email Bounces</div></div>
-    </div>
-    <div class="quick-actions">
-      <button class="qa-btn" onclick="showPage('contacts'); openAddContact()">&#43; Add Lead</button>
-      <button class="qa-btn" onclick="showPage('opens')">&#128140; Email Opens</button>
-      <button class="qa-btn" onclick="showPage('contacts')">&#128101; All Contacts</button>
-      <button class="qa-btn" onclick="showPage('pipelines')">&#128202; Pipelines</button>
-      <button class="qa-btn" onclick="showPage('campaigns')">&#128247; Campaigns</button>
-      <button class="qa-btn" onclick="showPage('admin')">&#9881;&#65039; Admin Panel</button>
-      <button class="qa-btn" onclick="syncGoogleContacts()">&#128257; Sync Google</button>
+    <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div><div class="stat-delta">+${contacts.filter(c=>{ const d=new Date(c.created_at); return (Date.now()-d)<30*86400000; }).length} this month</div></div>
+      <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${activeAgents}</div><div class="stat-label">Active agents</div><div class="stat-delta">${pendingApps > 0 ? pendingApps+' pending' : 'All active'}</div></div>
+      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${delivPct}%</div><div class="stat-label">Deliverability</div><div class="${bounced > 0 ? 'stat-delta-warn' : 'stat-delta'}">${bounced > 0 ? bounced+' bounces' : 'Clean list'}</div></div>
+      <div class="stat-card" style="border-left-color:${bounced > 0 ? '#f87171' : '#34d399'};background:${bounced > 0 ? 'rgba(248,113,113,0.05)' : 'rgba(52,211,153,0.05)'};"><div class="stat-num">${bounced}</div><div class="stat-label">Bounces</div><div class="${bounced > 0 ? 'stat-delta-warn' : 'stat-delta'}">${bounced > 0 ? 'Needs review' : 'None flagged'}</div></div>
     </div>
     <div class="dash-grid">
-      <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
-          <div class="dash-card-title">&#128308; System Health</div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Supabase Database</div><div class="action-item-sub">Project: ilrylhseqnllmejebozq</div></div><span class="badge badge-active">&#10003; Operational</span></div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Vercel Deployment</div><div class="action-item-sub">Auto-deploy on push</div></div><span class="badge badge-active">&#10003; Live</span></div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email Sequences</div><div class="action-item-sub">Apps Script trigger</div></div><span class="badge badge-active">&#10003; Running</span></div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email Bounces</div><div class="action-item-sub">${bounced} flagged contacts</div></div>${bounced > 0 ? `<button class="btn btn-outline btn-sm" onclick="showPage('compliance')">Review</button>` : '<span class="badge badge-active">&#10003; Clean</span>'}</div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Opted Out</div><div class="action-item-sub">${optedOut} contacts suppressed</div></div><span class="badge" style="background:#f3f4f6;color:#374151;">${optedOut}</span></div>
-          ${pendingApps > 0 ? `<div class="action-item"><div class="action-item-info"><div class="action-item-name">Agent Applications</div><div class="action-item-sub">${pendingApps} pending review</div></div><button class="btn btn-accent btn-sm" onclick="showPage('admin')">Review</button></div>` : ''}
+          ${_ctitle('ti-activity', 'System health')}
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Supabase database</div><div class="action-item-sub">Project: ilrylhseqnllmejebozq</div></div><span class="badge badge-active"><i class="ti ti-check"></i> Operational</span></div>
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Vercel deploy</div><div class="action-item-sub">Auto-deploy on push</div></div><span class="badge badge-active"><i class="ti ti-check"></i> Live</span></div>
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email sequences</div><div class="action-item-sub">Apps Script trigger</div></div><span class="badge badge-active"><i class="ti ti-check"></i> Running</span></div>
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Bounce flags</div><div class="action-item-sub">${bounced} flagged contacts</div></div>${bounced > 0 ? `<button class="btn btn-outline btn-sm" onclick="showPage('compliance')">Review</button>` : `<span class="badge badge-active"><i class="ti ti-check"></i> Clean</span>`}</div>
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Opted out</div><div class="action-item-sub">${optedOut} suppressed</div></div><span class="badge badge-completed">${optedOut}</span></div>
+          ${pendingApps > 0 ? `<div class="action-item"><div class="action-item-info"><div class="action-item-name">Agent applications</div><div class="action-item-sub">${pendingApps} pending review</div></div><button class="btn btn-primary btn-sm" onclick="showPage('admin')">Review</button></div>` : ''}
         </div>
         <div class="dash-card">
-          <div class="dash-card-title">&#128101; Agent Performance</div>
-          ${topAgents.length === 0 ? '<p style="font-size:13px;color:var(--muted);text-align:center;padding:16px 0;">No agents yet.</p>' : `
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          ${_ctitle('ti-building-community', 'Agency snapshot')}
+          ${agencyRows.length === 0 ? `<p style="font-size:13px;color:var(--text-muted);padding:12px 0;">No agencies yet.</p>` : `
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
             <thead><tr>
-              <th style="text-align:left;font-size:11px;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Agent</th>
-              <th style="text-align:right;font-size:11px;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Contacts</th>
-              <th style="text-align:right;font-size:11px;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Replied</th>
+              <th style="text-align:left;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Agency</th>
+              <th style="text-align:right;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Agents</th>
+              <th style="text-align:right;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Contacts</th>
+              <th style="text-align:right;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Replies</th>
+              <th style="text-align:right;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Open rate</th>
             </tr></thead>
-            <tbody>${topAgents.map(a => `<tr><td style="padding:7px 0;border-bottom:1px solid var(--border);">${a.name || a.email}</td><td style="text-align:right;padding:7px 0;border-bottom:1px solid var(--border);font-weight:600;">${a.contactCount.toLocaleString()}</td><td style="text-align:right;padding:7px 0;border-bottom:1px solid var(--border);color:#8b5cf6;font-weight:600;">${a.repliedCount}</td></tr>`).join('')}</tbody>
+            <tbody>${agencyRows.map(ag => `<tr>
+              <td style="padding:7px 0;border-bottom:0.5px solid var(--border);font-weight:500;color:var(--text-primary);">${ag.name}</td>
+              <td style="text-align:right;padding:7px 0;border-bottom:0.5px solid var(--border);color:var(--text-secondary);">${ag.agentCount}</td>
+              <td style="text-align:right;padding:7px 0;border-bottom:0.5px solid var(--border);font-weight:500;">${ag.contactCount.toLocaleString()}</td>
+              <td style="text-align:right;padding:7px 0;border-bottom:0.5px solid var(--border);color:var(--text-success);">${ag.replied}</td>
+              <td style="text-align:right;padding:7px 0;border-bottom:0.5px solid var(--border);color:var(--text-accent);">${ag.openRate}%</td>
+            </tr>`).join('')}</tbody>
           </table>`}
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:16px;">
-        <div class="dash-card">
-          <div class="dash-card-title">&#128140; Outreach Sequence Status</div>
-          <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
-          <div class="seq-row"><div><div class="seq-label" style="color:#5b21b6;font-weight:700;">Replied / Interested &#127881;</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#5b21b6;">${replied}</div></div>
-          <div style="margin-top:12px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div class="dash-card" style="flex:1;display:flex;flex-direction:column;min-height:320px;">
+          ${_ctitle('ti-robot', 'AI assistant')}
+          <div id="dash-ai-card" style="flex:1;display:flex;flex-direction:column;background:var(--surface-1);border:0.5px solid rgba(200,168,75,0.2);border-radius:8px;padding:11px;overflow:hidden;"></div>
+          <div style="margin-top:8px;text-align:right;">
+            <button class="btn btn-outline btn-sm" onclick="toggleAIPanel()"><i class="ti ti-external-link"></i> Open full panel</button>
+          </div>
         </div>
         <div class="dash-card">
-          <div class="dash-card-title">&#127970; Agency Snapshot</div>
-          ${agencyRows.length === 0 ? '<p style="font-size:13px;color:var(--muted);">No agencies found.</p>' : `
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <thead><tr>
-              <th style="text-align:left;font-size:11px;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Agency</th>
-              <th style="text-align:right;font-size:11px;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Agents</th>
-              <th style="text-align:right;font-size:11px;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Contacts</th>
-            </tr></thead>
-            <tbody>${agencyRows.map(ag => `<tr><td style="padding:7px 0;border-bottom:1px solid var(--border);">${ag.name}</td><td style="text-align:right;padding:7px 0;border-bottom:1px solid var(--border);">${ag.agentCount}</td><td style="text-align:right;padding:7px 0;border-bottom:1px solid var(--border);font-weight:600;">${ag.contactCount.toLocaleString()}</td></tr>`).join('')}</tbody>
-          </table>`}
+          ${_ctitle('ti-mail-opened', 'Outreach sequence')}
+          ${_seqTable(contacts, totalContacts)}
         </div>
       </div>
     </div>
   `;
+  renderDashAICard();
 }
 
 function renderDashboardAgency() {
@@ -451,64 +478,94 @@ function renderDashboardAgency() {
   const agencyName = currentAgent.agencies?.name || 'Your agency';
 
   const totalContacts = contacts.length;
-  const inSequence  = contacts.filter(c => c.sequence_status === 'Active').length;
-  const replied     = contacts.filter(c => c.sequence_status === 'Replied').length;
-  const activeDeals = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
-  const pendingApps = applications.length;
-  const step1 = contacts.filter(c => c.sequence_step >= 1).length;
-  const step2 = contacts.filter(c => c.sequence_step >= 2).length;
-  const step3 = contacts.filter(c => c.sequence_step >= 3).length;
-  const maxStep = totalContacts || 1;
+  const inSequence   = contacts.filter(c => c.sequence_status === 'Active').length;
+  const replied      = contacts.filter(c => c.sequence_status === 'Replied').length;
+  const pendingApps  = applications.length;
+  const openRatePct  = totalContacts > 0 ? Math.round(replied / totalContacts * 100) : 0;
 
   const myAgents = allAgents.filter(a => a.agency_id === currentAgent.agency_id);
-  const agentCMap = {}, agentRMap = {};
+  const agentCMap = {}, agentRMap = {}, agentDMap = {};
   contacts.forEach(c => { if (c.agent_id) agentCMap[c.agent_id] = (agentCMap[c.agent_id] || 0) + 1; });
   contacts.filter(c => c.sequence_status === 'Replied').forEach(c => { if (c.agent_id) agentRMap[c.agent_id] = (agentRMap[c.agent_id] || 0) + 1; });
-  const ranked = myAgents.map(a => ({ ...a, cnt: agentCMap[a.id] || 0, rep: agentRMap[a.id] || 0 })).sort((a, b) => b.cnt - a.cnt);
-  const medals = ['&#129351;','&#129352;','&#129353;'];
+  deals.forEach(d => { if (d.agent_id) agentDMap[d.agent_id] = (agentDMap[d.agent_id] || 0) + 1; });
+  const ranked = myAgents.map(a => ({ ...a, cnt: agentCMap[a.id] || 0, rep: agentRMap[a.id] || 0, dls: agentDMap[a.id] || 0 })).sort((a, b) => b.cnt - a.cnt);
+  const medals = ['🥇','🥈','🥉'];
+
+  // Campaign-level stats from deals by type/stage
+  const activeCampaigns = [
+    { name: 'State Farm sequence', contacts: contacts.filter(c=>c.contact_type==='Recruit').length, open: openRatePct },
+    { name: 'B2B group track', contacts: contacts.filter(c=>c.contact_type==='Group').length, open: 0 },
+    { name: 'B2C individual track', contacts: contacts.filter(c=>c.contact_type==='Individual').length, open: 0 },
+  ].filter(c => c.contacts > 0);
 
   el.innerHTML = `
     <div class="dash-header">
-      <div><div class="dash-greeting">${g}, ${firstName}! &#128075; <span style="font-size:13px;color:var(--muted);margin-left:8px;">${agencyName}</span></div><div class="dash-date">${dateStr}</div></div>
-      <button class="btn btn-outline" onclick="shareBookingLink()">&#128197; Share Booking Link</button>
+      <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr} &nbsp;·&nbsp; <span style="color:var(--text-muted);">${agencyName}</span></div></div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add Lead</button>
+        <button class="btn btn-outline btn-sm" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Work leads</button>
+      </div>
     </div>
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Agency Contacts</div></div>
-      <div class="stat-card" style="border-left-color:#3b82f6;"><div class="stat-num">${inSequence}</div><div class="stat-label">In Sequence</div></div>
-      <div class="stat-card" style="border-left-color:#8b5cf6;"><div class="stat-num">${replied}</div><div class="stat-label">Replied</div></div>
-      <div class="stat-card" style="border-left-color:#10b981;"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active Deals</div></div>
-      <div class="stat-card" style="border-left-color:#f59e0b;"><div class="stat-num">${pendingApps}</div><div class="stat-label">Pending Applications</div></div>
-    </div>
-    <div class="quick-actions">
-      <button class="qa-btn" onclick="showPage('contacts'); openAddContact()">&#43; Add Lead</button>
-      <button class="qa-btn" onclick="showPage('opens')">&#128140; Email Opens</button>
-      <button class="qa-btn" onclick="showPage('contacts')">&#128101; Contacts</button>
-      <button class="qa-btn" onclick="showPage('pipelines')">&#128202; Pipelines</button>
-      <button class="qa-btn" onclick="showPage('campaigns')">&#128247; Campaigns</button>
-      <button class="qa-btn" onclick="showPage('admin')">&#128101; Manage Team</button>
+    <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Agency contacts</div></div>
+      <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
+      <div class="stat-card" style="border-left-color:#c8a84b;background:rgba(200,168,75,0.05);"><div class="stat-num">${openRatePct}%</div><div class="stat-label">Open rate</div></div>
+      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${pendingApps}</div><div class="stat-label">Pending hires</div><div class="${pendingApps > 0 ? 'stat-delta-warn' : 'stat-delta'}">${pendingApps > 0 ? 'Needs review' : 'None pending'}</div></div>
     </div>
     <div class="dash-grid">
-      <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
-          <div class="dash-card-title">&#127942; Agent Leaderboard <span style="font-size:12px;font-weight:400;color:var(--muted);">by contacts</span></div>
-          ${ranked.length === 0 ? '<p style="font-size:13px;color:var(--muted);text-align:center;padding:16px 0;">No agents yet.</p>' :
-            ranked.map((a, i) => `<div class="action-item"><div style="font-size:16px;margin-right:2px;">${medals[i] || (i+1) + '.'}</div><div class="action-item-info"><div class="action-item-name">${a.name || a.email}</div><div class="action-item-sub">${a.cnt.toLocaleString()} contacts &middot; ${a.rep} replied</div></div>${a.gmail_connected ? '<span class="badge badge-active" style="font-size:10px;">Gmail &#10003;</span>' : ''}</div>`).join('')}
+          ${_ctitle('ti-trophy', 'Agent leaderboard — this month')}
+          ${ranked.length === 0
+            ? `<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:16px 0;">No agents yet.</p>`
+            : `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead><tr>
+                  <th style="text-align:left;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Agent</th>
+                  <th style="text-align:right;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Leads</th>
+                  <th style="text-align:right;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Replies</th>
+                  <th style="text-align:right;font-size:10px;font-weight:500;color:var(--text-muted);padding:5px 0;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:0.5px;">Deals</th>
+                </tr></thead>
+                <tbody>${ranked.map((a,i) => `<tr>
+                  <td style="padding:7px 0;border-bottom:0.5px solid var(--border);">${medals[i]||''} ${a.name||a.email}</td>
+                  <td style="text-align:right;padding:7px 0;border-bottom:0.5px solid var(--border);font-weight:500;">${a.cnt}</td>
+                  <td style="text-align:right;padding:7px 0;border-bottom:0.5px solid var(--border);color:var(--text-success);">${a.rep}</td>
+                  <td style="text-align:right;padding:7px 0;border-bottom:0.5px solid var(--border);color:var(--text-accent);">${a.dls}</td>
+                </tr>`).join('')}</tbody>
+              </table>`}
         </div>
-        ${pendingApps > 0 ? `<div class="dash-card"><div class="dash-card-title">&#128203; Pending Applications <span style="background:#fef3c7;color:#92400e;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;">${pendingApps}</span></div>${applications.slice(0,5).map(app => `<div class="action-item"><div class="action-item-info"><div class="action-item-name">${app.name || app.email}</div><div class="action-item-sub">${app.license_type || 'License track not set'} &middot; ${new Date(app.created_at).toLocaleDateString()}</div></div><button class="btn btn-outline btn-sm" onclick="showPage('admin')">Review</button></div>`).join('')}</div>` : ''}
+        ${pendingApps > 0 ? `
+        <div class="dash-card">
+          ${_ctitle('ti-clipboard-list', `Pending applications <span style="background:rgba(251,191,36,0.2);color:var(--text-warning);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">${pendingApps}</span>`)}
+          ${applications.slice(0,4).map(app => `
+          <div class="action-item">
+            <div class="action-item-info">
+              <div class="action-item-name">${app.name || app.email}</div>
+              <div class="action-item-sub">${app.license_type || 'Track not set'} &middot; ${new Date(app.created_at).toLocaleDateString()}</div>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="showPage('admin')">Review</button>
+          </div>`).join('')}
+        </div>` : ''}
       </div>
-      <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
-          <div class="dash-card-title">&#128140; Outreach Sequence Status</div>
-          <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
-          <div class="seq-row"><div><div class="seq-label" style="color:#5b21b6;font-weight:700;">Replied / Interested &#127881;</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#5b21b6;">${replied}</div></div>
-          <div style="margin-top:12px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>
+          ${_ctitle('ti-mail', 'Campaign performance')}
+          ${activeCampaigns.length === 0
+            ? `<p style="font-size:13px;color:var(--text-muted);padding:12px 0;">No active campaigns.</p>`
+            : activeCampaigns.map(c => `
+          <div class="activity-item">
+            <div class="activity-dot"></div>
+            <div style="flex:1;">
+              <div class="activity-text"><strong>${c.name}</strong> — ${c.contacts.toLocaleString()} contacts${c.open ? ' &middot; ' + c.open + '% open' : ''}</div>
+            </div>
+            <span class="badge badge-active">Active</span>
+          </div>`).join('')}
+          <div style="margin-top:10px;">
+            <button class="btn btn-outline btn-sm btn-full" onclick="showPage('campaigns')"><i class="ti ti-plus"></i> Create campaign</button>
+          </div>
         </div>
         <div class="dash-card">
-          <div class="dash-card-title">&#128337; Recent Deals</div>
-          ${deals.length === 0 ? '<p style="font-size:13px;color:var(--muted);text-align:center;padding:16px 0;">No deals yet.</p>' :
-            deals.slice(0,5).map(d => { const c = contacts.find(ct => ct.id === d.contact_id); return `<div class="activity-item"><div class="activity-dot"></div><div><div class="activity-text"><strong>${d.title}</strong></div><div class="activity-time">${c ? c.name : 'No contact'} &middot; ${d.stage}${d.value ? ' &middot; $' + parseFloat(d.value).toLocaleString() : ''}</div></div></div>`; }).join('')}
+          ${_ctitle('ti-mail-opened', 'Outreach sequence')}
+          ${_seqTable(contacts, totalContacts)}
         </div>
       </div>
     </div>
@@ -520,72 +577,104 @@ function renderDashboardAgent() {
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
 
   const totalContacts = contacts.length;
-  const inSequence  = contacts.filter(c => c.sequence_status === 'Active').length;
-  const replied     = contacts.filter(c => c.sequence_status === 'Replied').length;
-  const activeDeals = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
-  const notStarted  = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started');
-  const hotLeads    = contacts.filter(c => c.sequence_status === 'Replied');
-  const step1 = contacts.filter(c => c.sequence_step >= 1).length;
-  const step2 = contacts.filter(c => c.sequence_step >= 2).length;
-  const step3 = contacts.filter(c => c.sequence_step >= 3).length;
-  const maxStep = totalContacts || 1;
+  const inSequence   = contacts.filter(c => c.sequence_status === 'Active').length;
+  const replied      = contacts.filter(c => c.sequence_status === 'Replied').length;
+  const activeDeals  = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
+  const notStarted   = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started');
+  const hotLeads     = contacts.filter(c => c.sequence_status === 'Replied');
+
+  // Pipeline snapshot by stage
+  const stageOrder = ['Contacted','Responded','Proposal Sent','Negotiating'];
+  const stageMap = {};
+  deals.forEach(d => { if (!stageMap[d.stage]) stageMap[d.stage] = []; stageMap[d.stage].push(d); });
+
+  // Avatar initials helper
+  const initials = name => (name||'??').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
 
   el.innerHTML = `
-    <div class="dash-header">
-      <div><div class="dash-greeting">${g}, ${firstName}! &#128075;</div><div class="dash-date">${dateStr}</div></div>
-      <button class="btn btn-outline" onclick="shareBookingLink()">&#128197; Share Booking Link</button>
+    <div class="dash-header" style="margin-bottom:10px;">
+      <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr}</div></div>
+      <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
     </div>
-    ${hotLeads.length > 0 || notStarted.length > 0 ? `
-    <div style="background:var(--primary);border-radius:14px;padding:18px 22px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
-      <div>
-        <div style="font-size:15px;font-weight:700;color:white;">${hotLeads.length > 0 ? '&#128293; ' + hotLeads.length + ' lead' + (hotLeads.length > 1 ? 's' : '') + ' replied — follow up now!' : '&#9889; ' + notStarted.length + ' leads waiting to be contacted'}</div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:4px;">${hotLeads.length > 0 ? 'Someone responded to your outreach.' : 'Start your outreach to get the sequence running.'}</div>
+
+    <div class="dash-card" style="margin-bottom:10px;background:var(--surface-1);border-color:var(--border);">
+      <div style="font-size:14px;font-weight:500;color:var(--text-primary);">You have <strong style="color:var(--text-accent);">${notStarted.length} lead${notStarted.length !== 1 ? 's' : ''}</strong> to work${replied > 0 ? ` and <strong style="color:var(--text-success);">${replied} email open${replied !== 1 ? 's' : ''}</strong> waiting` : ''}.</div>
+      <div style="display:flex;gap:6px;margin-top:10px;">
+        <button class="btn btn-primary" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start working leads</button>
+        <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add new lead</button>
       </div>
-      <button class="btn btn-accent" onclick="startDialerSession()">&#9889; Work leads &rarr;</button>
-    </div>` : ''}
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">My Contacts</div></div>
-      <div class="stat-card" style="border-left-color:#3b82f6;"><div class="stat-num">${inSequence}</div><div class="stat-label">In Sequence</div></div>
-      <div class="stat-card" style="border-left-color:#8b5cf6;"><div class="stat-num">${replied}</div><div class="stat-label">Replied</div></div>
-      <div class="stat-card" style="border-left-color:#10b981;"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active Deals</div></div>
-      <div class="stat-card" style="border-left-color:#f59e0b;"><div class="stat-num">${notStarted.length}</div><div class="stat-label">Not Yet Contacted</div></div>
     </div>
-    <div class="quick-actions">
-      <button class="qa-btn" onclick="showPage('contacts'); openAddContact()">&#43; Add Lead</button>
-      <button class="qa-btn" onclick="shareBookingLink()">&#128197; Book Meeting</button>
-      <button class="qa-btn" onclick="showPage('opens')">&#128140; Email Opens</button>
-      <button class="qa-btn" onclick="showPage('pipelines')">&#128202; Pipelines</button>
-      <button class="qa-btn" onclick="showPage('contacts')">&#128101; All Contacts</button>
-      <button class="qa-btn" onclick="syncGoogleContacts()">&#128257; Sync Google</button>
+
+    <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:10px;">
+      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">My contacts</div></div>
+      <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
+      <div class="stat-card" style="border-left-color:#c8a84b;background:rgba(200,168,75,0.05);"><div class="stat-num">${replied}</div><div class="stat-label">Replied</div></div>
+      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
     </div>
+
     <div class="dash-grid">
-      <div style="display:flex;flex-direction:column;gap:16px;">
-        ${hotLeads.length > 0 ? `<div class="dash-card"><div class="dash-card-title">&#128293; Hot Leads — Replied <span style="background:#ede9fe;color:#5b21b6;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;">${hotLeads.length}</span></div>${hotLeads.slice(0,5).map(c => `<div class="action-item"><div class="action-item-info"><div class="action-item-name">${c.name || '—'}</div><div class="action-item-sub">${c.company || c.email || '—'}</div></div><button class="btn btn-accent btn-sm" onclick="viewContact('${c.id}','')">Follow up</button></div>`).join('')}${hotLeads.length > 5 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button></div>` : ''}</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
-          <div class="dash-card-title">&#9888;&#65039; Action Items <span style="background:#fef3c7;color:#92400e;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;">${notStarted.length} not started</span></div>
-          ${notStarted.length === 0 ? '<div style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">&#127881; All contacts are in the sequence!</div>' :
-            notStarted.slice(0,5).map(c => `<div class="action-item"><div class="action-item-info"><div class="action-item-name">${c.name || '—'}</div><div class="action-item-sub">${c.company || c.email || '—'}</div></div><button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button></div>`).join('')}
-          ${notStarted.length > 5 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${notStarted.length} &rarr;</button></div>` : ''}
+          ${_ctitle('ti-flame', `Hot leads — follow up now ${hotLeads.length > 0 ? `<span style="background:rgba(139,92,246,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">${hotLeads.length}</span>` : ''}`)}
+          ${hotLeads.length === 0
+            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No replies yet — keep the sequence running!</div>`
+            : hotLeads.slice(0, 5).map(c => `
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border);">
+              <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name||'—'}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${c.company||c.email||'—'}</div>
+              </div>
+              <span class="badge badge-active">Replied</span>
+              <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
+            </div>`).join('')}
+          ${hotLeads.length > 5 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button></div>` : ''}
         </div>
+
         <div class="dash-card">
-          <div class="dash-card-title">&#128295; Automation Status</div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email Outreach</div><div class="action-item-sub">Apps Script trigger</div></div><span class="badge badge-active">&#10003; Active</span></div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Your Gmail</div><div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected'}</div></div>${currentAgent.gmail_connected ? '<span class="badge badge-active">&#10003; Connected</span>' : '<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}</div>
+          ${_ctitle('ti-alert-circle', `Not yet contacted <span style="background:rgba(251,191,36,0.15);color:var(--text-warning);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">${notStarted.length}</span>`)}
+          ${notStarted.length === 0
+            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:5px;color:var(--text-success);"></i>All contacts are in the sequence!</div>`
+            : notStarted.slice(0, 4).map(c => `
+            <div class="action-item">
+              <div class="action-item-info">
+                <div class="action-item-name">${c.name||'—'}</div>
+                <div class="action-item-sub">${c.company||c.email||'—'}</div>
+              </div>
+              <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
+            </div>`).join('')}
+          ${notStarted.length > 4 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${notStarted.length} &rarr;</button></div>` : ''}
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
-          <div class="dash-card-title">&#128140; Outreach Sequence Status</div>
-          <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up (Day 3)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call (Day 7)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
-          <div class="seq-row"><div><div class="seq-label" style="color:#5b21b6;font-weight:700;">Replied / Interested &#127881;</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#5b21b6;">${replied}</div></div>
-          <div style="margin-top:12px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>
+          ${_ctitle('ti-layout-kanban', 'Pipeline snapshot')}
+          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;">
+            ${stageOrder.map(stage => {
+              const stagDeals = stageMap[stage] || [];
+              return `<div style="min-width:108px;background:var(--surface-1);border-radius:8px;padding:8px;flex-shrink:0;border:0.5px solid var(--border);">
+                <div style="font-size:10px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">${stage}</div>
+                ${stagDeals.length === 0
+                  ? `<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">—</div>`
+                  : stagDeals.slice(0,3).map(d => `<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:5px 7px;margin-bottom:3px;"><div style="font-size:11px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.title}</div>${d.value ? `<div style="font-size:11px;color:var(--text-success);">$${parseFloat(d.value).toLocaleString()}</div>` : ''}</div>`).join('')}
+              </div>`;
+            }).join('')}
+          </div>
+          <div style="margin-top:10px;">
+            <button class="btn btn-outline btn-sm btn-full" onclick="showPage('pipelines')"><i class="ti ti-external-link"></i> Full pipeline view</button>
+          </div>
         </div>
+
         <div class="dash-card">
-          <div class="dash-card-title">&#128337; Recent Deals</div>
-          ${deals.length === 0 ? '<div style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">No deals yet. Add your first deal!</div>' :
-            deals.slice(0,5).map(d => { const c = contacts.find(ct => ct.id === d.contact_id); return `<div class="activity-item"><div class="activity-dot"></div><div><div class="activity-text"><strong>${d.title}</strong></div><div class="activity-time">${c ? c.name : 'No contact'} &middot; ${d.stage}${d.value ? ' &middot; $' + parseFloat(d.value).toLocaleString() : ''}</div></div></div>`; }).join('')}
+          ${_ctitle('ti-mail-opened', 'Outreach sequence')}
+          ${_seqTable(contacts, totalContacts)}
+        </div>
+
+        <div class="dash-card">
+          ${_ctitle('ti-settings-automation', 'Automation status')}
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email outreach</div><div class="action-item-sub">Apps Script trigger</div></div><span class="badge badge-active"><i class="ti ti-check"></i> Active</span></div>
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Your Gmail</div><div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected'}</div></div>${currentAgent.gmail_connected ? `<span class="badge badge-active"><i class="ti ti-check"></i> Connected</span>` : `<button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect</button>`}</div>
         </div>
       </div>
     </div>
@@ -2604,6 +2693,8 @@ function renderAIMessages() {
     return `<div class="ai-msg ${msg.role}">${text}</div>`;
   }).join('');
   container.scrollTop = container.scrollHeight;
+  // Also refresh the embedded dashboard AI card if visible
+  if (document.getElementById('dash-ai-card')) renderDashAICard();
 }
 
 // ============================================================
