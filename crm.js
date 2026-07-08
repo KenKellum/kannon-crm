@@ -836,7 +836,7 @@ function switchPreviewRole(role) {
 
 function shareBookingLink() { manageBookingTypes(); }
 
-async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote) {
+async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, contactTypeRaw) {
   if (!toEmail || !toEmail.includes('@')) { showToast('Enter a valid email address.'); return; }
   if (!firstName) { showToast("Enter the recipient's first name."); return; }
 
@@ -851,6 +851,18 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote) 
   }
 
   const toName = [firstName, lastName].filter(Boolean).join(' ');
+
+  // Parse type — recruits encode pipeline as "Recruit|agent-kannon"
+  const typeRaw      = contactTypeRaw || 'Individual/Family';
+  const typeParts    = typeRaw.split('|');
+  const contactType  = typeParts[0];   // e.g. 'Recruit' or 'Individual/Family'
+  const pipelineMap  = {
+    'Individual/Family': { pipeline: 'individual-family', stage: 'Contacted' },
+    'Group/Employer':    { pipeline: 'group-employer',    stage: 'Outreach Sent' },
+    'Recruit|agent-kannon':   { pipeline: 'agent-kannon',   stage: 'Contacted' },
+    'Recruit|agent-insured':  { pipeline: 'agent-insured',  stage: 'Contacted' },
+  };
+  const pipeInfo = pipelineMap[typeRaw] || pipelineMap['Individual/Family'];
   const btn = document.querySelector('#booking-modal-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
@@ -875,10 +887,10 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote) 
           owner_id:         currentAgent.id,
           agent_id:         currentAgent.id,
           agency_id:        currentAgent.agency_id || null,
-          type:             'Individual/Family',
+          type:             contactType,
           sequence_status:  'Drip',
-          pipeline:         'individual-family',
-          pipeline_stage:   'Contacted'
+          pipeline:         pipeInfo.pipeline,
+          pipeline_stage:   pipeInfo.stage
         })
         .select('id')
         .single();
@@ -889,8 +901,8 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote) 
         contactId = created.id;
         // Add to in-memory list so contacts page shows it without a full reload
         contacts.unshift({ ...created, name: toName || toEmail.split('@')[0], email: toEmail.toLowerCase(),
-          owner_id: currentAgent.id, agent_id: currentAgent.id, type: 'Individual/Family',
-          sequence_status: 'Drip', pipeline: 'individual-family', pipeline_stage: 'Contacted' });
+          owner_id: currentAgent.id, agent_id: currentAgent.id, type: contactType,
+          sequence_status: 'Drip', pipeline: pipeInfo.pipeline, pipeline_stage: pipeInfo.stage });
       }
     }
 
@@ -1225,9 +1237,15 @@ function manageBookingTypes() {
         <input id="booking-last-name" type="text" placeholder="Last name"
           style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
       </div>
+      <select id="booking-contact-type" style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);margin-bottom:6px;">
+        <option value="Individual/Family">Individual / Family — Client</option>
+        <option value="Group/Employer">Group / Employer — Client</option>
+        <option value="Recruit|agent-kannon">Recruit — Kannon Financial</option>
+        <option value="Recruit|agent-insured">Recruit — Insured America</option>
+      </select>
       <textarea id="booking-email-note" rows="4"
         style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:vertical;margin-bottom:6px;box-sizing:border-box;"></textarea>
-      <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-first-name').value.trim(), document.getElementById('booking-last-name').value.trim(), document.getElementById('booking-email-note').value.trim())"
+      <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-first-name').value.trim(), document.getElementById('booking-last-name').value.trim(), document.getElementById('booking-email-note').value.trim(), document.getElementById('booking-contact-type').value)"
         style="background:var(--fill-accent);border:none;color:#000;border-radius:6px;padding:7px 16px;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail</button>
     </div>
 
