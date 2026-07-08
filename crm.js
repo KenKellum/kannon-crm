@@ -202,12 +202,12 @@ async function showApp() {
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
-  opens: 'Email Opens', campaigns: 'Campaigns', compliance: 'Compliance',
-  admin: 'Admin', dialer: 'Work My Leads'
+  opens: 'Email Opens', campaigns: 'Email Campaigns', compliance: 'Compliance',
+  admin: 'Admin', dialer: 'Work My Leads', settings: 'Settings', appointments: 'Appointments'
 };
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -215,14 +215,16 @@ function showPage(page) {
   });
   const titleEl = document.getElementById('topbar-page-title');
   if (titleEl) titleEl.textContent = PAGE_TITLES[page] || page;
-  if (page === 'dashboard')  renderDashboard();
-  if (page === 'pipelines')  renderPipelines();
-  if (page === 'contacts')   renderContacts();
-  if (page === 'opens')      renderOpens();
-  if (page === 'campaigns')  renderCampaigns();
-  if (page === 'compliance') renderCompliance();
-  if (page === 'admin')      renderAdmin();
-  if (page === 'dialer')     renderDialer();
+  if (page === 'dashboard')    renderDashboard();
+  if (page === 'pipelines')    renderPipelines();
+  if (page === 'contacts')     renderContacts();
+  if (page === 'opens')        renderOpens();
+  if (page === 'campaigns')    renderCampaigns();
+  if (page === 'compliance')   renderCompliance();
+  if (page === 'admin')        renderAdmin();
+  if (page === 'dialer')       renderDialer();
+  if (page === 'settings')     renderSettings();
+  if (page === 'appointments') renderAppointments();
 }
 
 // ============================================================
@@ -243,51 +245,63 @@ function renderSidebarNav() {
   const navConfig = {
     system_owner: [
       { label: 'Overview', items: [
-        { icon: 'ti-layout-dashboard', text: 'Dashboard',        page: 'dashboard' },
+        { icon: 'ti-layout-dashboard', text: 'Dashboard',          page: 'dashboard'    },
+        { icon: 'ti-calendar-event',   text: 'Appointments',       page: 'appointments' },
       ]},
       { label: 'Manage', items: [
-        { icon: 'ti-users',            text: 'All contacts',      page: 'contacts'  },
-        { icon: 'ti-layout-kanban',    text: 'Pipelines',         page: 'pipelines' },
-        { icon: 'ti-mail-opened',      text: 'Email opens',       page: 'opens',    badge: null },
-        { icon: 'ti-send',             text: 'Campaigns',         page: 'campaigns' },
-        { icon: 'ti-bolt',             text: 'Work my leads',     page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
+        { icon: 'ti-users',            text: 'All contacts',       page: 'contacts'  },
+        { icon: 'ti-layout-kanban',    text: 'Pipelines',          page: 'pipelines' },
+        { icon: 'ti-bolt',             text: 'Work my leads',      page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
       ]},
       { label: 'Agency & team', items: [
-        { icon: 'ti-building-community', text: 'Agencies & agents', page: 'admin',  badge: b.inactiveAgents || null, badgeType: 'red' },
+        { icon: 'ti-building-community', text: 'Agencies & agents', page: 'admin',   badge: b.inactiveAgents || null, badgeType: 'red' },
+      ]},
+      { label: 'Funnels', items: [
+        { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
+        { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'System', items: [
-        { icon: 'ti-shield-check',     text: 'Compliance',        page: 'compliance'},
+        { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
+        { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
       ]},
     ],
     agency_owner: [
       { label: 'My agency', items: [
-        { icon: 'ti-layout-dashboard', text: 'Dashboard',         page: 'dashboard' },
-        { icon: 'ti-users',            text: 'Contacts',          page: 'contacts'  },
-        { icon: 'ti-layout-kanban',    text: 'Pipelines',         page: 'pipelines' },
-        { icon: 'ti-bolt',             text: 'Work my leads',     page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
+        { icon: 'ti-layout-dashboard', text: 'Dashboard',          page: 'dashboard'    },
+        { icon: 'ti-users',            text: 'Contacts',           page: 'contacts'     },
+        { icon: 'ti-layout-kanban',    text: 'Pipelines',          page: 'pipelines'    },
+        { icon: 'ti-calendar-event',   text: 'Appointments',       page: 'appointments' },
+        { icon: 'ti-bolt',             text: 'Work my leads',      page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
       ]},
-      { label: 'Campaigns', items: [
-        { icon: 'ti-send',             text: 'My campaigns',      page: 'campaigns' },
-        { icon: 'ti-mail-opened',      text: 'Email opens',       page: 'opens',    badge: null },
+      { label: 'Funnels', items: [
+        { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
+        { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'Team', items: [
-        { icon: 'ti-building-community', text: 'Agents & hiring', page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
-        { icon: 'ti-shield-check',     text: 'Compliance',        page: 'compliance'},
+        { icon: 'ti-building-community', text: 'Agents & hiring',  page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
+        { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
+      ]},
+      { label: 'Account', items: [
+        { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
       ]},
     ],
     agent: [
       { label: 'My work', items: [
-        { icon: 'ti-layout-dashboard', text: 'Dashboard',         page: 'dashboard' },
-        { icon: 'ti-bolt',             text: 'Work my leads',     page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
-        { icon: 'ti-users',            text: 'My contacts',       page: 'contacts'  },
-        { icon: 'ti-layout-kanban',    text: 'My pipeline',       page: 'pipelines' },
+        { icon: 'ti-layout-dashboard', text: 'Dashboard',          page: 'dashboard'    },
+        { icon: 'ti-bolt',             text: 'Work my leads',      page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
+        { icon: 'ti-users',            text: 'My contacts',        page: 'contacts'     },
+        { icon: 'ti-layout-kanban',    text: 'My pipeline',        page: 'pipelines'    },
+        { icon: 'ti-calendar-event',   text: 'Appointments',       page: 'appointments' },
       ]},
-      { label: 'Outreach', items: [
-        { icon: 'ti-mail-opened',      text: 'Email opens',       page: 'opens',    badge: null },
-        { icon: 'ti-send',             text: 'Campaigns',         page: 'campaigns' },
+      { label: 'Funnels', items: [
+        { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
+        { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'Compliance', items: [
-        { icon: 'ti-shield-check',     text: 'Compliance',        page: 'compliance'},
+        { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
+      ]},
+      { label: 'Account', items: [
+        { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
       ]},
     ],
   };
@@ -340,6 +354,11 @@ async function loadData() {
   contacts = results[0].data || [];
   deals = results[1].data || [];
   applications = (results[2] && results[2].data) || [];
+  // Agency owner: scope deals to only those linked to their contacts (deals table has no agent_id)
+  if (currentAgent.role === 'agency_owner') {
+    const contactIds = new Set(contacts.map(c => c.id));
+    deals = deals.filter(d => !d.contact_id || contactIds.has(d.contact_id));
+  }
 
   // Get TRUE total count for ALL roles — bypasses PostgREST 1000-row cap
   let cntQ = supabaseClient.from('contacts').select('*', { count: 'exact', head: true });
@@ -520,7 +539,11 @@ function renderDashboardAgency() {
   const agentCMap = {}, agentRMap = {}, agentDMap = {};
   contacts.forEach(c => { if (c.agent_id) agentCMap[c.agent_id] = (agentCMap[c.agent_id] || 0) + 1; });
   contacts.filter(c => c.sequence_status === 'Replied').forEach(c => { if (c.agent_id) agentRMap[c.agent_id] = (agentRMap[c.agent_id] || 0) + 1; });
-  deals.forEach(d => { if (d.agent_id) agentDMap[d.agent_id] = (agentDMap[d.agent_id] || 0) + 1; });
+  // Deals table has user_id, not agent_id — cross-ref through contacts
+  contacts.forEach(c => {
+    const agentDeals = deals.filter(d => d.contact_id === c.id).length;
+    if (agentDeals > 0 && c.agent_id) agentDMap[c.agent_id] = (agentDMap[c.agent_id] || 0) + agentDeals;
+  });
   const ranked = myAgents.map(a => ({ ...a, cnt: agentCMap[a.id] || 0, rep: agentRMap[a.id] || 0, dls: agentDMap[a.id] || 0 })).sort((a, b) => b.cnt - a.cnt);
   const medals = ['🥇','🥈','🥉'];
 
@@ -617,8 +640,8 @@ function renderDashboardAgent() {
   const notStarted   = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started');
   const hotLeads     = contacts.filter(c => c.sequence_status === 'Replied');
 
-  // Pipeline snapshot by stage
-  const stageOrder = ['Contacted','Responded','Proposal Sent','Negotiating'];
+  // Pipeline snapshot by stage — use real PIPELINES stages
+  const stageOrder = PIPELINES['group-employer'].stages.slice(0, 4);
   const stageMap = {};
   deals.forEach(d => { if (!stageMap[d.stage]) stageMap[d.stage] = []; stageMap[d.stage].push(d); });
 
@@ -2006,7 +2029,7 @@ async function viewContact(contactId, email) {
   const { data: cc } = await supabaseClient.from('contact_companies').select('companies(name,slug)').eq('contact_id', c.id);
   const contactCompanies = (cc || []).map(r => r.companies);
 
-  const typeClass = { 'Group/Employer': 'badge-group', 'Individual & Family': 'badge-individual' };
+  const typeClass = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
   const badgeClass = typeClass[c.type] || 'badge-agent';
   const initials = (c.name || '?').split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
   const seqStatus = c.sequence_status || 'Not Started';
@@ -2060,6 +2083,7 @@ async function viewContact(contactId, email) {
     </div>
     <div class="panel-footer">
       <button class="btn btn-outline" onclick="closeContactPanel()">Close</button>
+      <button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>
       <button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')" title="Recruit this contact as a Kannon agent">&#128101; Recruit</button>
       <button class="btn btn-primary" onclick="closeContactPanel();editContact('${c.id}')">&#9999;&#65039; Edit</button>
     </div>`;
@@ -3068,6 +3092,365 @@ Contacts: ${total} total | ${indiv} Individual/Family | ${grp} Group/Employer | 
 Sequence Status: ${active} Active | ${drip} Drip | ${replied} Replied | ${bounced} Bounced | ${optedOut} Opted-Out
 Sequence Progress: ${step1} sent Email 1 | ${step2} sent Email 2 | ${step3} sent Email 3
 Deals: ${dealCount} in ${pipeline}`;
+}
+
+
+// ============================================================
+// SETTINGS PAGE
+// ============================================================
+async function renderSettings() {
+  const pg = document.getElementById('page-settings');
+  if (!pg) return;
+  // Refresh agent record from DB
+  const { data: fresh } = await supabaseClient.from('agents').select('*').eq('id', currentAgent.id).single();
+  if (fresh) Object.assign(currentAgent, fresh);
+
+  const agencyName = currentAgent.agencies?.name || allAgencies.find(a => a.id === currentAgent.agency_id)?.name || '—';
+
+  pg.innerHTML = `
+    <h2 class="section-title" style="margin-bottom:20px;">⚙️ Settings</h2>
+    <div style="max-width:680px;">
+
+      <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-user"></i>Profile</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Full Name</label>
+            <input type="text" id="s-name" value="${currentAgent.name||''}" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Display Name (booking page)</label>
+            <input type="text" id="s-display-name" value="${currentAgent.display_name||currentAgent.name||''}" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Phone</label>
+            <input type="text" id="s-phone" value="${currentAgent.phone||''}" placeholder="(555) 555-5555" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Title / Role</label>
+            <input type="text" id="s-title" value="${currentAgent.title||''}" placeholder="e.g. Licensed Insurance Advisor" style="width:100%;box-sizing:border-box;" />
+          </div>
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Login Email</label>
+          <input type="text" value="${currentAgent.email||''}" disabled style="width:100%;box-sizing:border-box;background:var(--surface-0);color:var(--text-muted);" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Contact your system admin to change your login email.</div>
+        </div>
+        <div style="margin-top:10px;padding:10px;background:var(--surface-1);border-radius:8px;border:0.5px solid var(--border);font-size:12px;color:var(--text-muted);">
+          <strong style="color:var(--text-secondary);">Role:</strong> ${({ system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' }[currentAgent.role] || currentAgent.role)}
+          &nbsp;&middot;&nbsp;
+          <strong style="color:var(--text-secondary);">Agency:</strong> ${agencyName}
+        </div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-calendar-event"></i>Booking Link</div>
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Your Calendly / Booking URL</label>
+        <input type="url" id="s-booking-link" value="${currentAgent.booking_link||''}" placeholder="https://calendly.com/yourname" style="width:100%;box-sizing:border-box;" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">Used in outreach emails so prospects can schedule directly with you.</div>
+        ${currentAgent.booking_link ? `
+        <div style="margin-top:10px;">
+          <a href="${currentAgent.booking_link}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i> Preview your booking page</a>
+        </div>` : ''}
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-mail"></i>Gmail Connection</div>
+        <div class="action-item">
+          <div class="action-item-info">
+            <div class="action-item-name">Gmail Account</div>
+            <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — email sequences will not send'}</div>
+          </div>
+          ${currentAgent.gmail_connected
+            ? `<span class="badge badge-active"><i class="ti ti-check"></i> Connected</span>`
+            : `<button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>`}
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:8px;line-height:1.6;">Gmail must be connected so the CRM can send outreach emails on your behalf through your Gmail account.</div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-certificate"></i>Licenses</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--text-primary);">
+            <input type="checkbox" id="s-life" ${currentAgent.has_life_license ? 'checked' : ''} style="width:16px;height:16px;flex-shrink:0;" />
+            Life Insurance License
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--text-primary);">
+            <input type="checkbox" id="s-health" ${currentAgent.has_health_license ? 'checked' : ''} style="width:16px;height:16px;flex-shrink:0;" />
+            Health Insurance License
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--text-primary);">
+            <input type="checkbox" id="s-investment" ${currentAgent.has_investment_license ? 'checked' : ''} style="width:16px;height:16px;flex-shrink:0;" />
+            Investment License (Series 6 / 63)
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <button class="btn btn-outline btn-sm" onclick="signOut()"><i class="ti ti-logout"></i> Sign out</button>
+        <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-device-floppy"></i> Save Settings</button>
+      </div>
+    </div>
+  `;
+}
+
+async function saveSettings() {
+  const nameEl   = document.getElementById('s-name');
+  const dispEl   = document.getElementById('s-display-name');
+  const phoneEl  = document.getElementById('s-phone');
+  const titleEl  = document.getElementById('s-title');
+  const bookEl   = document.getElementById('s-booking-link');
+  const lifeEl   = document.getElementById('s-life');
+  const healthEl = document.getElementById('s-health');
+  const invEl    = document.getElementById('s-investment');
+  if (!nameEl) return;
+
+  const updates = {
+    name:                  nameEl.value.trim(),
+    display_name:          dispEl.value.trim() || null,
+    phone:                 phoneEl.value.trim() || null,
+    title:                 titleEl.value.trim() || null,
+    booking_link:          bookEl.value.trim() || null,
+    has_life_license:      lifeEl.checked,
+    has_health_license:    healthEl.checked,
+    has_investment_license: invEl.checked,
+  };
+
+  const { error } = await supabaseClient.from('agents').update(updates).eq('id', currentAgent.id);
+  if (error) { showToast('Error saving: ' + error.message); return; }
+  Object.assign(currentAgent, updates);
+
+  // Update sidebar display
+  const snEl = document.getElementById('sidebar-user-name');
+  if (snEl) snEl.textContent = currentAgent.name;
+  const ndEl = document.getElementById('user-name-display');
+  if (ndEl) ndEl.textContent = currentAgent.name;
+
+  showToast('✓ Settings saved!');
+}
+
+// ============================================================
+// APPOINTMENTS PAGE
+// ============================================================
+async function renderAppointments() {
+  const pg = document.getElementById('page-appointments');
+  if (!pg) return;
+  pg.innerHTML = `<div style="color:var(--text-muted);padding:40px;text-align:center;">Loading appointments...</div>`;
+
+  let q = supabaseClient.from('booking_intents').select('*');
+  const role = previewRole || currentAgent.role;
+  if (role === 'agent') {
+    q = q.eq('agent_id', currentAgent.id);
+  } else if (role === 'agency_owner') {
+    const agencyIds = [...new Set([currentAgent.id, ...allAgents.filter(a => a.agency_id === currentAgent.agency_id).map(a => a.id)])];
+    q = q.in('agent_id', agencyIds);
+  }
+  q = q.order('created_at', { ascending: false }).limit(300);
+
+  const { data: intents, error } = await q;
+  if (error) { pg.innerHTML = `<div style="color:var(--danger);padding:40px;">${error.message}</div>`; return; }
+  const list = intents || [];
+
+  const pending   = list.filter(i => !i.status || i.status === 'pending');
+  const scheduled = list.filter(i => i.status === 'scheduled');
+  const completed = list.filter(i => i.status === 'completed');
+  const other     = list.filter(i => ['cancelled','no_show','rescheduled'].includes(i.status));
+
+  const statusBadge = s => ({
+    pending:     `<span class="badge" style="background:rgba(251,191,36,0.15);color:#d97706;">⏳ Pending</span>`,
+    scheduled:   `<span class="badge badge-active">📅 Scheduled</span>`,
+    completed:   `<span class="badge badge-completed">✅ Completed</span>`,
+    cancelled:   `<span class="badge" style="background:rgba(248,113,113,0.15);color:#dc2626;">❌ Cancelled</span>`,
+    no_show:     `<span class="badge" style="background:rgba(156,163,175,0.15);color:#6b7280;">👻 No-show</span>`,
+    rescheduled: `<span class="badge" style="background:rgba(139,92,246,0.15);color:#8b5cf6;">↺ Rescheduled</span>`,
+  }[s||'pending'] || `<span class="badge">Unknown</span>`);
+
+  const renderCard = intent => {
+    const bookerName  = intent.booker_name || intent.contact_name || '—';
+    const bookerEmail = intent.booker_email || '';
+    const agentRow    = allAgents.find(a => a.id === intent.agent_id);
+    const dateStr = intent.scheduled_at
+      ? new Date(intent.scheduled_at).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
+      : `Received ${new Date(intent.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+    const isOwnerOrAdmin = role !== 'agent';
+    return `
+      <div class="dash-card" style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:180px;">
+            <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">${bookerName}${intent.company ? ` <span style="font-weight:400;font-size:12px;color:var(--text-muted);">· ${intent.company}</span>` : ''}</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:3px;"><i class="ti ti-tag" style="font-size:11px;"></i> ${intent.appointment_label || intent.appointment_type || 'Appointment'}</div>
+            <div style="font-size:12px;color:var(--text-muted);">🕐 ${dateStr}</div>
+            ${bookerEmail ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">📧 ${bookerEmail}</div>` : ''}
+            ${intent.note ? `<div style="font-size:12px;color:var(--text-muted);margin-top:5px;font-style:italic;">"${intent.note}"</div>` : ''}
+            ${isOwnerOrAdmin && agentRow ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">👤 Agent: ${agentRow.name}</div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0;">
+            ${statusBadge(intent.status)}
+            <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;justify-content:flex-end;">
+              ${!intent.status || intent.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick="apptSchedule('${intent.id}')">📅 Schedule</button>` : ''}
+              ${intent.status !== 'completed' ? `<button class="btn btn-outline btn-sm" onclick="apptComplete('${intent.id}')">✓ Done</button>` : ''}
+              <button class="btn btn-outline btn-sm" onclick="apptReschedule('${intent.id}')">↺</button>
+              <button class="btn btn-danger btn-sm" onclick="apptCancel('${intent.id}')">✕</button>
+            </div>
+          </div>
+        </div>
+        ${intent.agent_notes ? `<div style="margin-top:8px;padding:7px 10px;background:var(--surface-1);border-radius:6px;font-size:12px;color:var(--text-secondary);border:0.5px solid var(--border);">📝 ${intent.agent_notes}</div>` : ''}
+      </div>`;
+  };
+
+  const sectionHtml = (title, items, icon, color) => items.length === 0 ? '' : `
+    <div style="margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:${color||'var(--text-muted)'};margin-bottom:10px;padding-bottom:6px;border-bottom:0.5px solid var(--border);">${icon} ${title} · ${items.length}</div>
+      ${items.map(renderCard).join('')}
+    </div>`;
+
+  const isEmpty = list.length === 0;
+  pg.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+      <h2 class="section-title" style="margin:0;">📅 Appointments</h2>
+      <button class="btn btn-accent" onclick="apptLog()"><i class="ti ti-plus"></i> Log Appointment</button>
+    </div>
+
+    <div class="opens-stats" style="margin-bottom:24px;">
+      <div class="opens-stat" style="border-left-color:#d97706;"><div class="num" style="color:#d97706;">${pending.length}</div><div class="lbl">Pending</div></div>
+      <div class="opens-stat" style="border-left-color:#34d399;"><div class="num" style="color:#34d399;">${scheduled.length}</div><div class="lbl">Scheduled</div></div>
+      <div class="opens-stat"><div class="num">${completed.length}</div><div class="lbl">Completed</div></div>
+      <div class="opens-stat"><div class="num">${list.length}</div><div class="lbl">Total</div></div>
+    </div>
+
+    ${isEmpty
+      ? `<div style="text-align:center;padding:60px 20px;color:var(--text-muted);"><i class="ti ti-calendar" style="font-size:48px;display:block;margin-bottom:16px;opacity:0.4;"></i><div style="font-size:15px;font-weight:500;margin-bottom:6px;">No appointments yet</div><div style="font-size:13px;">Appointments appear here when contacts use your booking link, or you can log them manually.</div></div>`
+      : `${sectionHtml('Pending', pending, '⏳', '#d97706')}
+         ${sectionHtml('Scheduled', scheduled, '📅', '#34d399')}
+         ${sectionHtml('Completed', completed, '✅', 'var(--text-success)')}
+         ${sectionHtml('Other', other, '📋', 'var(--text-muted)')}`
+    }
+  `;
+}
+
+async function apptSchedule(id) {
+  const dt = prompt('Enter scheduled date/time (e.g. 7/15/2026 2:00 PM):');
+  if (dt === null) return;
+  const parsed = new Date(dt);
+  const updates = { status: 'scheduled', scheduled_at: isNaN(parsed) ? null : parsed.toISOString() };
+  const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('📅 Scheduled!'); renderAppointments();
+}
+
+async function apptComplete(id) {
+  const notes = prompt('Completion notes (optional):') || null;
+  const { error } = await supabaseClient.from('booking_intents')
+    .update({ status: 'completed', completed_at: new Date().toISOString(), agent_notes: notes })
+    .eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('✅ Marked complete!'); renderAppointments();
+}
+
+async function apptReschedule(id) {
+  const notes = prompt('Reschedule notes (new time, reason, etc.):');
+  if (notes === null) return;
+  const { error } = await supabaseClient.from('booking_intents')
+    .update({ status: 'rescheduled', scheduled_at: null, agent_notes: notes || null })
+    .eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('↺ Rescheduled'); renderAppointments();
+}
+
+async function apptCancel(id) {
+  if (!confirm('Mark this appointment as cancelled?')) return;
+  const { error } = await supabaseClient.from('booking_intents').update({ status: 'cancelled' }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('Cancelled'); renderAppointments();
+}
+
+async function apptLog() {
+  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
+  showModal('Log Appointment', `
+    <label>Contact</label>
+    <select id="appt-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Appointment Type</label>
+    <input type="text" id="appt-type" placeholder="e.g. Discovery Call, Benefits Review, Follow-up..." />
+    <label>Date &amp; Time</label>
+    <input type="datetime-local" id="appt-dt" />
+    <label>Notes</label>
+    <textarea id="appt-notes" placeholder="Any context or details..."></textarea>
+  `, async () => {
+    const contactId = document.getElementById('appt-contact').value;
+    const apptType  = document.getElementById('appt-type').value.trim();
+    const dt        = document.getElementById('appt-dt').value;
+    const notes     = document.getElementById('appt-notes').value.trim();
+    if (!apptType) { showToast('Appointment type required'); return false; }
+    const contact = contactId ? contacts.find(c => c.id === contactId) : null;
+    const { error } = await supabaseClient.from('booking_intents').insert({
+      agent_id:          currentAgent.id,
+      contact_id:        contactId || null,
+      contact_name:      contact?.name || null,
+      booker_name:       contact?.name || null,
+      booker_email:      contact?.email || null,
+      company:           contact?.company || null,
+      appointment_type:  apptType,
+      appointment_label: apptType,
+      scheduled_at:      dt ? new Date(dt).toISOString() : null,
+      agent_notes:       notes || null,
+      status:            dt ? 'scheduled' : 'pending',
+    });
+    if (error) { showToast('Error: ' + error.message); return false; }
+    showToast('✓ Appointment logged!'); renderAppointments();
+  });
+}
+
+// ============================================================
+// CONTACT TRANSFER
+// ============================================================
+async function transferContact(contactId) {
+  const contact = contacts.find(c => c.id === contactId);
+  if (!contact) { showToast('Contact not found'); return; }
+
+  const role = previewRole || currentAgent.role;
+  let eligible;
+  if (role === 'system_owner') {
+    eligible = allAgents.filter(a => a.id !== currentAgent.id && (a.status === 'active' || !a.status));
+  } else {
+    eligible = allAgents.filter(a => a.agency_id === currentAgent.agency_id && a.id !== currentAgent.id && (a.status === 'active' || !a.status));
+  }
+
+  if (eligible.length === 0) {
+    showToast('No other agents available to transfer to in your agency.');
+    return;
+  }
+
+  const agentOptions = eligible.map(a => `<option value="${a.id}">${a.name} (${a.email})</option>`).join('');
+
+  showModal(`Transfer: ${contact.name}`, `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6;">The selected agent will become the new owner of this contact and all its history. Your copy will be removed.</p>
+    <label>Transfer to Agent</label>
+    <select id="xfer-agent">${agentOptions}</select>
+    <label style="margin-top:12px;">Note for the receiving agent (optional)</label>
+    <textarea id="xfer-note" placeholder="Context about this contact, why you're transferring, next steps..."></textarea>
+  `, async () => {
+    const newAgentId = document.getElementById('xfer-agent').value;
+    if (!newAgentId) { showToast('Select an agent'); return false; }
+    const newAgent = eligible.find(a => a.id === newAgentId);
+    const note = document.getElementById('xfer-note').value.trim();
+
+    const updates = { agent_id: newAgentId };
+    // Include note in contact notes field so it's visible to the new owner
+    if (note) {
+      const existingNotes = contact.notes ? contact.notes + '\n\n' : '';
+      updates.notes = existingNotes + `[Transferred from ${currentAgent.name} on ${new Date().toLocaleDateString()}] ${note}`;
+    }
+
+    const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
+    if (error) { showToast('Error: ' + error.message); return false; }
+
+    // Update local state
+    const idx = contacts.findIndex(c => c.id === contactId);
+    if (idx >= 0) Object.assign(contacts[idx], updates);
+
+    showToast(`✓ Contact transferred to ${newAgent?.name || 'agent'}`);
+    renderContacts();
+  });
 }
 
 // ============================================================
