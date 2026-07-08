@@ -3276,6 +3276,7 @@ async function renderAppointments() {
 
 function _calRenderShell(pg) {
   pg.innerHTML = `
+    <div id="cal-pending"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;align-items:center;gap:6px;">
         <button class="btn btn-outline btn-sm" onclick="calNav(-1)" style="width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;"><i class="ti ti-chevron-left"></i></button>
@@ -3292,8 +3293,7 @@ function _calRenderShell(pg) {
         <button class="btn btn-accent btn-sm" onclick="apptLog()"><i class="ti ti-plus"></i> Add</button>
       </div>
     </div>
-    <div id="cal-body" style="min-height:500px;"></div>
-    <div id="cal-pending" style="margin-top:16px;"></div>`;
+    <div id="cal-body" style="min-height:500px;"></div>`;
 }
 
 function _calUpdateViewBtns() {
@@ -3312,10 +3312,10 @@ function _calUpdateViewBtns() {
 
 function _calRenderView() {
   _calUpdateViewBtns();
+  _calPending(); // always render pending strip first (appears above calendar)
   if (calView === 'month') _calMonth();
   else if (calView === 'week') _calWeek();
   else _calDay();
-  _calPending();
 }
 
 // ── MONTH VIEW ──
@@ -3516,24 +3516,30 @@ function _calPending() {
   const el = document.getElementById('cal-pending');
   if (!el) return;
   const unscheduled = calAppointments.filter(a => !a.scheduled_at && (!a.status || a.status === 'pending'));
-  if (unscheduled.length === 0) { el.innerHTML = ''; return; }
+  if (unscheduled.length === 0) { el.innerHTML = ''; el.style.marginBottom = '0'; return; }
+  el.style.marginBottom = '14px';
   el.innerHTML = `
-    <div style="margin-top:4px;">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;margin-bottom:10px;">⏳ Unscheduled Requests (${unscheduled.length})</div>
-      ${unscheduled.map(a => {
-        const name = a.booker_name||a.contact_name||'—';
-        const st = _calStatus(a.status);
-        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface-1);border-radius:8px;border:0.5px solid var(--border);border-left:3px solid ${st.border};margin-bottom:6px;gap:8px;flex-wrap:wrap;">
-          <div>
-            <div style="font-size:13px;font-weight:500;color:var(--text-primary);">${name}${a.company?` <span style="font-size:11px;color:var(--text-muted);">· ${a.company}</span>`:''}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${a.appointment_label||a.appointment_type||'Appointment'} · Received ${new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
-          </div>
-          <div style="display:flex;gap:4px;">
-            <button class="btn btn-outline btn-sm" onclick="apptSchedule('${a.id}')">📅 Schedule</button>
-            <button class="btn btn-danger btn-sm" onclick="apptCancel('${a.id}')">✕</button>
-          </div>
-        </div>`;
-      }).join('')}
+    <div style="background:rgba(251,191,36,0.05);border:0.5px solid rgba(217,119,6,0.3);border-radius:10px;padding:10px 14px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;">⏳ Unscheduled Requests</span>
+        <span style="background:rgba(217,119,6,0.18);color:#b45309;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">${unscheduled.length}</span>
+        <span style="font-size:11px;color:var(--text-muted);margin-left:2px;">— schedule or dismiss each one below</span>
+      </div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;">
+        ${unscheduled.map(a => {
+          const name = a.booker_name||a.contact_name||'—';
+          const received = new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+          return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #d97706;border-radius:8px;padding:9px 11px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:1px;">${name}</div>
+            ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:7px;">${a.appointment_label||a.appointment_type||'Appointment'} · ${received}</div>
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">📅 Schedule</button>
+              <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">✕</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
     </div>`;
 }
 
@@ -3582,15 +3588,33 @@ function apptDetail(id) {
 
 // ── CRUD ACTIONS (update + refresh calendar) ──
 async function apptSchedule(id) {
-  const dt = prompt('Enter date/time (e.g. 7/15/2026 2:00 PM):');
-  if (dt===null) return;
-  const parsed = new Date(dt);
-  const { error } = await supabaseClient.from('booking_intents').update({ status:'scheduled', scheduled_at: isNaN(parsed)?null:parsed.toISOString() }).eq('id',id);
-  if (error) { showToast('Error: '+error.message); return; }
-  showToast('📅 Scheduled!');
-  const idx = calAppointments.findIndex(a=>a.id===id);
-  if (idx>=0) { calAppointments[idx].status='scheduled'; if(!isNaN(parsed)) calAppointments[idx].scheduled_at=parsed.toISOString(); }
-  _calRenderView();
+  const appt = calAppointments.find(a=>a.id===id);
+  const name = appt ? (appt.booker_name||appt.contact_name||'this appointment') : 'this appointment';
+  // Pre-fill datetime-local with tomorrow 9am as a sensible default
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(9,0,0,0);
+  const pad = n => String(n).padStart(2,'0');
+  const defaultDt = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-${pad(tomorrow.getDate())}T09:00`;
+  showModal(`Schedule: ${name}`, `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Choose the date and time for this appointment.</p>
+    <label>Date &amp; Time <span style="color:var(--danger);">*</span></label>
+    <input type="datetime-local" id="sched-dt" value="${defaultDt}" style="width:100%;box-sizing:border-box;" />
+    <label style="margin-top:12px;">Internal notes (optional)</label>
+    <input type="text" id="sched-notes" placeholder="Confirmed via phone, Zoom link sent, etc." style="width:100%;box-sizing:border-box;" />
+  `, async () => {
+    const dtVal = document.getElementById('sched-dt').value;
+    if (!dtVal) { showToast('Please select a date and time'); return false; }
+    const notes = document.getElementById('sched-notes').value.trim();
+    const parsed = new Date(dtVal);
+    const updates = { status:'scheduled', scheduled_at:parsed.toISOString() };
+    if (notes) updates.agent_notes = notes;
+    const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
+    if (error) { showToast('Error: '+error.message); return false; }
+    showToast('📅 Scheduled!');
+    const idx = calAppointments.findIndex(a=>a.id===id);
+    if (idx>=0) Object.assign(calAppointments[idx], updates);
+    calDate = parsed; // jump calendar to scheduled date
+    _calRenderView();
+  });
 }
 
 async function apptComplete(id) {
