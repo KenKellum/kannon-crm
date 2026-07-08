@@ -16,7 +16,7 @@ const PIPELINES = {
   'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
 
-const CONTACT_TYPES = ['Group/Employer','Individual & Family','Recruit','Agent — Insured America','Agent — Kannon Financial'];
+const CONTACT_TYPES = ['Group/Employer','Individual/Family','Recruit','Agent — Insured America','Agent — Kannon Financial'];
 
 let supabaseClient = null;
 let campaignTab = 'drip';
