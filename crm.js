@@ -1005,6 +1005,85 @@ function updateBookingNote() {
 
 function updateBookingNoteForType(typeRaw) { updateBookingNote(); }
 
+async function generateAIBookingMessage() {
+  const email     = document.getElementById('booking-email-to')?.value.trim()   || '';
+  const firstName = document.getElementById('booking-first-name')?.value.trim() || '';
+  const lastName  = document.getElementById('booking-last-name')?.value.trim()  || '';
+  const typeRaw   = document.getElementById('booking-contact-type')?.value       || 'Individual/Family';
+  const intent    = document.getElementById('booking-intent')?.value             || 'just-met';
+  const noteEl    = document.getElementById('booking-email-note');
+  const aiBtn     = document.getElementById('booking-ai-btn');
+
+  const contactName = [firstName, lastName].filter(Boolean).join(' ') || email.split('@')[0] || 'this person';
+  const agentName   = currentAgent.name || 'I';
+
+  const intentLabels = {
+    'just-met':   'We just met in person',
+    'after-call': 'We just spoke on the phone',
+    'follow-up':  'Following up on a prior conversation',
+    'referral':   'This is a referral — a mutual contact passed along their info',
+    'reconnect':  'Reconnecting after a long time with no contact',
+    'social':     'Connected via social media or met online',
+  };
+  const typeLabels = {
+    'Individual/Family':     'Individual or family prospect looking for health, life, or financial coverage',
+    'Group/Employer':        'Business owner or HR decision-maker for group employee benefits',
+    'Recruit|agent-kannon':  'Potential recruit for the Kannon Financial Group agent team',
+    'Recruit|agent-insured': 'Potential recruit for the Insured America agent team',
+  };
+
+  // Fetch contact notes if the contact already exists
+  let contactNotes = '';
+  if (email && email.includes('@')) {
+    try {
+      const { data } = await supabaseClient
+        .from('contacts').select('notes')
+        .eq('email', email.toLowerCase()).eq('owner_id', currentAgent.id).limit(1);
+      if (data && data.length > 0 && data[0].notes) contactNotes = data[0].notes.trim();
+    } catch(e) { /* ignore — notes are optional */ }
+  }
+
+  if (aiBtn)  { aiBtn.disabled = true; aiBtn.textContent = '✨ Generating…'; }
+  if (noteEl) { noteEl.style.opacity = '0.5'; }
+
+  const prompt = `You are writing a brief, personal email message on behalf of ${agentName}, an independent insurance and financial agent at Kannon Financial Group.
+
+Recipient name: ${contactName}
+Contact type: ${typeLabels[typeRaw] || typeLabels['Individual/Family']}
+How we connected: ${intentLabels[intent] || intentLabels['just-met']}
+${contactNotes ? `Notes about this person: ${contactNotes}` : 'No prior notes on file — treat this as early-stage contact.'}
+
+Write ONLY the personal message body (2–4 sentences). Rules:
+- Do NOT include a greeting like "Hi ${firstName}," — the email template handles that automatically
+- Do NOT include any sign-off or signature — handled by the template
+- Write in first person as ${agentName}
+- Sound genuine and warm, NOT like a sales script or template
+- Be specific to the intent/situation where possible
+- Naturally lead toward the reason for sharing a booking link
+- If there are notes with specifics (renewal dates, coverage needs, situation details), reference them naturally
+Output ONLY the message body text. No labels, no quotes, just the paragraph(s).`;
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({ message: prompt, context: '', history: [] }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (noteEl && data.text) {
+      const body = data.text.trim();
+      noteEl.value = `${body}\n\nUse the link below to grab a time that works for you — takes just a couple minutes and there is no obligation, just a conversation.\n\nLooking forward to speaking with you!\n\n${agentName}`;
+    }
+  } catch(e) {
+    showToast('AI generation failed: ' + e.message);
+  } finally {
+    if (aiBtn)  { aiBtn.disabled = false; aiBtn.textContent = '✨ Generate with AI'; }
+    if (noteEl) { noteEl.style.opacity = '1'; }
+  }
+}
+
 let _bookingLookupTimer = null;
 async function bookingLinkLookupContact(email) {
   const statusEl = document.getElementById('booking-contact-status');
@@ -1326,8 +1405,12 @@ function manageBookingTypes() {
       </div>
       <textarea id="booking-email-note" rows="4"
         style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:vertical;margin-bottom:6px;box-sizing:border-box;"></textarea>
-      <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-first-name').value.trim(), document.getElementById('booking-last-name').value.trim(), document.getElementById('booking-email-note').value.trim(), document.getElementById('booking-contact-type').value)"
-        style="background:var(--fill-accent);border:none;color:#000;border-radius:6px;padding:7px 16px;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+        <button id="booking-ai-btn" onclick="generateAIBookingMessage()"
+          style="background:var(--surface-3);border:0.5px solid var(--border);color:var(--text-primary);border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;font-weight:500;white-space:nowrap;">✨ Generate with AI</button>
+        <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-first-name').value.trim(), document.getElementById('booking-last-name').value.trim(), document.getElementById('booking-email-note').value.trim(), document.getElementById('booking-contact-type').value)"
+          style="background:var(--fill-accent);border:none;color:#000;border-radius:6px;padding:7px 16px;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail</button>
+      </div>
     </div>
 
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Appointment Types</div>
@@ -2857,76 +2940,13 @@ function toggleAIPanel() {
   if (bubble) bubble.classList.toggle('open', aiPanelOpen);
   if (aiPanelOpen) {
     if (aiHistory.length === 0) renderAISuggestions();
-    setTimeout(() => document.getElementById('ai-input')?.focus(), 100);
+    setTimeout(() => document.getElementById('ai-input')?.focus(), 50);
   }
 }
 
-function renderAISuggestions() {
-  const el = document.getElementById('ai-suggestions');
-  if (!el) return;
-  el.innerHTML = AI_SUGGESTIONS.map(s =>
-    `<button class="ai-suggestion-chip" onclick="sendAIMessage('${s.replace(/'/g, "\\'")}')">${s}</button>`
-  ).join('');
-}
-
-function buildCRMContext() {
-  const role = currentAgent?.role || 'agent';
-  const name = currentAgent?.name || 'User';
-  const now = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-
-  // Contact stats
-  const total = totalContactCountFull || contacts.length;
-  const replied = contacts.filter(c => c.sequence_status === 'Replied').length;
-  const active = contacts.filter(c => c.sequence_status === 'Active').length;
-  const notStarted = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started').length;
-
-  // Pipeline stats
-  const dealsByStage = {};
-  deals.forEach(d => { dealsByStage[d.stage] = (dealsByStage[d.stage] || 0) + 1; });
-  const stageLines = Object.entries(dealsByStage).map(([s, n]) => `  ${s}: ${n}`).join('\n');
-
-  // Recent contacts (last 5 by created_at)
-  const recent = [...contacts]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5)
-    .map(c => `  - ${c.name} (${c.type || 'Contact'}) — ${c.sequence_status || 'Not started'} — ${c.email || 'no email'}`)
-    .join('\n');
-
-  // Hot leads (replied)
-  const hotLeads = contacts.filter(c => c.sequence_status === 'Replied').slice(0, 5)
-    .map(c => `  - ${c.name}${c.company ? ' @ ' + c.company : ''} — ${c.phone || c.email || ''}`)
-    .join('\n') || '  (none)';
-
-  return `Date: ${now}
-User: ${name} (${role})
-
-CONTACTS:
-  Total: ${total}
-  Replied / Hot: ${replied}
-  Active in sequence: ${active}
-  Not yet contacted: ${notStarted}
-
-HOT LEADS (replied):
-${hotLeads}
-
-RECENT ADDITIONS:
-${recent || '  (none)'}
-
-PIPELINE (deals by stage):
-${stageLines || '  (no deals)'}
-Total deals: ${deals.length}`;
-}
-
-async function sendAIMessage(overrideText) {
-  const input = document.getElementById('ai-input');
-  const message = (overrideText || input?.value || '').trim();
-  if (!message || aiThinking) return;
-
-  if (input) input.value = '';
-
-  // Hide suggestions once chat starts
-  const suggEl = document.getElementById('ai-suggestions');
-  if (suggEl) suggEl.innerHTML = '';
+async function sendAIMessage(message) {
+  if (!message || !message.trim()) return;
+  message = message.trim();
 
   // Append user message
   aiHistory.push({ role: 'user', content: message });
@@ -2950,7 +2970,7 @@ async function sendAIMessage(overrideText) {
         body: JSON.stringify({
           message,
           context: buildCRMContext(),
-          history: aiHistory.slice(0, -1), // exclude the message we just appended
+          history: aiHistory.slice(0, -1),
         }),
       }
     );
@@ -2983,18 +3003,58 @@ function appendAIThinking() {
 function renderAIMessages() {
   const container = document.getElementById('ai-messages');
   if (!container) return;
-  container.innerHTML = aiHistory.map(msg => {
-    const text = msg.content
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
+  const thinking = document.getElementById('ai-thinking-indicator');
+  if (thinking) thinking.remove();
+
+  if (aiHistory.length === 0) {
+    renderAISuggestions();
+    return;
+  }
+
+  container.innerHTML = aiHistory.map(m => {
+    const isUser = m.role === 'user';
+    const content = (m.content || '')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\n/g, '<br>');
-    return `<div class="ai-msg ${msg.role}">${text}</div>`;
+    return `<div class="ai-msg ${isUser ? 'user' : 'assistant'}">${content}</div>`;
   }).join('');
+
   container.scrollTop = container.scrollHeight;
-  // Also refresh the embedded dashboard AI card if visible
-  if (document.getElementById('dash-ai-card')) renderDashAICard();
+  if (aiThinking) appendAIThinking();
+}
+
+function renderAISuggestions() {
+  const container = document.getElementById('ai-messages');
+  if (!container) return;
+  const firstName = (currentAgent?.name || '').split(' ')[0] || 'there';
+  container.innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);padding:8px 0 12px;">Hi ${firstName} — ask me anything about your contacts, pipeline, or sequences.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      ${AI_SUGGESTIONS.map(s => `<button class="ai-suggestion" onclick="sendAIMessage('${s.replace(/'/g, "\'")}')">${s}</button>`).join('')}
+    </div>`;
+}
+
+function buildCRMContext() {
+  const total     = contacts.length;
+  const active    = contacts.filter(c => c.sequence_status === 'Active').length;
+  const drip      = contacts.filter(c => c.sequence_status === 'Drip').length;
+  const replied   = contacts.filter(c => c.sequence_status === 'Replied').length;
+  const bounced   = contacts.filter(c => c.email_status === 'bounced').length;
+  const optedOut  = contacts.filter(c => c.sequence_status === 'Opted-Out').length;
+  const indiv     = contacts.filter(c => c.type === 'Individual/Family').length;
+  const grp       = contacts.filter(c => c.type === 'Group/Employer').length;
+  const recruit   = contacts.filter(c => c.type === 'Recruit').length;
+  const step1     = contacts.filter(c => c.sequence_step >= 1).length;
+  const step2     = contacts.filter(c => c.sequence_step >= 2).length;
+  const step3     = contacts.filter(c => c.sequence_step >= 3).length;
+  const dealCount = deals ? deals.length : 0;
+  const pipeline  = currentPipeline || 'all pipelines';
+
+  return `KFG CRM Context — Agent: ${currentAgent?.name || 'Unknown'} | ${new Date().toLocaleDateString()}
+Contacts: ${total} total | ${indiv} Individual/Family | ${grp} Group/Employer | ${recruit} Recruit
+Sequence Status: ${active} Active | ${drip} Drip | ${replied} Replied | ${bounced} Bounced | ${optedOut} Opted-Out
+Sequence Progress: ${step1} sent Email 1 | ${step2} sent Email 2 | ${step3} sent Email 3
+Deals: ${dealCount} in ${pipeline}`;
 }
 
 // ============================================================
