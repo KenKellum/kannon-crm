@@ -312,9 +312,17 @@ async function loadData() {
   if (currentAgent.role === 'agent') {
     cq = cq.eq('agent_id', currentAgent.id);
   } else if (currentAgent.role === 'agency_owner') {
-    cq = cq.eq('agency_id', currentAgent.agency_id);
+    // Fetch all agents in this agency (including owner) then load their contacts
+    // This catches contacts where agency_id may not be set but agent_id is
+    const { data: agencyAgentRows } = await supabaseClient
+      .from('agents').select('id').eq('agency_id', currentAgent.agency_id);
+    const agencyAgentIds = [...new Set([
+      currentAgent.id,
+      ...((agencyAgentRows || []).map(a => a.id))
+    ])];
+    cq = cq.in('agent_id', agencyAgentIds);
   }
-  // system_owner: no filter
+  // system_owner: no filter — sees all
 
   let dq = supabaseClient.from('deals').select('*');
   if (currentAgent.role === 'agent') dq = dq.eq('user_id', currentUser.id);
