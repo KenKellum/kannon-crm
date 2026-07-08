@@ -40,6 +40,9 @@ let dialerQueue = [];
 let dialerIndex = 0;
 let totalContactCountFull = 0; // True DB count bypassing 1000-row cap
 let previewRole = null; // system_owner can preview other role views
+let calView = 'month';  // 'month' | 'week' | 'day'
+let calDate = new Date();
+let calAppointments = [];
 
 // ============================================================
 // INIT
@@ -3236,147 +3239,398 @@ async function saveSettings() {
 }
 
 // ============================================================
-// APPOINTMENTS PAGE
+// APPOINTMENTS — CALENDAR
 // ============================================================
+const CAL_STATUS = {
+  pending:     { bg:'rgba(251,191,36,0.18)',  border:'#d97706', dot:'#d97706',  label:'Pending'     },
+  scheduled:   { bg:'rgba(52,211,153,0.18)',  border:'#10b981', dot:'#10b981',  label:'Scheduled'   },
+  completed:   { bg:'rgba(156,163,175,0.12)', border:'#6b7280', dot:'#6b7280',  label:'Completed'   },
+  cancelled:   { bg:'rgba(248,113,113,0.18)', border:'#ef4444', dot:'#ef4444',  label:'Cancelled'   },
+  no_show:     { bg:'rgba(156,163,175,0.12)', border:'#9ca3af', dot:'#9ca3af',  label:'No-show'     },
+  rescheduled: { bg:'rgba(139,92,246,0.18)',  border:'#8b5cf6', dot:'#8b5cf6',  label:'Rescheduled' },
+};
+
+function _calStatus(s) { return CAL_STATUS[s||'pending'] || CAL_STATUS.pending; }
+function _calDateKey(dt) { const d=new Date(dt); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function _calTodayKey() { return _calDateKey(new Date()); }
+
 async function renderAppointments() {
   const pg = document.getElementById('page-appointments');
   if (!pg) return;
-  pg.innerHTML = `<div style="color:var(--text-muted);padding:40px;text-align:center;">Loading appointments...</div>`;
+  pg.innerHTML = `<div style="color:var(--text-muted);padding:40px;text-align:center;"><i class="ti ti-loader" style="font-size:24px;"></i> Loading...</div>`;
 
   let q = supabaseClient.from('booking_intents').select('*');
   const role = previewRole || currentAgent.role;
   if (role === 'agent') {
     q = q.eq('agent_id', currentAgent.id);
   } else if (role === 'agency_owner') {
-    const agencyIds = [...new Set([currentAgent.id, ...allAgents.filter(a => a.agency_id === currentAgent.agency_id).map(a => a.id)])];
-    q = q.in('agent_id', agencyIds);
+    const ids = [...new Set([currentAgent.id, ...allAgents.filter(a=>a.agency_id===currentAgent.agency_id).map(a=>a.id)])];
+    q = q.in('agent_id', ids);
   }
-  q = q.order('created_at', { ascending: false }).limit(300);
-
-  const { data: intents, error } = await q;
+  const { data, error } = await q.order('scheduled_at',{ascending:true}).limit(500);
   if (error) { pg.innerHTML = `<div style="color:var(--danger);padding:40px;">${error.message}</div>`; return; }
-  const list = intents || [];
-
-  const pending   = list.filter(i => !i.status || i.status === 'pending');
-  const scheduled = list.filter(i => i.status === 'scheduled');
-  const completed = list.filter(i => i.status === 'completed');
-  const other     = list.filter(i => ['cancelled','no_show','rescheduled'].includes(i.status));
-
-  const statusBadge = s => ({
-    pending:     `<span class="badge" style="background:rgba(251,191,36,0.15);color:#d97706;">⏳ Pending</span>`,
-    scheduled:   `<span class="badge badge-active">📅 Scheduled</span>`,
-    completed:   `<span class="badge badge-completed">✅ Completed</span>`,
-    cancelled:   `<span class="badge" style="background:rgba(248,113,113,0.15);color:#dc2626;">❌ Cancelled</span>`,
-    no_show:     `<span class="badge" style="background:rgba(156,163,175,0.15);color:#6b7280;">👻 No-show</span>`,
-    rescheduled: `<span class="badge" style="background:rgba(139,92,246,0.15);color:#8b5cf6;">↺ Rescheduled</span>`,
-  }[s||'pending'] || `<span class="badge">Unknown</span>`);
-
-  const renderCard = intent => {
-    const bookerName  = intent.booker_name || intent.contact_name || '—';
-    const bookerEmail = intent.booker_email || '';
-    const agentRow    = allAgents.find(a => a.id === intent.agent_id);
-    const dateStr = intent.scheduled_at
-      ? new Date(intent.scheduled_at).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
-      : `Received ${new Date(intent.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
-    const isOwnerOrAdmin = role !== 'agent';
-    return `
-      <div class="dash-card" style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
-          <div style="flex:1;min-width:180px;">
-            <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">${bookerName}${intent.company ? ` <span style="font-weight:400;font-size:12px;color:var(--text-muted);">· ${intent.company}</span>` : ''}</div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:3px;"><i class="ti ti-tag" style="font-size:11px;"></i> ${intent.appointment_label || intent.appointment_type || 'Appointment'}</div>
-            <div style="font-size:12px;color:var(--text-muted);">🕐 ${dateStr}</div>
-            ${bookerEmail ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">📧 ${bookerEmail}</div>` : ''}
-            ${intent.note ? `<div style="font-size:12px;color:var(--text-muted);margin-top:5px;font-style:italic;">"${intent.note}"</div>` : ''}
-            ${isOwnerOrAdmin && agentRow ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">👤 Agent: ${agentRow.name}</div>` : ''}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0;">
-            ${statusBadge(intent.status)}
-            <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;justify-content:flex-end;">
-              ${!intent.status || intent.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick="apptSchedule('${intent.id}')">📅 Schedule</button>` : ''}
-              ${intent.status !== 'completed' ? `<button class="btn btn-outline btn-sm" onclick="apptComplete('${intent.id}')">✓ Done</button>` : ''}
-              <button class="btn btn-outline btn-sm" onclick="apptReschedule('${intent.id}')">↺</button>
-              <button class="btn btn-danger btn-sm" onclick="apptCancel('${intent.id}')">✕</button>
-            </div>
-          </div>
-        </div>
-        ${intent.agent_notes ? `<div style="margin-top:8px;padding:7px 10px;background:var(--surface-1);border-radius:6px;font-size:12px;color:var(--text-secondary);border:0.5px solid var(--border);">📝 ${intent.agent_notes}</div>` : ''}
-      </div>`;
-  };
-
-  const sectionHtml = (title, items, icon, color) => items.length === 0 ? '' : `
-    <div style="margin-bottom:20px;">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:${color||'var(--text-muted)'};margin-bottom:10px;padding-bottom:6px;border-bottom:0.5px solid var(--border);">${icon} ${title} · ${items.length}</div>
-      ${items.map(renderCard).join('')}
-    </div>`;
-
-  const isEmpty = list.length === 0;
-  pg.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <h2 class="section-title" style="margin:0;">📅 Appointments</h2>
-      <button class="btn btn-accent" onclick="apptLog()"><i class="ti ti-plus"></i> Log Appointment</button>
-    </div>
-
-    <div class="opens-stats" style="margin-bottom:24px;">
-      <div class="opens-stat" style="border-left-color:#d97706;"><div class="num" style="color:#d97706;">${pending.length}</div><div class="lbl">Pending</div></div>
-      <div class="opens-stat" style="border-left-color:#34d399;"><div class="num" style="color:#34d399;">${scheduled.length}</div><div class="lbl">Scheduled</div></div>
-      <div class="opens-stat"><div class="num">${completed.length}</div><div class="lbl">Completed</div></div>
-      <div class="opens-stat"><div class="num">${list.length}</div><div class="lbl">Total</div></div>
-    </div>
-
-    ${isEmpty
-      ? `<div style="text-align:center;padding:60px 20px;color:var(--text-muted);"><i class="ti ti-calendar" style="font-size:48px;display:block;margin-bottom:16px;opacity:0.4;"></i><div style="font-size:15px;font-weight:500;margin-bottom:6px;">No appointments yet</div><div style="font-size:13px;">Appointments appear here when contacts use your booking link, or you can log them manually.</div></div>`
-      : `${sectionHtml('Pending', pending, '⏳', '#d97706')}
-         ${sectionHtml('Scheduled', scheduled, '📅', '#34d399')}
-         ${sectionHtml('Completed', completed, '✅', 'var(--text-success)')}
-         ${sectionHtml('Other', other, '📋', 'var(--text-muted)')}`
-    }
-  `;
+  calAppointments = data || [];
+  _calRenderShell(pg);
+  _calRenderView();
 }
 
+function _calRenderShell(pg) {
+  pg.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="calNav(-1)" style="width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;"><i class="ti ti-chevron-left"></i></button>
+        <div id="cal-title" style="font-size:16px;font-weight:700;color:var(--text-primary);min-width:190px;text-align:center;"></div>
+        <button class="btn btn-outline btn-sm" onclick="calNav(1)" style="width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;"><i class="ti ti-chevron-right"></i></button>
+        <button class="btn btn-outline btn-sm" onclick="calGoToday()" style="font-size:11px;">Today</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <div style="display:flex;background:var(--surface-0);border:0.5px solid var(--border);border-radius:8px;padding:2px;gap:2px;">
+          <button id="cal-v-day"   onclick="calSwitchView('day')"   style="padding:4px 12px;border-radius:6px;font-size:12px;border:none;cursor:pointer;font-weight:500;transition:all .15s;">Day</button>
+          <button id="cal-v-week"  onclick="calSwitchView('week')"  style="padding:4px 12px;border-radius:6px;font-size:12px;border:none;cursor:pointer;font-weight:500;transition:all .15s;">Week</button>
+          <button id="cal-v-month" onclick="calSwitchView('month')" style="padding:4px 12px;border-radius:6px;font-size:12px;border:none;cursor:pointer;font-weight:500;transition:all .15s;">Month</button>
+        </div>
+        <button class="btn btn-accent btn-sm" onclick="apptLog()"><i class="ti ti-plus"></i> Add</button>
+      </div>
+    </div>
+    <div id="cal-body" style="min-height:500px;"></div>
+    <div id="cal-pending" style="margin-top:16px;"></div>`;
+}
+
+function _calUpdateViewBtns() {
+  ['day','week','month'].forEach(v => {
+    const el = document.getElementById('cal-v-'+v);
+    if (!el) return;
+    if (v === calView) {
+      el.style.background = 'var(--surface-2)';
+      el.style.color = 'var(--text-primary)';
+    } else {
+      el.style.background = 'none';
+      el.style.color = 'var(--text-muted)';
+    }
+  });
+}
+
+function _calRenderView() {
+  _calUpdateViewBtns();
+  if (calView === 'month') _calMonth();
+  else if (calView === 'week') _calWeek();
+  else _calDay();
+  _calPending();
+}
+
+// ── MONTH VIEW ──
+function _calMonth() {
+  const titleEl = document.getElementById('cal-title');
+  const body    = document.getElementById('cal-body');
+  if (!titleEl || !body) return;
+
+  const yr = calDate.getFullYear(), mo = calDate.getMonth();
+  titleEl.textContent = new Date(yr,mo,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+
+  const today     = _calTodayKey();
+  const firstDay  = new Date(yr,mo,1).getDay(); // 0=Sun
+  const daysInMo  = new Date(yr,mo+1,0).getDate();
+  const daysInPrev= new Date(yr,mo,0).getDate();
+
+  // Build lookup: dateKey → appointments
+  const byDate = {};
+  calAppointments.forEach(a => {
+    if (!a.scheduled_at) return;
+    const k = _calDateKey(a.scheduled_at);
+    if (!byDate[k]) byDate[k] = [];
+    byDate[k].push(a);
+  });
+
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let cells = '';
+  const totalCells = Math.ceil((firstDay + daysInMo) / 7) * 7;
+
+  for (let i = 0; i < totalCells; i++) {
+    let day, dateKey, isCurrentMo = true;
+    if (i < firstDay) {
+      day = daysInPrev - firstDay + 1 + i;
+      dateKey = `${yr}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      if (mo === 0) dateKey = `${yr-1}-12-${String(day).padStart(2,'0')}`;
+      isCurrentMo = false;
+    } else if (i >= firstDay + daysInMo) {
+      day = i - firstDay - daysInMo + 1;
+      dateKey = `${yr}-${String(mo+2).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      if (mo === 11) dateKey = `${yr+1}-01-${String(day).padStart(2,'0')}`;
+      isCurrentMo = false;
+    } else {
+      day = i - firstDay + 1;
+      dateKey = `${yr}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+
+    const isToday = dateKey === today;
+    const dayAppts = byDate[dateKey] || [];
+
+    const chips = dayAppts.slice(0,3).map(a => {
+      const st = _calStatus(a.status);
+      const name = a.booker_name || a.contact_name || 'Appointment';
+      const time = a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
+      return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${st.bg};border-left:2px solid ${st.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
+    }).join('');
+    const more = dayAppts.length > 3 ? `<div style="font-size:10px;color:var(--text-muted);padding-left:4px;">+${dayAppts.length-3} more</div>` : '';
+
+    cells += `<div onclick="calDayClick('${dateKey}')" style="min-height:90px;padding:6px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);cursor:pointer;background:${isToday ? 'rgba(200,168,75,0.08)' : 'transparent'};transition:background .1s;" onmouseover="this.style.background='${isToday ? 'rgba(200,168,75,0.12)' : 'var(--surface-1)'}'" onmouseout="this.style.background='${isToday ? 'rgba(200,168,75,0.08)' : 'transparent'}'">
+      <div style="font-size:13px;font-weight:${isToday?'700':'500'};color:${!isCurrentMo?'var(--text-muted)':isToday?'var(--text-accent)':'var(--text-primary)'};${isToday?'width:24px;height:24px;background:var(--fill-accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#000;font-size:12px;margin-bottom:4px;':''}">${day}</div>
+      <div>${chips}${more}</div>
+    </div>`;
+  }
+
+  body.innerHTML = `
+    <div style="border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);background:var(--surface-1);border-bottom:0.5px solid var(--border);">
+        ${DOW.map(d=>`<div style="padding:8px;text-align:center;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">${d}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);">${cells}</div>
+    </div>`;
+}
+
+// ── WEEK VIEW ──
+function _calWeek() {
+  const titleEl = document.getElementById('cal-title');
+  const body    = document.getElementById('cal-body');
+  if (!titleEl || !body) return;
+
+  // Get Sunday of current week
+  const d = new Date(calDate);
+  d.setDate(d.getDate() - d.getDay());
+  const weekDays = Array.from({length:7},(_,i) => { const x=new Date(d); x.setDate(d.getDate()+i); return x; });
+
+  const today = _calTodayKey();
+  const startStr = weekDays[0].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const endStr   = weekDays[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  titleEl.textContent = `${startStr} — ${endStr}`;
+
+  const byDate = {};
+  calAppointments.forEach(a => {
+    if (!a.scheduled_at) return;
+    const k = _calDateKey(a.scheduled_at);
+    if (!byDate[k]) byDate[k] = [];
+    byDate[k].push(a);
+  });
+
+  const HOURS = Array.from({length:14},(_,i)=>i+7); // 7am–8pm
+
+  const cols = weekDays.map(wd => {
+    const dk = _calDateKey(wd);
+    const isToday = dk === today;
+    const dayAppts = (byDate[dk]||[]);
+
+    // Position events by hour
+    const eventBlocks = dayAppts.map(a => {
+      const dt = new Date(a.scheduled_at);
+      const hr = dt.getHours(), mn = dt.getMinutes();
+      const top = Math.max(0,(hr-7)*56 + Math.round(mn/60*56));
+      const st = _calStatus(a.status);
+      const name = a.booker_name || a.contact_name || 'Appt';
+      const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${top}px;height:50px;background:${st.bg};border-left:3px solid ${st.border};border-radius:4px;padding:3px 5px;cursor:pointer;overflow:hidden;z-index:1;">
+        <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}</div>
+        <div style="font-size:9px;color:var(--text-muted);">${timeStr}</div>
+      </div>`;
+    }).join('');
+
+    const dow = wd.toLocaleDateString('en-US',{weekday:'short'});
+    const dom = wd.getDate();
+    return `<div style="flex:1;min-width:0;border-right:0.5px solid var(--border);">
+      <div style="padding:8px 4px;text-align:center;background:${isToday?'rgba(200,168,75,0.1)':'var(--surface-1)'};border-bottom:0.5px solid var(--border);position:sticky;top:0;z-index:2;">
+        <div style="font-size:10px;font-weight:600;color:${isToday?'var(--text-accent)':'var(--text-muted)'};text-transform:uppercase;letter-spacing:0.4px;">${dow}</div>
+        <div style="font-size:${isToday?'18px':'14px'};font-weight:700;color:${isToday?'var(--text-accent)':'var(--text-primary)'};">${dom}</div>
+      </div>
+      <div style="position:relative;height:${14*56}px;">${eventBlocks}</div>
+    </div>`;
+  }).join('');
+
+  const timeCol = HOURS.map(h=>{
+    const label = h===12?'12pm':h>12?`${h-12}pm`:`${h}am`;
+    return `<div style="height:56px;padding-right:8px;text-align:right;font-size:10px;color:var(--text-muted);line-height:1;padding-top:4px;border-bottom:0.5px solid var(--border);">${label}</div>`;
+  }).join('');
+
+  const gridLines = HOURS.map(()=>`<div style="height:56px;border-bottom:0.5px solid var(--border);grid-column:1/-1;pointer-events:none;"></div>`).join('');
+
+  body.innerHTML = `
+    <div style="border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
+      <div style="display:flex;">
+        <div style="width:44px;flex-shrink:0;border-right:0.5px solid var(--border);">
+          <div style="height:49px;border-bottom:0.5px solid var(--border);"></div>
+          <div>${timeCol}</div>
+        </div>
+        <div style="flex:1;display:flex;min-width:0;overflow-x:auto;">${cols}</div>
+      </div>
+    </div>`;
+}
+
+// ── DAY VIEW ──
+function _calDay() {
+  const titleEl = document.getElementById('cal-title');
+  const body    = document.getElementById('cal-body');
+  if (!titleEl || !body) return;
+
+  const today   = _calTodayKey();
+  const dateKey = _calDateKey(calDate);
+  const isToday = dateKey === today;
+  titleEl.textContent = calDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+
+  const dayAppts = calAppointments.filter(a => a.scheduled_at && _calDateKey(a.scheduled_at)===dateKey);
+  const HOURS = Array.from({length:14},(_,i)=>i+7);
+
+  const eventBlocks = dayAppts.map(a => {
+    const dt = new Date(a.scheduled_at);
+    const hr = dt.getHours(), mn = dt.getMinutes();
+    const top = Math.max(0,(hr-7)*64 + Math.round(mn/60*64));
+    const st = _calStatus(a.status);
+    const name = a.booker_name || a.contact_name || 'Appointment';
+    const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    const agentRow = allAgents.find(x=>x.id===a.agent_id);
+    return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:4px;right:4px;top:${top}px;height:58px;background:${st.bg};border-left:4px solid ${st.border};border-radius:6px;padding:5px 10px;cursor:pointer;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+      <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}</div>
+      <div style="font-size:11px;color:var(--text-muted);">${timeStr} · ${a.appointment_label||a.appointment_type||'Appointment'}</div>
+      ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const timeCol = HOURS.map(h=>{
+    const label = h===12?'12pm':h>12?`${h-12}pm`:`${h}am`;
+    return `<div style="height:64px;padding-right:10px;text-align:right;font-size:11px;color:var(--text-muted);line-height:1;padding-top:5px;border-bottom:0.5px solid var(--border);">${label}</div>`;
+  }).join('');
+
+  const noAppts = dayAppts.length === 0 ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--text-muted);pointer-events:none;"><i class="ti ti-calendar" style="font-size:32px;display:block;margin-bottom:8px;opacity:0.3;"></i><div style="font-size:13px;">No appointments</div></div>` : '';
+
+  body.innerHTML = `
+    <div style="border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
+      <div style="padding:10px 16px;background:${isToday?'rgba(200,168,75,0.08)':'var(--surface-1)'};border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:600;color:${isToday?'var(--text-accent)':'var(--text-primary)'};">${isToday?'Today — ':''}${calDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
+        <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointment${dayAppts.length!==1?'s':''}</div>
+      </div>
+      <div style="display:flex;">
+        <div style="width:52px;flex-shrink:0;border-right:0.5px solid var(--border);">${timeCol}</div>
+        <div style="flex:1;position:relative;min-height:${14*64}px;">${noAppts}${eventBlocks}</div>
+      </div>
+    </div>`;
+}
+
+function _calPending() {
+  const el = document.getElementById('cal-pending');
+  if (!el) return;
+  const unscheduled = calAppointments.filter(a => !a.scheduled_at && (!a.status || a.status === 'pending'));
+  if (unscheduled.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div style="margin-top:4px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;margin-bottom:10px;">⏳ Unscheduled Requests (${unscheduled.length})</div>
+      ${unscheduled.map(a => {
+        const name = a.booker_name||a.contact_name||'—';
+        const st = _calStatus(a.status);
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface-1);border-radius:8px;border:0.5px solid var(--border);border-left:3px solid ${st.border};margin-bottom:6px;gap:8px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:13px;font-weight:500;color:var(--text-primary);">${name}${a.company?` <span style="font-size:11px;color:var(--text-muted);">· ${a.company}</span>`:''}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${a.appointment_label||a.appointment_type||'Appointment'} · Received ${new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-outline btn-sm" onclick="apptSchedule('${a.id}')">📅 Schedule</button>
+            <button class="btn btn-danger btn-sm" onclick="apptCancel('${a.id}')">✕</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// ── NAVIGATION ──
+function calNav(dir) {
+  const d = new Date(calDate);
+  if (calView === 'month') { d.setMonth(d.getMonth() + dir); }
+  else if (calView === 'week') { d.setDate(d.getDate() + dir*7); }
+  else { d.setDate(d.getDate() + dir); }
+  calDate = d;
+  _calRenderView();
+}
+function calGoToday() { calDate = new Date(); _calRenderView(); }
+function calSwitchView(v) { calView = v; _calRenderView(); }
+function calDayClick(dateStr) { calDate = new Date(dateStr+'T12:00:00'); calSwitchView('day'); }
+
+// ── APPOINTMENT DETAIL MODAL ──
+function apptDetail(id) {
+  const a = calAppointments.find(x=>x.id===id);
+  if (!a) return;
+  const st = _calStatus(a.status);
+  const agentRow = allAgents.find(x=>x.id===a.agent_id);
+  const name = a.booker_name||a.contact_name||'—';
+  const dtStr = a.scheduled_at ? new Date(a.scheduled_at).toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not scheduled';
+  showModal(name, `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:${st.bg};border:1px solid ${st.border};color:var(--text-primary);">${st.label}</span>
+      <span style="font-size:12px;color:var(--text-muted);">${a.appointment_label||a.appointment_type||'Appointment'}</span>
+    </div>
+    <div style="display:grid;gap:8px;font-size:13px;">
+      ${a.company?`<div><span style="color:var(--text-muted);">Company:</span> ${a.company}</div>`:''}
+      ${a.booker_email?`<div><span style="color:var(--text-muted);">Email:</span> ${a.booker_email}</div>`:''}
+      <div><span style="color:var(--text-muted);">Date/Time:</span> ${dtStr}</div>
+      ${agentRow?`<div><span style="color:var(--text-muted);">Agent:</span> ${agentRow.name}</div>`:''}
+      ${a.note?`<div><span style="color:var(--text-muted);">Note:</span> <em>${a.note}</em></div>`:''}
+      ${a.agent_notes?`<div><span style="color:var(--text-muted);">Internal notes:</span> ${a.agent_notes}</div>`:''}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;">
+      ${a.status!=='scheduled'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptSchedule('${id}')">📅 Schedule</button>`:''}
+      ${a.status!=='completed'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptComplete('${id}')">✓ Complete</button>`:''}
+      <button class="btn btn-outline btn-sm" onclick="closeModal();apptReschedule('${id}')">↺ Reschedule</button>
+      ${a.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">✕ Cancel</button>`:''}
+    </div>
+  `, null);
+}
+
+// ── CRUD ACTIONS (update + refresh calendar) ──
 async function apptSchedule(id) {
-  const dt = prompt('Enter scheduled date/time (e.g. 7/15/2026 2:00 PM):');
-  if (dt === null) return;
+  const dt = prompt('Enter date/time (e.g. 7/15/2026 2:00 PM):');
+  if (dt===null) return;
   const parsed = new Date(dt);
-  const updates = { status: 'scheduled', scheduled_at: isNaN(parsed) ? null : parsed.toISOString() };
-  const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id', id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  showToast('📅 Scheduled!'); renderAppointments();
+  const { error } = await supabaseClient.from('booking_intents').update({ status:'scheduled', scheduled_at: isNaN(parsed)?null:parsed.toISOString() }).eq('id',id);
+  if (error) { showToast('Error: '+error.message); return; }
+  showToast('📅 Scheduled!');
+  const idx = calAppointments.findIndex(a=>a.id===id);
+  if (idx>=0) { calAppointments[idx].status='scheduled'; if(!isNaN(parsed)) calAppointments[idx].scheduled_at=parsed.toISOString(); }
+  _calRenderView();
 }
 
 async function apptComplete(id) {
   const notes = prompt('Completion notes (optional):') || null;
-  const { error } = await supabaseClient.from('booking_intents')
-    .update({ status: 'completed', completed_at: new Date().toISOString(), agent_notes: notes })
-    .eq('id', id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  showToast('✅ Marked complete!'); renderAppointments();
+  const { error } = await supabaseClient.from('booking_intents').update({ status:'completed', completed_at:new Date().toISOString(), agent_notes:notes }).eq('id',id);
+  if (error) { showToast('Error: '+error.message); return; }
+  showToast('✅ Complete!');
+  const idx = calAppointments.findIndex(a=>a.id===id);
+  if (idx>=0) { calAppointments[idx].status='completed'; calAppointments[idx].agent_notes=notes; }
+  _calRenderView();
 }
 
 async function apptReschedule(id) {
-  const notes = prompt('Reschedule notes (new time, reason, etc.):');
-  if (notes === null) return;
-  const { error } = await supabaseClient.from('booking_intents')
-    .update({ status: 'rescheduled', scheduled_at: null, agent_notes: notes || null })
-    .eq('id', id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  showToast('↺ Rescheduled'); renderAppointments();
+  const notes = prompt('Reschedule notes (new time, reason):');
+  if (notes===null) return;
+  const { error } = await supabaseClient.from('booking_intents').update({ status:'rescheduled', scheduled_at:null, agent_notes:notes||null }).eq('id',id);
+  if (error) { showToast('Error: '+error.message); return; }
+  showToast('↺ Rescheduled');
+  const idx = calAppointments.findIndex(a=>a.id===id);
+  if (idx>=0) { calAppointments[idx].status='rescheduled'; calAppointments[idx].scheduled_at=null; }
+  _calRenderView();
 }
 
 async function apptCancel(id) {
-  if (!confirm('Mark this appointment as cancelled?')) return;
-  const { error } = await supabaseClient.from('booking_intents').update({ status: 'cancelled' }).eq('id', id);
-  if (error) { showToast('Error: ' + error.message); return; }
-  showToast('Cancelled'); renderAppointments();
+  if (!confirm('Mark as cancelled?')) return;
+  const { error } = await supabaseClient.from('booking_intents').update({ status:'cancelled' }).eq('id',id);
+  if (error) { showToast('Error: '+error.message); return; }
+  showToast('Cancelled');
+  const idx = calAppointments.findIndex(a=>a.id===id);
+  if (idx>=0) calAppointments[idx].status='cancelled';
+  _calRenderView();
 }
 
 async function apptLog() {
-  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c=>`<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
   showModal('Log Appointment', `
     <label>Contact</label>
     <select id="appt-contact"><option value="">— No contact —</option>${contactOptions}</select>
     <label>Appointment Type</label>
-    <input type="text" id="appt-type" placeholder="e.g. Discovery Call, Benefits Review, Follow-up..." />
+    <input type="text" id="appt-type" placeholder="e.g. Discovery Call, Benefits Review..." />
     <label>Date &amp; Time</label>
     <input type="datetime-local" id="appt-dt" />
     <label>Notes</label>
@@ -3387,22 +3641,22 @@ async function apptLog() {
     const dt        = document.getElementById('appt-dt').value;
     const notes     = document.getElementById('appt-notes').value.trim();
     if (!apptType) { showToast('Appointment type required'); return false; }
-    const contact = contactId ? contacts.find(c => c.id === contactId) : null;
-    const { error } = await supabaseClient.from('booking_intents').insert({
-      agent_id:          currentAgent.id,
-      contact_id:        contactId || null,
-      contact_name:      contact?.name || null,
-      booker_name:       contact?.name || null,
-      booker_email:      contact?.email || null,
-      company:           contact?.company || null,
-      appointment_type:  apptType,
-      appointment_label: apptType,
-      scheduled_at:      dt ? new Date(dt).toISOString() : null,
-      agent_notes:       notes || null,
-      status:            dt ? 'scheduled' : 'pending',
-    });
-    if (error) { showToast('Error: ' + error.message); return false; }
-    showToast('✓ Appointment logged!'); renderAppointments();
+    const contact = contactId ? contacts.find(c=>c.id===contactId) : null;
+    const newAppt = {
+      agent_id: currentAgent.id, contact_id: contactId||null,
+      contact_name: contact?.name||null, booker_name: contact?.name||null,
+      booker_email: contact?.email||null, company: contact?.company||null,
+      appointment_type: apptType, appointment_label: apptType,
+      scheduled_at: dt?new Date(dt).toISOString():null,
+      agent_notes: notes||null, status: dt?'scheduled':'pending',
+    };
+    const { data, error } = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
+    if (error) { showToast('Error: '+error.message); return false; }
+    calAppointments.push(data);
+    // Jump calendar to the appointment date if scheduled
+    if (dt) { calDate = new Date(dt); calView = calDate.toDateString()===new Date().toDateString()?calView:'month'; }
+    showToast('✓ Appointment added!');
+    _calRenderView();
   });
 }
 
