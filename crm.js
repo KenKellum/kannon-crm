@@ -3620,28 +3620,35 @@ async function apptSchedule(id) {
   }
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(9,0,0,0);
   const pad = n => String(n).padStart(2,'0');
-  const defaultDt = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-${pad(tomorrow.getDate())}T09:00`;
+  // Pre-fill with existing scheduled_at if available (for rescheduled items), else tomorrow 9am
+  const existingDt = appt?.scheduled_at ? new Date(appt.scheduled_at) : null;
+  const fillDt = existingDt || tomorrow;
+  const defaultDt = `${fillDt.getFullYear()}-${pad(fillDt.getMonth()+1)}-${pad(fillDt.getDate())}T${pad(fillDt.getHours())}:${pad(fillDt.getMinutes())}`;
   showModal(`Schedule: ${name}`, `
     <div style="display:flex;gap:8px;margin-bottom:14px;">
-      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;" id="sched-lbl-confirm">
+      <label style="flex:1;border:0.5px solid var(--accent);border-radius:8px;padding:10px 12px;cursor:pointer;" id="sched-lbl-confirm">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <input type="radio" name="sched-type" value="confirm" checked onchange="document.getElementById('sched-lbl-confirm').style.borderColor='var(--accent)';document.getElementById('sched-lbl-propose').style.borderColor='var(--border)';" />
+          <input type="radio" name="sched-type" value="confirm" checked
+            onchange="document.getElementById('sched-lbl-confirm').style.borderColor='var(--accent)';document.getElementById('sched-lbl-propose').style.borderColor='var(--border)';document.getElementById('sched-dt').disabled=true;document.getElementById('sched-dt-row').style.opacity='0.45';" />
           <span style="font-size:12px;font-weight:600;">✅ Confirm this time</span>
         </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Send confirmation email to prospect</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Lock the time &amp; send confirmation email</div>
       </label>
       <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;" id="sched-lbl-propose">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <input type="radio" name="sched-type" value="propose" onchange="document.getElementById('sched-lbl-propose').style.borderColor='var(--accent)';document.getElementById('sched-lbl-confirm').style.borderColor='var(--border)';" />
+          <input type="radio" name="sched-type" value="propose"
+            onchange="document.getElementById('sched-lbl-propose').style.borderColor='var(--accent)';document.getElementById('sched-lbl-confirm').style.borderColor='var(--border)';document.getElementById('sched-dt').disabled=false;document.getElementById('sched-dt-row').style.opacity='1';" />
           <span style="font-size:12px;font-weight:600;">📧 Propose new time</span>
         </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Ask prospect to confirm this time</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Pick a new time &amp; ask prospect to confirm</div>
       </label>
     </div>
     <label>Prospect Email <span style="color:var(--danger);">*</span></label>
     <input type="email" id="sched-email" value="${bestEmail}" placeholder="prospect@email.com" style="width:100%;box-sizing:border-box;" />
-    <label style="margin-top:12px;">Date &amp; Time <span style="color:var(--danger);">*</span></label>
-    <input type="datetime-local" id="sched-dt" value="${defaultDt}" style="width:100%;box-sizing:border-box;" />
+    <div id="sched-dt-row" style="opacity:0.45;transition:opacity .2s;">
+      <label style="margin-top:12px;display:block;">Date &amp; Time <span style="font-size:11px;color:var(--text-muted);">(locked — switch to Propose to change)</span></label>
+      <input type="datetime-local" id="sched-dt" value="${defaultDt}" disabled style="width:100%;box-sizing:border-box;" />
+    </div>
     <label style="margin-top:12px;">Notes to prospect (optional)</label>
     <input type="text" id="sched-notes" placeholder="Zoom link, phone number, location, etc." style="width:100%;box-sizing:border-box;" />
   `, async () => {
