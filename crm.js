@@ -309,14 +309,16 @@ function renderSidebarNav() {
 // ============================================================
 async function loadData() {
   let cq = supabaseClient.from('contacts').select('*');
+  // agencyAgentIds declared here so count query below can reuse it
+  let agencyAgentIds = [currentAgent.id];
+
   if (currentAgent.role === 'agent') {
     cq = cq.eq('agent_id', currentAgent.id);
   } else if (currentAgent.role === 'agency_owner') {
-    // Fetch all agents in this agency (including owner) then load their contacts
-    // This catches contacts where agency_id may not be set but agent_id is
+    // Fetch all agents in this agency so contacts without agency_id are included
     const { data: agencyAgentRows } = await supabaseClient
       .from('agents').select('id').eq('agency_id', currentAgent.agency_id);
-    const agencyAgentIds = [...new Set([
+    agencyAgentIds = [...new Set([
       currentAgent.id,
       ...((agencyAgentRows || []).map(a => a.id))
     ])];
@@ -339,12 +341,16 @@ async function loadData() {
   deals = results[1].data || [];
   applications = (results[2] && results[2].data) || [];
 
-  // Get true total count for system_owner (bypasses PostgREST 1000-row cap)
-  if (currentAgent.role === 'system_owner') {
-    const { count } = await supabaseClient
-      .from('contacts').select('*', { count: 'exact', head: true });
-    totalContactCountFull = count || 0;
+  // Get TRUE total count for ALL roles — bypasses PostgREST 1000-row cap
+  let cntQ = supabaseClient.from('contacts').select('*', { count: 'exact', head: true });
+  if (currentAgent.role === 'agent') {
+    cntQ = cntQ.eq('agent_id', currentAgent.id);
+  } else if (currentAgent.role === 'agency_owner') {
+    cntQ = cntQ.in('agent_id', agencyAgentIds);
   }
+  // system_owner: no filter
+  const { count: trueCount } = await cntQ;
+  totalContactCountFull = trueCount || 0;
 }
 
 // ============================================================
@@ -504,7 +510,7 @@ function renderDashboardAgency() {
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
   const agencyName = currentAgent.agencies?.name || 'Your agency';
 
-  const totalContacts = contacts.length;
+  const totalContacts = totalContactCountFull || contacts.length;
   const inSequence   = contacts.filter(c => c.sequence_status === 'Active').length;
   const replied      = contacts.filter(c => c.sequence_status === 'Replied').length;
   const pendingApps  = applications.length;
@@ -520,9 +526,9 @@ function renderDashboardAgency() {
 
   // Campaign-level stats from deals by type/stage
   const activeCampaigns = [
-    { name: 'State Farm sequence', contacts: contacts.filter(c=>c.contact_type==='Recruit').length, open: openRatePct },
-    { name: 'B2B group track', contacts: contacts.filter(c=>c.contact_type==='Group').length, open: 0 },
-    { name: 'B2C individual track', contacts: contacts.filter(c=>c.contact_type==='Individual').length, open: 0 },
+    { name: 'State Farm sequence', contacts: contacts.filter(c=>c.type==='Recruit').length, open: openRatePct },
+    { name: 'B2B group track', contacts: contacts.filter(c=>c.type==='Group/Employer').length, open: 0 },
+    { name: 'B2C individual track', contacts: contacts.filter(c=>c.type==='Individual/Family').length, open: 0 },
   ].filter(c => c.contacts > 0);
 
   el.innerHTML = `
@@ -604,7 +610,7 @@ function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
 
-  const totalContacts = contacts.length;
+  const totalContacts = totalContactCountFull || contacts.length;
   const inSequence   = contacts.filter(c => c.sequence_status === 'Active').length;
   const replied      = contacts.filter(c => c.sequence_status === 'Replied').length;
   const activeDeals  = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
@@ -1122,7 +1128,7 @@ async function bookingLinkLookupContact(email) {
       const typeEl = document.getElementById('booking-contact-type');
       if (typeEl) {
         let dropVal = c.type || 'Individual/Family';
-        if (c.type === 'Recruit') dropVal = 'Recruit|' + (c.pipeline || 'agent-kannon');
+        if (c.type === 'Recruit') dropVal = 'Recruit|agent-insured'; // pipeline col removed; default to Insured America
         typeEl.value = dropVal;
       }
       statusEl.style.color = '#16a34a';
@@ -1144,7 +1150,7 @@ function startDialerSession(filterType) {
   if (!filterType) {
     const hotCount   = contacts.filter(c => c.sequence_status === 'Replied').length;
     const freshCount = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started').length;
-    const allCount   = contacts.length;
+    const allCount   = totalContactCountFull || contacts.length;
     showModal('&#9889; Start a Lead Session', `
       <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Choose which leads to work through. You can stop anytime.</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
@@ -1621,7 +1627,7 @@ async function renderCampaigns() {
   });
 
   const dripB2b     = drip.filter(c => c.type === 'Group/Employer').length;
-  const dripB2c     = drip.filter(c => c.type === 'Individual & Family').length;
+  const dripB2c     = drip.filter(c => c.type === 'Individual/Family').length;
   const dripRecruit = drip.filter(c => c.type === 'Recruit').length;
   const monthMap    = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
 
@@ -1938,7 +1944,7 @@ function openAiReviewModal(table, segment, result) {
 // ============================================================
 async function renderOpens() {
   document.getElementById('page-opens').innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading email opens...</div>`;
-  const { data: opens, error } = await supabaseClient.from('email_opens').select('*').order('opened_at', { ascending: false }).limit(200);
+  const { data: opens, error } = await supabaseClient.from('email_opens').select('*').order('opened_at', { ascending: false }).limit(1000);
   if (error) { document.getElementById('page-opens').innerHTML = `<div class="empty-state"><div class="emoji">&#9888;&#65039;</div><p>Error loading: ${error.message}</p></div>`; return; }
   const all = opens || [];
   const total = all.length;
@@ -2269,7 +2275,7 @@ async function clearDnc(id) {
 async function renderContacts() {
   const pg = document.getElementById('page-contacts');
   const PAGE_SIZE = 100;
-  const typeClass  = { 'Group/Employer': 'badge-group', 'Individual & Family': 'badge-individual' };
+  const typeClass  = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
   const seqClass   = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Drip': 'badge-group', 'Not Started': 'badge-agent' };
   const showOwnerCol = currentAgent.role !== 'agent';
 
@@ -2320,7 +2326,11 @@ async function renderContacts() {
   // Query Supabase directly — bypasses PostgREST row cap entirely
   let q = supabaseClient.from('contacts').select('*');
   if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
-  else if (currentAgent.role === 'agency_owner') q = q.eq('agency_id', currentAgent.agency_id);
+  else if (currentAgent.role === 'agency_owner') {
+    // Match loadData: query by agent_id IN [...] to catch contacts without agency_id set
+    const agencyIds = [...new Set([currentAgent.id, ...allAgents.filter(a => a.agency_id === currentAgent.agency_id).map(a => a.id)])];
+    q = q.in('agent_id', agencyIds);
+  }
   if (contactTypeFilter) q = q.eq('type', contactTypeFilter);
   if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%`);
   const offset = (contactPage || 0) * PAGE_SIZE;
