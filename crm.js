@@ -855,11 +855,52 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote) 
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
   try {
+    // ── Step 1: Find or create contact directly in Supabase ──
+    let contactId = null;
+    const { data: existing } = await supabaseClient
+      .from('contacts')
+      .select('id')
+      .eq('email', toEmail.toLowerCase())
+      .eq('owner_id', currentAgent.id)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      contactId = existing[0].id;
+    } else {
+      const { data: created, error: createErr } = await supabaseClient
+        .from('contacts')
+        .insert({
+          name:             toName || toEmail.split('@')[0],
+          email:            toEmail.toLowerCase(),
+          owner_id:         currentAgent.id,
+          agent_id:         currentAgent.id,
+          agency_id:        currentAgent.agency_id || null,
+          type:             'Individual/Family',
+          sequence_status:  'Drip',
+          pipeline:         'individual-family',
+          pipeline_stage:   'Contacted'
+        })
+        .select('id')
+        .single();
+
+      if (createErr) {
+        console.warn('Contact create warning:', createErr.message);
+      } else if (created) {
+        contactId = created.id;
+        // Add to in-memory list so contacts page shows it without a full reload
+        contacts.unshift({ ...created, name: toName || toEmail.split('@')[0], email: toEmail.toLowerCase(),
+          owner_id: currentAgent.id, agent_id: currentAgent.id, type: 'Individual/Family',
+          sequence_status: 'Drip', pipeline: 'individual-family', pipeline_stage: 'Contacted' });
+      }
+    }
+
+    // ── Step 2: Send email via Apps Script ───────────────────
     const url = new URL(APPS_SCRIPT_URL);
     url.searchParams.set('action',    'send_booking_link');
     url.searchParams.set('agent_id',  currentAgent.id);
     url.searchParams.set('to',        toEmail);
     url.searchParams.set('to_name',   toName);
+    if (contactId) url.searchParams.set('contact_id', contactId);
     if (personalNote) url.searchParams.set('note', personalNote);
 
     const res  = await fetch(url.toString());
@@ -872,6 +913,8 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote) 
       document.getElementById('booking-last-name').value   = '';
       document.getElementById('booking-contact-status').textContent = '';
       document.getElementById('booking-email-note').value  = getDefaultBookingNote();
+      // Refresh contacts page if currently visible
+      if (document.getElementById('page-contacts')?.style.display !== 'none') renderContacts();
     } else {
       showToast(`⚠️ Send failed: ${data.message || 'Unknown error'}`);
     }
