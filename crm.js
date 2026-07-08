@@ -869,11 +869,11 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
   try {
     // ── Step 1: Find or create contact directly in Supabase ──
     let contactId = null;
-    const { data: existing } = await supabaseClient
+    const { data: existing, error: lookupErr } = await supabaseClient
       .from('contacts')
-      .select('id')
+      .select('id, name, type')
       .eq('email', toEmail.toLowerCase())
-      .eq('owner_id', currentAgent.id)
+      .eq('agent_id', currentAgent.id)
       .limit(1);
 
     if (existing && existing.length > 0) {
@@ -884,25 +884,20 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
         .insert({
           name:             toName || toEmail.split('@')[0],
           email:            toEmail.toLowerCase(),
-          owner_id:         currentAgent.id,
+          user_id:          currentUser.id,
           agent_id:         currentAgent.id,
           agency_id:        currentAgent.agency_id || null,
           type:             contactType,
           sequence_status:  'Drip',
-          pipeline:         pipeInfo.pipeline,
-          pipeline_stage:   pipeInfo.stage
         })
-        .select('id')
+        .select()
         .single();
 
       if (createErr) {
-        console.warn('Contact create warning:', createErr.message);
+        showToast(`⚠️ Contact not saved: ${createErr.message}`, 5000);
       } else if (created) {
         contactId = created.id;
-        // Add to in-memory list so contacts page shows it without a full reload
-        contacts.unshift({ ...created, name: toName || toEmail.split('@')[0], email: toEmail.toLowerCase(),
-          owner_id: currentAgent.id, agent_id: currentAgent.id, type: contactType,
-          sequence_status: 'Drip', pipeline: pipeInfo.pipeline, pipeline_stage: pipeInfo.stage });
+        contacts.unshift(created);
       }
     }
 
@@ -1038,7 +1033,7 @@ async function generateAIBookingMessage() {
     try {
       const { data } = await supabaseClient
         .from('contacts').select('notes')
-        .eq('email', email.toLowerCase()).eq('owner_id', currentAgent.id).limit(1);
+        .eq('email', email.toLowerCase()).eq('agent_id', currentAgent.id).limit(1);
       if (data && data.length > 0 && data[0].notes) contactNotes = data[0].notes.trim();
     } catch(e) { /* ignore — notes are optional */ }
   }
@@ -1105,9 +1100,9 @@ async function bookingLinkLookupContact(email) {
   _bookingLookupTimer = setTimeout(async () => {
     const { data } = await supabaseClient
       .from('contacts')
-      .select('id,name,type,pipeline')
+      .select('id,name,type')
       .eq('email', email.toLowerCase())
-      .eq('owner_id', currentAgent.id)
+      .eq('agent_id', currentAgent.id)
       .limit(1);
 
     if (data && data.length > 0) {
