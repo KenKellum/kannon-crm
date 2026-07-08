@@ -878,7 +878,7 @@ async function sendBookingLinkEmail(toEmail, personalNote) {
 
 function getDefaultBookingNote() {
   const name = currentAgent.name || 'I';
-  return `${name} wanted to personally reach out and find a time to connect. Whether you have questions about health coverage, life insurance, or just want to explore your options — I'm here to help.\n\nUse the link above to grab a time that works for you. Takes just a couple minutes to schedule and there's no obligation.\n\nLooking forward to speaking with you!`;
+  return `${name} wanted to personally reach out and find a time to connect. Whether you have questions about health coverage, life insurance, or just want to explore your options — I'm here to help.\n\nUse the link below to grab a time that works for you. Takes just a couple minutes to schedule and there's no obligation.\n\nLooking forward to speaking with you!`;
 }
 
 // ============================================================
