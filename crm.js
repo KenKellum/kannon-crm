@@ -937,9 +937,27 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
   }
 }
 
-function getDefaultBookingNote() {
-  const name = currentAgent.name || 'I';
-  return `${name} wanted to personally reach out and find a time to connect. Whether you have questions about health coverage, life insurance, or just want to explore your options — I'm here to help.\n\nUse the link below to grab a time that works for you. Takes just a couple minutes to schedule and there's no obligation.\n\nLooking forward to speaking with you!`;
+function getDefaultBookingNote(typeRaw) {
+  const name = currentAgent.name || 'your agent';
+  const type = typeRaw || document.getElementById('booking-contact-type')?.value || 'Individual/Family';
+
+  if (type === 'Group/Employer') {
+    return `${name} here with Kannon Financial Group. I wanted to reach out about how we can help your organization design a competitive group health and benefits package — one that helps you attract and retain great people, often at a lower cost than you might expect.\n\nUse the link below to schedule a quick call at your convenience. No obligation, just a conversation.\n\nLooking forward to connecting with you!`;
+  }
+  if (type === 'Recruit|agent-kannon') {
+    return `${name} here with Kannon Financial Group. I wanted to personally reach out about an exciting opportunity to join our growing team of licensed insurance professionals.\n\nWhether you're currently licensed or just exploring a career in financial services, I'd love to share what we offer — the flexibility, income potential, and the chance to make a real difference in people's lives.\n\nUse the link below to schedule a quick introductory call. No pressure, just a conversation.\n\nLooking forward to speaking with you!`;
+  }
+  if (type === 'Recruit|agent-insured') {
+    return `${name} here with The Insured America Agency. I wanted to reach out personally about a career opportunity that could change your financial future.\n\nWe're looking for motivated individuals who want to build a meaningful career in life insurance and financial services — with the training, support, and leadership of a proven organization behind them.\n\nUse the link below to grab a time that works for you. No obligation — just a conversation about your goals and what we can offer.\n\nLooking forward to connecting with you!`;
+  }
+  // Default: Individual/Family
+  return `${name} here with Kannon Financial Group. I wanted to personally reach out and find a time to connect. Whether you have questions about health coverage, life insurance, or retirement planning — I'm here to help you find the right fit for you and your family.\n\nUse the link below to grab a time that works for you. Takes just a couple minutes and there's no obligation.\n\nLooking forward to speaking with you!`;
+}
+
+function updateBookingNoteForType(typeRaw) {
+  const noteEl = document.getElementById('booking-email-note');
+  if (!noteEl) return;
+  noteEl.value = getDefaultBookingNote(typeRaw);
 }
 
 let _bookingLookupTimer = null;
@@ -1244,7 +1262,7 @@ function manageBookingTypes() {
         <input id="booking-last-name" type="text" placeholder="Last name"
           style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
       </div>
-      <select id="booking-contact-type" style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);margin-bottom:6px;">
+      <select id="booking-contact-type" onchange="updateBookingNoteForType(this.value)" style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);margin-bottom:6px;">
         <option value="Individual/Family">Individual / Family — Client</option>
         <option value="Group/Employer">Group / Employer — Client</option>
         <option value="Recruit|agent-kannon">Recruit — Kannon Financial</option>
