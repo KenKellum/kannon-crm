@@ -836,10 +836,11 @@ function switchPreviewRole(role) {
 
 function shareBookingLink() { manageBookingTypes(); }
 
-async function sendBookingLinkEmail(toEmail, personalNote) {
+async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote) {
   if (!toEmail || !toEmail.includes('@')) { showToast('Enter a valid email address.'); return; }
+  if (!firstName) { showToast("Enter the recipient's first name."); return; }
 
-  // Must have Gmail connected — we send through the system, not the local mail client
+  // Must have Gmail connected
   if (!currentAgent.gmail_connected) {
     showToast('⚠️ Connect your Gmail first (Settings → Gmail Connect)', 5000);
     return;
@@ -849,6 +850,7 @@ async function sendBookingLinkEmail(toEmail, personalNote) {
     showToast('⚠️ Apps Script URL not configured.'); return;
   }
 
+  const toName = [firstName, lastName].filter(Boolean).join(' ');
   const btn = document.querySelector('#booking-modal-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
@@ -857,28 +859,73 @@ async function sendBookingLinkEmail(toEmail, personalNote) {
     url.searchParams.set('action',    'send_booking_link');
     url.searchParams.set('agent_id',  currentAgent.id);
     url.searchParams.set('to',        toEmail);
+    url.searchParams.set('to_name',   toName);
     if (personalNote) url.searchParams.set('note', personalNote);
 
     const res  = await fetch(url.toString());
     const data = await res.json();
 
     if (data.status === 'ok') {
-      showToast(`✓ Booking link sent to ${toEmail} via your Gmail`);
-      document.getElementById('booking-email-to').value   = '';
-      document.getElementById('booking-email-note').value = getDefaultBookingNote();
+      showToast(`✓ Booking link sent to ${toName || toEmail} via your Gmail`);
+      document.getElementById('booking-email-to').value    = '';
+      document.getElementById('booking-first-name').value  = '';
+      document.getElementById('booking-last-name').value   = '';
+      document.getElementById('booking-contact-status').textContent = '';
+      document.getElementById('booking-email-note').value  = getDefaultBookingNote();
     } else {
       showToast(`⚠️ Send failed: ${data.message || 'Unknown error'}`);
     }
   } catch(e) {
     showToast(`⚠️ Error: ${e.message}`);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail'; }
   }
 }
 
 function getDefaultBookingNote() {
   const name = currentAgent.name || 'I';
   return `${name} wanted to personally reach out and find a time to connect. Whether you have questions about health coverage, life insurance, or just want to explore your options — I'm here to help.\n\nUse the link below to grab a time that works for you. Takes just a couple minutes to schedule and there's no obligation.\n\nLooking forward to speaking with you!`;
+}
+
+let _bookingLookupTimer = null;
+async function bookingLinkLookupContact(email) {
+  const statusEl = document.getElementById('booking-contact-status');
+  const firstEl  = document.getElementById('booking-first-name');
+  const lastEl   = document.getElementById('booking-last-name');
+  if (!statusEl) return;
+
+  clearTimeout(_bookingLookupTimer);
+  if (!email || !email.includes('@')) {
+    statusEl.textContent = '';
+    if (firstEl) firstEl.value = '';
+    if (lastEl)  lastEl.value  = '';
+    return;
+  }
+
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = 'Looking up…';
+
+  _bookingLookupTimer = setTimeout(async () => {
+    const { data } = await supabaseClient
+      .from('contacts')
+      .select('id,name')
+      .eq('email', email.toLowerCase())
+      .eq('owner_id', currentAgent.id)
+      .limit(1);
+
+    if (data && data.length > 0) {
+      const c = data[0];
+      const parts = (c.name || '').split(' ');
+      if (firstEl) firstEl.value = parts[0] || '';
+      if (lastEl)  lastEl.value  = parts.slice(1).join(' ') || '';
+      statusEl.style.color = '#16a34a';
+      statusEl.textContent = `✓ Existing contact: ${c.name}`;
+    } else {
+      if (firstEl && !firstEl.value) firstEl.value = '';
+      statusEl.style.color = 'var(--muted)';
+      statusEl.textContent = 'Not in your contacts — will be created on send.';
+    }
+  }, 400);
 }
 
 // ============================================================
@@ -1124,12 +1171,20 @@ function manageBookingTypes() {
     <div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px;">
       <p style="font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:8px;"><i class="ti ti-mail" style="margin-right:4px;"></i>Send booking link by email</p>
       <div style="display:flex;gap:6px;margin-bottom:6px;">
-        <input id="booking-email-to" type="email" placeholder="recipient@example.com"
+        <input id="booking-email-to" type="email" placeholder="Email address *"
+          style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);"
+          oninput="bookingLinkLookupContact(this.value)" />
+      </div>
+      <div id="booking-contact-status" style="font-size:11px;color:var(--muted);margin-bottom:6px;min-height:16px;"></div>
+      <div id="booking-name-fields" style="display:flex;gap:6px;margin-bottom:6px;">
+        <input id="booking-first-name" type="text" placeholder="First name *"
+          style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
+        <input id="booking-last-name" type="text" placeholder="Last name"
           style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
       </div>
       <textarea id="booking-email-note" rows="4"
         style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:vertical;margin-bottom:6px;box-sizing:border-box;"></textarea>
-      <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-email-note').value.trim())"
+      <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-first-name').value.trim(), document.getElementById('booking-last-name').value.trim(), document.getElementById('booking-email-note').value.trim())"
         style="background:var(--fill-accent);border:none;color:#000;border-radius:6px;padding:7px 16px;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail</button>
     </div>
 
@@ -1995,9 +2050,10 @@ async function renderContacts() {
   ).join('');
 
   // Render shell immediately so tabs show while DB query runs
+  const _searchFocused = document.activeElement && document.activeElement.id === 'contact-search-input';
   pg.innerHTML = `
     <div class="contacts-toolbar">
-      <input type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}"
+      <input id="contact-search-input" type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}"
              oninput="contactSearch=this.value;contactPage=0;renderContacts();" style="max-width:280px;" />
       <select onchange="contactSort=this.value;contactPage=0;renderContacts();"
               style="padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;color:#1e293b;background:#fff;cursor:pointer;">
@@ -2015,6 +2071,12 @@ async function renderContacts() {
     <div class="contacts-table" id="contacts-table-body">
       <div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading...</div>
     </div>`;
+
+  // Restore search focus if user was typing
+  if (_searchFocused) {
+    const _el = document.getElementById('contact-search-input');
+    if (_el) { _el.focus(); const _l = _el.value.length; _el.setSelectionRange(_l, _l); }
+  }
 
   // Sort options
   const sortMap = {
