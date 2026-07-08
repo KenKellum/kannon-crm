@@ -3259,7 +3259,7 @@ async function renderAppointments() {
   if (!pg) return;
   pg.innerHTML = `<div style="color:var(--text-muted);padding:40px;text-align:center;"><i class="ti ti-loader" style="font-size:24px;"></i> Loading...</div>`;
 
-  let q = supabaseClient.from('booking_intents').select('*');
+  let q = supabaseClient.from('booking_intents').select('*').neq('status','cancelled');
   const role = previewRole || currentAgent.role;
   if (role === 'agent') {
     q = q.eq('agent_id', currentAgent.id);
@@ -3607,7 +3607,14 @@ function apptDetail(id) {
 async function apptSchedule(id) {
   const appt = calAppointments.find(a=>a.id===id);
   const name  = appt ? (appt.booker_name||appt.contact_name||'this appointment') : 'this appointment';
-  const email = appt?.booker_email || '';
+  // Prefer contact's stored email over what was typed at booking time
+  let email = '';
+  if (appt?.contact_id) {
+    const linkedContact = contacts.find(c => c.id === appt.contact_id);
+    email = linkedContact?.email || appt?.booker_email || '';
+  } else {
+    email = appt?.booker_email || '';
+  }
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(9,0,0,0);
   const pad = n => String(n).padStart(2,'0');
   const defaultDt = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth()+1)}-${pad(tomorrow.getDate())}T09:00`;
@@ -3695,13 +3702,19 @@ async function apptReschedule(id) {
 }
 
 async function apptCancel(id) {
-  if (!confirm('Mark as cancelled?')) return;
-  const { error } = await supabaseClient.from('booking_intents').update({ status:'cancelled' }).eq('id',id);
-  if (error) { showToast('Error: '+error.message); return; }
-  showToast('Cancelled');
-  const idx = calAppointments.findIndex(a=>a.id===id);
-  if (idx>=0) calAppointments[idx].status='cancelled';
-  _calRenderView();
+  const appt = calAppointments.find(a=>a.id===id);
+  const who = appt ? (appt.booker_name||appt.contact_name||'this request') : 'this request';
+  showModal('Dismiss Request', `
+    <p style="font-size:14px;color:var(--text-primary);margin:0 0 8px 0;">Cancel the appointment request from <strong>${who}</strong>?</p>
+    <p style="font-size:13px;color:var(--text-muted);margin:0;">This will remove it from your list. The prospect will not be notified automatically.</p>
+  `, async () => {
+    const { error } = await supabaseClient.from('booking_intents').update({ status:'cancelled' }).eq('id',id);
+    if (error) { showToast('Error: '+error.message); return false; }
+    showToast('Request dismissed');
+    const idx = calAppointments.findIndex(a=>a.id===id);
+    if (idx>=0) calAppointments.splice(idx, 1);
+    _calRenderView();
+  });
 }
 
 async function apptLog() {
