@@ -937,28 +937,73 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
   }
 }
 
-function getDefaultBookingNote(typeRaw) {
-  const name = currentAgent.name || 'your agent';
-  const type = typeRaw || document.getElementById('booking-contact-type')?.value || 'Individual/Family';
+function getDefaultBookingNote(typeRaw, intent) {
+  const agentName = currentAgent.name || 'I';
+  const type   = typeRaw || document.getElementById('booking-contact-type')?.value || 'Individual/Family';
+  const intnt  = intent  || document.getElementById('booking-intent')?.value        || 'just-met';
 
-  if (type === 'Group/Employer') {
-    return `${name} here with Kannon Financial Group. I wanted to reach out about how we can help your organization design a competitive group health and benefits package — one that helps you attract and retain great people, often at a lower cost than you might expect.\n\nUse the link below to schedule a quick call at your convenience. No obligation, just a conversation.\n\nLooking forward to connecting with you!`;
-  }
-  if (type === 'Recruit|agent-kannon') {
-    return `${name} here with Kannon Financial Group. I wanted to personally reach out about an exciting opportunity to join our growing team of licensed insurance professionals.\n\nWhether you're currently licensed or just exploring a career in financial services, I'd love to share what we offer — the flexibility, income potential, and the chance to make a real difference in people's lives.\n\nUse the link below to schedule a quick introductory call. No pressure, just a conversation.\n\nLooking forward to speaking with you!`;
-  }
-  if (type === 'Recruit|agent-insured') {
-    return `${name} here with The Insured America Agency. I wanted to reach out personally about a career opportunity that could change your financial future.\n\nWe're looking for motivated individuals who want to build a meaningful career in life insurance and financial services — with the training, support, and leadership of a proven organization behind them.\n\nUse the link below to grab a time that works for you. No obligation — just a conversation about your goals and what we can offer.\n\nLooking forward to connecting with you!`;
-  }
-  // Default: Individual/Family
-  return `${name} here with Kannon Financial Group. I wanted to personally reach out and find a time to connect. Whether you have questions about health coverage, life insurance, or retirement planning — I'm here to help you find the right fit for you and your family.\n\nUse the link below to grab a time that works for you. Takes just a couple minutes and there's no obligation.\n\nLooking forward to speaking with you!`;
+  // ── Intent-based opening ────────────────────────────────────
+  const openers = {
+    'just-met':   'It was great meeting you!',
+    'after-call': 'It was so great speaking with you today!',
+    'follow-up':  'I wanted to follow up on our previous conversation.',
+    'referral':   'I was given your information by a mutual contact and wanted to personally reach out.',
+    'reconnect':  'I wanted to reach back out and reconnect — it has been a while!',
+    'social':     'I came across your profile and wanted to personally reach out.',
+  };
+  const opener = openers[intnt] || openers['just-met'];
+
+  // ── Type-based pitch ────────────────────────────────────────
+  const pitches = {
+    'Individual/Family': {
+      'just-met':   "As we discussed, I'd love to find a time to sit down and go over your coverage options. Whether it's health, life, or planning for retirement — I want to make sure you and your family are fully protected.",
+      'after-call': "As promised, I'm sending over my booking link so we can get our next conversation on the calendar. I have some great options I think will be a perfect fit for you.",
+      'follow-up':  "I wanted to circle back and see if you'd be open to a quick conversation about your coverage options. I work with families every day to find plans that offer real protection without breaking the budget.",
+      'referral':   "They spoke very highly of you and I think there's a real opportunity for me to help. I'd love to connect and learn more about what you're looking for when it comes to your coverage and financial future.",
+      'reconnect':  "A lot has changed in the insurance landscape and I have some new options I think you'd want to know about. I'd love to reconnect and make sure you're still in the best possible position.",
+      'social':     "I work with individuals and families to find the right health, life, and financial coverage — and I think I might be able to help you too. I'd love to learn more about your situation.",
+    },
+    'Group/Employer': {
+      'just-met':   "As I mentioned, I specialize in helping businesses like yours design competitive group health and benefits packages — ones that help you attract and retain great talent, often at a lower cost than you'd expect.",
+      'after-call': "As we discussed, I'm going to put together some options for your team. In the meantime, let's get a formal meeting on the calendar so I can walk you through everything in detail.",
+      'follow-up':  "I wanted to follow up and see if there's a good time to connect about your company's group benefits. We've helped a number of businesses in your area reduce costs while improving coverage for their teams.",
+      'referral':   "They thought we'd be a great fit, and I think so too. We work with businesses of all sizes to build group health and benefits packages that make a real difference for your team.",
+      'reconnect':  "I wanted to reach back out — we have some new group plan options that weren't available before, and I think they could be a real win for your organization.",
+      'social':     "I came across your company and I think there's a real opportunity for us to work together. We help businesses design competitive group benefits packages that attract top talent and keep employees happy.",
+    },
+    'Recruit|agent-kannon': {
+      'just-met':   "As I mentioned, we are growing the Kannon Financial Group team and I genuinely think you'd be a great fit. I'd love to share more about the opportunity, the income potential, and what makes our team different.",
+      'after-call': "I really enjoyed our conversation today! I think there's a tremendous opportunity here for you and I'd love to dive deeper into the details and answer any questions you have.",
+      'follow-up':  "I wanted to follow up on my previous message about the opportunity at Kannon Financial Group. We're looking for driven individuals who want to build something meaningful — and I think you're exactly the kind of person we want on our team.",
+      'referral':   "A mutual connection thought you'd be a great fit for what we're building at Kannon Financial Group — and based on what I know about you, I agree. I'd love to share more about the opportunity.",
+      'reconnect':  "I wanted to reach back out — we've had some exciting developments at Kannon Financial Group and I think the timing might be right for us to have a conversation about your career goals.",
+      'social':     "I came across your background and I think you'd be a fantastic addition to the Kannon Financial Group team. We're growing fast and I'd love to tell you more about what we're building.",
+    },
+    'Recruit|agent-insured': {
+      'just-met':   "As I mentioned, The Insured America Agency is growing and I think you'd be a tremendous fit. I'd love to share more about the career path, the support system, and the income potential that comes with it.",
+      'after-call': "Loved our conversation today! I'm excited about the possibility of you joining The Insured America Agency team and I'd love to get a proper sit-down on the calendar to walk you through everything.",
+      'follow-up':  "I wanted to follow up about the career opportunity at The Insured America Agency. We offer industry-leading training, a proven system, and a real path to financial independence — and I'd love to tell you more.",
+      'referral':   "A mutual contact thought you'd be a perfect fit for what we're doing at The Insured America Agency. We're looking for motivated individuals who are serious about building a career — and I'd love to connect.",
+      'reconnect':  "I wanted to reach back out — a lot has changed at The Insured America Agency and I have some exciting updates I think you'd want to hear. I'd love to reconnect and catch up.",
+      'social':     "Your background caught my attention and I immediately thought of the opportunity we have at The Insured America Agency. I'd love to reach out personally and share more about what we're building.",
+    },
+  };
+
+  const typePitches = pitches[type] || pitches['Individual/Family'];
+  const pitch = typePitches[intnt] || typePitches['just-met'];
+
+  return `${opener}\n\n${pitch}\n\nUse the link below to grab a time that works for you — takes just a couple minutes and there is no obligation, just a conversation.\n\nLooking forward to speaking with you!\n\n${agentName}`;
 }
 
-function updateBookingNoteForType(typeRaw) {
-  const noteEl = document.getElementById('booking-email-note');
+function updateBookingNote() {
+  const noteEl  = document.getElementById('booking-email-note');
+  const typeEl  = document.getElementById('booking-contact-type');
+  const intentEl = document.getElementById('booking-intent');
   if (!noteEl) return;
-  noteEl.value = getDefaultBookingNote(typeRaw);
+  noteEl.value = getDefaultBookingNote(typeEl?.value, intentEl?.value);
 }
+
+function updateBookingNoteForType(typeRaw) { updateBookingNote(); }
 
 let _bookingLookupTimer = null;
 async function bookingLinkLookupContact(email) {
@@ -1000,6 +1045,7 @@ async function bookingLinkLookupContact(email) {
       }
       statusEl.style.color = '#16a34a';
       statusEl.textContent = `✓ Existing contact: ${c.name} (${c.type || 'Individual/Family'})`;
+      updateBookingNote();
     } else {
       if (firstEl && !firstEl.value) firstEl.value = '';
       statusEl.style.color = 'var(--muted)';
@@ -1262,12 +1308,22 @@ function manageBookingTypes() {
         <input id="booking-last-name" type="text" placeholder="Last name"
           style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);" />
       </div>
-      <select id="booking-contact-type" onchange="updateBookingNoteForType(this.value)" style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);margin-bottom:6px;">
-        <option value="Individual/Family">Individual / Family — Client</option>
-        <option value="Group/Employer">Group / Employer — Client</option>
-        <option value="Recruit|agent-kannon">Recruit — Kannon Financial</option>
-        <option value="Recruit|agent-insured">Recruit — Insured America</option>
-      </select>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <select id="booking-contact-type" onchange="updateBookingNote()" style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);">
+          <option value="Individual/Family">Individual / Family</option>
+          <option value="Group/Employer">Group / Employer</option>
+          <option value="Recruit|agent-kannon">Recruit — Kannon Financial</option>
+          <option value="Recruit|agent-insured">Recruit — Insured America</option>
+        </select>
+        <select id="booking-intent" onchange="updateBookingNote()" style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);">
+          <option value="just-met">We Just Met</option>
+          <option value="after-call">After a Call</option>
+          <option value="follow-up">Following Up</option>
+          <option value="referral">Referral</option>
+          <option value="reconnect">Reconnecting</option>
+          <option value="social">Social / Online</option>
+        </select>
+      </div>
       <textarea id="booking-email-note" rows="4"
         style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:vertical;margin-bottom:6px;box-sizing:border-box;"></textarea>
       <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-first-name').value.trim(), document.getElementById('booking-last-name').value.trim(), document.getElementById('booking-email-note').value.trim(), document.getElementById('booking-contact-type').value)"
@@ -1312,7 +1368,7 @@ function manageBookingTypes() {
   // Pre-populate the default email message after modal renders
   setTimeout(() => {
     const noteEl = document.getElementById('booking-email-note');
-    if (noteEl && !noteEl.value) noteEl.value = getDefaultBookingNote();
+    if (noteEl) noteEl.value = getDefaultBookingNote();
   }, 50);
 }
 
