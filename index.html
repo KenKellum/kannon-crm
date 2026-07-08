@@ -266,11 +266,15 @@
     /* TOAST */
     #toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface-3); color: var(--text-primary); border: 0.5px solid var(--border); padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 500; z-index: 400; opacity: 0; transition: opacity 0.2s; pointer-events: none; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
 
-    /* AI ASSISTANT FLOATING PANEL */
-    #ai-bubble { position: fixed; bottom: 24px; right: 24px; z-index: 500; width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); color: var(--text-accent); border: 0.5px solid var(--border); cursor: pointer; font-size: 18px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; transition: all 0.15s; }
-    #ai-bubble:hover { background: var(--surface-3); border-color: rgba(255,255,255,0.2); transform: scale(1.05); }
-    #ai-bubble.open { background: var(--fill-accent); color: #000; border-color: var(--fill-accent); }
-    #ai-panel { position: fixed; bottom: 80px; right: 24px; width: 360px; height: 520px; background: var(--surface-1); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); z-index: 499; display: none; flex-direction: column; overflow: hidden; border: 0.5px solid var(--border); }
+    /* AI ASSISTANT SIDEBAR BUTTON + PANEL */
+    .sidebar-ai-btn-wrap { padding: 6px 8px 4px; flex-shrink: 0; }
+    #ai-bubble { display: none; width: 100%; padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid rgba(200,168,75,0.25); background: var(--bg-accent); cursor: pointer; text-align: left; transition: all 0.15s; align-items: center; gap: 8px; }
+    #ai-bubble:hover { background: rgba(200,168,75,0.18); border-color: rgba(200,168,75,0.4); }
+    #ai-bubble.open { background: rgba(200,168,75,0.22); border-color: var(--border-accent); }
+    #ai-bubble i { font-size: 15px; color: var(--text-accent); flex-shrink: 0; }
+    .ai-bubble-label { font-size: 12px; font-weight: 500; color: var(--text-accent); flex: 1; }
+    .ai-bubble-sub { font-size: 10px; color: var(--text-muted); }
+    #ai-panel { position: fixed; bottom: 80px; left: 218px; width: 360px; height: 520px; background: var(--surface-1); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); z-index: 499; display: none; flex-direction: column; overflow: hidden; border: 0.5px solid var(--border); }
     #ai-panel.open { display: flex; }
     .ai-panel-header { background: var(--surface-2); border-bottom: 0.5px solid var(--border); padding: 12px 14px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .ai-panel-header-icon { width: 28px; height: 28px; border-radius: 50%; background: var(--bg-accent); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; color: var(--text-accent); }
@@ -378,6 +382,13 @@
     <nav class="sidebar-nav" id="sidebar-nav-container">
       <!-- Rendered by renderSidebarNav() based on role -->
     </nav>
+    <div class="sidebar-ai-btn-wrap">
+      <button id="ai-bubble" onclick="toggleAIPanel()" title="KFG Assistant">
+        <i class="ti ti-robot"></i>
+        <span class="ai-bubble-label">KFG Assistant</span>
+        <span class="ai-bubble-sub">Powered by Claude</span>
+      </button>
+    </div>
     <div class="sidebar-footer">
       <div class="sidebar-user-info">
         <div class="sidebar-avatar" id="sidebar-avatar">?</div>
@@ -421,8 +432,6 @@
 <div id="modal-container"></div>
 
 <!-- AI ASSISTANT FLOATING PANEL -->
-<button id="ai-bubble" onclick="toggleAIPanel()" title="AI Assistant">✦</button>
-
 <div id="ai-panel">
   <div class="ai-panel-header">
     <div class="ai-panel-header-icon">✦</div>

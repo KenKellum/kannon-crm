@@ -2546,7 +2546,7 @@ const AI_SUGGESTIONS = [
 
 function showAIBubble() {
   const bubble = document.getElementById('ai-bubble');
-  if (bubble) bubble.style.display = 'flex';
+  if (bubble) bubble.style.display = 'flex'; // flex keeps icon + text aligned
 }
 
 function toggleAIPanel() {
