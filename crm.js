@@ -3144,14 +3144,20 @@ async function renderSettings() {
       </div>
 
       <div class="dash-card" style="margin-bottom:16px;">
-        <div class="dash-card-title"><i class="ti ti-calendar-event"></i>Booking Link</div>
-        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Your Calendly / Booking URL</label>
-        <input type="url" id="s-booking-link" value="${currentAgent.booking_link||''}" placeholder="https://calendly.com/yourname" style="width:100%;box-sizing:border-box;" />
-        <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">Used in outreach emails so prospects can schedule directly with you.</div>
-        ${currentAgent.booking_link ? `
-        <div style="margin-top:10px;">
-          <a href="${currentAgent.booking_link}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i> Preview your booking page</a>
-        </div>` : ''}
+        <div class="dash-card-title"><i class="ti ti-calendar-event"></i>Your Booking Page</div>
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Your CRM Booking Link (auto-generated)</label>
+        ${currentAgent.route ? `
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
+          <input type="text" value="https://kannon-crm.vercel.app/book?agent=${currentAgent.route}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:12px;cursor:text;" />
+          <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/book?agent=${currentAgent.route}').then(()=>showToast('✓ Copied!'))"><i class="ti ti-copy"></i></button>
+          <a href="https://kannon-crm.vercel.app/book?agent=${currentAgent.route}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
+        </div>` : `<div style="font-size:12px;color:var(--text-muted);padding:10px;background:var(--surface-1);border-radius:6px;margin-bottom:10px;">No booking page route set. Contact your system admin to assign your agent route slug.</div>`}
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.6;">This link is automatically embedded in all outreach emails you send through the CRM. Prospects click it to see your available appointment types and request a booking.</div>
+        <div style="margin-top:14px;border-top:0.5px solid var(--border);padding-top:14px;">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">External Booking URL (optional override — e.g. Calendly)</label>
+          <input type="url" id="s-booking-link" value="${currentAgent.booking_link||''}" placeholder="https://calendly.com/yourname" style="width:100%;box-sizing:border-box;" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Only fill this in if you prefer to use Calendly or another scheduler instead of the CRM booking page.</div>
+        </div>
       </div>
 
       <div class="dash-card" style="margin-bottom:16px;">
