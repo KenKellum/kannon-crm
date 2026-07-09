@@ -3700,14 +3700,51 @@ async function apptComplete(id) {
 }
 
 async function apptReschedule(id) {
-  const notes = prompt('Reschedule notes (new time, reason):');
-  if (notes===null) return;
-  const { error } = await supabaseClient.from('booking_intents').update({ status:'rescheduled', scheduled_at:null, agent_notes:notes||null }).eq('id',id);
-  if (error) { showToast('Error: '+error.message); return; }
-  showToast('↺ Rescheduled');
-  const idx = calAppointments.findIndex(a=>a.id===id);
-  if (idx>=0) { calAppointments[idx].status='rescheduled'; calAppointments[idx].scheduled_at=null; }
-  _calRenderView();
+  const appt = calAppointments.find(a => a.id === id);
+  if (!appt) return;
+
+  // Pre-fill with existing scheduled_at or tomorrow 9am
+  let prefill = '';
+  if (appt.scheduled_at) {
+    const d = new Date(appt.scheduled_at);
+    const pad = n => String(n).padStart(2,'0');
+    prefill = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } else {
+    const tmr = new Date(); tmr.setDate(tmr.getDate()+1); tmr.setHours(9,0,0,0);
+    const pad = n => String(n).padStart(2,'0');
+    prefill = `${tmr.getFullYear()}-${pad(tmr.getMonth()+1)}-${pad(tmr.getDate())}T09:00`;
+  }
+
+  const name = appt.contact_name || appt.booker_name || 'this prospect';
+
+  showModal(
+    `Reschedule: ${name}`,
+    `<p style="margin:0 0 14px;color:#64748b;font-size:14px;">Pick a new date/time to propose to the prospect.</p>
+     <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;display:block;margin-bottom:4px;">New Date &amp; Time</label>
+     <input type="datetime-local" id="modal-reschedule-dt" value="${prefill}"
+       style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:14px;">
+     <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;display:block;margin-bottom:4px;">Notes (optional)</label>
+     <textarea id="modal-reschedule-notes" rows="3" placeholder="Reason for reschedule, new instructions, etc."
+       style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;">${appt.agent_notes||''}</textarea>`,
+    async () => {
+      const dtVal = document.getElementById('modal-reschedule-dt')?.value || '';
+      const notesVal = document.getElementById('modal-reschedule-notes')?.value?.trim() || null;
+      const updates = { status:'rescheduled', rescheduled_by:'agent', agent_notes:notesVal };
+      if (dtVal) updates.scheduled_at = new Date(dtVal).toISOString();
+      const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
+      if (error) { showToast('Error: '+error.message); return false; }
+      showToast('↺ Reschedule proposed to prospect');
+      const idx = calAppointments.findIndex(a=>a.id===id);
+      if (idx>=0) {
+        calAppointments[idx].status='rescheduled';
+        calAppointments[idx].rescheduled_by='agent';
+        calAppointments[idx].agent_notes=notesVal;
+        if (dtVal) calAppointments[idx].scheduled_at=new Date(dtVal).toISOString();
+      }
+      _calRenderView();
+    },
+    'Propose New Time'
+  );
 }
 
 async function apptCancel(id) {
