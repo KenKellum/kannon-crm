@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // CONFIG & STATE
 // ============================================================
 const SUPABASE_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
@@ -3717,9 +3717,17 @@ async function apptReschedule(id) {
 
   const name = appt.contact_name || appt.booker_name || 'this prospect';
 
+  // Best-effort email lookup
+  let bestEmail = appt.booker_email || '';
+  if (appt.contact_id) { const linked = contacts.find(c => c.id === appt.contact_id); if (linked?.email) bestEmail = linked.email; }
+  if (!bestEmail) { const byName = contacts.find(c => c.name?.toLowerCase() === name.toLowerCase()); if (byName?.email) bestEmail = byName.email; }
+
   showModal(
     `Reschedule: ${name}`,
-    `<p style="margin:0 0 14px;color:#64748b;font-size:14px;">Pick a new date/time to propose to the prospect.</p>
+    `<p style="margin:0 0 14px;color:#64748b;font-size:14px;">Pick a new date/time to propose. An email will be sent automatically.</p>
+     <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;display:block;margin-bottom:4px;">Prospect Email</label>
+     <input type="email" id="modal-reschedule-email" value="${bestEmail}"
+       style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:14px;" placeholder="prospect@email.com">
      <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;display:block;margin-bottom:4px;">New Date &amp; Time</label>
      <input type="datetime-local" id="modal-reschedule-dt" value="${prefill}"
        style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:14px;">
@@ -3727,12 +3735,24 @@ async function apptReschedule(id) {
      <textarea id="modal-reschedule-notes" rows="3" placeholder="Reason for reschedule, new instructions, etc."
        style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;">${appt.agent_notes||''}</textarea>`,
     async () => {
-      const dtVal = document.getElementById('modal-reschedule-dt')?.value || '';
+      const dtVal    = document.getElementById('modal-reschedule-dt')?.value || '';
       const notesVal = document.getElementById('modal-reschedule-notes')?.value?.trim() || null;
-      const updates = { status:'rescheduled', rescheduled_by:'agent', agent_notes:notesVal };
+      const toEmail  = document.getElementById('modal-reschedule-email')?.value?.trim() || bestEmail;
+      const updates  = { status:'rescheduled', rescheduled_by:'agent', agent_notes:notesVal, booker_email:toEmail };
       if (dtVal) updates.scheduled_at = new Date(dtVal).toISOString();
       const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
       if (error) { showToast('Error: '+error.message); return false; }
+      try {
+        const url = new URL(APPS_SCRIPT_URL);
+        url.searchParams.set('action',            'appointment_reschedule');
+        url.searchParams.set('agent_id',          currentAgent.id);
+        url.searchParams.set('booking_intent_id', id);
+        url.searchParams.set('to',                toEmail);
+        url.searchParams.set('to_name',           name);
+        if (dtVal) url.searchParams.set('datetime_iso', new Date(dtVal).toISOString());
+        if (notesVal) url.searchParams.set('notes', notesVal);
+        fetch(url.toString());
+      } catch(_) {}
       showToast('Γå║ Reschedule proposed to prospect');
       const idx = calAppointments.findIndex(a=>a.id===id);
       if (idx>=0) {
