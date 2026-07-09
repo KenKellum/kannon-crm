@@ -2088,6 +2088,7 @@ async function viewContact(contactId, email) {
       <button class="btn btn-outline" onclick="closeContactPanel()">Close</button>
       <button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>
       <button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')" title="Recruit this contact as a Kannon agent">&#128101; Recruit</button>
+      <button class="btn btn-outline btn-sm" onclick="startSequence('${c.id}')" title="Enroll in outreach sequence">&#9654; Sequence</button>
       <button class="btn btn-primary" onclick="closeContactPanel();editContact('${c.id}')">&#9999;&#65039; Edit</button>
     </div>`;
   document.getElementById('contact-panel').classList.add('open');
@@ -2829,6 +2830,40 @@ async function deleteAgent(id) {
 // ============================================================
 // MODAL
 // ============================================================
+// ============================================================
+// START / RESTART OUTREACH SEQUENCE
+// ============================================================
+async function startSequence(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) return;
+  const cur = c.type || 'Individual/Family';
+  const isOptedOut = c.opt_out_email || c.sequence_status === 'Opted Out';
+  if (isOptedOut) { showToast('This contact has opted out â€” cannot re-enroll.'); return; }
+  if (c.email_status === 'bounced') { showToast('This contact has a bounced email â€” fix it first.'); return; }
+
+  showModal('Start Sequence: ' + (c.name || 'Contact'), `
+    <p style="margin:0 0 14px;color:#64748b;font-size:14px;">
+      Choose a track below. <strong>${c.name || 'This contact'}</strong> will receive Email 1 on the next automation run (within 24 hours).
+    </p>
+    <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;margin-bottom:6px;">Sequence Track</label>
+    <select id="seq-track-select" style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:12px;">
+      <option value="Individual/Family" ${cur === 'Individual/Family' ? 'selected' : ''}>B2C â€” Individual / Family</option>
+      <option value="Group/Employer" ${cur === 'Group/Employer' ? 'selected' : ''}>B2B â€” Group / Employer</option>
+      <option value="Recruit" ${cur === 'Recruit' ? 'selected' : ''}>Recruit â€” State Farm Agent</option>
+    </select>
+    <p style="font-size:11px;color:#94a3b8;margin:0;">Changing the track also updates the contact type. Any previous sequence progress is reset.</p>
+  `, async () => {
+    const track = document.getElementById('seq-track-select')?.value || cur;
+    const updates = { type: track, sequence_status: null, sequence_step: 0, last_email_sent_at: null };
+    const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
+    if (error) { showToast('Error: ' + error.message); return false; }
+    Object.assign(c, updates);
+    showToast('âœ“ Sequence queued! ' + (c.name || 'Contact') + ' gets Email 1 on the next run.');
+    viewContact(contactId);
+    return true;
+  }, { confirmLabel: 'Start Sequence' });
+}
+
 function showModal(title, bodyHtml, onSave, opts = {}) {
   const confirmLabel = opts.confirmLabel || 'Save';
   const footer = opts.hideConfirm
