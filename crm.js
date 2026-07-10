@@ -2643,7 +2643,11 @@ async function markEmailVerified(id) {
 async function verifyAllEmails() {
   const targets = contacts.filter(c => c.email && !c.email_status);
   if (!targets.length) { showToast('No unverified emails to check'); return; }
-  const msg = 'Verify ' + targets.length + ' email(s)?\n\nSends batches of 10 at a time — results update as each batch finishes.\n\nTip: use the type filter tabs to verify a smaller group first.';
+  const skipped = contacts.filter(x => x.email && x.email_status).length;
+  const msg = 'Verify ' + targets.length + ' unverified email(s)?\n\n'
+    + (skipped > 0 ? skipped + ' contact(s) already have a status (Valid, Risky, Invalid, etc.) and will be skipped.\n\n' : '')
+    + 'Only emails with no prior check result will be sent for verification.\n\n'
+    + 'Sends batches of 10 — results update as each batch finishes.';
   if (!confirm(msg)) return;
 
   const BATCH = 10;
