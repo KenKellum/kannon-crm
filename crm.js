@@ -1982,6 +1982,18 @@ async function renderOpens() {
     const oName  = o.contact_name  || '?';
     const contact = contacts.find(c => c.email && c.email.toLowerCase() === oEmail.toLowerCase());
     const contactId = contact ? contact.id : '';
+    const emailSt = contact ? (contact.email_status || null) : null;
+    const _stBadge = emailSt === 'valid'
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#16a34a;">&#10003; Valid</span>'
+      : (emailSt === 'invalid' || emailSt === 'bounced' || emailSt === 'bad-domain' || emailSt === 'bad-syntax')
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#fee2e2;color:#dc2626;">&#9888; Invalid</span>'
+      : emailSt === 'risky'
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#f3f4f6;color:#6b7280;">? Risky</span>'
+      : emailSt === 'catch-all'
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#fef9c3;color:#854d0e;">~ Catch-All</span>'
+      : emailSt
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:#f3f4f6;color:#6b7280;">' + emailSt + '</span>'
+      : '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:#f3f4f6;color:#9ca3af;">Unverified</span>';
     const initials = oName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
     return `<tr class="opens-row" onclick="viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">
       <td style="white-space:nowrap;"><span class="contact-avatar" style="width:30px;height:30px;font-size:11px;">${initials}</span><strong>${oName}</strong></td>
@@ -1989,6 +2001,7 @@ async function renderOpens() {
       <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'…':''):'—'}</td>
       <td><span class="badge badge-group">${o.sequence_track||'—'}</span></td>
       <td style="font-size:12px;color:var(--muted);white-space:nowrap;">${formatTimeAgo(o.opened_at)}</td>
+      <td>${_stBadge}</td>
       <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">View &rarr;</button></td>
     </tr>`;
   }).join('');
@@ -2087,8 +2100,12 @@ async function viewContact(contactId, email) {
     </div>
     <div class="panel-footer">
       <button class="btn btn-outline" onclick="closeContactPanel()">Close</button>
-      <button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>
-      <button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')" title="Recruit this contact as a Kannon agent">&#128101; Recruit</button>
+      ${_canSend
+        ? `<button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>`
+        : `<button class="btn btn-outline btn-sm" disabled title="Email must be Verified before transferring" style="opacity:0.4;cursor:not-allowed;"><i class="ti ti-arrows-exchange"></i> Transfer</button>`}
+      ${_canSend
+        ? `<button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')" title="Recruit this contact as a Kannon agent">&#128101; Recruit</button>`
+        : `<button class="btn btn-accent btn-sm" disabled title="Email must be Verified before adding to sequence" style="opacity:0.4;cursor:not-allowed;">&#128101; Recruit</button>`}
       <button class="btn btn-outline btn-sm" onclick="startSequence('${c.id}')" title="Enroll in outreach sequence">&#9654; Sequence</button>
       <button class="btn btn-primary" onclick="closeContactPanel();editContact('${c.id}')">&#9999;&#65039; Edit</button>
     </div>`;
