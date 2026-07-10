@@ -2003,7 +2003,7 @@ async function renderOpens() {
     <div class="contacts-table">
       ${all.length === 0
         ? `<div class="empty-state"><div class="emoji">&#128235;</div><p>No email opens tracked yet.</p></div>`
-        : `<table><thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Email</th><th>Opened</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`}
+        : `<table><thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Email</th><th>Opened</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`}
     </div>`;
 }
 
@@ -2041,6 +2041,7 @@ async function viewContact(contactId, email) {
   const dots = [1,2,3].map(i => `<div class="seq-dot ${i < seqStep ? 'done' : i === seqStep && seqStatus === 'Active' ? 'active' : ''}"></div>`).join('');
   const opensCount = (opens || []).length;
   const ownerAgent = allAgents.find(a => a.id === c.agent_id);
+  const _canSend = c.email_status === 'valid';
   const companyBadges = contactCompanies.map(co => `<span class="badge ${co.slug === 'primerica' ? 'badge-primerica' : 'badge-insured'}">${co.name}</span>`).join(' ');
 
   document.getElementById('contact-panel').innerHTML = `
