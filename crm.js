@@ -2966,8 +2966,8 @@ async function startSequence(contactId) {
   if (!c) return;
   const cur = c.type || 'Individual/Family';
   const isOptedOut = c.opt_out_email || c.sequence_status === 'Opted Out';
-  if (isOptedOut) { showToast('This contact has opted out â€” cannot re-enroll.'); return; }
-  if (c.email_status === 'bounced') { showToast('This contact has a bounced email â€” fix it first.'); return; }
+  if (isOptedOut) { showToast('This contact has opted out — cannot re-enroll.'); return; }
+  if (c.email_status === 'bounced') { showToast('This contact has a bounced email — fix it first.'); return; }
 
   showModal('Start Sequence: ' + (c.name || 'Contact'), `
     <p style="margin:0 0 14px;color:#64748b;font-size:14px;">
@@ -2975,9 +2975,9 @@ async function startSequence(contactId) {
     </p>
     <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;margin-bottom:6px;">Sequence Track</label>
     <select id="seq-track-select" style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:12px;">
-      <option value="Individual/Family" ${cur === 'Individual/Family' ? 'selected' : ''}>B2C â€” Individual / Family</option>
-      <option value="Group/Employer" ${cur === 'Group/Employer' ? 'selected' : ''}>B2B â€” Group / Employer</option>
-      <option value="Recruit" ${cur === 'Recruit' ? 'selected' : ''}>Recruit â€” State Farm Agent</option>
+      <option value="Individual/Family" ${cur === 'Individual/Family' ? 'selected' : ''}>B2C — Individual / Family</option>
+      <option value="Group/Employer" ${cur === 'Group/Employer' ? 'selected' : ''}>B2B — Group / Employer</option>
+      <option value="Recruit" ${cur === 'Recruit' ? 'selected' : ''}>Recruit — State Farm Agent</option>
     </select>
     <p style="font-size:11px;color:#94a3b8;margin:0;">Changing the track also updates the contact type. Any previous sequence progress is reset.</p>
   `, async () => {
@@ -2986,7 +2986,7 @@ async function startSequence(contactId) {
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
     if (error) { showToast('Error: ' + error.message); return false; }
     Object.assign(c, updates);
-    showToast('âœ“ Sequence queued! ' + (c.name || 'Contact') + ' gets Email 1 on the next run.');
+    showToast('✓ Sequence queued! ' + (c.name || 'Contact') + ' gets Email 1 on the next run.');
     viewContact(contactId);
     return true;
   }, { confirmLabel: 'Start Sequence' });
