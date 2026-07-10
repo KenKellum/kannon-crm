@@ -2642,46 +2642,74 @@ async function markEmailVerified(id) {
 
 async function verifyAllEmails() {
   const targets = contacts.filter(c => c.email && !c.email_status);
-  if (!targets.length) { showToast('No unverified emails to check'); return; }
+  if (targets.length === 0) { showToast('No unverified emails to check'); return; }
+
   const skipped = contacts.filter(x => x.email && x.email_status).length;
-  const msg = 'Verify ' + targets.length + ' unverified email(s)?\n\n'
-    + (skipped > 0 ? skipped + ' contact(s) already have a status (Valid, Risky, Invalid, etc.) and will be skipped.\n\n' : '')
-    + 'Only emails with no prior check result will be sent for verification.\n\n'
-    + 'Sends batches of 10 — results update as each batch finishes.';
+  const msg = 'Verify ' + targets.length + ' unverified email' + (targets.length > 1 ? 's' : '') + '?\n\n'
+    + (skipped > 0 ? skipped + ' contact' + (skipped > 1 ? 's' : '') + ' already have a status (Valid, Risky, Invalid, etc.) and will be skipped.\n\n' : '')
+    + 'Only emails with no prior check result will be sent for verification.\n\nResults update as each batch of 10 finishes.';
   if (!confirm(msg)) return;
 
+  targets.forEach(c => { c.email_status = 'pending'; });
+  renderContacts();
+
+  // Progress bar
+  const progressEl = document.createElement('div');
+  progressEl.id = 'verify-progress';
+  progressEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px 20px;box-shadow:0 4px 20px rgba(0,0,0,.15);z-index:9999;min-width:300px;max-width:420px;';
+  progressEl.innerHTML = '<div style="font-weight:600;font-size:14px;margin-bottom:8px;">&#128269; Verifying Emails…</div>'
+    + '<div style="background:var(--surface);border-radius:6px;height:8px;overflow:hidden;margin-bottom:8px;">'
+    + '<div id="verify-bar" style="background:var(--accent);height:100%;width:0%;transition:width .3s ease;border-radius:6px;"></div></div>'
+    + '<div id="verify-status" style="font-size:12px;color:var(--muted);">0 / ' + targets.length + ' checked</div>';
+  document.body.appendChild(progressEl);
+
   const BATCH = 10;
-  let totalValid = 0, totalBad = 0, done = 0;
+  let done = 0, valid = 0, invalid = 0, risky = 0;
 
   for (let i = 0; i < targets.length; i += BATCH) {
-    const chunk = targets.slice(i, i + BATCH);
-    chunk.forEach(ct => { ct.email_status = 'pending'; });
-    renderContacts();
-    showToast('Verifying ' + (i + 1) + '-' + Math.min(i + BATCH, targets.length) + ' of ' + targets.length + '...');
+    const batch  = targets.slice(i, i + BATCH);
+    const emails = batch.map(c => c.email);
+    const ids    = batch.map(c => c.id);
     try {
-      const res = await fetch(SUPABASE_URL + '/functions/v1/verify-email', {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
-        body: JSON.stringify({ emails: chunk.map(ct => ct.email), contact_ids: chunk.map(ct => ct.id) })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ emails, contact_ids: ids })
       });
       const data = await res.json();
       if (data.results) {
         data.results.forEach(r => {
-          const ct = contacts.find(x => x.id === r.contact_id);
-          if (ct) { ct.email_status = r.status; ct.email_verify_reason = r.reason || ''; ct.email_verified_at = new Date().toISOString(); }
-          if (r.status === 'valid') totalValid++;
-          else if (['invalid','bad-domain','bad-syntax','bounced'].includes(r.status)) totalBad++;
+          const c = contacts.find(x => x.id === r.contact_id);
+          if (c) {
+            c.email_status = r.status;
+            c.email_verify_reason = r.reason || '';
+            c.email_verified_at = new Date().toISOString();
+            if (r.status === 'valid') valid++;
+            else if (['invalid','bad-domain','bad-syntax'].includes(r.status)) invalid++;
+            else if (['risky','catch-all'].includes(r.status)) risky++;
+          }
         });
-        done += chunk.length;
-      } else {
-        showToast('Batch error: ' + (data.error || 'unknown'));
-      }
-    } catch (e) {
-      showToast('Batch ' + Math.floor(i/BATCH + 1) + ' failed: ' + e.message);
-    }
+        done += data.results.length;
+      } else { done += batch.length; }
+    } catch (e) { done += batch.length; }
+
+    const pct      = Math.round((done / targets.length) * 100);
+    const barEl    = document.getElementById('verify-bar');
+    const statusEl = document.getElementById('verify-status');
+    if (barEl)    barEl.style.width = pct + '%';
+    if (statusEl) statusEl.textContent = done + ' / ' + targets.length + ' checked — ' + valid + ' valid, ' + risky + ' risky, ' + invalid + ' invalid';
     renderContacts();
   }
-  showToast('Done: ' + totalValid + ' valid, ' + totalBad + ' bad of ' + done + ' checked');
+
+  // Completion state
+  const barEl = document.getElementById('verify-bar');
+  if (barEl) barEl.style.background = '#22c55e';
+  const titleEl = progressEl.querySelector('div');
+  if (titleEl) titleEl.innerHTML = '&#10003; Verification Complete';
+  const statusEl = document.getElementById('verify-status');
+  if (statusEl) statusEl.textContent = 'Complete! ' + valid + ' valid · ' + risky + ' risky · ' + invalid + ' invalid of ' + targets.length + ' checked';
+  setTimeout(() => { const el = document.getElementById('verify-progress'); if (el) el.remove(); }, 5000);
+  renderContacts();
 }
 
 // ============================================================
