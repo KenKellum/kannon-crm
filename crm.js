@@ -2016,7 +2016,7 @@ async function renderOpens() {
     <div class="contacts-table">
       ${all.length === 0
         ? `<div class="empty-state"><div class="emoji">&#128235;</div><p>No email opens tracked yet.</p></div>`
-        : `<table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Subject</th><th>Email</th><th>Opened</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`}
+        : `<table><thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Email</th><th>Opened</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`}
     </div>`;
 }
 
