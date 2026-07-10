@@ -2327,6 +2327,7 @@ async function renderContacts() {
         <option value="sequence_status_asc" ${contactSort==='sequence_status_asc'?'selected':''}>Sequence Status</option>
       </select>
       <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
+      <button class="btn btn-outline" onclick="verifyAllEmails()" style="font-size:13px;" title="SMTP-verify unverified emails">&#128269; Verify All Emails</button>
       <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
     </div>
     <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
@@ -2380,11 +2381,19 @@ async function renderContacts() {
     const badgeClass = typeClass[c.type] || 'badge-agent';
     const seqStatus  = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
-    const emailBadge = c.email_status === 'bounced'
-      ? `<span title="Bounced — bad email address" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#9888;&#65039; BOUNCE</span>`
+    const emailBadge = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
+      ? `<span title="${(c.email_verify_reason||'Bad email').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#9888; INVALID</span>`
       : (c.email_status === 'opted_out' || c.opt_out_email)
       ? `<span title="Opted out of emails" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#128683; OPT-OUT</span>`
-      : '';
+      : c.email_status === 'valid'
+      ? `<span title="Email verified" style="margin-left:5px;background:#dcfce7;color:#16a34a;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#10003; VALID</span>`
+      : c.email_status === 'catch-all'
+      ? `<span title="Catch-all domain" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">~ CATCH-ALL</span>`
+      : c.email_status === 'risky'
+      ? `<span title="${(c.email_verify_reason||'Unverified').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#f3f4f6;color:#6b7280;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">? RISKY</span>`
+      : c.email_status === 'pending'
+      ? `<span title="Verifying..." style="margin-left:5px;background:#eff6ff;color:#2563eb;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">... CHECKING</span>`
+      : ''
     const dncBadge = c.do_not_call
       ? `<span title="Do Not Call" style="margin-left:4px;background:#fce7f3;color:#9d174d;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#128245; DNC</span>`
       : '';
@@ -2403,6 +2412,7 @@ async function renderContacts() {
       <td>
         <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
         <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editContact('${c.id}')">Edit</button>
+        ${c.email ? `<button class="btn btn-outline btn-sm" style="margin-left:4px;font-size:11px;" onclick="verifyContactEmail('${c.id}')" title="Verify email">&#128269; Verify</button>` : ''}
         <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="deleteContact('${c.id}')">&#10005;</button>
       </td>
     </tr>`;
@@ -2484,11 +2494,22 @@ function editContact(id) {
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
   const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
-  const emailStatusNote = c.email_status === 'bounced'
-    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">⚠ <strong>Bounced</strong> — this email address was rejected. Correct it below to re-enable outreach.</div>`
+  const _verifiedAt = c.email_verified_at ? ` (verified ${new Date(c.email_verified_at).toLocaleDateString()})` : '';
+  const emailStatusNote = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
+    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">&#9888; <strong>Invalid Email</strong>${_verifiedAt} &#8212; ${c.email_verify_reason||'rejected'}. Correct it below.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button></div>`
     : c.email_status === 'opted_out'
-    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">⛔ <strong>Opted Out</strong> — this contact requested removal. Uncheck below to restore (only if they ask to re-subscribe).</div>`
-    : '';
+    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">&#128683; <strong>Opted Out</strong> &#8212; uncheck below to restore.</div>`
+    : c.email_status === 'valid'
+    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#16a34a;">&#10003; <strong>Email Verified</strong>${_verifiedAt}</div>`
+    : c.email_status === 'risky'
+    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">? <strong>Risky</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button></div>`
+    : c.email_status === 'catch-all'
+    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">~ <strong>Catch-All Domain</strong>${_verifiedAt} &#8212; mailbox unconfirmed.</div>`
+    : c.email_status === 'pending'
+    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#2563eb;">... <strong>Verifying...</strong> Refresh in a moment.</div>`
+    : c.email && !c.email_status
+    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">Not verified. <button type="button" class="btn btn-outline btn-sm" style="margin-left:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify Now</button></div>`
+    : ''
   showModal('Edit Contact', `
     ${emailStatusNote}
     <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
@@ -2550,6 +2571,58 @@ async function deleteContact(id) {
   ]);
   await supabaseClient.from('contacts').delete().eq('id', id);
   contacts = contacts.filter(c => c.id !== id); renderContacts(); showToast('Contact deleted');
+}
+// ── Email Verification ────────────────────────────────────────────────────────
+
+async function verifyContactEmail(id) {
+  const contact = contacts.find(x => x.id === id);
+  if (!contact || !contact.email) { showToast('No email on this contact'); return; }
+  contact.email_status = 'pending';
+  renderContacts();
+  showToast('Verifying ' + contact.email + '...');
+  try {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/verify-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ email: contact.email, contact_id: id })
+    });
+    const data = await res.json();
+    if (data.status) {
+      contact.email_status = data.status;
+      contact.email_verify_reason = data.reason || '';
+      contact.email_verified_at = new Date().toISOString();
+      showToast(contact.email + ' is ' + data.status.toUpperCase());
+    } else { showToast('Verify error: ' + (data.error || 'unknown')); }
+  } catch (e) { showToast('Verify failed: ' + e.message); }
+  renderContacts();
+}
+
+async function verifyAllEmails() {
+  const targets = contacts.filter(c => c.email && c.email_status !== 'valid' && c.email_status !== 'opted_out' && c.email_status !== 'pending');
+  if (!targets.length) { showToast('No unverified emails to check'); return; }
+  if (!confirm('Verify ' + targets.length + ' email address' + (targets.length > 1 ? 'es' : '') + '? May take a minute.')) return;
+  targets.forEach(c => { c.email_status = 'pending'; });
+  renderContacts();
+  showToast('Verifying ' + targets.length + ' emails...');
+  try {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/verify-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ emails: targets.map(c => c.email), contact_ids: targets.map(c => c.id) })
+    });
+    const data = await res.json();
+    if (data.results) {
+      let valid = 0, bad = 0;
+      data.results.forEach(r => {
+        const c = contacts.find(x => x.id === r.contact_id);
+        if (c) { c.email_status = r.status; c.email_verify_reason = r.reason || ''; c.email_verified_at = new Date().toISOString(); }
+        if (r.status === 'valid') valid++;
+        else if (['invalid','bad-domain','bad-syntax'].includes(r.status)) bad++;
+      });
+      showToast('Done: ' + valid + ' valid, ' + bad + ' bad of ' + data.results.length);
+    } else { showToast('Bulk verify error: ' + (data.error || 'unknown')); }
+  } catch (e) { showToast('Bulk verify failed: ' + e.message); }
+  renderContacts();
 }
 
 // ============================================================
