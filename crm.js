@@ -2542,10 +2542,11 @@ function editContact(id) {
     const newDnc     = document.getElementById('con-dnc').checked;
     const newEmail   = document.getElementById('con-email').value.trim() || null;
     // If email was bounced and a new email was entered, clear the bounce status
-    const newEmailStatus = (c.email_status === 'bounced' && newEmail && newEmail !== c.email) ? 'valid'
+    // When email changes, clear status so trigger re-verifies it
+    const newEmailStatus = (c.email_status === 'bounced' && newEmail && newEmail !== c.email) ? null
       : newOptOut ? 'opted_out'
-      : (c.email_status === 'opted_out' && !newOptOut) ? 'valid'
-      : c.email_status || 'valid';
+      : (c.email_status === 'opted_out' && !newOptOut) ? null
+      : c.email_status || null;
     const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
