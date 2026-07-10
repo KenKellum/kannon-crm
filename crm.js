@@ -2601,29 +2601,41 @@ async function verifyContactEmail(id) {
 async function verifyAllEmails() {
   const targets = contacts.filter(c => c.email && c.email_status !== 'valid' && c.email_status !== 'opted_out' && c.email_status !== 'pending');
   if (!targets.length) { showToast('No unverified emails to check'); return; }
-  if (!confirm('Verify ' + targets.length + ' email address' + (targets.length > 1 ? 'es' : '') + '? May take a minute.')) return;
-  targets.forEach(c => { c.email_status = 'pending'; });
-  renderContacts();
-  showToast('Verifying ' + targets.length + ' emails...');
-  try {
-    const res = await fetch(SUPABASE_URL + '/functions/v1/verify-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
-      body: JSON.stringify({ emails: targets.map(c => c.email), contact_ids: targets.map(c => c.id) })
-    });
-    const data = await res.json();
-    if (data.results) {
-      let valid = 0, bad = 0;
-      data.results.forEach(r => {
-        const c = contacts.find(x => x.id === r.contact_id);
-        if (c) { c.email_status = r.status; c.email_verify_reason = r.reason || ''; c.email_verified_at = new Date().toISOString(); }
-        if (r.status === 'valid') valid++;
-        else if (['invalid','bad-domain','bad-syntax'].includes(r.status)) bad++;
+  const msg = 'Verify ' + targets.length + ' email(s)?\n\nSends batches of 10 at a time — results update as each batch finishes.\n\nTip: use the type filter tabs to verify a smaller group first.';
+  if (!confirm(msg)) return;
+
+  const BATCH = 10;
+  let totalValid = 0, totalBad = 0, done = 0;
+
+  for (let i = 0; i < targets.length; i += BATCH) {
+    const chunk = targets.slice(i, i + BATCH);
+    chunk.forEach(ct => { ct.email_status = 'pending'; });
+    renderContacts();
+    showToast('Verifying ' + (i + 1) + '-' + Math.min(i + BATCH, targets.length) + ' of ' + targets.length + '...');
+    try {
+      const res = await fetch(SUPABASE_URL + '/functions/v1/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ emails: chunk.map(ct => ct.email), contact_ids: chunk.map(ct => ct.id) })
       });
-      showToast('Done: ' + valid + ' valid, ' + bad + ' bad of ' + data.results.length);
-    } else { showToast('Bulk verify error: ' + (data.error || 'unknown')); }
-  } catch (e) { showToast('Bulk verify failed: ' + e.message); }
-  renderContacts();
+      const data = await res.json();
+      if (data.results) {
+        data.results.forEach(r => {
+          const ct = contacts.find(x => x.id === r.contact_id);
+          if (ct) { ct.email_status = r.status; ct.email_verify_reason = r.reason || ''; ct.email_verified_at = new Date().toISOString(); }
+          if (r.status === 'valid') totalValid++;
+          else if (['invalid','bad-domain','bad-syntax','bounced'].includes(r.status)) totalBad++;
+        });
+        done += chunk.length;
+      } else {
+        showToast('Batch error: ' + (data.error || 'unknown'));
+      }
+    } catch (e) {
+      showToast('Batch ' + Math.floor(i/BATCH + 1) + ' failed: ' + e.message);
+    }
+    renderContacts();
+  }
+  showToast('Done: ' + totalValid + ' valid, ' + totalBad + ' bad of ' + done + ' checked');
 }
 
 // ============================================================
