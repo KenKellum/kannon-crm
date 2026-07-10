@@ -2495,20 +2495,21 @@ function editContact(id) {
     : '';
   const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
   const _verifiedAt = c.email_verified_at ? ` (verified ${new Date(c.email_verified_at).toLocaleDateString()})` : '';
+  const _markBtn = `<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;margin-left:6px;font-size:11px;color:#16a34a;border-color:#16a34a;" onclick="markEmailVerified('${c.id}')">&#10003; Mark as Verified</button>`;
   const emailStatusNote = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
-    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">&#9888; <strong>Invalid Email</strong>${_verifiedAt} &#8212; ${c.email_verify_reason||'rejected'}. Correct it below.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button></div>`
+    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">&#9888; <strong>Invalid Email</strong>${_verifiedAt} &#8212; ${c.email_verify_reason||'rejected'}. Correct it below, or mark valid if you know it works.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
     : c.email_status === 'opted_out'
     ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">&#128683; <strong>Opted Out</strong> &#8212; uncheck below to restore.</div>`
     : c.email_status === 'valid'
-    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#16a34a;">&#10003; <strong>Email Verified</strong>${_verifiedAt}</div>`
+    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#16a34a;">&#10003; <strong>Email Verified</strong>${_verifiedAt}${c.email_verify_reason === 'Manually verified by agent' ? ' <em style="font-size:10px;opacity:0.8;">(manual)</em>' : ''}</div>`
     : c.email_status === 'risky'
-    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">? <strong>Risky</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button></div>`
+    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">? <strong>Risky / Unconfirmed</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}.<br><small style="display:block;margin-top:4px;color:#9ca3af;">Common for Microsoft, Google, State Farm &#8212; SMTP probing is blocked. If you know this email works, mark it verified.</small><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
     : c.email_status === 'catch-all'
-    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">~ <strong>Catch-All Domain</strong>${_verifiedAt} &#8212; mailbox unconfirmed.</div>`
+    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">~ <strong>Catch-All Domain</strong>${_verifiedAt} &#8212; mailbox unconfirmed. If you know this person's inbox is real, mark it verified.<br>${_markBtn}</div>`
     : c.email_status === 'pending'
-    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#2563eb;">... <strong>Verifying...</strong> Refresh in a moment.</div>`
+    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#2563eb;">... <strong>Verifying...</strong> Refresh in a moment, or mark verified if you know it's good.<br>${_markBtn}</div>`
     : c.email && !c.email_status
-    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">Not verified. <button type="button" class="btn btn-outline btn-sm" style="margin-left:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify Now</button></div>`
+    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;"><strong>&#9888; Not verified &#8212; will NOT receive emails until verified.</strong><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify via SMTP</button>${_markBtn}</div>`
     : ''
   showModal('Edit Contact', `
     ${emailStatusNote}
@@ -2596,6 +2597,29 @@ async function verifyContactEmail(id) {
     } else { showToast('Verify error: ' + (data.error || 'unknown')); }
   } catch (e) { showToast('Verify failed: ' + e.message); }
   renderContacts();
+}
+
+async function markEmailVerified(id) {
+  const contact = contacts.find(x => x.id === id);
+  if (!contact) return;
+  const msg = 'Mark "' + (contact.email || 'this email') + '" as Verified?\n\nUse this when you know the address is good (e.g. you received email from them, or SMTP probing was blocked by their server).\n\nThis email will now be included in sequences and sends.';
+  if (!confirm(msg)) return;
+  try {
+    const { error } = await supabaseClient.from('contacts').update({
+      email_status: 'valid',
+      email_verify_reason: 'Manually verified by agent',
+      email_verified_at: new Date().toISOString()
+    }).eq('id', id);
+    if (error) throw error;
+    contact.email_status = 'valid';
+    contact.email_verify_reason = 'Manually verified by agent';
+    contact.email_verified_at = new Date().toISOString();
+    showToast(contact.email + ' marked as Verified');
+    renderContacts();
+    if (document.querySelector('.modal-overlay')) editContact(id);
+  } catch (e) {
+    showToast('Error: ' + e.message);
+  }
 }
 
 async function verifyAllEmails() {
