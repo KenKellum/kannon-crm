@@ -29,7 +29,6 @@ let allAgencies = [];
 let allCompanies = [];
 let contacts = [];
 let deals = [];
-let dealActivities = [];
 let draggedDeal = null;
 let currentPipeline = 'group-employer';
 let contactSearch = '';
@@ -357,9 +356,6 @@ async function loadData() {
   const results = await Promise.all(queries);
   contacts = results[0].data || [];
   deals = results[1].data || [];
-  // Load deal activities (RLS auto-filters to user's deals)
-  const { data: actData } = await supabaseClient.from('deal_activities').select('*').order('created_at', { ascending: false });
-  dealActivities = actData || [];
   applications = (results[2] && results[2].data) || [];
   // Agency owner: scope deals to only those linked to their contacts (deals table has no agent_id)
   if (currentAgent.role === 'agency_owner') {
@@ -2142,130 +2138,6 @@ function closeContactPanel() {
   document.getElementById('panel-overlay').style.display = 'none';
   document.body.style.overflow = '';
 }
-function closeAllPanels() { closeContactPanel(); closeDealPanel(); }
-
-function closeDealPanel() {
-  document.getElementById('deal-panel').classList.remove('open');
-  document.getElementById('panel-overlay').style.display = 'none';
-  document.body.style.overflow = '';
-}
-
-function renderActivityTimeline(dealId) {
-  const acts = dealActivities.filter(a => a.deal_id === dealId);
-  if (!acts.length) return '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No activity logged yet.</div>';
-  const icons = { note: '&#128221;', call: '&#128222;', email: '&#9993;', stage_change: '&#9889;' };
-  return acts.map(a => {
-    const dt = new Date(a.created_at);
-    const dateStr = dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' ' + dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    return `<div class="activity-item">
-      <div class="activity-dot ${a.type}">${icons[a.type]||'&#128204;'}</div>
-      <div class="activity-body">
-        <div class="activity-content">${a.content}</div>
-        <div class="activity-meta">${dateStr}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function saveDealActivity(dealId) {
-  const typeEl = document.getElementById('act-type-' + dealId);
-  const contentEl = document.getElementById('act-content-' + dealId);
-  if (!typeEl || !contentEl) return;
-  const type = typeEl.value;
-  const content = contentEl.value.trim();
-  if (!content) { showToast('Add some content first'); return; }
-  const { data, error } = await supabaseClient.from('deal_activities').insert({
-    deal_id: dealId, agent_id: currentAgent.id, type, content
-  }).select().single();
-  if (error) { showToast('Error: ' + error.message); return; }
-  dealActivities.unshift(data);
-  contentEl.value = '';
-  const tl = document.getElementById('timeline-' + dealId);
-  if (tl) tl.innerHTML = renderActivityTimeline(dealId);
-  showToast('&#10003; Activity logged!');
-}
-
-function openDealPanel(dealId) {
-  const deal = deals.find(d => d.id === dealId); if (!deal) return;
-  const contact = contacts.find(c => c.id === deal.contact_id);
-  const pipeline = PIPELINES[deal.pipeline] || { name: deal.pipeline };
-  const isHealth = ['group-employer','individual-family'].includes(deal.pipeline);
-  const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : null;
-  const fv = (v, fallback='Not set') => v ? String(v) : `<span class="empty">${fallback}</span>`;
-
-  const contactSection = contact ? `
-    <div class="panel-field"><span class="panel-field-icon">&#128100;</span><strong>${contact.name}</strong>${contact.company ? ' &mdash; ' + contact.company : ''}</div>
-    ${contact.phone ? `<div class="panel-field"><span class="panel-field-icon">&#128222;</span><a href="tel:${contact.phone}">${contact.phone}</a></div>` : ''}
-    ${contact.email ? `<div class="panel-field"><span class="panel-field-icon">&#9993;</span><a href="mailto:${contact.email}">${contact.email}</a></div>` : ''}
-  ` : '<div class="panel-field" style="color:var(--text-muted);">No contact linked</div>';
-
-  const healthSection = isHealth ? `
-  <div class="panel-section">
-    <div class="panel-label">Plan Details</div>
-    <div class="deal-field-grid">
-      <div class="deal-field"><div class="deal-field-label">Employees</div><div class="deal-field-value ${deal.employees ? '' : 'empty'}">${deal.employees || 'Not set'}</div></div>
-      <div class="deal-field"><div class="deal-field-label">Renewal Date</div><div class="deal-field-value ${deal.renewal_date ? '' : 'empty'}">${fmtDate(deal.renewal_date) || 'Not set'}</div></div>
-      <div class="deal-field"><div class="deal-field-label">Current Carrier</div><div class="deal-field-value ${deal.current_carrier ? '' : 'empty'}">${deal.current_carrier || 'Unknown'}</div></div>
-      <div class="deal-field"><div class="deal-field-label">Quoted Premium</div><div class="deal-field-value ${deal.quoted_premium ? '' : 'empty'}">${deal.quoted_premium ? '$' + parseFloat(deal.quoted_premium).toLocaleString() + '/mo' : 'Not quoted'}</div></div>
-    </div>
-  </div>` : '';
-
-  const nextStepSection = deal.next_step ? `
-    <div style="margin-top:10px;">
-      <div class="deal-field-label" style="margin-bottom:4px;">Next Step</div>
-      <div class="next-step-box">${deal.next_step}${deal.next_step_date ? `<span style="color:var(--text-muted);font-size:12px;display:block;margin-top:3px;">Due ${fmtDate(deal.next_step_date)}</span>` : ''}</div>
-    </div>` : '';
-
-  document.getElementById('deal-panel').innerHTML = `
-    <div class="panel-header">
-      <div class="panel-header-info">
-        <div class="panel-avatar" style="font-size:18px;">&#129309;</div>
-        <div>
-          <div class="panel-name">${deal.title}</div>
-          <div style="margin-top:3px;"><span class="deal-panel-stage">${pipeline.name} &rarr; ${deal.stage}</span></div>
-        </div>
-      </div>
-      <button class="panel-close-btn" onclick="closeDealPanel()">&#215;</button>
-    </div>
-    <div class="panel-body">
-      <div class="panel-section">
-        <div class="panel-label">Linked Contact</div>
-        ${contactSection}
-      </div>
-      <div class="panel-section">
-        <div class="panel-label">Deal Details</div>
-        <div class="deal-field-grid">
-          <div class="deal-field"><div class="deal-field-label">Deal Value</div><div class="deal-field-value ${deal.value ? '' : 'empty'}">${deal.value ? '$' + parseFloat(deal.value).toLocaleString() : 'Not set'}</div></div>
-          <div class="deal-field"><div class="deal-field-label">Expected Close</div><div class="deal-field-value ${deal.close_date ? '' : 'empty'}">${fmtDate(deal.close_date) || 'Not set'}</div></div>
-        </div>
-        ${nextStepSection}
-      </div>
-      ${healthSection}
-      <div class="panel-section">
-        <div class="panel-label">Activity Log</div>
-        <div class="activity-log-form">
-          <select id="act-type-${dealId}">
-            <option value="note">&#128221; Note</option>
-            <option value="call">&#128222; Call</option>
-            <option value="email">&#9993; Email</option>
-          </select>
-          <textarea id="act-content-${dealId}" placeholder="Log a call outcome, note, or email summary..."></textarea>
-          <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="saveDealActivity('${dealId}')">Log It</button>
-        </div>
-        <div class="activity-timeline" id="timeline-${dealId}">${renderActivityTimeline(dealId)}</div>
-      </div>
-      ${deal.notes ? `<div class="panel-section"><div class="panel-label">Notes</div><div class="panel-notes-box">${deal.notes}</div></div>` : ''}
-    </div>
-    <div class="panel-footer">
-      <button class="btn btn-outline" onclick="closeDealPanel()">Close</button>
-      ${contact ? `<button class="btn btn-outline btn-sm" onclick="closeDealPanel();viewContact('${contact.id}','')">&#128100; Contact</button>` : ''}
-      <button class="btn btn-danger btn-sm" onclick="closeDealPanel();deleteDeal('${dealId}')">Delete</button>
-      <button class="btn btn-primary" onclick="closeDealPanel();editDeal('${dealId}')">&#9999;&#65039; Edit Deal</button>
-    </div>`;
-  document.getElementById('panel-overlay').style.display = 'block';
-  document.getElementById('deal-panel').classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
 
 // ============================================================
 // PIPELINES
@@ -2278,14 +2150,12 @@ function renderPipelines() {
     const stageDeals = pipelineDeals.filter(d => d.stage === stage);
     const cards = stageDeals.map(deal => {
       const contact = contacts.find(c => c.id === deal.contact_id);
-      const fmtRenewal = deal.renewal_date ? new Date(deal.renewal_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : null;
-      return `<div class="deal-card" draggable="true" ondragstart="dragStart(event,'${deal.id}')" id="deal-${deal.id}" onclick="openDealPanel('${deal.id}')" style="cursor:pointer;">
+      return `<div class="deal-card" draggable="true" ondragstart="dragStart(event,'${deal.id}')" id="deal-${deal.id}">
         <div class="deal-name">${deal.title}</div>
         <div class="deal-contact">&#128100; ${contact ? contact.name : 'No contact'}</div>
         ${deal.value ? `<div class="deal-value">$${parseFloat(deal.value).toLocaleString()}</div>` : ''}
-        ${fmtRenewal ? `<div style="font-size:11px;color:#f59e0b;margin-top:5px;">&#128260; Renews ${fmtRenewal}</div>` : ''}
-        ${deal.next_step ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">&#10145; ${deal.next_step.substring(0,55)}${deal.next_step.length>55?'...':''}</div>` : ''}
-        <div class="deal-actions" onclick="event.stopPropagation()">
+        ${deal.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:6px;">${deal.notes.substring(0,80)}${deal.notes.length>80?'...':''}</div>` : ''}
+        <div class="deal-actions">
           <button class="btn btn-outline btn-sm" onclick="editDeal('${deal.id}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteDeal('${deal.id}')">&#10005;</button>
         </div>
@@ -2330,34 +2200,11 @@ function openAddDeal(stage = '') {
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
     <label>Contact</label><select id="deal-contact"><option value="">ΓÇö No contact ΓÇö</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" placeholder="0" min="0" />
-    <label>Expected Close Date</label><input type="date" id="deal-close-date" />
-    <label>Next Step</label><input type="text" id="deal-next-step" placeholder="e.g. Send proposal, Schedule call..." />
-    <label>Next Step Due Date</label><input type="date" id="deal-next-step-date" />
-    <hr style="border-color:var(--border);margin:8px 0;">
-    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);margin-bottom:8px;">Group Health Details</div>
-    <label># of Employees</label><input type="number" id="deal-employees" placeholder="e.g. 25" min="1" />
-    <label>Renewal Date</label><input type="date" id="deal-renewal-date" />
-    <label>Current Carrier</label><input type="text" id="deal-carrier" placeholder="e.g. BlueCross, PacificSource..." />
-    <label>Quoted Monthly Premium ($)</label><input type="number" id="deal-quoted" placeholder="0" min="0" />
     <label>Notes</label><textarea id="deal-notes" placeholder="Key details, next steps..."></textarea>
   `, async () => {
     const title = document.getElementById('deal-title').value.trim();
     if (!title) { showToast('Deal name is required'); return false; }
-    const { data, error } = await supabaseClient.from('deals').insert({
-      title, pipeline: currentPipeline,
-      stage: document.getElementById('deal-stage').value,
-      contact_id: document.getElementById('deal-contact').value || null,
-      value: parseFloat(document.getElementById('deal-value').value) || null,
-      close_date: document.getElementById('deal-close-date').value || null,
-      next_step: document.getElementById('deal-next-step').value.trim() || null,
-      next_step_date: document.getElementById('deal-next-step-date').value || null,
-      employees: parseInt(document.getElementById('deal-employees').value) || null,
-      renewal_date: document.getElementById('deal-renewal-date').value || null,
-      current_carrier: document.getElementById('deal-carrier').value.trim() || null,
-      quoted_premium: parseFloat(document.getElementById('deal-quoted').value) || null,
-      notes: document.getElementById('deal-notes').value.trim() || null,
-      user_id: currentUser.id
-    }).select().single();
+    const { data, error } = await supabaseClient.from('deals').insert({ title, pipeline: currentPipeline, stage: document.getElementById('deal-stage').value, contact_id: document.getElementById('deal-contact').value || null, value: parseFloat(document.getElementById('deal-value').value) || null, notes: document.getElementById('deal-notes').value.trim() || null, user_id: currentUser.id }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
     deals.unshift(data); showToast('Deal added!'); renderPipelines();
   });
@@ -2373,33 +2220,11 @@ function editDeal(id) {
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
     <label>Contact</label><select id="deal-contact"><option value="">ΓÇö No contact ΓÇö</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" value="${deal.value||''}" min="0" />
-    <label>Expected Close Date</label><input type="date" id="deal-close-date" value="${deal.close_date||''}" />
-    <label>Next Step</label><input type="text" id="deal-next-step" value="${deal.next_step||''}" placeholder="e.g. Send proposal, Schedule call..." />
-    <label>Next Step Due Date</label><input type="date" id="deal-next-step-date" value="${deal.next_step_date||''}" />
-    <hr style="border-color:var(--border);margin:8px 0;">
-    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);margin-bottom:8px;">Group Health Details</div>
-    <label># of Employees</label><input type="number" id="deal-employees" value="${deal.employees||''}" min="1" />
-    <label>Renewal Date</label><input type="date" id="deal-renewal-date" value="${deal.renewal_date||''}" />
-    <label>Current Carrier</label><input type="text" id="deal-carrier" value="${deal.current_carrier||''}" placeholder="e.g. BlueCross, PacificSource..." />
-    <label>Quoted Monthly Premium ($)</label><input type="number" id="deal-quoted" value="${deal.quoted_premium||''}" min="0" />
     <label>Notes</label><textarea id="deal-notes">${deal.notes||''}</textarea>
   `, async () => {
     const title = document.getElementById('deal-title').value.trim();
     if (!title) { showToast('Deal name is required'); return false; }
-    const updates = {
-      title,
-      stage: document.getElementById('deal-stage').value,
-      contact_id: document.getElementById('deal-contact').value || null,
-      value: parseFloat(document.getElementById('deal-value').value) || null,
-      close_date: document.getElementById('deal-close-date').value || null,
-      next_step: document.getElementById('deal-next-step').value.trim() || null,
-      next_step_date: document.getElementById('deal-next-step-date').value || null,
-      employees: parseInt(document.getElementById('deal-employees').value) || null,
-      renewal_date: document.getElementById('deal-renewal-date').value || null,
-      current_carrier: document.getElementById('deal-carrier').value.trim() || null,
-      quoted_premium: parseFloat(document.getElementById('deal-quoted').value) || null,
-      notes: document.getElementById('deal-notes').value.trim() || null
-    };
+    const updates = { title, stage: document.getElementById('deal-stage').value, contact_id: document.getElementById('deal-contact').value || null, value: parseFloat(document.getElementById('deal-value').value) || null, notes: document.getElementById('deal-notes').value.trim() || null };
     const { error } = await supabaseClient.from('deals').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
     Object.assign(deal, updates); showToast('Deal updated!'); renderPipelines();
