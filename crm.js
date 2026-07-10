@@ -2455,7 +2455,7 @@ async function renderContacts() {
   document.getElementById('contacts-table-body').innerHTML = shown_count === 0
     ? `<div class="empty-state"><div class="emoji">&#128101;</div><p>${contactSearch || contactTypeFilter ? 'No contacts match your filter.' : 'No contacts yet. Add your first one!'}</p></div>`
     : `${pageNav}<table><thead><tr>
-        <th>Name</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>
+        <th>Name</th><th>Phone</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>
         ${showOwnerCol ? '<th>Owner</th>' : ''}<th>Actions</th>
       </tr></thead><tbody>${rows}</tbody></table>${pageNav}`;
 }
