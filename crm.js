@@ -2641,7 +2641,7 @@ async function markEmailVerified(id) {
 }
 
 async function verifyAllEmails() {
-  const targets = contacts.filter(c => c.email && c.email_status !== 'valid' && c.email_status !== 'opted_out' && c.email_status !== 'pending');
+  const targets = contacts.filter(c => c.email && !c.email_status);
   if (!targets.length) { showToast('No unverified emails to check'); return; }
   const msg = 'Verify ' + targets.length + ' email(s)?\n\nSends batches of 10 at a time — results update as each batch finishes.\n\nTip: use the type filter tabs to verify a smaller group first.';
   if (!confirm(msg)) return;
