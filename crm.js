@@ -1,22 +1,22 @@
 // ============================================================
-// CONFIG & STATE
+// CONFIG & STATE  (build: email-verify-2026-07-10)
 // ============================================================
 const SUPABASE_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
 
 
-// GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
+// GMAIL OAUTH CONFIGΓÇöfill these in after Google Cloud setup
 const GOOGLE_OAUTH_CLIENT_ID = 'PASTE_CLIENT_ID_HERE';
 const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
-  'agent-insured': { name: 'Agent Recruiting — Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
-  'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
+  'agent-insured': { name: 'Agent Recruiting ΓÇö Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
+  'agent-kannon': { name: 'Agent Recruiting ΓÇö Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
 
-const CONTACT_TYPES = ['Group/Employer','Individual/Family','Recruit','Agent — Insured America','Agent — Kannon Financial'];
+const CONTACT_TYPES = ['Group/Employer','Individual/Family','Recruit','Agent ΓÇö Insured America','Agent ΓÇö Kannon Financial'];
 
 let supabaseClient = null;
 let campaignTab = 'drip';
@@ -80,7 +80,7 @@ async function loadAgentProfile() {
     .maybeSingle();
 
   if (!agent) {
-    // First login — link by email
+    // First login ΓÇö link by email
     const { data: byEmail } = await supabaseClient
       .from('agents')
       .select('*, agencies(name)')
@@ -197,7 +197,7 @@ async function showApp() {
     window.history.replaceState({}, '', window.location.pathname);
     currentAgent.gmail_connected = true;
     renderDashboard();
-    showToast('✓ Gmail connected!');
+    showToast('Γ£ô Gmail connected!');
   } else if (currentAgent.role === 'agent' && !currentAgent.gmail_connected) {
     setTimeout(() => showGmailSetup(false), 500);
   }
@@ -231,7 +231,7 @@ function showPage(page) {
 }
 
 // ============================================================
-// SIDEBAR NAV — role-adaptive
+// SIDEBAR NAV ΓÇö role-adaptive
 // ============================================================
 function getNavBadges() {
   const notStarted = contacts.filter(c => !c.sequence_status || c.sequence_status === 'not_started').length;
@@ -322,7 +322,7 @@ function renderSidebarNav() {
 }
 
 // ============================================================
-// DATA — role-filtered
+// DATA ΓÇö role-filtered
 // ============================================================
 async function loadData() {
   let cq = supabaseClient.from('contacts').select('*');
@@ -341,7 +341,7 @@ async function loadData() {
     ])];
     cq = cq.in('agent_id', agencyAgentIds);
   }
-  // system_owner: no filter — sees all
+  // system_owner: no filter ΓÇö sees all
 
   let dq = supabaseClient.from('deals').select('*');
   if (currentAgent.role === 'agent') dq = dq.eq('user_id', currentUser.id);
@@ -363,7 +363,7 @@ async function loadData() {
     deals = deals.filter(d => !d.contact_id || contactIds.has(d.contact_id));
   }
 
-  // Get TRUE total count for ALL roles — bypasses PostgREST 1000-row cap
+  // Get TRUE total count for ALL roles ΓÇö bypasses PostgREST 1000-row cap
   let cntQ = supabaseClient.from('contacts').select('*', { count: 'exact', head: true });
   if (currentAgent.role === 'agent') {
     cntQ = cntQ.eq('agent_id', currentAgent.id);
@@ -376,7 +376,7 @@ async function loadData() {
 }
 
 // ============================================================
-// DASHBOARD — role-adaptive
+// DASHBOARD ΓÇö role-adaptive
 // ============================================================
 function renderDashboard() {
   const role = previewRole || currentAgent.role;
@@ -408,9 +408,9 @@ function _seqTable(contacts, totalContacts) {
   const step3 = contacts.filter(c => c.sequence_step >= 3).length;
   const replied = contacts.filter(c => c.sequence_status === 'Replied').length;
   return `
-    <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
-    <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
-    <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
+    <div class="seq-row"><div><div class="seq-label">Email 1 ΓÇö Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
+    <div class="seq-row"><div><div class="seq-label">Email 2 ΓÇö Follow-up</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
+    <div class="seq-row"><div><div class="seq-label">Email 3 ΓÇö Book a Call</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
     <div class="seq-row"><div><div class="seq-label" style="color:#a78bfa;">Replied / Interested</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#a78bfa;">${replied}</div></div>
     <div style="margin-top:10px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>`;
 }
@@ -420,12 +420,12 @@ function renderDashAICard() {
   if (!el) return;
   const msgs = aiHistory.slice(-4);
   const msgsHtml = msgs.length === 0
-    ? `<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Hi ${(currentAgent.name||'').split(' ')[0]} — ask me anything about your CRM data, contacts, or pipeline.</div>`
+    ? `<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Hi ${(currentAgent.name||'').split(' ')[0]} ΓÇö ask me anything about your CRM data, contacts, or pipeline.</div>`
     : msgs.map(m => `<div style="background:${m.role==='user'?'var(--bg-accent)':'var(--surface-3)'};border:0.5px solid ${m.role==='user'?'rgba(200,168,75,0.25)':'var(--border)'};border-radius:7px;padding:8px 11px;font-size:12px;line-height:1.5;color:var(--text-primary);margin-bottom:5px;">${m.content.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`).join('');
   el.innerHTML = `
     <div style="flex:1;overflow-y:auto;margin-bottom:8px;">${msgsHtml}</div>
     <div style="display:flex;gap:6px;">
-      <input id="dash-ai-input" type="text" placeholder="Ask me to query, fix, or explain anything…" style="flex:1;border-radius:20px;padding:7px 12px;font-size:12px;background:var(--surface-3);border-color:var(--border);" onkeydown="if(event.key==='Enter')sendDashAIMessage()" />
+      <input id="dash-ai-input" type="text" placeholder="Ask me to query, fix, or explain anythingΓÇª" style="flex:1;border-radius:20px;padding:7px 12px;font-size:12px;background:var(--surface-3);border-color:var(--border);" onkeydown="if(event.key==='Enter')sendDashAIMessage()" />
       <button onclick="sendDashAIMessage()" style="width:30px;height:30px;border-radius:50%;background:var(--fill-accent);border:none;color:#000;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">&#10148;</button>
     </div>`;
 }
@@ -542,13 +542,13 @@ function renderDashboardAgency() {
   const agentCMap = {}, agentRMap = {}, agentDMap = {};
   contacts.forEach(c => { if (c.agent_id) agentCMap[c.agent_id] = (agentCMap[c.agent_id] || 0) + 1; });
   contacts.filter(c => c.sequence_status === 'Replied').forEach(c => { if (c.agent_id) agentRMap[c.agent_id] = (agentRMap[c.agent_id] || 0) + 1; });
-  // Deals table has user_id, not agent_id — cross-ref through contacts
+  // Deals table has user_id, not agent_id ΓÇö cross-ref through contacts
   contacts.forEach(c => {
     const agentDeals = deals.filter(d => d.contact_id === c.id).length;
     if (agentDeals > 0 && c.agent_id) agentDMap[c.agent_id] = (agentDMap[c.agent_id] || 0) + agentDeals;
   });
   const ranked = myAgents.map(a => ({ ...a, cnt: agentCMap[a.id] || 0, rep: agentRMap[a.id] || 0, dls: agentDMap[a.id] || 0 })).sort((a, b) => b.cnt - a.cnt);
-  const medals = ['🥇','🥈','🥉'];
+  const medals = ['≡ƒÑç','≡ƒÑê','≡ƒÑë'];
 
   // Campaign-level stats from deals by type/stage
   const activeCampaigns = [
@@ -559,7 +559,7 @@ function renderDashboardAgency() {
 
   el.innerHTML = `
     <div class="dash-header">
-      <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr} &nbsp; | &nbsp; <span style="color:var(--text-muted);">${agencyName}</span></div></div>
+      <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr} &nbsp;┬╖&nbsp; <span style="color:var(--text-muted);">${agencyName}</span></div></div>
       <div style="display:flex;gap:6px;">
         <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
         <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add Lead</button>
@@ -575,7 +575,7 @@ function renderDashboardAgency() {
     <div class="dash-grid">
       <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
-          ${_ctitle('ti-trophy', 'Agent leaderboard — this month')}
+          ${_ctitle('ti-trophy', 'Agent leaderboard ΓÇö this month')}
           ${ranked.length === 0
             ? `<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:16px 0;">No agents yet.</p>`
             : `<table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -615,7 +615,7 @@ function renderDashboardAgency() {
           <div class="activity-item">
             <div class="activity-dot"></div>
             <div style="flex:1;">
-              <div class="activity-text"><strong>${c.name}</strong> — ${c.contacts.toLocaleString()} contacts${c.open ? ' &middot; ' + c.open + '% open' : ''}</div>
+              <div class="activity-text"><strong>${c.name}</strong> ΓÇö ${c.contacts.toLocaleString()} contacts${c.open ? ' &middot; ' + c.open + '% open' : ''}</div>
             </div>
             <span class="badge badge-active">Active</span>
           </div>`).join('')}
@@ -643,7 +643,7 @@ function renderDashboardAgent() {
   const notStarted   = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started');
   const hotLeads     = contacts.filter(c => c.sequence_status === 'Replied');
 
-  // Pipeline snapshot by stage — use real PIPELINES stages
+  // Pipeline snapshot by stage ΓÇö use real PIPELINES stages
   const stageOrder = PIPELINES['group-employer'].stages.slice(0, 4);
   const stageMap = {};
   deals.forEach(d => { if (!stageMap[d.stage]) stageMap[d.stage] = []; stageMap[d.stage].push(d); });
@@ -675,15 +675,15 @@ function renderDashboardAgent() {
     <div class="dash-grid">
       <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
-          ${_ctitle('ti-flame', `Hot leads — follow up now ${hotLeads.length > 0 ? `<span style="background:rgba(139,92,246,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">${hotLeads.length}</span>` : ''}`)}
+          ${_ctitle('ti-flame', `Hot leads ΓÇö follow up now ${hotLeads.length > 0 ? `<span style="background:rgba(139,92,246,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">${hotLeads.length}</span>` : ''}`)}
           ${hotLeads.length === 0
-            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No replies yet — keep the sequence running!</div>`
+            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No replies yet ΓÇö keep the sequence running!</div>`
             : hotLeads.slice(0, 5).map(c => `
             <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border);">
               <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
               <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name||'—'}</div>
-                <div style="font-size:11px;color:var(--text-muted);">${c.company||c.email||'—'}</div>
+                <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name||'ΓÇö'}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${c.company||c.email||'ΓÇö'}</div>
               </div>
               <span class="badge badge-active">Replied</span>
               <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
@@ -698,8 +698,8 @@ function renderDashboardAgent() {
             : notStarted.slice(0, 4).map(c => `
             <div class="action-item">
               <div class="action-item-info">
-                <div class="action-item-name">${c.name||'—'}</div>
-                <div class="action-item-sub">${c.company||c.email||'—'}</div>
+                <div class="action-item-name">${c.name||'ΓÇö'}</div>
+                <div class="action-item-sub">${c.company||c.email||'ΓÇö'}</div>
               </div>
               <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
             </div>`).join('')}
@@ -716,7 +716,7 @@ function renderDashboardAgent() {
               return `<div style="min-width:108px;background:var(--surface-1);border-radius:8px;padding:8px;flex-shrink:0;border:0.5px solid var(--border);">
                 <div style="font-size:10px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">${stage}</div>
                 ${stagDeals.length === 0
-                  ? `<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">—</div>`
+                  ? `<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">ΓÇö</div>`
                   : stagDeals.slice(0,3).map(d => `<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:5px 7px;margin-bottom:3px;"><div style="font-size:11px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.title}</div>${d.value ? `<div style="font-size:11px;color:var(--text-success);">$${parseFloat(d.value).toLocaleString()}</div>` : ''}</div>`).join('')}
               </div>`;
             }).join('')}
@@ -741,7 +741,7 @@ function renderDashboardAgent() {
   `;
 }
 
-// [legacy vars kept for reference — now split into three functions above]
+// [legacy vars kept for reference ΓÇö now split into three functions above]
 function renderDashboard_UNUSED() {
   const totalContacts = contacts.length;
   const inSequence = contacts.filter(c => c.sequence_status === 'Active').length;
@@ -802,8 +802,8 @@ function renderDashboard_UNUSED() {
             : notStarted.map(c => `
               <div class="action-item">
                 <div class="action-item-info">
-                  <div class="action-item-name">${c.name || '—'}</div>
-                  <div class="action-item-sub">${c.company || c.email || '—'}</div>
+                  <div class="action-item-name">${c.name || 'ΓÇö'}</div>
+                  <div class="action-item-sub">${c.company || c.email || 'ΓÇö'}</div>
                 </div>
                 <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
               </div>`).join('')}
@@ -820,13 +820,13 @@ function renderDashboard_UNUSED() {
             <span class="badge badge-active">&#10003; Active</span>
           </div>
           <div class="action-item">
-            <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am • Two-way</div></div>
+            <div class="action-item-info"><div class="action-item-name">Google Contacts Sync</div><div class="action-item-sub">Daily 2am ΓÇó Two-way</div></div>
             <span class="badge badge-active">&#10003; Active</span>
           </div>
           <div class="action-item">
             <div class="action-item-info">
               <div class="action-item-name">Your Gmail</div>
-              <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — replies not tracked'}</div>
+              <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected ΓÇö replies not tracked'}</div>
             </div>
             ${currentAgent.gmail_connected ? '<span class="badge badge-active">&#10003; Connected</span>' : '<button class="btn btn-accent btn-sm" onclick="showGmailSetup(true)">Connect</button>'}
           </div>
@@ -836,9 +836,9 @@ function renderDashboard_UNUSED() {
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="dash-card">
           <div class="dash-card-title">&#128140; Outreach Sequence Status</div>
-          <div class="seq-row"><div><div class="seq-label">Email 1 — Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 2 — Follow-up (Day 3)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
-          <div class="seq-row"><div><div class="seq-label">Email 3 — Book a Call (Day 7)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 1 ΓÇö Introduction</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step1/maxStep*100)}%"></div></div></div><div class="seq-count">${step1}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 2 ΓÇö Follow-up (Day 3)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step2/maxStep*100)}%"></div></div></div><div class="seq-count">${step2}</div></div>
+          <div class="seq-row"><div><div class="seq-label">Email 3 ΓÇö Book a Call (Day 7)</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(step3/maxStep*100)}%"></div></div></div><div class="seq-count">${step3}</div></div>
           <div class="seq-row"><div><div class="seq-label" style="color:#5b21b6;font-weight:700;">Replied / Interested &#127881;</div><div class="seq-bar-track"><div class="seq-bar-fill" style="width:${Math.round(replied/maxStep*100)}%;background:#8b5cf6;"></div></div></div><div class="seq-count" style="color:#5b21b6;">${replied}</div></div>
           <div style="margin-top:12px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View Email Opens &rarr;</button></div>
         </div>
@@ -882,17 +882,17 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
 
   // Must have Gmail connected
   if (!currentAgent.gmail_connected) {
-    showToast('⚠ Connect your Gmail first (Settings → Gmail Connect)', 5000);
+    showToast('ΓÜá∩╕Å Connect your Gmail first (Settings ΓåÆ Gmail Connect)', 5000);
     return;
   }
 
   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'PASTE_APPS_SCRIPT_URL_HERE') {
-    showToast('⚠ Apps Script URL not configured.'); return;
+    showToast('ΓÜá∩╕Å Apps Script URL not configured.'); return;
   }
 
   const toName = [firstName, lastName].filter(Boolean).join(' ');
 
-  // Parse type — recruits encode pipeline as "Recruit|agent-kannon"
+  // Parse type ΓÇö recruits encode pipeline as "Recruit|agent-kannon"
   const typeRaw      = contactTypeRaw || 'Individual/Family';
   const typeParts    = typeRaw.split('|');
   const contactType  = typeParts[0];   // e.g. 'Recruit' or 'Individual/Family'
@@ -904,10 +904,10 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
   };
   const pipeInfo = pipelineMap[typeRaw] || pipelineMap['Individual/Family'];
   const btn = document.querySelector('#booking-modal-send-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'SendingΓÇª'; }
 
   try {
-    // ── Step 1: Find or create contact directly in Supabase ──
+    // ΓöÇΓöÇ Step 1: Find or create contact directly in Supabase ΓöÇΓöÇ
     let contactId = null;
     const { data: existing, error: lookupErr } = await supabaseClient
       .from('contacts')
@@ -934,14 +934,14 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
         .single();
 
       if (createErr) {
-        showToast(`⚠ Contact not saved: ${createErr.message}`, 5000);
+        showToast(`ΓÜá∩╕Å Contact not saved: ${createErr.message}`, 5000);
       } else if (created) {
         contactId = created.id;
         contacts.unshift(created);
       }
     }
 
-    // ── Step 2: Send email via Apps Script ───────────────────
+    // ΓöÇΓöÇ Step 2: Send email via Apps Script ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     const url = new URL(APPS_SCRIPT_URL);
     url.searchParams.set('action',    'send_booking_link');
     url.searchParams.set('agent_id',  currentAgent.id);
@@ -954,7 +954,7 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
     const data = await res.json();
 
     if (data.status === 'ok') {
-      showToast(`✓ Booking link sent to ${toName || toEmail} via your Gmail`);
+      showToast(`Γ£ô Booking link sent to ${toName || toEmail} via your Gmail`);
       document.getElementById('booking-email-to').value    = '';
       document.getElementById('booking-first-name').value  = '';
       document.getElementById('booking-last-name').value   = '';
@@ -963,10 +963,10 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
       // Refresh contacts page if currently visible
       if (document.getElementById('page-contacts')?.style.display !== 'none') renderContacts();
     } else {
-      showToast(`⚠ Send failed: ${data.message || 'Unknown error'}`);
+      showToast(`ΓÜá∩╕Å Send failed: ${data.message || 'Unknown error'}`);
     }
   } catch(e) {
-    showToast(`⚠ Error: ${e.message}`);
+    showToast(`ΓÜá∩╕Å Error: ${e.message}`);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail'; }
   }
@@ -977,49 +977,49 @@ function getDefaultBookingNote(typeRaw, intent) {
   const type   = typeRaw || document.getElementById('booking-contact-type')?.value || 'Individual/Family';
   const intnt  = intent  || document.getElementById('booking-intent')?.value        || 'just-met';
 
-  // ── Intent-based opening ────────────────────────────────────
+  // ΓöÇΓöÇ Intent-based opening ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const openers = {
     'just-met':   'It was great meeting you!',
     'after-call': 'It was so great speaking with you today!',
     'follow-up':  'I wanted to follow up on our previous conversation.',
     'referral':   'I was given your information by a mutual contact and wanted to personally reach out.',
-    'reconnect':  'I wanted to reach back out and reconnect — it has been a while!',
+    'reconnect':  'I wanted to reach back out and reconnect ΓÇö it has been a while!',
     'social':     'I came across your profile and wanted to personally reach out.',
   };
   const opener = openers[intnt] || openers['just-met'];
 
-  // ── Type-based pitch ────────────────────────────────────────
+  // ΓöÇΓöÇ Type-based pitch ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const pitches = {
     'Individual/Family': {
-      'just-met':   "As we discussed, I'd love to find a time to sit down and go over your coverage options. Whether it's health, life, or planning for retirement — I want to make sure you and your family are fully protected.",
+      'just-met':   "As we discussed, I'd love to find a time to sit down and go over your coverage options. Whether it's health, life, or planning for retirement ΓÇö I want to make sure you and your family are fully protected.",
       'after-call': "As promised, I'm sending over my booking link so we can get our next conversation on the calendar. I have some great options I think will be a perfect fit for you.",
       'follow-up':  "I wanted to circle back and see if you'd be open to a quick conversation about your coverage options. I work with families every day to find plans that offer real protection without breaking the budget.",
       'referral':   "They spoke very highly of you and I think there's a real opportunity for me to help. I'd love to connect and learn more about what you're looking for when it comes to your coverage and financial future.",
       'reconnect':  "A lot has changed in the insurance landscape and I have some new options I think you'd want to know about. I'd love to reconnect and make sure you're still in the best possible position.",
-      'social':     "I work with individuals and families to find the right health, life, and financial coverage — and I think I might be able to help you too. I'd love to learn more about your situation.",
+      'social':     "I work with individuals and families to find the right health, life, and financial coverage ΓÇö and I think I might be able to help you too. I'd love to learn more about your situation.",
     },
     'Group/Employer': {
-      'just-met':   "As I mentioned, I specialize in helping businesses like yours design competitive group health and benefits packages — ones that help you attract and retain great talent, often at a lower cost than you'd expect.",
+      'just-met':   "As I mentioned, I specialize in helping businesses like yours design competitive group health and benefits packages ΓÇö ones that help you attract and retain great talent, often at a lower cost than you'd expect.",
       'after-call': "As we discussed, I'm going to put together some options for your team. In the meantime, let's get a formal meeting on the calendar so I can walk you through everything in detail.",
       'follow-up':  "I wanted to follow up and see if there's a good time to connect about your company's group benefits. We've helped a number of businesses in your area reduce costs while improving coverage for their teams.",
       'referral':   "They thought we'd be a great fit, and I think so too. We work with businesses of all sizes to build group health and benefits packages that make a real difference for your team.",
-      'reconnect':  "I wanted to reach back out — we have some new group plan options that weren't available before, and I think they could be a real win for your organization.",
+      'reconnect':  "I wanted to reach back out ΓÇö we have some new group plan options that weren't available before, and I think they could be a real win for your organization.",
       'social':     "I came across your company and I think there's a real opportunity for us to work together. We help businesses design competitive group benefits packages that attract top talent and keep employees happy.",
     },
     'Recruit|agent-kannon': {
       'just-met':   "As I mentioned, we are growing the Kannon Financial Group team and I genuinely think you'd be a great fit. I'd love to share more about the opportunity, the income potential, and what makes our team different.",
       'after-call': "I really enjoyed our conversation today! I think there's a tremendous opportunity here for you and I'd love to dive deeper into the details and answer any questions you have.",
-      'follow-up':  "I wanted to follow up on my previous message about the opportunity at Kannon Financial Group. We're looking for driven individuals who want to build something meaningful — and I think you're exactly the kind of person we want on our team.",
-      'referral':   "A mutual connection thought you'd be a great fit for what we're building at Kannon Financial Group — and based on what I know about you, I agree. I'd love to share more about the opportunity.",
-      'reconnect':  "I wanted to reach back out — we've had some exciting developments at Kannon Financial Group and I think the timing might be right for us to have a conversation about your career goals.",
+      'follow-up':  "I wanted to follow up on my previous message about the opportunity at Kannon Financial Group. We're looking for driven individuals who want to build something meaningful ΓÇö and I think you're exactly the kind of person we want on our team.",
+      'referral':   "A mutual connection thought you'd be a great fit for what we're building at Kannon Financial Group ΓÇö and based on what I know about you, I agree. I'd love to share more about the opportunity.",
+      'reconnect':  "I wanted to reach back out ΓÇö we've had some exciting developments at Kannon Financial Group and I think the timing might be right for us to have a conversation about your career goals.",
       'social':     "I came across your background and I think you'd be a fantastic addition to the Kannon Financial Group team. We're growing fast and I'd love to tell you more about what we're building.",
     },
     'Recruit|agent-insured': {
       'just-met':   "As I mentioned, The Insured America Agency is growing and I think you'd be a tremendous fit. I'd love to share more about the career path, the support system, and the income potential that comes with it.",
       'after-call': "Loved our conversation today! I'm excited about the possibility of you joining The Insured America Agency team and I'd love to get a proper sit-down on the calendar to walk you through everything.",
-      'follow-up':  "I wanted to follow up about the career opportunity at The Insured America Agency. We offer industry-leading training, a proven system, and a real path to financial independence — and I'd love to tell you more.",
-      'referral':   "A mutual contact thought you'd be a perfect fit for what we're doing at The Insured America Agency. We're looking for motivated individuals who are serious about building a career — and I'd love to connect.",
-      'reconnect':  "I wanted to reach back out — a lot has changed at The Insured America Agency and I have some exciting updates I think you'd want to hear. I'd love to reconnect and catch up.",
+      'follow-up':  "I wanted to follow up about the career opportunity at The Insured America Agency. We offer industry-leading training, a proven system, and a real path to financial independence ΓÇö and I'd love to tell you more.",
+      'referral':   "A mutual contact thought you'd be a perfect fit for what we're doing at The Insured America Agency. We're looking for motivated individuals who are serious about building a career ΓÇö and I'd love to connect.",
+      'reconnect':  "I wanted to reach back out ΓÇö a lot has changed at The Insured America Agency and I have some exciting updates I think you'd want to hear. I'd love to reconnect and catch up.",
       'social':     "Your background caught my attention and I immediately thought of the opportunity we have at The Insured America Agency. I'd love to reach out personally and share more about what we're building.",
     },
   };
@@ -1027,7 +1027,7 @@ function getDefaultBookingNote(typeRaw, intent) {
   const typePitches = pitches[type] || pitches['Individual/Family'];
   const pitch = typePitches[intnt] || typePitches['just-met'];
 
-  return `${opener}\n\n${pitch}\n\nUse the link below to grab a time that works for you — takes just a couple minutes and there is no obligation, just a conversation.\n\nLooking forward to speaking with you!\n\n${agentName}`;
+  return `${opener}\n\n${pitch}\n\nUse the link below to grab a time that works for you ΓÇö takes just a couple minutes and there is no obligation, just a conversation.\n\nLooking forward to speaking with you!\n\n${agentName}`;
 }
 
 function updateBookingNote() {
@@ -1056,7 +1056,7 @@ async function generateAIBookingMessage() {
     'just-met':   'We just met in person',
     'after-call': 'We just spoke on the phone',
     'follow-up':  'Following up on a prior conversation',
-    'referral':   'This is a referral — a mutual contact passed along their info',
+    'referral':   'This is a referral ΓÇö a mutual contact passed along their info',
     'reconnect':  'Reconnecting after a long time with no contact',
     'social':     'Connected via social media or met online',
   };
@@ -1075,10 +1075,10 @@ async function generateAIBookingMessage() {
         .from('contacts').select('notes')
         .eq('email', email.toLowerCase()).eq('agent_id', currentAgent.id).limit(1);
       if (data && data.length > 0 && data[0].notes) contactNotes = data[0].notes.trim();
-    } catch(e) { /* ignore — notes are optional */ }
+    } catch(e) { /* ignore ΓÇö notes are optional */ }
   }
 
-  if (aiBtn)  { aiBtn.disabled = true; aiBtn.textContent = '✨ Generating…'; }
+  if (aiBtn)  { aiBtn.disabled = true; aiBtn.textContent = 'Γ£¿ GeneratingΓÇª'; }
   if (noteEl) { noteEl.style.opacity = '0.5'; }
 
   const prompt = `You are writing a brief, personal email message on behalf of ${agentName}, an independent insurance and financial agent at Kannon Financial Group.
@@ -1086,11 +1086,11 @@ async function generateAIBookingMessage() {
 Recipient name: ${contactName}
 Contact type: ${typeLabels[typeRaw] || typeLabels['Individual/Family']}
 How we connected: ${intentLabels[intent] || intentLabels['just-met']}
-${contactNotes ? `Notes about this person: ${contactNotes}` : 'No prior notes on file — treat this as early-stage contact.'}
+${contactNotes ? `Notes about this person: ${contactNotes}` : 'No prior notes on file ΓÇö treat this as early-stage contact.'}
 
-Write ONLY the personal message body (2–4 sentences). Rules:
-- Do NOT include a greeting like "Hi ${firstName}," — the email template handles that automatically
-- Do NOT include any sign-off or signature — handled by the template
+Write ONLY the personal message body (2ΓÇô4 sentences). Rules:
+- Do NOT include a greeting like "Hi ${firstName}," ΓÇö the email template handles that automatically
+- Do NOT include any sign-off or signature ΓÇö handled by the template
 - Write in first person as ${agentName}
 - Sound genuine and warm, NOT like a sales script or template
 - Be specific to the intent/situation where possible
@@ -1109,12 +1109,12 @@ Output ONLY the message body text. No labels, no quotes, just the paragraph(s).`
     if (data.error) throw new Error(data.error);
     if (noteEl && data.text) {
       const body = data.text.trim();
-      noteEl.value = `${body}\n\nUse the link below to grab a time that works for you — takes just a couple minutes and there is no obligation, just a conversation.\n\nLooking forward to speaking with you!\n\n${agentName}`;
+      noteEl.value = `${body}\n\nUse the link below to grab a time that works for you ΓÇö takes just a couple minutes and there is no obligation, just a conversation.\n\nLooking forward to speaking with you!\n\n${agentName}`;
     }
   } catch(e) {
     showToast('AI generation failed: ' + e.message);
   } finally {
-    if (aiBtn)  { aiBtn.disabled = false; aiBtn.textContent = '✨ Generate with AI'; }
+    if (aiBtn)  { aiBtn.disabled = false; aiBtn.textContent = 'Γ£¿ Generate with AI'; }
     if (noteEl) { noteEl.style.opacity = '1'; }
   }
 }
@@ -1135,7 +1135,7 @@ async function bookingLinkLookupContact(email) {
   }
 
   statusEl.style.color = 'var(--muted)';
-  statusEl.textContent = 'Looking up…';
+  statusEl.textContent = 'Looking upΓÇª';
 
   _bookingLookupTimer = setTimeout(async () => {
     const { data } = await supabaseClient
@@ -1158,18 +1158,18 @@ async function bookingLinkLookupContact(email) {
         typeEl.value = dropVal;
       }
       statusEl.style.color = '#16a34a';
-      statusEl.textContent = `✓ Existing contact: ${c.name} (${c.type || 'Individual/Family'})`;
+      statusEl.textContent = `Γ£ô Existing contact: ${c.name} (${c.type || 'Individual/Family'})`;
       updateBookingNote();
     } else {
       if (firstEl && !firstEl.value) firstEl.value = '';
       statusEl.style.color = 'var(--muted)';
-      statusEl.textContent = 'Not in your contacts — will be created on send.';
+      statusEl.textContent = 'Not in your contacts ΓÇö will be created on send.';
     }
   }, 400);
 }
 
 // ============================================================
-// WORK MY LEADS — Power Dialer
+// WORK MY LEADS ΓÇö Power Dialer
 // ============================================================
 function startDialerSession(filterType) {
   // If no filter specified, show picker modal
@@ -1181,10 +1181,10 @@ function startDialerSession(filterType) {
       <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Choose which leads to work through. You can stop anytime.</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${hotCount > 0 ? `<button class="btn btn-accent btn-full" onclick="closeModal();startDialerSession('replied')">
-          &#128293; Hot leads — Replied (${hotCount})
+          &#128293; Hot leads ΓÇö Replied (${hotCount})
         </button>` : ''}
         <button class="btn btn-primary btn-full" onclick="closeModal();startDialerSession('not_started')">
-          &#128101; Fresh leads — Not yet contacted (${freshCount})
+          &#128101; Fresh leads ΓÇö Not yet contacted (${freshCount})
         </button>
         <button class="btn btn-outline btn-full" onclick="closeModal();startDialerSession('all')">
           &#128203; All my contacts (${allCount})
@@ -1262,7 +1262,7 @@ function renderDialer() {
         <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
           <div style="width:58px;height:58px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;flex-shrink:0;">${initials}</div>
           <div style="flex:1;min-width:0;">
-            <div style="font-size:22px;font-weight:700;color:var(--primary);margin-bottom:3px;">${contact.name || '—'}</div>
+            <div style="font-size:22px;font-weight:700;color:var(--primary);margin-bottom:3px;">${contact.name || 'ΓÇö'}</div>
             <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">${[contact.company, contact.city ? contact.city + (contact.state ? ', ' + contact.state : '') : ''].filter(Boolean).join(' &nbsp;&middot;&nbsp; ') || '&mdash;'}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <span class="badge ${typeClass}">${contact.type || 'Contact'}</span>
@@ -1272,7 +1272,7 @@ function renderDialer() {
           </div>
           <div style="text-align:right;flex-shrink:0;">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Added</div>
-            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:2px;">${contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:2px;">${contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'ΓÇö'}</div>
           </div>
         </div>
 
@@ -1280,15 +1280,15 @@ function renderDialer() {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;background:#f8fafc;border-radius:10px;margin-bottom:20px;">
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Email</div>
-            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;word-break:break-all;">${contact.email || '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;word-break:break-all;">${contact.email || 'ΓÇö'}</div>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Phone</div>
-            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.phone || '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.phone || 'ΓÇö'}</div>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Company</div>
-            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.company || '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.company || 'ΓÇö'}</div>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Sequence step</div>
@@ -1327,9 +1327,47 @@ async function dialerMarkInterested(contactId) {
     if (idx > -1) contacts[idx].sequence_status = 'Replied';
     const qi = dialerQueue.findIndex(c => c.id === contactId);
     if (qi > -1) dialerQueue[qi].sequence_status = 'Replied';
-    showToast('&#129309; Marked as Interested / Replied!');
+
+    // Auto-route to the right pipeline based on contact type
+    const contact = contacts.find(c => c.id === contactId);
+    if (contact && contact.type) {
+      const t = contact.type;
+      let dest = null;
+      if      (t === 'Group/Employer')         dest = { pipeline: 'group-employer',    stage: 'Responded' };
+      else if (t === 'Individual/Family')      dest = { pipeline: 'individual-family', stage: 'Contacted' };
+      else if (t === 'Recruit')                dest = { pipeline: 'agent-kannon',      stage: 'Interested' };
+      else if (t.includes('Insured America'))  dest = { pipeline: 'agent-insured',     stage: 'Interested' };
+      else if (t.includes('Kannon Financial')) dest = { pipeline: 'agent-kannon',      stage: 'Interested' };
+
+      if (dest) {
+        const alreadyInPipeline = deals.some(d => d.contact_id === contactId && d.pipeline === dest.pipeline);
+        if (!alreadyInPipeline) {
+          const dealTitle = contact.company || contact.name || 'New Deal';
+          const { data: newDeal, error: dealErr } = await supabaseClient.from('deals').insert({
+            title: dealTitle,
+            pipeline: dest.pipeline,
+            stage: dest.stage,
+            contact_id: contactId,
+            user_id: currentUser.id
+          }).select().single();
+          if (!dealErr && newDeal) {
+            deals.unshift(newDeal);
+            showToast('&#129309; Interested! Added to pipeline -> ' + dest.stage);
+          } else {
+            showToast('&#129309; Marked Interested (pipeline error: ' + (dealErr?.message || '?') + ')');
+          }
+        } else {
+          showToast('&#129309; Marked as Interested / Replied!');
+        }
+      } else {
+        showToast('&#129309; Marked as Interested / Replied!');
+      }
+    } else {
+      showToast('&#129309; Marked as Interested / Replied!');
+    }
+
     dialerNext();
-  } catch (e) { showToast('Error saving — try again'); }
+  } catch (e) { showToast('Error saving - try again'); }
 }
 
 async function dialerSaveNote(contactId) {
@@ -1426,8 +1464,8 @@ function manageBookingTypes() {
         <select id="booking-contact-type" onchange="updateBookingNote()" style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);">
           <option value="Individual/Family">Individual / Family</option>
           <option value="Group/Employer">Group / Employer</option>
-          <option value="Recruit|agent-kannon">Recruit — Kannon Financial</option>
-          <option value="Recruit|agent-insured">Recruit — Insured America</option>
+          <option value="Recruit|agent-kannon">Recruit ΓÇö Kannon Financial</option>
+          <option value="Recruit|agent-insured">Recruit ΓÇö Insured America</option>
         </select>
         <select id="booking-intent" onchange="updateBookingNote()" style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);">
           <option value="just-met">We Just Met</option>
@@ -1442,7 +1480,7 @@ function manageBookingTypes() {
         style="width:100%;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);resize:vertical;margin-bottom:6px;box-sizing:border-box;"></textarea>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
         <button id="booking-ai-btn" onclick="generateAIBookingMessage()"
-          style="background:var(--surface-3);border:0.5px solid var(--border);color:var(--text-primary);border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;font-weight:500;white-space:nowrap;">✨ Generate with AI</button>
+          style="background:var(--surface-3);border:0.5px solid var(--border);color:var(--text-primary);border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;font-weight:500;white-space:nowrap;">Γ£¿ Generate with AI</button>
         <button id="booking-modal-send-btn" onclick="sendBookingLinkEmail(document.getElementById('booking-email-to').value.trim(), document.getElementById('booking-first-name').value.trim(), document.getElementById('booking-last-name').value.trim(), document.getElementById('booking-email-note').value.trim(), document.getElementById('booking-contact-type').value)"
           style="background:var(--fill-accent);border:none;color:#000;border-radius:6px;padding:7px 16px;font-size:12px;cursor:pointer;font-weight:600;"><i class="ti ti-send" style="margin-right:4px;"></i>Send via Gmail</button>
       </div>
@@ -1576,13 +1614,13 @@ function showGmailSetup(isManual) {
   ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;';
   const fn = (currentAgent.name || '').split(' ')[0] || 'there';
   ov.innerHTML = '<div style="background:white;border-radius:16px;padding:40px 36px;max-width:480px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,0.28);text-align:center;">' +
-    '<div style="font-size:52px;margin-bottom:14px;">📧</div>' +
+    '<div style="font-size:52px;margin-bottom:14px;">≡ƒôº</div>' +
     '<h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">' + (isManual ? 'Connect Your Gmail' : 'One last step, ' + fn + '!') + '</h2>' +
     '<p style="font-size:14px;color:#64748b;line-height:1.65;margin-bottom:6px;">Connect your Gmail so outreach emails come <strong>from your address</strong> and replies land <strong>in your inbox</strong>.</p>' +
     '<p style="font-size:13px;color:#94a3b8;margin-bottom:24px;">The CRM auto-marks contacts as "Replied" when they write back.</p>' +
-    '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">✓ Gmail connected! Refreshing...</div>' +
+    '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">Γ£ô Gmail connected! Refreshing...</div>' +
     '<button onclick="connectGmail()" id="gmail-connect-btn" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">Connect Gmail</button>' +
-    '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">⚠ Waiting for authorization...</div>' +
+    '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">ΓÅ│ Waiting for authorization...</div>' +
     (isManual ? '<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();window.removeEventListener(\'message\',handleGmailMessage);" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Close</button>'
               : '<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Skip for now</button>') +
     '</div>';
@@ -1614,7 +1652,7 @@ function onGmailConnected(email) {
   currentAgent.gmail_connected = true; currentAgent.gmail_email = email;
   const el = document.getElementById('gmail-setup-status'); if (el) el.style.display = 'block';
   window.removeEventListener('message', handleGmailMessage);
-  setTimeout(() => { const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove(); renderDashboard(); showToast('✓ Gmail connected! Sending from ' + (email || 'your Gmail')); }, 1800);
+  setTimeout(() => { const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove(); renderDashboard(); showToast('Γ£ô Gmail connected! Sending from ' + (email || 'your Gmail')); }, 1800);
 }
 function dismissGmailSetup() {
   const ov = document.getElementById('gmail-setup-overlay'); if (ov) ov.remove();
@@ -1623,7 +1661,7 @@ function dismissGmailSetup() {
 }
 
 // ============================================================
-// CAMPAIGNS — drip content library + stats
+// CAMPAIGNS ΓÇö drip content library + stats
 // ============================================================
 async function renderCampaigns() {
   document.getElementById('page-campaigns').innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading campaigns...</div>`;
@@ -1657,8 +1695,8 @@ async function renderCampaigns() {
   const dripRecruit = drip.filter(c => c.type === 'Recruit').length;
   const monthMap    = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
 
-  // ── DRIP sections ───────────────────────────────────────────
-  const dripSegLabel = { b2b:'🏢 B2B Client', b2c:'👤 B2C Client', recruit:'🎯 Recruit' };
+  // ΓöÇΓöÇ DRIP sections ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  const dripSegLabel = { b2b:'≡ƒÅó B2B Client', b2c:'≡ƒæñ B2C Client', recruit:'≡ƒñ¥ Recruit' };
   const dripSections = ['b2b','b2c','recruit'].map(seg => {
     const items = allDrip.filter(c => c.segment === seg);
     if (!items.length) return '';
@@ -1668,17 +1706,17 @@ async function renderCampaigns() {
       const ctaBadge = item.cta_type === 'cta'
         ? `<span class="badge badge-replied" style="font-size:10px;padding:2px 6px;">CTA</span>`
         : `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;padding:2px 6px;">EDU</span>`;
-      const monthBadge = item.awareness_month ? `<span style="font-size:11px;color:#c8a84b;margin-left:6px;">📋 ${monthMap[item.awareness_month]}</span>` : '';
+      const monthBadge = item.awareness_month ? `<span style="font-size:11px;color:#c8a84b;margin-left:6px;">≡ƒôà ${monthMap[item.awareness_month]}</span>` : '';
       const activeColor = item.is_active ? '#16a34a' : '#dc2626';
       return `<tr>
         <td style="font-size:13px;font-weight:600;max-width:240px;">${item.subject}</td>
         <td style="font-size:12px;color:var(--muted);">${item.topic}</td>
         <td>${ctaBadge}${monthBadge}</td>
         <td style="text-align:center;font-size:13px;">${s.sent}</td>
-        <td style="text-align:center;font-size:13px;color:${openRate>20?'#16a34a':'var(--muted)'};">${s.sent>0?openRate+'%':'—'}</td>
+        <td style="text-align:center;font-size:13px;color:${openRate>20?'#16a34a':'var(--muted)'};">${s.sent>0?openRate+'%':'ΓÇö'}</td>
         <td style="white-space:nowrap;">
           <button class="btn btn-outline btn-sm" onclick="previewEmailContent('${item.id}')">Preview</button>
-          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('drip_content','${item.id}')">✏ Edit</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('drip_content','${item.id}')">Γ£Å∩╕Å Edit</button>
           <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${activeColor};" onclick="toggleDripContent('${item.id}',${item.is_active})">${item.is_active?'Active':'Paused'}</button>
         </td>
       </tr>`;
@@ -1691,12 +1729,12 @@ async function renderCampaigns() {
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }).join('');
 
-  // ── SEQUENCE sections ────────────────────────────────────────
+  // ΓöÇΓöÇ SEQUENCE sections ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const seqSegLabel = {
-    'b2b':'🏢 B2B Outreach',
-    'b2c':'👤 B2C Outreach',
-    'recruit-standard':'🎯 Recruit (Standard)',
-    'recruit-statefarm':'🏆 Recruit (State Farm)'
+    'b2b':'≡ƒÅó B2B Outreach',
+    'b2c':'≡ƒæñ B2C Outreach',
+    'recruit-standard':'≡ƒñ¥ Recruit (Standard)',
+    'recruit-statefarm':'≡ƒÜù Recruit (State Farm)'
   };
   const seqSections = ['b2b','b2c','recruit-standard','recruit-statefarm'].map(seg => {
     const items = allSeq.filter(s => s.segment === seg).sort((a,b) => a.email_num - b.email_num);
@@ -1714,7 +1752,7 @@ async function renderCampaigns() {
         <td style="text-align:center;"><span class="badge ${item.is_active?'badge-active':'badge-completed'}" style="font-size:10px;">${activeLabel}</span></td>
         <td style="white-space:nowrap;">
           <button class="btn btn-outline btn-sm" onclick="previewEmailContent('${item.id}')">Preview</button>
-          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('sequence_content','${item.id}')">✏ Edit</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editEmailContent('sequence_content','${item.id}')">Γ£Å∩╕Å Edit</button>
           <button class="btn btn-outline btn-sm" style="margin-left:4px;color:${activeColor};" onclick="toggleSeqContent('${item.id}',${item.is_active})">${activeLabel}</button>
         </td>
       </tr>`;
@@ -1730,13 +1768,13 @@ async function renderCampaigns() {
   const tabDrip = (campaignTab === 'drip');
   document.getElementById('page-campaigns').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <h2 class="section-title" style="margin:0;">📧 Email Campaigns</h2>
-      <button class="btn btn-primary" onclick="aiSuggestEmail()">✨ AI Suggest New Email</button>
+      <h2 class="section-title" style="margin:0;">≡ƒôº Email Campaigns</h2>
+      <button class="btn btn-primary" onclick="aiSuggestEmail()">Γ£¿ AI Suggest New Email</button>
     </div>
 
     <div style="display:flex;gap:2px;margin-bottom:24px;border-bottom:2px solid #e2e8f0;">
-      <button onclick="switchCampaignTab('drip')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${tabDrip?'#1a3a5c':'transparent'};background:none;color:${tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">📂 Drip (${allDrip.length})</button>
-      <button onclick="switchCampaignTab('seq')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${!tabDrip?'#1a3a5c':'transparent'};background:none;color:${!tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">📈 Sequences (${allSeq.length})</button>
+      <button onclick="switchCampaignTab('drip')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${tabDrip?'#1a3a5c':'transparent'};background:none;color:${tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">≡ƒÆº Drip (${allDrip.length})</button>
+      <button onclick="switchCampaignTab('seq')" style="padding:10px 20px;font-size:14px;font-weight:600;border:none;border-bottom:3px solid ${!tabDrip?'#1a3a5c':'transparent'};background:none;color:${!tabDrip?'#1a3a5c':'var(--muted)'};cursor:pointer;transition:all .15s;">≡ƒô¼ Sequences (${allSeq.length})</button>
     </div>
 
     <div id="camp-drip" style="display:${tabDrip?'block':'none'};">
@@ -1748,14 +1786,14 @@ async function renderCampaigns() {
         <div class="opens-stat" style="border-left-color:#8b5cf6;"><div class="num">${allSends.length}</div><div class="lbl">Sent</div></div>
       </div>
       <div style="background:#fff8e7;border:1px solid #c8a84b;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#92400e;line-height:1.6;">
-        <strong>Cadence:</strong> Every 5 days (first 60 days) → Weekly. Triggered daily via Apps Script <code style="background:#fef3c7;padding:2px 5px;border-radius:3px;">runDripCampaign()</code>.
+        <strong>Cadence:</strong> Every 5 days (first 60 days) ΓåÆ Weekly. Triggered daily via Apps Script <code style="background:#fef3c7;padding:2px 5px;border-radius:3px;">runDripCampaign()</code>.
       </div>
       ${dripSections}
     </div>
 
     <div id="camp-seq" style="display:${!tabDrip?'block':'none'};">
       <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#1e40af;line-height:1.6;">
-        <strong>3-email outreach sequence</strong> — runs via Apps Script. B2B/B2C routes by contact type. Recruits route by <em>Outreach Track</em> (Standard or State Farm). Add state-specific rows (e.g. MT, AZ) to override generic templates.
+        <strong>3-email outreach sequence</strong> ΓÇö runs via Apps Script. B2B/B2C routes by contact type. Recruits route by <em>Outreach Track</em> (Standard or State Farm). Add state-specific rows (e.g. MT, AZ) to override generic templates.
       </div>
       ${seqSections}
     </div>
@@ -1790,7 +1828,7 @@ function previewEmailContent(id) {
     <div style="border:1px solid #e2e8f0;border-radius:6px;padding:16px;background:#f8fafc;font-size:13px;line-height:1.7;max-height:360px;overflow-y:auto;">
       ${(item.body_html||'').replace(/{firstName}/g,'[First Name]').replace(/{agentName}/g,'[Agent Name]').replace(/{state}/g,'[State]').replace(/{city}/g,'[City]')}
     </div>`;
-  showModal('📧 Preview: ' + (item.subject||'').substring(0,50), body, null, { hideConfirm: true });
+  showModal('≡ƒôº Preview: ' + (item.subject||'').substring(0,50), body, null, { hideConfirm: true });
 }
 
 function editEmailContent(table, id) {
@@ -1809,7 +1847,7 @@ function editEmailContent(table, id) {
       </div>
       <div style="flex:1;">
         <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">State Override (blank = all states)</label>
-        <input id="ec-state" class="form-input" value="${item.state||''}" placeholder="MT, AZ…" style="width:100%;text-transform:uppercase;" maxlength="2">
+        <input id="ec-state" class="form-input" value="${item.state||''}" placeholder="MT, AZΓÇª" style="width:100%;text-transform:uppercase;" maxlength="2">
       </div>
     </div>`;
 
@@ -1826,7 +1864,7 @@ function editEmailContent(table, id) {
     <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Plain Text (optional)</label>
     <textarea id="ec-plain" class="form-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${item.body_plain||''}</textarea>`;
 
-  showModal('✏ Edit Email', body, async () => {
+  showModal('Γ£Å∩╕Å Edit Email', body, async () => {
     const updates = {
       subject:   document.getElementById('ec-subject').value.trim(),
       body_html: document.getElementById('ec-body').value,
@@ -1842,7 +1880,7 @@ function editEmailContent(table, id) {
     if (!updates.subject || !updates.body_html) { showToast('Subject and body are required.'); return false; }
     const { error } = await supabaseClient.from(table).update(updates).eq('id', id);
     if (error) { showToast('Save failed: ' + error.message); return false; }
-    showToast('✓ Email updated!');
+    showToast('Γ£à Email updated!');
     campaignItemsMap[id] = { ...item, ...updates };
     renderCampaigns();
   });
@@ -1855,13 +1893,13 @@ function aiSuggestEmail() {
     </div>
     <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Segment / Track</label>
     <select id="ai-seg" class="form-input" style="width:100%;margin-bottom:12px;">
-      <option value="b2b|drip_content">B2B — Drip</option>
-      <option value="b2c|drip_content">B2C — Drip</option>
-      <option value="recruit|drip_content">Recruit — Drip</option>
-      <option value="b2b|sequence_content">B2B — Outreach Sequence</option>
-      <option value="b2c|sequence_content">B2C — Outreach Sequence</option>
-      <option value="recruit-standard|sequence_content">Recruit — Outreach (Standard)</option>
-      <option value="recruit-statefarm|sequence_content">Recruit — Outreach (State Farm)</option>
+      <option value="b2b|drip_content">B2B ΓÇö Drip</option>
+      <option value="b2c|drip_content">B2C ΓÇö Drip</option>
+      <option value="recruit|drip_content">Recruit ΓÇö Drip</option>
+      <option value="b2b|sequence_content">B2B ΓÇö Outreach Sequence</option>
+      <option value="b2c|sequence_content">B2C ΓÇö Outreach Sequence</option>
+      <option value="recruit-standard|sequence_content">Recruit ΓÇö Outreach (Standard)</option>
+      <option value="recruit-statefarm|sequence_content">Recruit ΓÇö Outreach (State Farm)</option>
     </select>
     <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Tone</label>
     <select id="ai-tone" class="form-input" style="width:100%;margin-bottom:12px;">
@@ -1870,11 +1908,11 @@ function aiSuggestEmail() {
       <option value="conversational and friendly">Conversational &amp; Friendly</option>
       <option value="urgency-driven">Urgency-Driven</option>
     </select>
-    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic / Angle — what should this email be about?</label>
+    <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Topic / Angle ΓÇö what should this email be about?</label>
     <textarea id="ai-topic" class="form-input" rows="3" placeholder="e.g. Introduce our Medicare supplement options and explain how we compare to other carriers on pricing" style="width:100%;resize:vertical;"></textarea>
     <div id="ai-status" style="margin-top:12px;font-size:13px;color:var(--muted);min-height:20px;"></div>`;
 
-  showModal('✨ AI — Suggest New Email', body, async () => {
+  showModal('Γ£¿ AI ΓÇö Suggest New Email', body, async () => {
     const segVal   = document.getElementById('ai-seg').value;
     const tone     = document.getElementById('ai-tone').value;
     const topic    = document.getElementById('ai-topic').value.trim();
@@ -1882,7 +1920,7 @@ function aiSuggestEmail() {
     if (!topic) { showToast('Please describe what the email should be about.'); return false; }
 
     const [segment, table] = segVal.split('|');
-    statusEl.innerHTML = '<em>⚠ Generating… this usually takes 10–15 seconds.</em>';
+    statusEl.innerHTML = '<em>ΓÅ│ GeneratingΓÇª this usually takes 10ΓÇô15 seconds.</em>';
 
     let result;
     try {
@@ -1902,7 +1940,7 @@ function aiSuggestEmail() {
     closeModal();
     openAiReviewModal(table, segment, result);
     return false;
-  }, { confirmLabel: '✨ Generate' });
+  }, { confirmLabel: 'Γ£¿ Generate' });
 }
 
 function openAiReviewModal(table, segment, result) {
@@ -1923,14 +1961,14 @@ function openAiReviewModal(table, segment, result) {
       </div>
       <div style="flex:1;">
         <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">State Override (blank = all states)</label>
-        <input id="ec-state" class="form-input" value="" placeholder="MT, AZ…" style="text-transform:uppercase;" maxlength="2">
+        <input id="ec-state" class="form-input" value="" placeholder="MT, AZΓÇª" style="text-transform:uppercase;" maxlength="2">
       </div>
     </div>`;
 
   const safeSubject = (result.subject||'').replace(/"/g,'&quot;');
   const body = `
     <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#166534;">
-      ✨ AI draft for <strong>${segment}</strong>. Review and edit, then click <strong>Save &amp; Activate</strong>.
+      Γ£¿ AI draft for <strong>${segment}</strong>. Review and edit, then click <strong>Save &amp; Activate</strong>.
     </div>
     <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Subject Line</label>
     <input id="ec-subject" class="form-input" value="${safeSubject}" style="width:100%;margin-bottom:4px;">
@@ -1940,7 +1978,7 @@ function openAiReviewModal(table, segment, result) {
     <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 4px;">Plain Text</label>
     <textarea id="ec-plain" class="form-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;resize:vertical;">${result.body_plain||''}</textarea>`;
 
-  showModal('✨ Review AI Draft', body, async () => {
+  showModal('Γ£¿ Review AI Draft', body, async () => {
     const insertData = {
       segment,
       subject:    document.getElementById('ec-subject').value.trim(),
@@ -1960,9 +1998,9 @@ function openAiReviewModal(table, segment, result) {
     }
     const { error } = await supabaseClient.from(table).insert([insertData]);
     if (error) { showToast('Save failed: ' + error.message); return false; }
-    showToast('✓ New email saved and activated!');
+    showToast('Γ£à New email saved and activated!');
     renderCampaigns();
-  }, { confirmLabel: '💾 Save & Activate' });
+  }, { confirmLabel: '≡ƒÆ╛ Save & Activate' });
 }
 
 // ============================================================
@@ -1982,26 +2020,13 @@ async function renderOpens() {
     const oName  = o.contact_name  || '?';
     const contact = contacts.find(c => c.email && c.email.toLowerCase() === oEmail.toLowerCase());
     const contactId = contact ? contact.id : '';
-    const emailSt = contact ? (contact.email_status || null) : null;
-    const _stBadge = emailSt === 'valid'
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#16a34a;">&#10003; Valid</span>'
-      : (emailSt === 'invalid' || emailSt === 'bounced' || emailSt === 'bad-domain' || emailSt === 'bad-syntax')
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#fee2e2;color:#dc2626;">&#9888; Invalid</span>'
-      : emailSt === 'risky'
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#f3f4f6;color:#6b7280;">? Risky</span>'
-      : emailSt === 'catch-all'
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#fef9c3;color:#854d0e;">~ Catch-All</span>'
-      : emailSt
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:#f3f4f6;color:#6b7280;">' + emailSt + '</span>'
-      : '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:#f3f4f6;color:#9ca3af;">Unverified</span>';
     const initials = oName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
     return `<tr class="opens-row" onclick="viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">
       <td style="white-space:nowrap;"><span class="contact-avatar" style="width:30px;height:30px;font-size:11px;">${initials}</span><strong>${oName}</strong></td>
-      <td style="color:var(--muted);font-size:13px;">${oEmail||'—'}</td>
-      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'…':''):'—'}</td>
-      <td><span class="badge badge-group">${o.sequence_track||'—'}</span></td>
+      <td style="color:var(--muted);font-size:13px;">${oEmail||'ΓÇö'}</td>
+      <td style="font-size:13px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject?o.email_subject.substring(0,60)+(o.email_subject.length>60?'ΓÇª':''):'ΓÇö'}</td>
+      <td><span class="badge badge-group">${o.sequence_track||'ΓÇö'}</span></td>
       <td style="font-size:12px;color:var(--muted);white-space:nowrap;">${formatTimeAgo(o.opened_at)}</td>
-      <td>${_stBadge}</td>
       <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">View &rarr;</button></td>
     </tr>`;
   }).join('');
@@ -2016,12 +2041,12 @@ async function renderOpens() {
     <div class="contacts-table">
       ${all.length === 0
         ? `<div class="empty-state"><div class="emoji">&#128235;</div><p>No email opens tracked yet.</p></div>`
-        : `<table><thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Email</th><th>Opened</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`}
+        : `<table><thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Email</th><th>Opened</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`}
     </div>`;
 }
 
 function formatTimeAgo(dateStr) {
-  if (!dateStr) return '—';
+  if (!dateStr) return 'ΓÇö';
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 2) return 'just now';
@@ -2054,7 +2079,6 @@ async function viewContact(contactId, email) {
   const dots = [1,2,3].map(i => `<div class="seq-dot ${i < seqStep ? 'done' : i === seqStep && seqStatus === 'Active' ? 'active' : ''}"></div>`).join('');
   const opensCount = (opens || []).length;
   const ownerAgent = allAgents.find(a => a.id === c.agent_id);
-  const _canSend = c.email_status === 'valid';
   const companyBadges = contactCompanies.map(co => `<span class="badge ${co.slug === 'primerica' ? 'badge-primerica' : 'badge-insured'}">${co.name}</span>`).join(' ');
 
   document.getElementById('contact-panel').innerHTML = `
@@ -2062,7 +2086,7 @@ async function viewContact(contactId, email) {
       <div class="panel-header-info">
         <div class="panel-avatar">${initials}</div>
         <div>
-          <div class="panel-name">${c.name||'—'}</div>
+          <div class="panel-name">${c.name||'ΓÇö'}</div>
           ${c.type ? `<span class="badge ${badgeClass}" style="font-size:11px;">${c.type}</span>` : ''}
           ${companyBadges ? `<div style="margin-top:4px;">${companyBadges}</div>` : ''}
         </div>
@@ -2094,19 +2118,14 @@ async function viewContact(contactId, email) {
       <div class="panel-section">
         <div class="panel-label">Email Opens (${opensCount})</div>
         ${opensCount > 0
-          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.sequence_track||'—'}</span><div class="panel-open-subject">${o.email_subject?o.email_subject.substring(0,55)+(o.email_subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
+          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.sequence_track||'ΓÇö'}</span><div class="panel-open-subject">${o.email_subject?o.email_subject.substring(0,55)+(o.email_subject.length>55?'ΓÇª':''):'ΓÇö'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
           : '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No email opens recorded yet.</div>'}
       </div>
     </div>
     <div class="panel-footer">
       <button class="btn btn-outline" onclick="closeContactPanel()">Close</button>
-      ${_canSend
-        ? `<button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>`
-        : `<button class="btn btn-outline btn-sm" disabled title="Email must be Verified before transferring" style="opacity:0.4;cursor:not-allowed;"><i class="ti ti-arrows-exchange"></i> Transfer</button>`}
-      ${_canSend
-        ? `<button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')" title="Recruit this contact as a Kannon agent">&#128101; Recruit</button>`
-        : `<button class="btn btn-accent btn-sm" disabled title="Email must be Verified before adding to sequence" style="opacity:0.4;cursor:not-allowed;">&#128101; Recruit</button>`}
-      <button class="btn btn-outline btn-sm" onclick="startSequence('${c.id}')" title="Enroll in outreach sequence">&#9654; Sequence</button>
+      <button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>
+      <button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')" title="Recruit this contact as a Kannon agent">&#128101; Recruit</button>
       <button class="btn btn-primary" onclick="closeContactPanel();editContact('${c.id}')">&#9999;&#65039; Edit</button>
     </div>`;
   document.getElementById('contact-panel').classList.add('open');
@@ -2175,11 +2194,11 @@ async function drop(e, stage) {
 function openAddDeal(stage = '') {
   const pipeline = PIPELINES[currentPipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} ΓÇö ${c.company||c.email||''}</option>`).join('');
   showModal('Add New Deal', `
     <label>Deal / Opportunity Name *</label><input type="text" id="deal-title" placeholder="e.g. Acme Corp Benefits Package" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label><select id="deal-contact"><option value="">ΓÇö No contact ΓÇö</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" placeholder="0" min="0" />
     <label>Notes</label><textarea id="deal-notes" placeholder="Key details, next steps..."></textarea>
   `, async () => {
@@ -2195,11 +2214,11 @@ function editDeal(id) {
   const deal = deals.find(d => d.id === id); if (!deal) return;
   const pipeline = PIPELINES[deal.pipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===deal.stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}" ${c.id===deal.contact_id?'selected':''}>${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c => `<option value="${c.id}" ${c.id===deal.contact_id?'selected':''}>${c.name} ΓÇö ${c.company||c.email||''}</option>`).join('');
   showModal('Edit Deal', `
     <label>Deal Name *</label><input type="text" id="deal-title" value="${deal.title}" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label><select id="deal-contact"><option value="">ΓÇö No contact ΓÇö</option>${contactOptions}</select>
     <label>Deal Value ($)</label><input type="number" id="deal-value" value="${deal.value||''}" min="0" />
     <label>Notes</label><textarea id="deal-notes">${deal.notes||''}</textarea>
   `, async () => {
@@ -2219,7 +2238,7 @@ async function deleteDeal(id) {
 }
 
 // ============================================================
-// COMPLIANCE — bounced, opted-out, DNC contacts
+// COMPLIANCE ΓÇö bounced, opted-out, DNC contacts
 // ============================================================
 async function renderCompliance() {
   const pg = document.getElementById('page-compliance');
@@ -2239,16 +2258,16 @@ async function renderCompliance() {
   function complianceRow(c, action) {
     const ownerAgent = allAgents.find(a => a.id === c.agent_id);
     return `<tr>
-      <td style="font-weight:600;font-size:13px;">${c.name||'—'}</td>
-      <td style="font-size:12px;">${c.email||'—'}</td>
-      <td style="font-size:12px;">${c.phone||'—'}</td>
-      <td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'—'}</td>
+      <td style="font-weight:600;font-size:13px;">${c.name||'ΓÇö'}</td>
+      <td style="font-size:12px;">${c.email||'ΓÇö'}</td>
+      <td style="font-size:12px;">${c.phone||'ΓÇö'}</td>
+      <td style="font-size:12px;color:var(--muted);">${ownerAgent?ownerAgent.name:'ΓÇö'}</td>
       <td style="white-space:nowrap;">${action}</td>
     </tr>`;
   }
 
   const bouncedRows = bounced.map(c => complianceRow(c,
-    `<button class="btn btn-outline btn-sm" onclick="editContact('${c.id}')">✏ Fix Email</button>
+    `<button class="btn btn-outline btn-sm" onclick="editContact('${c.id}')">Γ£Å∩╕Å Fix Email</button>
      <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="deleteContact('${c.id}')">Delete</button>`
   )).join('');
 
@@ -2267,31 +2286,31 @@ async function renderCompliance() {
 
   pg.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <h2 class="section-title" style="margin:0;">⚖ Compliance Center</h2>
+      <h2 class="section-title" style="margin:0;">≡ƒ¢í∩╕Å Compliance Center</h2>
       <div style="font-size:13px;color:var(--muted);">Bounced and opted-out contacts are automatically skipped by all sequences and drip campaigns.</div>
     </div>
 
     <div class="opens-stats" style="margin-bottom:28px;">
-      <div class="opens-stat" style="border-left-color:#dc2626;"><div class="num" style="color:#dc2626;">${bounced.length}</div><div class="lbl">⚠ Bounced</div></div>
-      <div class="opens-stat" style="border-left-color:#d97706;"><div class="num" style="color:#d97706;">${optedOut.length}</div><div class="lbl">⛔ Opted Out</div></div>
-      <div class="opens-stat" style="border-left-color:#9d174d;"><div class="num" style="color:#9d174d;">${dnc.length}</div><div class="lbl">📵 Do Not Call</div></div>
+      <div class="opens-stat" style="border-left-color:#dc2626;"><div class="num" style="color:#dc2626;">${bounced.length}</div><div class="lbl">ΓÜá∩╕Å Bounced</div></div>
+      <div class="opens-stat" style="border-left-color:#d97706;"><div class="num" style="color:#d97706;">${optedOut.length}</div><div class="lbl">≡ƒÜ½ Opted Out</div></div>
+      <div class="opens-stat" style="border-left-color:#9d174d;"><div class="num" style="color:#9d174d;">${dnc.length}</div><div class="lbl">≡ƒô╡ Do Not Call</div></div>
       <div class="opens-stat"><div class="num">${list.length}</div><div class="lbl">Total Issues</div></div>
     </div>
 
     <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#991b1b;line-height:1.6;">
-      <strong>⚠ Bounced Emails (${bounced.length})</strong> — These addresses were rejected by the mail server. Fix the email or delete the contact.
+      <strong>ΓÜá∩╕Å Bounced Emails (${bounced.length})</strong> ΓÇö These addresses were rejected by the mail server. Fix the email or delete the contact.
     </div>
-    ${tableHtml(bouncedRows, '✓ No bounced email addresses.')}
+    ${tableHtml(bouncedRows, 'Γ£à No bounced email addresses.')}
 
     <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#92400e;line-height:1.6;">
-      <strong>⛔ Opted Out (${optedOut.length})</strong> — These contacts replied asking to unsubscribe. Do not re-enroll without their explicit permission.
+      <strong>≡ƒÜ½ Opted Out (${optedOut.length})</strong> ΓÇö These contacts replied asking to unsubscribe. Do not re-enroll without their explicit permission.
     </div>
-    ${tableHtml(optOutRows, '✓ No opted-out contacts.')}
+    ${tableHtml(optOutRows, 'Γ£à No opted-out contacts.')}
 
     <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#6b21a8;line-height:1.6;">
-      <strong>📵 Do Not Call (${dnc.length})</strong> — These contacts are flagged for no phone outreach.
+      <strong>≡ƒô╡ Do Not Call (${dnc.length})</strong> ΓÇö These contacts are flagged for no phone outreach.
     </div>
-    ${tableHtml(dncRows, '✓ No Do Not Call contacts.')}
+    ${tableHtml(dncRows, 'Γ£à No Do Not Call contacts.')}
   `;
 }
 
@@ -2301,7 +2320,7 @@ async function clearOptOut(id) {
     opt_out_email: false, email_status: 'valid', opt_out_at: null, opt_out_reason: null
   }).eq('id', id);
   if (error) { showToast('Error: ' + error.message); return; }
-  showToast('✓ Opt-out cleared');
+  showToast('Γ£à Opt-out cleared');
   await loadData();
   renderCompliance();
 }
@@ -2310,7 +2329,7 @@ async function clearDnc(id) {
   if (!confirm('Remove Do Not Call flag for this contact?')) return;
   const { error } = await supabaseClient.from('contacts').update({ do_not_call: false }).eq('id', id);
   if (error) { showToast('Error: ' + error.message); return; }
-  showToast('✓ DNC flag removed');
+  showToast('Γ£à DNC flag removed');
   await loadData();
   renderCompliance();
 }
@@ -2345,7 +2364,7 @@ async function renderContacts() {
         <option value="sequence_status_asc" ${contactSort==='sequence_status_asc'?'selected':''}>Sequence Status</option>
       </select>
       <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
-      <button class="btn btn-outline" onclick="verifyAllEmails()" style="font-size:13px;" title="SMTP-verify unverified emails">&#128269; Verify All Emails</button>
+      <button class="btn btn-outline" onclick="verifyAllEmails()" style="font-size:13px;" title="SMTP-verify all contacts with unverified emails">&#128269; Verify All Emails</button>
       <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
     </div>
     <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
@@ -2370,7 +2389,7 @@ async function renderContacts() {
   };
   const sortOpt = sortMap[contactSort] || sortMap['created_at_desc'];
 
-  // Query Supabase directly — bypasses PostgREST row cap entirely
+  // Query Supabase directly ΓÇö bypasses PostgREST row cap entirely
   let q = supabaseClient.from('contacts').select('*');
   if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
   else if (currentAgent.role === 'agency_owner') {
@@ -2400,18 +2419,18 @@ async function renderContacts() {
     const seqStatus  = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
     const emailBadge = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
-      ? `<span title="${(c.email_verify_reason||'Bad email').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#9888; INVALID</span>`
+      ? `<span title="${(c.email_verify_reason||'Bad email address').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#9888; INVALID</span>`
       : (c.email_status === 'opted_out' || c.opt_out_email)
       ? `<span title="Opted out of emails" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#128683; OPT-OUT</span>`
       : c.email_status === 'valid'
       ? `<span title="Email verified" style="margin-left:5px;background:#dcfce7;color:#16a34a;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#10003; VALID</span>`
       : c.email_status === 'catch-all'
-      ? `<span title="Catch-all domain" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">~ CATCH-ALL</span>`
+      ? `<span title="Catch-all domain &#8212; individual mailbox unconfirmed" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">~ CATCH-ALL</span>`
       : c.email_status === 'risky'
-      ? `<span title="${(c.email_verify_reason||'Unverified').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#f3f4f6;color:#6b7280;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">? RISKY</span>`
+      ? `<span title="${(c.email_verify_reason||'Could not fully verify').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#f3f4f6;color:#6b7280;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">? RISKY</span>`
       : c.email_status === 'pending'
-      ? `<span title="Verifying..." style="margin-left:5px;background:#eff6ff;color:#2563eb;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">... CHECKING</span>`
-      : ''
+      ? `<span title="Verification in progress..." style="margin-left:5px;background:#eff6ff;color:#2563eb;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">... CHECKING</span>`
+      : '';
     const dncBadge = c.do_not_call
       ? `<span title="Do Not Call" style="margin-left:4px;background:#fce7f3;color:#9d174d;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#128245; DNC</span>`
       : '';
@@ -2419,19 +2438,18 @@ async function renderContacts() {
       <td style="cursor:pointer;" onclick="viewContact('${c.id}','')">
         <div style="display:flex;align-items:center;">
           <span class="contact-avatar">${initials}</span>
-          <span style="font-weight:600;">${c.name || '—'}</span>
+          <span style="font-weight:600;">${c.name || 'ΓÇö'}</span>
         </div>
       </td>
-      <td style="font-size:13px;">${c.phone || '—'}</td>
-      <td style="font-size:13px;">${c.email || '—'}${emailBadge}</td>
-      <td style="font-size:13px;">${c.company || '—'}${dncBadge}</td>
-      ${!contactTypeFilter ? `<td>${c.type ? `<span class="badge ${badgeClass}">${c.type}</span>` : '—'}</td>` : ''}
+      <td style="font-size:13px;">${c.email || 'ΓÇö'}${emailBadge}</td>
+      <td style="font-size:13px;">${c.company || 'ΓÇö'}${dncBadge}</td>
+      <td>${c.type ? `<span class="badge ${badgeClass}">${c.type}</span>` : 'ΓÇö'}</td>
       <td><span class="badge ${seqClass[seqStatus] || 'badge-agent'}">${seqStatus}</span></td>
-      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent ? ownerAgent.name : '—'}</td>` : ''}
+      ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent ? ownerAgent.name : 'ΓÇö'}</td>` : ''}
       <td>
         <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
         <button class="btn btn-outline btn-sm" style="margin-left:4px;" onclick="editContact('${c.id}')">Edit</button>
-        ${c.email ? `<button class="btn btn-outline btn-sm" style="margin-left:4px;font-size:11px;" onclick="verifyContactEmail('${c.id}')" title="Verify email">&#128269; Verify</button>` : ''}
+        ${c.email ? `<button class="btn btn-outline btn-sm" style="margin-left:4px;font-size:11px;" onclick="verifyContactEmail('${c.id}')" title="Verify email via SMTP">&#128269; Verify</button>` : ''}
         <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="deleteContact('${c.id}')">&#10005;</button>
       </td>
     </tr>`;
@@ -2448,14 +2466,14 @@ async function renderContacts() {
 
   const shown_count = (shown || []).length;
   const countLabel = hasNext
-    ? `Showing ${offset + 1}–${offset + shown_count}  |  more on next page`
+    ? `Showing ${offset + 1}ΓÇô${offset + shown_count} ┬╖ more on next page`
     : `${offset + shown_count} contact${offset + shown_count !== 1 ? 's' : ''}${(contactPage || 0) > 0 ? ` (page ${(contactPage || 0) + 1})` : ''}`;
 
   document.getElementById('contacts-count').textContent = countLabel;
   document.getElementById('contacts-table-body').innerHTML = shown_count === 0
     ? `<div class="empty-state"><div class="emoji">&#128101;</div><p>${contactSearch || contactTypeFilter ? 'No contacts match your filter.' : 'No contacts yet. Add your first one!'}</p></div>`
     : `${pageNav}<table><thead><tr>
-        <th>Name</th><th>Phone</th><th>Email</th><th>Company</th>${!contactTypeFilter ? '<th>Type</th>' : ''}<th>Sequence</th>
+        <th>Name</th><th>Email</th><th>Company</th><th>Type</th><th>Sequence</th>
         ${showOwnerCol ? '<th>Owner</th>' : ''}<th>Actions</th>
       </tr></thead><tbody>${rows}</tbody></table>${pageNav}`;
 }
@@ -2465,7 +2483,7 @@ function openAddContact() {
   // Agent picker for agency_owner and system_owner
   const canAssign = currentAgent.role !== 'agent';
   const agentOptions = canAssign
-    ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
+    ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} ΓÇö ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
 
   showModal('Add Contact', `
@@ -2473,7 +2491,7 @@ function openAddContact() {
     <label>Email</label><input type="email" id="con-email" placeholder="jane@company.com" />
     <label>Phone</label><input type="tel" id="con-phone" placeholder="(555) 555-5555" />
     <label>Company / Employer</label><input type="text" id="con-company" placeholder="Acme Corp" />
-    <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Type</label><select id="con-type"><option value="">ΓÇö Select type ΓÇö</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes" placeholder="Any relevant notes..."></textarea>
   `, async () => {
@@ -2510,26 +2528,25 @@ function editContact(id) {
   const typeOptions = CONTACT_TYPES.map(t => `<option value="${t}" ${t===c.type?'selected':''}>${t}</option>`).join('');
   const canAssign = currentAgent.role !== 'agent';
   const agentOptions = canAssign
-    ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
+    ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} ΓÇö ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
   const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
   const _verifiedAt = c.email_verified_at ? ` (verified ${new Date(c.email_verified_at).toLocaleDateString()})` : '';
-  const _markBtn = `<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;margin-left:6px;font-size:11px;color:#16a34a;border-color:#16a34a;" onclick="markEmailVerified('${c.id}')">&#10003; Mark as Verified</button>`;
   const emailStatusNote = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
-    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">&#9888; <strong>Invalid Email</strong>${_verifiedAt} &#8212; ${c.email_verify_reason||'rejected'}. Correct it below, or mark valid if you know it works.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
+    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">&#9888; <strong>Invalid Email</strong>${_verifiedAt} &#8212; ${c.email_verify_reason||'this email was rejected'}. Correct it below to re-enable outreach.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button></div>`
     : c.email_status === 'opted_out'
-    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">&#128683; <strong>Opted Out</strong> &#8212; uncheck below to restore.</div>`
+    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">&#128683; <strong>Opted Out</strong> &#8212; this contact requested removal. Uncheck below to restore (only if they ask to re-subscribe).</div>`
     : c.email_status === 'valid'
-    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#16a34a;">&#10003; <strong>Email Verified</strong>${_verifiedAt}${c.email_verify_reason === 'Manually verified by agent' ? ' <em style="font-size:10px;opacity:0.8;">(manual)</em>' : ''}</div>`
+    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#16a34a;">&#10003; <strong>Email Verified</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}</div>`
     : c.email_status === 'risky'
-    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">? <strong>Risky / Unconfirmed</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}.<br><small style="display:block;margin-top:4px;color:#9ca3af;">Common for Microsoft, Google, State Farm &#8212; SMTP probing is blocked. If you know this email works, mark it verified.</small><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
+    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">? <strong>Risky</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button></div>`
     : c.email_status === 'catch-all'
-    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">~ <strong>Catch-All Domain</strong>${_verifiedAt} &#8212; mailbox unconfirmed. If you know this person's inbox is real, mark it verified.<br>${_markBtn}</div>`
+    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">~ <strong>Catch-All Domain</strong>${_verifiedAt} &#8212; this domain accepts all addresses; individual mailbox unconfirmed.</div>`
     : c.email_status === 'pending'
-    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#2563eb;">... <strong>Verifying...</strong> Refresh in a moment, or mark verified if you know it's good.<br>${_markBtn}</div>`
+    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#2563eb;">... <strong>Verification in progress...</strong> Refresh in a moment.</div>`
     : c.email && !c.email_status
-    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;"><strong>&#9888; Not verified &#8212; will NOT receive emails until verified.</strong><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify via SMTP</button>${_markBtn}</div>`
-    : ''
+    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">Email not yet verified. <button type="button" class="btn btn-outline btn-sm" style="margin-left:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify Now</button></div>`
+    : '';
   showModal('Edit Contact', `
     ${emailStatusNote}
     <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
@@ -2538,7 +2555,7 @@ function editContact(id) {
     <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
     <label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
     <label>State</label><input type="text" id="con-state" value="${c.state||''}" placeholder="e.g. MT" maxlength="2" style="width:80px;" />
-    <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Type</label><select id="con-type"><option value="">ΓÇö Select type ΓÇö</option>${typeOptions}</select>
     <label>Outreach Track <span style="font-size:11px;color:var(--muted);">(Recruit contacts only)</span></label><select id="con-track">${trackOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
@@ -2546,11 +2563,11 @@ function editContact(id) {
       <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Compliance</div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
         <input type="checkbox" id="con-optout" ${c.opt_out_email?'checked':''} style="width:16px;height:16px;">
-        <span>⛔ Opted Out of Emails</span>
+        <span>≡ƒÜ½ Opted Out of Emails</span>
       </label>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px;">
         <input type="checkbox" id="con-dnc" ${c.do_not_call?'checked':''} style="width:16px;height:16px;">
-        <span>📵 Do Not Call</span>
+        <span>≡ƒô╡ Do Not Call</span>
       </label>
     </div>
   `, async () => {
@@ -2562,11 +2579,10 @@ function editContact(id) {
     const newDnc     = document.getElementById('con-dnc').checked;
     const newEmail   = document.getElementById('con-email').value.trim() || null;
     // If email was bounced and a new email was entered, clear the bounce status
-    // When email changes, clear status so trigger re-verifies it
-    const newEmailStatus = (c.email_status === 'bounced' && newEmail && newEmail !== c.email) ? null
+    const newEmailStatus = (c.email_status === 'bounced' && newEmail && newEmail !== c.email) ? 'valid'
       : newOptOut ? 'opted_out'
-      : (c.email_status === 'opted_out' && !newOptOut) ? null
-      : c.email_status || null;
+      : (c.email_status === 'opted_out' && !newOptOut) ? 'valid'
+      : c.email_status || 'valid';
     const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
@@ -2593,123 +2609,81 @@ async function deleteContact(id) {
   await supabaseClient.from('contacts').delete().eq('id', id);
   contacts = contacts.filter(c => c.id !== id); renderContacts(); showToast('Contact deleted');
 }
+
 // ── Email Verification ────────────────────────────────────────────────────────
 
 async function verifyContactEmail(id) {
-  const contact = contacts.find(x => x.id === id);
-  if (!contact || !contact.email) { showToast('No email on this contact'); return; }
-  contact.email_status = 'pending';
+  const c = contacts.find(x => x.id === id);
+  if (!c || !c.email) { showToast('No email address on this contact'); return; }
+
+  // Optimistically set pending in UI
+  c.email_status = 'pending';
   renderContacts();
-  showToast('Verifying ' + contact.email + '...');
+  showToast('Verifying ' + c.email + '...');
+
   try {
-    const res = await fetch(SUPABASE_URL + '/functions/v1/verify-email', {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-email`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
-      body: JSON.stringify({ email: contact.email, contact_id: id })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ email: c.email, contact_id: id })
     });
     const data = await res.json();
     if (data.status) {
-      contact.email_status = data.status;
-      contact.email_verify_reason = data.reason || '';
-      contact.email_verified_at = new Date().toISOString();
-      showToast(contact.email + ' is ' + data.status.toUpperCase());
-    } else { showToast('Verify error: ' + (data.error || 'unknown')); }
-  } catch (e) { showToast('Verify failed: ' + e.message); }
-  renderContacts();
-}
-
-async function markEmailVerified(id) {
-  const contact = contacts.find(x => x.id === id);
-  if (!contact) return;
-  const msg = 'Mark "' + (contact.email || 'this email') + '" as Verified?\n\nUse this when you know the address is good (e.g. you received email from them, or SMTP probing was blocked by their server).\n\nThis email will now be included in sequences and sends.';
-  if (!confirm(msg)) return;
-  try {
-    const { error } = await supabaseClient.from('contacts').update({
-      email_status: 'valid',
-      email_verify_reason: 'Manually verified by agent',
-      email_verified_at: new Date().toISOString()
-    }).eq('id', id);
-    if (error) throw error;
-    contact.email_status = 'valid';
-    contact.email_verify_reason = 'Manually verified by agent';
-    contact.email_verified_at = new Date().toISOString();
-    showToast(contact.email + ' marked as Verified');
-    renderContacts();
-    if (document.querySelector('.modal-overlay')) editContact(id);
+      c.email_status = data.status;
+      c.email_verify_reason = data.reason || '';
+      c.email_verified_at = new Date().toISOString();
+      showToast(`${c.email} &#8594; ${data.status.toUpperCase()}`);
+    } else {
+      showToast('Verification error: ' + (data.error || 'unknown'));
+    }
   } catch (e) {
-    showToast('Error: ' + e.message);
+    showToast('Verify failed: ' + e.message);
   }
+  renderContacts();
 }
 
 async function verifyAllEmails() {
-  const targets = contacts.filter(c => c.email && !c.email_status);
+  // Collect contacts with email that haven't been successfully verified yet
+  const targets = contacts.filter(c => c.email && c.email_status !== 'valid' && c.email_status !== 'opted_out' && c.email_status !== 'pending');
   if (targets.length === 0) { showToast('No unverified emails to check'); return; }
 
-  const skipped = contacts.filter(x => x.email && x.email_status).length;
-  const msg = 'Verify ' + targets.length + ' unverified email' + (targets.length > 1 ? 's' : '') + '?\n\n'
-    + (skipped > 0 ? skipped + ' contact' + (skipped > 1 ? 's' : '') + ' already have a status (Valid, Risky, Invalid, etc.) and will be skipped.\n\n' : '')
-    + 'Only emails with no prior check result will be sent for verification.\n\nResults update as each batch of 10 finishes.';
-  if (!confirm(msg)) return;
+  if (!confirm(`Verify ${targets.length} email address${targets.length>1?'es':''}? This may take a minute.`)) return;
 
+  showToast(`Starting bulk verification of ${targets.length} emails...`);
+
+  // Mark all pending immediately
   targets.forEach(c => { c.email_status = 'pending'; });
   renderContacts();
 
-  // Progress bar
-  const progressEl = document.createElement('div');
-  progressEl.id = 'verify-progress';
-  progressEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px 20px;box-shadow:0 4px 20px rgba(0,0,0,.15);z-index:9999;min-width:300px;max-width:420px;';
-  progressEl.innerHTML = '<div style="font-weight:600;font-size:14px;margin-bottom:8px;">&#128269; Verifying Emails…</div>'
-    + '<div style="background:var(--surface);border-radius:6px;height:8px;overflow:hidden;margin-bottom:8px;">'
-    + '<div id="verify-bar" style="background:var(--accent);height:100%;width:0%;transition:width .3s ease;border-radius:6px;"></div></div>'
-    + '<div id="verify-status" style="font-size:12px;color:var(--muted);">0 / ' + targets.length + ' checked</div>';
-  document.body.appendChild(progressEl);
+  const emails = targets.map(c => c.email);
+  const ids    = targets.map(c => c.id);
 
-  const BATCH = 10;
-  let done = 0, valid = 0, invalid = 0, risky = 0;
-
-  for (let i = 0; i < targets.length; i += BATCH) {
-    const batch  = targets.slice(i, i + BATCH);
-    const emails = batch.map(c => c.email);
-    const ids    = batch.map(c => c.id);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
-        body: JSON.stringify({ emails, contact_ids: ids })
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ emails, contact_ids: ids })
+    });
+    const data = await res.json();
+    if (data.results) {
+      let valid = 0, invalid = 0;
+      data.results.forEach(r => {
+        const c = contacts.find(x => x.id === r.contact_id);
+        if (c) {
+          c.email_status = r.status;
+          c.email_verify_reason = r.reason || '';
+          c.email_verified_at = new Date().toISOString();
+          if (r.status === 'valid') valid++;
+          else if (r.status === 'invalid' || r.status === 'bad-domain' || r.status === 'bad-syntax') invalid++;
+        }
       });
-      const data = await res.json();
-      if (data.results) {
-        data.results.forEach(r => {
-          const c = contacts.find(x => x.id === r.contact_id);
-          if (c) {
-            c.email_status = r.status;
-            c.email_verify_reason = r.reason || '';
-            c.email_verified_at = new Date().toISOString();
-            if (r.status === 'valid') valid++;
-            else if (['invalid','bad-domain','bad-syntax'].includes(r.status)) invalid++;
-            else if (['risky','catch-all'].includes(r.status)) risky++;
-          }
-        });
-        done += data.results.length;
-      } else { done += batch.length; }
-    } catch (e) { done += batch.length; }
-
-    const pct      = Math.round((done / targets.length) * 100);
-    const barEl    = document.getElementById('verify-bar');
-    const statusEl = document.getElementById('verify-status');
-    if (barEl)    barEl.style.width = pct + '%';
-    if (statusEl) statusEl.textContent = done + ' / ' + targets.length + ' checked — ' + valid + ' valid, ' + risky + ' risky, ' + invalid + ' invalid';
-    renderContacts();
+      showToast(`Done! ${valid} valid, ${invalid} invalid of ${data.results.length} checked`);
+    } else {
+      showToast('Bulk verify error: ' + (data.error || 'unknown'));
+    }
+  } catch (e) {
+    showToast('Bulk verify failed: ' + e.message);
   }
-
-  // Completion state
-  const barEl = document.getElementById('verify-bar');
-  if (barEl) barEl.style.background = '#22c55e';
-  const titleEl = progressEl.querySelector('div');
-  if (titleEl) titleEl.innerHTML = '&#10003; Verification Complete';
-  const statusEl = document.getElementById('verify-status');
-  if (statusEl) statusEl.textContent = 'Complete! ' + valid + ' valid · ' + risky + ' risky · ' + invalid + ' invalid of ' + targets.length + ' checked';
-  setTimeout(() => { const el = document.getElementById('verify-progress'); if (el) el.remove(); }, 5000);
   renderContacts();
 }
 
@@ -2725,7 +2699,7 @@ async function renderAdmin() {
 
   const pendingAgentSection = pendingAgents.length > 0 ? `
     <div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-      <div style="font-weight:700;font-size:14px;color:#b45309;margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} — Awaiting Approval</div>
+      <div style="font-weight:700;font-size:14px;color:#b45309;margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} ΓÇö Awaiting Approval</div>
       ${pendingAgents.map(a => {
         const recruiter = allAgents.find(x => x.id === a.recruited_by);
         const niprBadge = a.nipr_result
@@ -2748,7 +2722,7 @@ async function renderAdmin() {
     </div>` : '';
 
   const agentRows = activeAgents.map(a => {
-    const agencyName = a.agencies?.name || '—';
+    const agencyName = a.agencies?.name || 'ΓÇö';
     const roleBadge = a.role === 'system_owner' ? 'badge-sys' : a.role === 'agency_owner' ? 'badge-owner' : 'badge-agent';
     const roleLabel = { system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' }[a.role] || a.role;
     return `<div class="agent-row">
@@ -2865,7 +2839,7 @@ async function recruitContact(contactId) {
     <label>Recruiting Agent</label>
     <select id="rec-recruiter">${recruiterOptions}</select>
     <label>Assign to Agency (optional)</label>
-    <select id="rec-agency"><option value="">— No agency yet —</option>${agencyOptions}</select>
+    <select id="rec-agency"><option value="">ΓÇö No agency yet ΓÇö</option>${agencyOptions}</select>
     <label>Role</label>
     <select id="rec-role">
       <option value="agent">Agent</option>
@@ -2918,7 +2892,7 @@ async function rejectAgent(agentId) {
 }
 
 function openAddAgent() {
-  const agencyOptions = allAgencies.map(a => `<option value="${a.id}">${a.name} — ${a.companies?.name||''}</option>`).join('');
+  const agencyOptions = allAgencies.map(a => `<option value="${a.id}">${a.name} ΓÇö ${a.companies?.name||''}</option>`).join('');
   const companyCheckboxes = allCompanies.map(c => `
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-weight:400;">
       <input type="checkbox" id="co-${c.id}" value="${c.id}" style="width:auto;" /> ${c.name}
@@ -2933,7 +2907,7 @@ function openAddAgent() {
       <option value="system_owner">System Owner</option>
     </select>
     <label>Agency</label>
-    <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
+    <select id="ag-agency"><option value="">ΓÇö No agency ΓÇö</option>${agencyOptions}</select>
     <label>Companies</label>
     ${companyCheckboxes}
   `, async () => {
@@ -2959,7 +2933,7 @@ function openAddAgent() {
 
 function editAgent(id) {
   const a = allAgents.find(x => x.id === id); if (!a) return;
-  const agencyOptions = allAgencies.map(ag => `<option value="${ag.id}" ${ag.id===a.agency_id?'selected':''}>${ag.name} — ${ag.companies?.name||''}</option>`).join('');
+  const agencyOptions = allAgencies.map(ag => `<option value="${ag.id}" ${ag.id===a.agency_id?'selected':''}>${ag.name} ΓÇö ${ag.companies?.name||''}</option>`).join('');
   showModal('Edit Agent', `
     <label>Full Name *</label><input type="text" id="ag-name" value="${a.name}" />
     <label>Email *</label><input type="email" id="ag-email" value="${a.email}" />
@@ -2970,7 +2944,7 @@ function editAgent(id) {
       <option value="system_owner" ${a.role==='system_owner'?'selected':''}>System Owner</option>
     </select>
     <label>Agency</label>
-    <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
+    <select id="ag-agency"><option value="">ΓÇö No agency ΓÇö</option>${agencyOptions}</select>
   `, async () => {
     const name = document.getElementById('ag-name').value.trim();
     const email = document.getElementById('ag-email').value.trim();
@@ -2991,40 +2965,6 @@ async function deleteAgent(id) {
 // ============================================================
 // MODAL
 // ============================================================
-// ============================================================
-// START / RESTART OUTREACH SEQUENCE
-// ============================================================
-async function startSequence(contactId) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) return;
-  const cur = c.type || 'Individual/Family';
-  const isOptedOut = c.opt_out_email || c.sequence_status === 'Opted Out';
-  if (isOptedOut) { showToast('This contact has opted out — cannot re-enroll.'); return; }
-  if (c.email_status === 'bounced') { showToast('This contact has a bounced email — fix it first.'); return; }
-
-  showModal('Start Sequence: ' + (c.name || 'Contact'), `
-    <p style="margin:0 0 14px;color:#64748b;font-size:14px;">
-      Choose a track below. <strong>${c.name || 'This contact'}</strong> will receive Email 1 on the next automation run (within 24 hours).
-    </p>
-    <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;margin-bottom:6px;">Sequence Track</label>
-    <select id="seq-track-select" style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:12px;">
-      <option value="Individual/Family" ${cur === 'Individual/Family' ? 'selected' : ''}>B2C — Individual / Family</option>
-      <option value="Group/Employer" ${cur === 'Group/Employer' ? 'selected' : ''}>B2B — Group / Employer</option>
-      <option value="Recruit" ${cur === 'Recruit' ? 'selected' : ''}>Recruit — State Farm Agent</option>
-    </select>
-    <p style="font-size:11px;color:#94a3b8;margin:0;">Changing the track also updates the contact type. Any previous sequence progress is reset.</p>
-  `, async () => {
-    const track = document.getElementById('seq-track-select')?.value || cur;
-    const updates = { type: track, sequence_status: null, sequence_step: 0, last_email_sent_at: null };
-    const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
-    if (error) { showToast('Error: ' + error.message); return false; }
-    Object.assign(c, updates);
-    showToast('✓ Sequence queued! ' + (c.name || 'Contact') + ' gets Email 1 on the next run.');
-    viewContact(contactId);
-    return true;
-  }, { confirmLabel: 'Start Sequence' });
-}
-
 function showModal(title, bodyHtml, onSave, opts = {}) {
   const confirmLabel = opts.confirmLabel || 'Save';
   const footer = opts.hideConfirm
@@ -3080,7 +3020,7 @@ async function syncGoogleContacts() {
     await fetch(url, { mode: 'no-cors' });
     showToast('&#128257; Sync triggered! Google Contacts will update in ~30 seconds.');
   } catch(e) {
-    showToast('Sync sent — check Apps Script logs if issues arise.');
+    showToast('Sync sent ΓÇö check Apps Script logs if issues arise.');
   }
 }
 
@@ -3122,7 +3062,7 @@ async function approveApplication(id) {
   if (idx >= 0) applications[idx] = { ...applications[idx], status: 'approved', agent_id: newAgent.id };
   allAgents.push(newAgent);
 
-  showToast('✓ ' + app.first_name + ' ' + app.last_name + ' approved! Create their Google Workspace account in Admin Console.');
+  showToast('Γ£ô ' + app.first_name + ' ' + app.last_name + ' approved! Create their Google Workspace account in Admin Console.');
   renderAdmin();
 }
 
@@ -3216,7 +3156,7 @@ async function sendAIMessage(message) {
 
     aiHistory.push({ role: 'assistant', content: data.text });
   } catch (e) {
-    aiHistory.push({ role: 'assistant', content: `⚠ Error: ${e.message}` });
+    aiHistory.push({ role: 'assistant', content: `ΓÜá∩╕Å Error: ${e.message}` });
   } finally {
     aiThinking = false;
     if (sendBtn) sendBtn.disabled = false;
@@ -3231,7 +3171,7 @@ function appendAIThinking() {
   const el = document.createElement('div');
   el.className = 'ai-msg assistant thinking';
   el.id = 'ai-thinking-indicator';
-  el.textContent = '🤔 Thinking…';
+  el.textContent = 'Γ£ª ThinkingΓÇª';
   container.appendChild(el);
   container.scrollTop = container.scrollHeight;
 }
@@ -3264,7 +3204,7 @@ function renderAISuggestions() {
   if (!container) return;
   const firstName = (currentAgent?.name || '').split(' ')[0] || 'there';
   container.innerHTML = `
-    <div style="font-size:12px;color:var(--text-muted);padding:8px 0 12px;">Hi ${firstName} — ask me anything about your contacts, pipeline, or sequences.</div>
+    <div style="font-size:12px;color:var(--text-muted);padding:8px 0 12px;">Hi ${firstName} ΓÇö ask me anything about your contacts, pipeline, or sequences.</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">
       ${AI_SUGGESTIONS.map(s => `<button class="ai-suggestion" onclick="sendAIMessage('${s.replace(/'/g, "\'")}')">${s}</button>`).join('')}
     </div>`;
@@ -3286,7 +3226,7 @@ function buildCRMContext() {
   const dealCount = deals ? deals.length : 0;
   const pipeline  = currentPipeline || 'all pipelines';
 
-  return `KFG CRM Context — Agent: ${currentAgent?.name || 'Unknown'} | ${new Date().toLocaleDateString()}
+  return `KFG CRM Context ΓÇö Agent: ${currentAgent?.name || 'Unknown'} | ${new Date().toLocaleDateString()}
 Contacts: ${total} total | ${indiv} Individual/Family | ${grp} Group/Employer | ${recruit} Recruit
 Sequence Status: ${active} Active | ${drip} Drip | ${replied} Replied | ${bounced} Bounced | ${optedOut} Opted-Out
 Sequence Progress: ${step1} sent Email 1 | ${step2} sent Email 2 | ${step3} sent Email 3
@@ -3304,10 +3244,10 @@ async function renderSettings() {
   const { data: fresh } = await supabaseClient.from('agents').select('*').eq('id', currentAgent.id).single();
   if (fresh) Object.assign(currentAgent, fresh);
 
-  const agencyName = currentAgent.agencies?.name || allAgencies.find(a => a.id === currentAgent.agency_id)?.name || '—';
+  const agencyName = currentAgent.agencies?.name || allAgencies.find(a => a.id === currentAgent.agency_id)?.name || 'ΓÇö';
 
   pg.innerHTML = `
-    <h2 class="section-title" style="margin-bottom:20px;">⚙ Settings</h2>
+    <h2 class="section-title" style="margin-bottom:20px;">ΓÜÖ∩╕Å Settings</h2>
     <div style="max-width:680px;">
 
       <div class="dash-card" style="margin-bottom:16px;">
@@ -3348,12 +3288,12 @@ async function renderSettings() {
         ${currentAgent.route ? `
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
           <input type="text" value="https://kannon-crm.vercel.app/book?agent=${currentAgent.route}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:12px;cursor:text;" />
-          <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/book?agent=${currentAgent.route}').then(()=>showToast('✓ Copied!'))"><i class="ti ti-copy"></i></button>
+          <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/book?agent=${currentAgent.route}').then(()=>showToast('Γ£ô Copied!'))"><i class="ti ti-copy"></i></button>
           <a href="https://kannon-crm.vercel.app/book?agent=${currentAgent.route}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
         </div>` : `<div style="font-size:12px;color:var(--text-muted);padding:10px;background:var(--surface-1);border-radius:6px;margin-bottom:10px;">No booking page route set. Contact your system admin to assign your agent route slug.</div>`}
         <div style="font-size:11px;color:var(--text-muted);line-height:1.6;">This link is automatically embedded in all outreach emails you send through the CRM. Prospects click it to see your available appointment types and request a booking.</div>
         <div style="margin-top:14px;border-top:0.5px solid var(--border);padding-top:14px;">
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">External Booking URL (optional override — e.g. Calendly)</label>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">External Booking URL (optional override ΓÇö e.g. Calendly)</label>
           <input type="url" id="s-booking-link" value="${currentAgent.booking_link||''}" placeholder="https://calendly.com/yourname" style="width:100%;box-sizing:border-box;" />
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Only fill this in if you prefer to use Calendly or another scheduler instead of the CRM booking page.</div>
         </div>
@@ -3364,7 +3304,7 @@ async function renderSettings() {
         <div class="action-item">
           <div class="action-item-info">
             <div class="action-item-name">Gmail Account</div>
-            <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — email sequences will not send'}</div>
+            <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected ΓÇö email sequences will not send'}</div>
           </div>
           ${currentAgent.gmail_connected
             ? `<span class="badge badge-active"><i class="ti ti-check"></i> Connected</span>`
@@ -3431,11 +3371,11 @@ async function saveSettings() {
   const ndEl = document.getElementById('user-name-display');
   if (ndEl) ndEl.textContent = currentAgent.name;
 
-  showToast('✓ Settings saved!');
+  showToast('Γ£ô Settings saved!');
 }
 
 // ============================================================
-// APPOINTMENTS — CALENDAR
+// APPOINTMENTS ΓÇö CALENDAR
 // ============================================================
 const CAL_STATUS = {
   pending:     { bg:'rgba(251,191,36,0.18)',  border:'#d97706', dot:'#d97706',  label:'Pending'     },
@@ -3514,7 +3454,7 @@ function _calRenderView() {
   else _calDay();
 }
 
-// ── MONTH VIEW ──
+// ΓöÇΓöÇ MONTH VIEW ΓöÇΓöÇ
 function _calMonth() {
   const titleEl = document.getElementById('cal-title');
   const body    = document.getElementById('cal-body');
@@ -3528,7 +3468,7 @@ function _calMonth() {
   const daysInMo  = new Date(yr,mo+1,0).getDate();
   const daysInPrev= new Date(yr,mo,0).getDate();
 
-  // Build lookup: dateKey → appointments
+  // Build lookup: dateKey ΓåÆ appointments
   const byDate = {};
   calAppointments.forEach(a => {
     if (!a.scheduled_at) return;
@@ -3584,7 +3524,7 @@ function _calMonth() {
     </div>`;
 }
 
-// ── WEEK VIEW ──
+// ΓöÇΓöÇ WEEK VIEW ΓöÇΓöÇ
 function _calWeek() {
   const titleEl = document.getElementById('cal-title');
   const body    = document.getElementById('cal-body');
@@ -3598,7 +3538,7 @@ function _calWeek() {
   const today = _calTodayKey();
   const startStr = weekDays[0].toLocaleDateString('en-US',{month:'short',day:'numeric'});
   const endStr   = weekDays[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  titleEl.textContent = `${startStr} — ${endStr}`;
+  titleEl.textContent = `${startStr} ΓÇö ${endStr}`;
 
   const byDate = {};
   calAppointments.forEach(a => {
@@ -3608,7 +3548,7 @@ function _calWeek() {
     byDate[k].push(a);
   });
 
-  const HOURS = Array.from({length:14},(_,i)=>i+7); // 7am–8pm
+  const HOURS = Array.from({length:14},(_,i)=>i+7); // 7amΓÇô8pm
 
   const cols = weekDays.map(wd => {
     const dk = _calDateKey(wd);
@@ -3659,7 +3599,7 @@ function _calWeek() {
     </div>`;
 }
 
-// ── DAY VIEW ──
+// ΓöÇΓöÇ DAY VIEW ΓöÇΓöÇ
 function _calDay() {
   const titleEl = document.getElementById('cal-title');
   const body    = document.getElementById('cal-body');
@@ -3683,7 +3623,7 @@ function _calDay() {
     const agentRow = allAgents.find(x=>x.id===a.agent_id);
     return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:4px;right:4px;top:${top}px;height:58px;background:${st.bg};border-left:4px solid ${st.border};border-radius:6px;padding:5px 10px;cursor:pointer;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}</div>
-      <div style="font-size:11px;color:var(--text-muted);">${timeStr}  |  ${a.appointment_label||a.appointment_type||'Appointment'}</div>
+      <div style="font-size:11px;color:var(--text-muted);">${timeStr} ┬╖ ${a.appointment_label||a.appointment_type||'Appointment'}</div>
       ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
     </div>`;
   }).join('');
@@ -3698,7 +3638,7 @@ function _calDay() {
   body.innerHTML = `
     <div style="border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
       <div style="padding:10px 16px;background:${isToday?'rgba(200,168,75,0.08)':'var(--surface-1)'};border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:13px;font-weight:600;color:${isToday?'var(--text-accent)':'var(--text-primary)'};">${isToday?'Today — ':''}${calDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
+        <div style="font-size:13px;font-weight:600;color:${isToday?'var(--text-accent)':'var(--text-primary)'};">${isToday?'Today ΓÇö ':''}${calDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
         <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointment${dayAppts.length!==1?'s':''}</div>
       </div>
       <div style="display:flex;">
@@ -3720,35 +3660,35 @@ function _calPending() {
   el.innerHTML = `
     <div style="background:rgba(251,191,36,0.05);border:0.5px solid rgba(217,119,6,0.3);border-radius:10px;padding:10px 14px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;">⚠ Needs Attention</span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;">ΓÅ│ Needs Attention</span>
         <span style="background:rgba(217,119,6,0.18);color:#b45309;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">${unscheduled.length}</span>
       </div>
       <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;">
         ${unscheduled.map(a => {
-          const name = a.booker_name||a.contact_name||'—';
+          const name = a.booker_name||a.contact_name||'ΓÇö';
           const received = new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
           // Status badge
-          let badge = '', borderColor = '#d97706', btnLabel = '📋 Schedule';
+          let badge = '', borderColor = '#d97706', btnLabel = '≡ƒôà Schedule';
           if (a.status === 'rescheduled' && a.rescheduled_by === 'agent') {
-            badge = `<div style="font-size:10px;background:rgba(234,179,8,0.15);color:#b45309;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">⚠ Awaiting prospect confirm</div>`;
-            borderColor = '#d97706'; btnLabel = '📋 Update';
+            badge = `<div style="font-size:10px;background:rgba(234,179,8,0.15);color:#b45309;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">ΓÅ│ Awaiting prospect confirm</div>`;
+            borderColor = '#d97706'; btnLabel = '≡ƒôà Update';
           } else if (a.status === 'rescheduled' && a.rescheduled_by === 'prospect') {
-            badge = `<div style="font-size:10px;background:rgba(139,92,246,0.15);color:#7c3aed;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">🔄 Prospect requested reschedule</div>`;
-            borderColor = '#8b5cf6'; btnLabel = '📋 New Time';
+            badge = `<div style="font-size:10px;background:rgba(139,92,246,0.15);color:#7c3aed;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">≡ƒöä Prospect requested reschedule</div>`;
+            borderColor = '#8b5cf6'; btnLabel = '≡ƒôà New Time';
           }
           // Show proposed time if rescheduled
           const proposedTime = a.scheduled_at && a.status === 'rescheduled'
-            ? `<div style="font-size:11px;color:var(--text-primary);font-weight:500;margin-bottom:5px;">📅 ${new Date(a.scheduled_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>`
+            ? `<div style="font-size:11px;color:var(--text-primary);font-weight:500;margin-bottom:5px;">≡ƒùô ${new Date(a.scheduled_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>`
             : '';
           return `<div style="flex-shrink:0;width:230px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid ${borderColor};border-radius:8px;padding:9px 11px;">
             ${badge}
             <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:1px;">${name}</div>
             ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label||a.appointment_type||'Appointment'}  |  ${received}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label||a.appointment_type||'Appointment'} ┬╖ ${received}</div>
             ${proposedTime}
             <div style="display:flex;gap:4px;">
               <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">${btnLabel}</button>
-              <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">✕</button>
+              <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">Γ£ò</button>
             </div>
           </div>`;
         }).join('')}
@@ -3756,7 +3696,7 @@ function _calPending() {
     </div>`;
 }
 
-// ── NAVIGATION ──
+// ΓöÇΓöÇ NAVIGATION ΓöÇΓöÇ
 function calNav(dir) {
   const d = new Date(calDate);
   if (calView === 'month') { d.setMonth(d.getMonth() + dir); }
@@ -3769,13 +3709,13 @@ function calGoToday() { calDate = new Date(); _calRenderView(); }
 function calSwitchView(v) { calView = v; _calRenderView(); }
 function calDayClick(dateStr) { calDate = new Date(dateStr+'T12:00:00'); calSwitchView('day'); }
 
-// ── APPOINTMENT DETAIL MODAL ──
+// ΓöÇΓöÇ APPOINTMENT DETAIL MODAL ΓöÇΓöÇ
 function apptDetail(id) {
   const a = calAppointments.find(x=>x.id===id);
   if (!a) return;
   const st = _calStatus(a.status);
   const agentRow = allAgents.find(x=>x.id===a.agent_id);
-  const name = a.booker_name||a.contact_name||'—';
+  const name = a.booker_name||a.contact_name||'ΓÇö';
   const dtStr = a.scheduled_at ? new Date(a.scheduled_at).toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not scheduled';
   showModal(name, `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
@@ -3791,19 +3731,19 @@ function apptDetail(id) {
       ${a.agent_notes?`<div><span style="color:var(--text-muted);">Internal notes:</span> ${a.agent_notes}</div>`:''}
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;">
-      ${a.status!=='scheduled'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptSchedule('${id}')">📋 Schedule</button>`:''}
-      ${a.status!=='completed'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptComplete('${id}')">✓ Complete</button>`:''}
-      <button class="btn btn-outline btn-sm" onclick="closeModal();apptReschedule('${id}')">↺ Reschedule</button>
-      ${a.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">✕ Cancel</button>`:''}
+      ${a.status!=='scheduled'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptSchedule('${id}')">≡ƒôà Schedule</button>`:''}
+      ${a.status!=='completed'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptComplete('${id}')">Γ£ô Complete</button>`:''}
+      <button class="btn btn-outline btn-sm" onclick="closeModal();apptReschedule('${id}')">Γå║ Reschedule</button>
+      ${a.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">Γ£ò Cancel</button>`:''}
     </div>
   `, null);
 }
 
-// ── CRUD ACTIONS (update + refresh calendar) ──
+// ΓöÇΓöÇ CRUD ACTIONS (update + refresh calendar) ΓöÇΓöÇ
 async function apptSchedule(id) {
   const appt = calAppointments.find(a=>a.id===id);
   const name  = appt ? (appt.booker_name||appt.contact_name||'this appointment') : 'this appointment';
-  // Best-effort email: linked contact record → booker_email → empty
+  // Best-effort email: linked contact record ΓåÆ booker_email ΓåÆ empty
   let bestEmail = appt?.booker_email || '';
   if (appt?.contact_id) {
     const linked = contacts.find(c => c.id === appt.contact_id);
@@ -3826,7 +3766,7 @@ async function apptSchedule(id) {
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <input type="radio" name="sched-type" value="confirm" checked
             onchange="document.getElementById('sched-lbl-confirm').style.borderColor='var(--accent)';document.getElementById('sched-lbl-propose').style.borderColor='var(--border)';document.getElementById('sched-dt').disabled=true;document.getElementById('sched-dt-row').style.opacity='0.45';" />
-          <span style="font-size:12px;font-weight:600;">✓ Confirm this time</span>
+          <span style="font-size:12px;font-weight:600;">Γ£à Confirm this time</span>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Lock the time &amp; send confirmation email</div>
       </label>
@@ -3834,7 +3774,7 @@ async function apptSchedule(id) {
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <input type="radio" name="sched-type" value="propose"
             onchange="document.getElementById('sched-lbl-propose').style.borderColor='var(--accent)';document.getElementById('sched-lbl-confirm').style.borderColor='var(--border)';document.getElementById('sched-dt').disabled=false;document.getElementById('sched-dt-row').style.opacity='1';" />
-          <span style="font-size:12px;font-weight:600;">📧 Propose new time</span>
+          <span style="font-size:12px;font-weight:600;">≡ƒôº Propose new time</span>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Pick a new time &amp; ask prospect to confirm</div>
       </label>
@@ -3842,7 +3782,7 @@ async function apptSchedule(id) {
     <label>Prospect Email <span style="color:var(--danger);">*</span></label>
     <input type="email" id="sched-email" value="${bestEmail}" placeholder="prospect@email.com" style="width:100%;box-sizing:border-box;" />
     <div id="sched-dt-row" style="opacity:0.45;transition:opacity .2s;">
-      <label style="margin-top:12px;display:block;">Date &amp; Time <span style="font-size:11px;color:var(--text-muted);">(locked — switch to Propose to change)</span></label>
+      <label style="margin-top:12px;display:block;">Date &amp; Time <span style="font-size:11px;color:var(--text-muted);">(locked ΓÇö switch to Propose to change)</span></label>
       <input type="datetime-local" id="sched-dt" value="${defaultDt}" disabled style="width:100%;box-sizing:border-box;" />
     </div>
     <label style="margin-top:12px;">Notes to prospect (optional)</label>
@@ -3877,7 +3817,7 @@ async function apptSchedule(id) {
       if (notes) url.searchParams.set('notes', notes);
       fetch(url.toString()); // non-blocking
     } catch(_) {}
-    showToast(isPropose ? '📧 Reschedule proposal sent!' : '📋 Appointment confirmed!');
+    showToast(isPropose ? '≡ƒôº Reschedule proposal sent!' : '≡ƒôà Appointment confirmed!');
     const idx = calAppointments.findIndex(a => a.id === id);
     if (idx >= 0) Object.assign(calAppointments[idx], updates);
     calDate = parsed;
@@ -3889,7 +3829,7 @@ async function apptComplete(id) {
   const notes = prompt('Completion notes (optional):') || null;
   const { error } = await supabaseClient.from('booking_intents').update({ status:'completed', completed_at:new Date().toISOString(), agent_notes:notes }).eq('id',id);
   if (error) { showToast('Error: '+error.message); return; }
-  showToast('✓ Complete!');
+  showToast('Γ£à Complete!');
   const idx = calAppointments.findIndex(a=>a.id===id);
   if (idx>=0) { calAppointments[idx].status='completed'; calAppointments[idx].agent_notes=notes; }
   _calRenderView();
@@ -3949,12 +3889,13 @@ async function apptReschedule(id) {
         if (notesVal) url.searchParams.set('notes', notesVal);
         fetch(url.toString());
       } catch(_) {}
-      showToast('↺ Reschedule proposed to prospect');
+      showToast('📧 Reschedule proposal sent to prospect!');
       const idx = calAppointments.findIndex(a=>a.id===id);
       if (idx>=0) {
         calAppointments[idx].status='rescheduled';
         calAppointments[idx].rescheduled_by='agent';
         calAppointments[idx].agent_notes=notesVal;
+        calAppointments[idx].booker_email=toEmail;
         if (dtVal) calAppointments[idx].scheduled_at=new Date(dtVal).toISOString();
       }
       _calRenderView();
@@ -3980,10 +3921,10 @@ async function apptCancel(id) {
 }
 
 async function apptLog() {
-  const contactOptions = contacts.map(c=>`<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
+  const contactOptions = contacts.map(c=>`<option value="${c.id}">${c.name} ΓÇö ${c.company||c.email||''}</option>`).join('');
   showModal('Log Appointment', `
     <label>Contact</label>
-    <select id="appt-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <select id="appt-contact"><option value="">ΓÇö No contact ΓÇö</option>${contactOptions}</select>
     <label>Appointment Type</label>
     <input type="text" id="appt-type" placeholder="e.g. Discovery Call, Benefits Review..." />
     <label>Date &amp; Time</label>
@@ -4008,9 +3949,8 @@ async function apptLog() {
     const { data, error } = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
     if (error) { showToast('Error: '+error.message); return false; }
     calAppointments.push(data);
-    // Jump calendar to the appointment date if scheduled
     if (dt) { calDate = new Date(dt); calView = calDate.toDateString()===new Date().toDateString()?calView:'month'; }
-    showToast('✓ Appointment added!');
+    showToast('\u2713 Appointment added!');
     _calRenderView();
   });
 }
@@ -4042,33 +3982,20 @@ async function transferContact(contactId) {
     <label>Transfer to Agent</label>
     <select id="xfer-agent">${agentOptions}</select>
     <label style="margin-top:12px;">Note for the receiving agent (optional)</label>
-    <textarea id="xfer-note" placeholder="Context about this contact, why you're transferring, next steps..."></textarea>
+    <textarea id="xfer-note" placeholder="Context about this contact, why you are transferring, next steps..."></textarea>
   `, async () => {
     const newAgentId = document.getElementById('xfer-agent').value;
     if (!newAgentId) { showToast('Select an agent'); return false; }
     const newAgent = eligible.find(a => a.id === newAgentId);
     const note = document.getElementById('xfer-note').value.trim();
-
     const updates = { agent_id: newAgentId };
-    // Include note in contact notes field so it's visible to the new owner
     if (note) {
-      const existingNotes = contact.notes ? contact.notes + '\n\n' : '';
-      updates.notes = existingNotes + `[Transferred from ${currentAgent.name} on ${new Date().toLocaleDateString()}] ${note}`;
+      const existing = contact.notes || '';
+      updates.notes = existing ? existing + '\n\nTransfer note: ' + note : 'Transfer note: ' + note;
     }
-
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
-    if (error) { showToast('Error: ' + error.message); return false; }
-
-    // Update local state
+    if (error) { showToast('Error: '+error.message); return false; }
     const idx = contacts.findIndex(c => c.id === contactId);
-    if (idx >= 0) Object.assign(contacts[idx], updates);
-
-    showToast(`✓ Contact transferred to ${newAgent?.name || 'agent'}`);
-    renderContacts();
-  });
-}
-
-// ============================================================
-// STARTUP
-// ============================================================
-init();
+    if (idx >= 0) contacts.splice(idx, 1);
+    showToast(`\u2713 ${contact.name} transferred to ${newAgent?.name || 'agent'}`);
+    renderContac
