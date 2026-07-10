@@ -559,7 +559,7 @@ function renderDashboardAgency() {
 
   el.innerHTML = `
     <div class="dash-header">
-      <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr} &nbsp;┬╖&nbsp; <span style="color:var(--text-muted);">${agencyName}</span></div></div>
+      <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr} &nbsp; | &nbsp; <span style="color:var(--text-muted);">${agencyName}</span></div></div>
       <div style="display:flex;gap:6px;">
         <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
         <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add Lead</button>
@@ -2447,7 +2447,7 @@ async function renderContacts() {
 
   const shown_count = (shown || []).length;
   const countLabel = hasNext
-    ? `Showing ${offset + 1}–${offset + shown_count} ┬╖ more on next page`
+    ? `Showing ${offset + 1}–${offset + shown_count}  |  more on next page`
     : `${offset + shown_count} contact${offset + shown_count !== 1 ? 's' : ''}${(contactPage || 0) > 0 ? ` (page ${(contactPage || 0) + 1})` : ''}`;
 
   document.getElementById('contacts-count').textContent = countLabel;
@@ -3650,7 +3650,7 @@ function _calDay() {
     const agentRow = allAgents.find(x=>x.id===a.agent_id);
     return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:4px;right:4px;top:${top}px;height:58px;background:${st.bg};border-left:4px solid ${st.border};border-radius:6px;padding:5px 10px;cursor:pointer;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}</div>
-      <div style="font-size:11px;color:var(--text-muted);">${timeStr} ┬╖ ${a.appointment_label||a.appointment_type||'Appointment'}</div>
+      <div style="font-size:11px;color:var(--text-muted);">${timeStr}  |  ${a.appointment_label||a.appointment_type||'Appointment'}</div>
       ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
     </div>`;
   }).join('');
@@ -3711,7 +3711,7 @@ function _calPending() {
             ${badge}
             <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:1px;">${name}</div>
             ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label||a.appointment_type||'Appointment'} ┬╖ ${received}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label||a.appointment_type||'Appointment'}  |  ${received}</div>
             ${proposedTime}
             <div style="display:flex;gap:4px;">
               <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">${btnLabel}</button>
