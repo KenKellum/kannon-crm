@@ -30,6 +30,7 @@ let allCompanies = [];
 let contacts = [];
 let deals = [];
 let dealActivities = [];
+let dealTasks = [];
 let draggedDeal = null;
 let currentPipeline = 'group-employer';
 let contactSearch = '';
@@ -376,6 +377,8 @@ async function loadData() {
   // system_owner: no filter
   const { count: trueCount } = await cntQ;
   totalContactCountFull = trueCount || 0;
+  const { data: taskData } = await supabaseClient.from('deal_tasks').select('*').eq('user_id', currentUser.id).order('due_date', { ascending: true });
+  dealTasks = taskData || [];
 }
 
 // ============================================================
@@ -732,6 +735,10 @@ function renderDashboardAgent() {
         <div class="dash-card">
           ${_ctitle('ti-mail-opened', 'Outreach sequence')}
           ${_seqTable(contacts, totalContacts)}
+        </div>
+
+        <div class="dash-card">
+          ${renderTasksWidget()}
         </div>
 
         <div class="dash-card">
@@ -2202,6 +2209,233 @@ async function saveDealActivity(dealId) {
   showToast('&#10003; Activity logged!');
 }
 
+// ── Stage-aware quick actions ─────────────────────────────────────────────────
+function getStageActions(pipeline, stage) {
+  var m = {
+    'group-employer': {
+      'New Lead':   ['Request Employee Census','Schedule Discovery Call','Send Company Overview'],
+      'Contacted':  ['Follow Up on Interest','Schedule Discovery Call','Request Meeting'],
+      'Responded':  ['Send Group Quote','Schedule Benefit Presentation','Request Signed Census'],
+      'Proposal':   ['Follow Up on Proposal','Answer Benefit Questions','Request Decision Date'],
+      'Closing':    ['Send Group Application','Schedule Enrollment Meeting','Confirm Effective Date'],
+      'Won':        ['Set Annual Renewal Reminder','Request Employer Referrals','Plan Renewal Strategy']
+    },
+    'individual-family': {
+      'New Lead':   ['Schedule Needs Analysis','Send Plan Overview','Verify Coverage Needs'],
+      'Contacted':  ['Follow Up with Plan Options','Schedule Call','Confirm Best Time to Talk'],
+      'Responded':  ['Send Individual Quote','Compare Plan Options','Schedule Enrollment Call'],
+      'Proposal':   ['Follow Up on Quote','Answer Plan Questions','Request Enrollment Decision'],
+      'Closing':    ['Complete Application','Confirm Coverage Start Date','Submit Application'],
+      'Won':        ['Set Renewal Reminder','Request Referrals','Confirm Coverage Active']
+    },
+    'agent-insured': {
+      'New Lead':    ['Schedule Recruiting Call','Send Agent Overview','Check License Status'],
+      'Interested':  ['Schedule Recruiting Call','Send Company Overview','Check License Status'],
+      'Meeting Set': ['Prepare Recruiting Packet','Send Contracting Docs','Answer Questions'],
+      'Contracting': ['Follow Up on Contract','Verify Appointment','Check E&O Insurance'],
+      'Active':      ['Check First Month Production','Offer Product Training','Schedule Check-in'],
+      'Won':         ['Set Production Review','Offer Advanced Training','Request Agent Referrals']
+    },
+    'agent-kannon': {
+      'New Lead':    ['Schedule Recruiting Call','Send Kannon Overview','Discuss Opportunity'],
+      'Interested':  ['Schedule Recruiting Call','Send Kannon Overview','Discuss Opportunity'],
+      'Meeting Set': ['Prepare Offer Package','Send Contracting Docs','Answer Questions'],
+      'Contracting': ['Follow Up on Contract','Verify License Transfer','Complete Onboarding'],
+      'Active':      ['Check First Month Production','Offer Training','Schedule Team Meeting'],
+      'Won':         ['Set Production Review','Introduce to Team','Plan Growth Strategy']
+    }
+  };
+  return (m[pipeline] && m[pipeline][stage]) || ['Follow Up','Schedule Call','Log Activity'];
+}
+
+// ── Deal task UI helpers ──────────────────────────────────────────────────────
+function renderDealTaskList(dealId) {
+  var tasks = dealTasks.filter(function(t) { return t.deal_id === dealId; });
+  if (!tasks.length) {
+    return '<div style="color:var(--text-muted);font-size:12px;padding:6px 0;">No tasks yet — add one below or use Quick Actions above</div>';
+  }
+  var open = tasks.filter(function(t) { return !t.completed; });
+  var done = tasks.filter(function(t) { return t.completed;  });
+  var html = '';
+  open.forEach(function(t) {
+    var today   = new Date().toISOString().slice(0, 10);
+    var overdue = t.due_date && t.due_date < today;
+    html += '<div class="task-item">'
+      + '<input type="checkbox" onchange="toggleDealTask(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;,true)" />'
+      + '<span class="task-title">' + (t.title || '') + '</span>'
+      + (t.due_date ? '<span class="task-due-date" style="color:' + (overdue ? '#ef4444' : 'var(--text-muted)') + '">' + t.due_date + '</span>' : '')
+      + '<button class="task-del-btn" onclick="deleteDealTaskItem(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;)" title="Remove task">&#215;</button>'
+      + '</div>';
+  });
+  if (done.length) {
+    html += '<details style="margin-top:6px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;list-style:none;">&#9654; Done (' + done.length + ')</summary>';
+    done.forEach(function(t) {
+      html += '<div class="task-item">'
+        + '<input type="checkbox" checked onchange="toggleDealTask(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;,false)" />'
+        + '<span class="task-title" style="text-decoration:line-through;opacity:0.45;">' + (t.title || '') + '</span>'
+        + '<button class="task-del-btn" onclick="deleteDealTaskItem(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;)">&#215;</button>'
+        + '</div>';
+    });
+    html += '</details>';
+  }
+  return html;
+}
+
+// Dashboard widget — returns a full dash-card HTML string
+function renderTasksWidget() {
+  var today    = new Date().toISOString().slice(0, 10);
+  var open     = dealTasks.filter(function(t) { return !t.completed; });
+  var overdue  = open.filter(function(t) { return t.due_date && t.due_date < today; });
+  var dueToday = open.filter(function(t) { return t.due_date === today; });
+  var upcoming = open.filter(function(t) { return t.due_date && t.due_date > today; });
+  var showList = overdue.concat(dueToday).concat(upcoming).slice(0, 5);
+  var badge    = open.length
+    ? ' <span style="background:rgba(99,102,241,0.15);color:#818cf8;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + open.length + '</span>'
+    : '';
+  var header = _ctitle('ti-checks', 'My Tasks' + badge);
+  if (!showList.length) {
+    return '<div class="dash-card">' + header
+      + '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;">'
+      + '<i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:4px;color:var(--text-success);"></i>'
+      + 'No open tasks — all caught up!</div>'
+      + '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage(\'pipelines\')">View Pipelines &rarr;</button></div>'
+      + '</div>';
+  }
+  var rows = showList.map(function(t) {
+    var deal    = deals.find(function(d) { return d.id === t.deal_id; });
+    var isOver  = t.due_date && t.due_date < today;
+    var isToday = t.due_date === today;
+    var dueLbl  = t.due_date
+      ? (isOver  ? '<span style="color:#ef4444;">Overdue: ' + t.due_date + '</span>'
+                 : isToday ? '<span style="color:#f59e0b;">Due today</span>'
+                 : t.due_date)
+      : '';
+    return '<div class="action-item" style="padding:6px 0;">'
+      + '<div class="action-item-info">'
+      + '<div class="action-item-name" style="font-size:12px;">' + (t.title || '') + '</div>'
+      + '<div class="action-item-sub">' + (deal ? deal.title : 'Pipeline deal')
+      + (dueLbl ? ' &bull; ' + dueLbl : '') + '</div></div>'
+      + '<button class="btn btn-outline btn-sm" onclick="openDealPanel(&#39;' + t.deal_id + '&#39;)">Open</button>'
+      + '</div>';
+  }).join('');
+  return '<div class="dash-card">' + header + rows
+    + (open.length > 5
+      ? '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage(\'pipelines\')">' + open.length + ' tasks total &rarr;</button></div>'
+      : '')
+    + '</div>';
+}
+
+// ── Deal task CRUD ────────────────────────────────────────────────────────────
+async function quickAddTask(dealId, title) {
+  var ins = await supabaseClient.from('deal_tasks')
+    .insert({ deal_id: dealId, user_id: currentUser.id, title: title, completed: false })
+    .select().single();
+  if (ins.error) { showToast('Error: ' + ins.error.message); return; }
+  dealTasks.push(ins.data);
+  var el = document.getElementById('task-list-' + dealId);
+  if (el) el.innerHTML = renderDealTaskList(dealId);
+  showToast('Task added: ' + title);
+}
+
+async function addDealTaskFromInput(dealId) {
+  var inp    = document.getElementById('task-input-' + dealId);
+  var dateEl = document.getElementById('task-date-' + dealId);
+  if (!inp || !inp.value.trim()) return;
+  var title = inp.value.trim();
+  var due   = dateEl && dateEl.value ? dateEl.value : null;
+  var ins = await supabaseClient.from('deal_tasks')
+    .insert({ deal_id: dealId, user_id: currentUser.id, title: title, due_date: due, completed: false })
+    .select().single();
+  if (ins.error) { showToast('Error: ' + ins.error.message); return; }
+  dealTasks.push(ins.data);
+  inp.value = '';
+  if (dateEl) dateEl.value = '';
+  var el = document.getElementById('task-list-' + dealId);
+  if (el) el.innerHTML = renderDealTaskList(dealId);
+  showToast('Task added');
+}
+
+async function toggleDealTask(taskId, dealId, done) {
+  var upd = done
+    ? { completed: true,  completed_at: new Date().toISOString() }
+    : { completed: false, completed_at: null };
+  var { error } = await supabaseClient.from('deal_tasks').update(upd).eq('id', taskId);
+  if (error) { showToast('Error: ' + error.message); return; }
+  var t = dealTasks.find(function(x) { return x.id === taskId; });
+  if (t) { t.completed = done; t.completed_at = done ? new Date().toISOString() : null; }
+  var el = document.getElementById('task-list-' + dealId);
+  if (el) el.innerHTML = renderDealTaskList(dealId);
+}
+
+async function deleteDealTaskItem(taskId, dealId) {
+  var { error } = await supabaseClient.from('deal_tasks').delete().eq('id', taskId);
+  if (error) { showToast('Error: ' + error.message); return; }
+  dealTasks = dealTasks.filter(function(x) { return x.id !== taskId; });
+  var el = document.getElementById('task-list-' + dealId);
+  if (el) el.innerHTML = renderDealTaskList(dealId);
+}
+
+// ── Send email from deal panel ────────────────────────────────────────────────
+function openDealEmailModal(dealId) {
+  var deal    = deals.find(function(d) { return d.id === dealId; });
+  var contact = deal && deal.contact_id ? contacts.find(function(c) { return c.id === deal.contact_id; }) : null;
+  var aName   = currentAgent ? (currentAgent.name  || '') : '';
+  var aPhone  = currentAgent ? (currentAgent.phone || '') : '';
+  var aEmail  = currentAgent ? (currentAgent.email || '') : '';
+  var toEmail = contact && contact.email ? contact.email : '';
+  var toName  = contact ? (contact.name  || '') : '';
+  var dTitle  = deal    ? (deal.title    || '') : '';
+  var sig     = aName + (aPhone ? '\n' + aPhone : '') + (aEmail ? '\n' + aEmail : '');
+  var defBody = 'Hi ' + toName + ',\n\nI wanted to follow up regarding ' + dTitle + '.\n\nPlease don\'t hesitate to reach out with any questions or to schedule a time to connect.\n\nBest regards,\n' + sig;
+  showModal('Send Email',
+    '<div style="display:flex;flex-direction:column;gap:10px;">'
+    + '<div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);display:block;margin-bottom:3px;">To</label>'
+    + '<input type="text" id="em-to" value="' + toEmail + '" placeholder="recipient@email.com" /></div>'
+    + '<div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);display:block;margin-bottom:3px;">Subject</label>'
+    + '<input type="text" id="em-subj" value="Following up — ' + dTitle + '" /></div>'
+    + '<div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);display:block;margin-bottom:3px;">Message</label>'
+    + '<textarea id="em-body" rows="10" style="width:100%;resize:vertical;background:var(--surface-1);border:0.5px solid var(--border);color:var(--text-primary);border-radius:var(--radius);padding:8px;font-family:inherit;font-size:13px;box-sizing:border-box;">' + defBody + '</textarea></div>'
+    + '</div>',
+    async function() {
+      var to   = (document.getElementById('em-to')   || {}).value || '';
+      var subj = (document.getElementById('em-subj') || {}).value || '';
+      var body = (document.getElementById('em-body') || {}).value || '';
+      to = to.trim(); subj = subj.trim();
+      if (!to || !subj) { showToast('To and Subject are required'); return false; }
+      await sendDealEmail(dealId, to, subj, body);
+      return false;
+    },
+    { confirmLabel: '&#9993; Send Email' }
+  );
+}
+
+async function sendDealEmail(dealId, to, subj, body) {
+  closeModal();
+  showToast('Sending...');
+  try {
+    var sess  = await supabaseClient.auth.getSession();
+    var token = sess.data.session ? sess.data.session.access_token : '';
+    var res   = await fetch(SUPABASE_URL + '/functions/v1/send-deal-email', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body:    JSON.stringify({ deal_id: dealId, to: to, subject: subj,
+                                body: body.replace(/\n/g, '<br>'), agent_id: currentUser.id })
+    });
+    var result = await res.json();
+    if (!res.ok || result.error) { showToast('Error: ' + (result.error || 'Send failed')); return; }
+    dealActivities.unshift({
+      deal_id: dealId, agent_id: currentUser.id, type: 'email',
+      content: 'Email sent to ' + to + ': ' + subj, created_at: new Date().toISOString()
+    });
+    var tl = document.getElementById('timeline-' + dealId);
+    if (tl) tl.innerHTML = renderActivityTimeline(dealId);
+    showToast('&#9993; Email sent!');
+  } catch(e) {
+    showToast('Send failed: ' + e.message);
+  }
+}
+
+
 function openDealPanel(dealId) {
   const deal    = deals.find(d => d.id === dealId); if (!deal) return;
   const contact = contacts.find(c => c.id === deal.contact_id);
@@ -2261,6 +2495,21 @@ function openDealPanel(dealId) {
     + '<div class="deal-field"><div class="deal-field-label">Expected Close</div><div class="deal-field-value' + (deal.close_date ? '' : ' empty') + '">' + (fmtDate(deal.close_date) || 'Not set') + '</div></div>'
     + '</div>' + nextStepHTML + '</div>'
     + healthHTML
+    + '<div class="panel-section" style="padding-top:0;">'
+    + '<div class="panel-label">Quick Actions</div>'
+    + '<div class="quick-action-grid">'
+    + getStageActions(deal.pipeline, deal.stage).map(function(a){
+        return '<button class="quick-action-btn" onclick="quickAddTask(&#39;' + dealId + '&#39;,&#39;' + a + '&#39;)">&#43; ' + a + '</button>';
+      }).join('')
+    + '</div></div>'
+    + '<div class="panel-section">'
+    + '<div class="panel-label">Tasks <span id="task-count-' + dealId + '" style="font-size:11px;color:var(--text-muted);"></span></div>'
+    + '<div id="task-list-' + dealId + '">' + renderDealTaskList(dealId) + '</div>'
+    + '<div class="task-add-row">'
+    + '<input type="text" id="task-input-' + dealId + '" placeholder="Add a task..." onkeydown="if(event.key===&#39;Enter&#39;)addDealTaskFromInput(&#39;' + dealId + '&#39;)" />'
+    + '<input type="date" id="task-date-' + dealId + '" />'
+    + '<button class="btn btn-primary btn-sm" onclick="addDealTaskFromInput(&#39;' + dealId + '&#39;)">Add</button>'
+    + '</div></div>'
     + '<div class="panel-section"><div class="panel-label">Activity Log</div>'
     + '<div class="activity-log-form">'
     + '<select id="act-type-' + dealId + '"><option value="note">&#128221; Note</option><option value="call">&#128222; Call</option><option value="email">&#9993; Email</option></select>'
@@ -2274,6 +2523,7 @@ function openDealPanel(dealId) {
     + '<div class="panel-footer">'
     + '<button class="btn btn-outline" onclick="closeDealPanel()">Close</button>'
     + footerContact
+    + '<button class="btn btn-outline btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border-color:rgba(59,130,246,0.3);" onclick="openDealEmailModal(&#39;' + dealId + '&#39;)">&#9993; Email</button>'
     + '<button class="btn btn-danger btn-sm" onclick="closeDealPanel();deleteDeal(&#39;' + dealId + '&#39;)">Delete</button>'
     + '<button class="btn btn-primary" onclick="closeDealPanel();editDeal(&#39;' + dealId + '&#39;)">&#9999;&#65039; Edit Deal</button>'
     + '</div>';

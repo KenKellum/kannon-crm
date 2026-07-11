@@ -224,6 +224,20 @@
     /* DEAL PANEL */
     #deal-panel { position: fixed; right: -540px; top: 0; width: 540px; height: 100vh; background: var(--surface-1); z-index: 300; box-shadow: -4px 0 32px rgba(0,0,0,0.5); transition: right 0.3s cubic-bezier(.4,0,.2,1); display: flex; flex-direction: column; overflow: hidden; border-left: 0.5px solid var(--border); }
     #deal-panel.open { right: 0; }
+    /* Quick actions + deal tasks */
+    .quick-action-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .quick-action-btn { font-size: 11px; padding: 4px 12px; background: var(--surface-2); border: 0.5px solid var(--border); color: var(--text-secondary); border-radius: 14px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .quick-action-btn:hover { background: rgba(99,102,241,0.15); color: var(--text-accent); border-color: rgba(99,102,241,0.3); }
+    .task-item { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid var(--border); }
+    .task-item:last-child { border-bottom: none; }
+    .task-item input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--fill-accent); flex-shrink: 0; }
+    .task-title { flex: 1; font-size: 13px; color: var(--text-primary); }
+    .task-due-date { font-size: 11px; white-space: nowrap; }
+    .task-del-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 3px; line-height: 1; }
+    .task-del-btn:hover { color: #ef4444; }
+    .task-add-row { display: flex; gap: 6px; margin-top: 10px; align-items: center; }
+    .task-add-row input[type="text"] { flex: 1; }
+    .task-add-row input[type="date"] { width: 130px; }
     /* Contact search dropdown */
     .csd-wrap { position: relative; }
     .csd-input { width: 100%; }
