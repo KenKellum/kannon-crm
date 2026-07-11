@@ -4578,13 +4578,32 @@ function apptDetail(id) {
   }
   const editLabel = (a.appointment_label||'').replace(/"/g,'&quot;');
   const editType  = (a.appointment_type||'').replace(/"/g,'&quot;');
-  const durOpts = [15,20,30,45,60,90,120].map(m => {
-    const lbl = m===60?'1 hour':m===90?'1 hr 30 min':m===120?'2 hours':m+' min';
-    return `<option value="${m}"${a.duration_minutes===m?' selected':''}>${lbl}</option>`;
-  }).join('') + `<option value="allday"${isAllDayAppt?' selected':''}>All Day</option>`;
+  // Duration options — match apptLog exactly (no 20 min; full label text)
+  const _dm = a.duration_minutes;
+  const durOpts = [
+    {v:15,l:'15 minutes'},{v:30,l:'30 minutes'},{v:45,l:'45 minutes'},
+    {v:60,l:'1 hour'},{v:90,l:'1 hour 30 minutes'},{v:120,l:'2 hours'}
+  ].map(o=>`<option value="${o.v}"${_dm===o.v?' selected':''}>${o.l}</option>`).join('')
+   + `<option value="allday"${isAllDayAppt?' selected':''}>All Day</option>`;
   const title = isPersonal
     ? (a.appointment_label||'Personal Block')
     : (a.booker_name||a.contact_name||'Appointment');
+  // apptDurationChange defined here so it works even if apptLog() hasn't run yet.
+  // Restores original appointment time when switching allday → timed.
+  const _origTime = defaultDt ? defaultDt.split('T')[1] : '09:00';
+  window.apptDurationChange = function(val) {
+    var dt = document.getElementById('appt-dt');
+    var da = document.getElementById('appt-dt-allday');
+    if (!dt || !da) return;
+    if (val === 'allday') {
+      da.value = dt.value ? dt.value.split('T')[0] : da.value;
+      dt.style.display = 'none'; da.style.display = '';
+    } else {
+      var dateOnly = da.value || (dt.value ? dt.value.split('T')[0] : '');
+      dt.value = dateOnly ? (dateOnly + 'T' + _origTime) : defaultDt;
+      da.style.display = 'none'; dt.style.display = '';
+    }
+  };
   showModal(title, `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
       ${isPersonal
@@ -4605,25 +4624,35 @@ function apptDetail(id) {
       style="width:100%;box-sizing:border-box;" />` : `
     <label>Appointment Type</label>
     <input type="text" id="appt-edit-type" value="${editType}" list="appt-edit-type-list"
-      placeholder="e.g. Discovery Call, Follow-Up..."
-      style="width:100%;box-sizing:border-box;" />
+      placeholder="e.g. Discovery Call..." style="width:100%;box-sizing:border-box;" />
     <datalist id="appt-edit-type-list">
-      <option value="Discovery Call"><option value="Follow-Up"><option value="Demo">
-      <option value="Proposal Review"><option value="Closing Call">
-      <option value="Check-In"><option value="Onboarding">
+      <option value="Discovery Call">
+      <option value="Benefits Review">
+      <option value="Benefits Presentation">
+      <option value="Enrollment Meeting">
+      <option value="Needs Analysis">
+      <option value="Policy Review">
+      <option value="Follow-Up Call">
+      <option value="Annual Review">
+      <option value="Group Benefits Overview">
+      <option value="Recruiting Call">
+      <option value="Onboarding Meeting">
+      <option value="Claims Review">
     </datalist>
     <label style="margin-top:10px;">Label <span style="color:var(--text-muted);font-size:11px;">(optional)</span></label>
     <input type="text" id="appt-edit-label" value="${editLabel}"
       placeholder="Short label shown on calendar..."
       style="width:100%;box-sizing:border-box;" />`}
-    <label style="margin-top:10px;">Date &amp; Time</label>
-    <input type="datetime-local" id="appt-dt" value="${defaultDt}"
-      style="width:100%;box-sizing:border-box;${isAllDayAppt?'display:none;':''}" />
-    <input type="date" id="appt-dt-allday" value="${defaultDateOnly}"
-      style="width:100%;box-sizing:border-box;${isAllDayAppt?'':'display:none;'}" />
     <label style="margin-top:10px;">Duration</label>
     <select id="appt-duration" onchange="apptDurationChange(this.value)"
       style="width:100%;box-sizing:border-box;">${durOpts}</select>
+    <label style="margin-top:10px;">Date &amp; Time</label>
+    <input type="datetime-local" id="appt-dt" value="${defaultDt}"
+      onclick="try{this.showPicker()}catch(e){}"
+      style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'display:none;':''}" />
+    <input type="date" id="appt-dt-allday" value="${defaultDateOnly}"
+      onclick="try{this.showPicker()}catch(e){}"
+      style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'':'display:none;'}" />
     <label style="margin-top:10px;">Notes</label>
     <textarea id="appt-edit-notes" rows="2"
       style="width:100%;box-sizing:border-box;">${a.agent_notes||''}</textarea>
@@ -4929,9 +4958,6 @@ async function apptLog() {
       <label>Block Title</label>
       <input type="text" id="appt-personal-title" placeholder="e.g. Team Meeting, Lunch, Out of Office..." />
     </div>
-    <label>Date &amp; Time</label>
-    <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;" />
-    <input type="date" id="appt-dt-allday" value="${_defaultDt.split('T')[0]}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;display:none;" />
     <label>Duration</label>
     <select id="appt-duration" onchange="apptDurationChange(this.value)">
       <option value="15">15 minutes</option>
@@ -4942,6 +4968,9 @@ async function apptLog() {
       <option value="120">2 hours</option>
       <option value="allday">All Day</option>
     </select>
+    <label>Date &amp; Time</label>
+    <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;" />
+    <input type="date" id="appt-dt-allday" value="${_defaultDt.split('T')[0]}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;display:none;" />
     <label>Notes</label>
     <textarea id="appt-notes" placeholder="Any context or details..."></textarea>
     <div id="appt-email-row" style="margin-top:12px;display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface-0);border-radius:var(--radius);border:0.5px solid var(--border-accent);">
