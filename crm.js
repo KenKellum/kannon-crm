@@ -2249,6 +2249,9 @@ function getStageActions(pipeline, stage) {
 }
 
 // ── Deal task UI helpers ──────────────────────────────────────────────────────
+function _qdt(el) { deleteDealTaskItem(el.getAttribute('data-tid'), el.getAttribute('data-did')); }
+function _qtt(el, done) { toggleDealTask(el.getAttribute('data-tid'), el.getAttribute('data-did'), done); }
+
 function renderDealTaskList(dealId) {
   var tasks = dealTasks.filter(function(t) { return t.deal_id === dealId; });
   if (!tasks.length) {
@@ -2261,19 +2264,19 @@ function renderDealTaskList(dealId) {
     var today   = new Date().toISOString().slice(0, 10);
     var overdue = t.due_date && t.due_date < today;
     html += '<div class="task-item">'
-      + '<input type="checkbox" onchange="toggleDealTask(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;,true)" />'
+      + '<input type="checkbox" data-tid="' + t.id + '" data-did="' + dealId + '" onchange="_qtt(this,true)" />'
       + '<span class="task-title">' + (t.title || '') + '</span>'
       + (t.due_date ? '<span class="task-due-date" style="color:' + (overdue ? '#ef4444' : 'var(--text-muted)') + '">' + t.due_date + '</span>' : '')
-      + '<button class="task-del-btn" onclick="deleteDealTaskItem(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;)" title="Remove task">&#215;</button>'
+      + '<button class="task-del-btn" data-tid="' + t.id + '" data-did="' + dealId + '" onclick="_qdt(this)" title="Remove task">&#215;</button>'
       + '</div>';
   });
   if (done.length) {
     html += '<details style="margin-top:6px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;list-style:none;">&#9654; Done (' + done.length + ')</summary>';
     done.forEach(function(t) {
       html += '<div class="task-item">'
-        + '<input type="checkbox" checked onchange="toggleDealTask(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;,false)" />'
+        + '<input type="checkbox" checked data-tid="' + t.id + '" data-did="' + dealId + '" onchange="_qtt(this,false)" />'
         + '<span class="task-title" style="text-decoration:line-through;opacity:0.45;">' + (t.title || '') + '</span>'
-        + '<button class="task-del-btn" onclick="deleteDealTaskItem(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;)">&#215;</button>'
+        + '<button class="task-del-btn" data-tid="' + t.id + '" data-did="' + dealId + '" onclick="_qdt(this)">&#215;</button>'
         + '</div>';
     });
     html += '</details>';
@@ -2359,7 +2362,8 @@ async function toggleDealTask(taskId, dealId, done) {
   var upd = done
     ? { completed: true,  completed_at: new Date().toISOString() }
     : { completed: false, completed_at: null };
-  var { error } = await supabaseClient.from('deal_tasks').update(upd).eq('id', taskId);
+  var _updRes = await supabaseClient.from('deal_tasks').update(upd).eq('id', taskId);
+  var error = _updRes.error;
   if (error) { showToast('Error: ' + error.message); return; }
   var t = dealTasks.find(function(x) { return x.id === taskId; });
   if (t) { t.completed = done; t.completed_at = done ? new Date().toISOString() : null; }
@@ -2368,7 +2372,8 @@ async function toggleDealTask(taskId, dealId, done) {
 }
 
 async function deleteDealTaskItem(taskId, dealId) {
-  var { error } = await supabaseClient.from('deal_tasks').delete().eq('id', taskId);
+  var _delRes = await supabaseClient.from('deal_tasks').delete().eq('id', taskId);
+  var error = _delRes.error;
   if (error) { showToast('Error: ' + error.message); return; }
   dealTasks = dealTasks.filter(function(x) { return x.id !== taskId; });
   var el = document.getElementById('task-list-' + dealId);
