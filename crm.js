@@ -4567,29 +4567,124 @@ function apptDetail(id) {
   if (!a) return;
   const st = _calStatus(a.status);
   const agentRow = allAgents.find(x=>x.id===a.agent_id);
-  const name = a.booker_name||a.contact_name||'—';
-  const dtStr = a.scheduled_at ? new Date(a.scheduled_at).toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not scheduled';
-  showModal(name, `
+  const isPersonal = !a.contact_id;
+  const isAllDayAppt = a.duration_minutes === 1440;
+  const pad = n => String(n).padStart(2,'0');
+  let defaultDt = '', defaultDateOnly = '';
+  if (a.scheduled_at) {
+    const d = new Date(a.scheduled_at);
+    defaultDt = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    defaultDateOnly = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+  const editLabel = (a.appointment_label||'').replace(/"/g,'&quot;');
+  const editType  = (a.appointment_type||'').replace(/"/g,'&quot;');
+  const durOpts = [15,20,30,45,60,90,120].map(m => {
+    const lbl = m===60?'1 hour':m===90?'1 hr 30 min':m===120?'2 hours':m+' min';
+    return `<option value="${m}"${a.duration_minutes===m?' selected':''}>${lbl}</option>`;
+  }).join('') + `<option value="allday"${isAllDayAppt?' selected':''}>All Day</option>`;
+  const title = isPersonal
+    ? (a.appointment_label||'Personal Block')
+    : (a.booker_name||a.contact_name||'Appointment');
+  showModal(title, `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-      <span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:${st.bg};border:1px solid ${st.border};color:var(--text-primary);">${st.label}</span>
-      <span style="font-size:12px;color:var(--text-muted);">${a.appointment_label||a.appointment_type||'Appointment'}</span>
+      ${isPersonal
+        ? `<span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(139,92,246,0.15);border:1px solid #8b5cf6;color:#7c3aed;">Personal Block</span>`
+        : `<span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:${st.bg};border:1px solid ${st.border};color:var(--text-primary);">${st.label}</span>`}
     </div>
-    <div style="display:grid;gap:8px;font-size:13px;">
-      ${a.company?`<div><span style="color:var(--text-muted);">Company:</span> ${a.company}</div>`:''}
-      ${a.booker_email?`<div><span style="color:var(--text-muted);">Email:</span> ${a.booker_email}</div>`:''}
-      <div><span style="color:var(--text-muted);">Date/Time:</span> ${dtStr}</div>
-      <div><span style="color:var(--text-muted);">Duration:</span> ${a.duration_minutes===1440?'All Day':a.duration_minutes===60?'1 hour':a.duration_minutes===90?'1 hr 30 min':a.duration_minutes===120?'2 hours':(a.duration_minutes||30)+' min'}</div>
-      ${agentRow?`<div><span style="color:var(--text-muted);">Agent:</span> ${agentRow.name}</div>`:''}
-      ${a.note?`<div><span style="color:var(--text-muted);">Note:</span> <em>${a.note}</em></div>`:''}
-      ${a.agent_notes?`<div><span style="color:var(--text-muted);">Internal notes:</span> ${a.agent_notes}</div>`:''}
+    ${!isPersonal ? `
+    <div style="margin-bottom:12px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;font-size:13px;">
+      <div style="font-weight:600;">${a.booker_name||a.contact_name||'—'}</div>
+      ${a.company?`<div style="color:var(--text-muted);">${a.company}</div>`:''}
+      ${a.booker_email?`<div style="color:var(--text-muted);">${a.booker_email}</div>`:''}
+      ${agentRow?`<div style="color:var(--text-muted);font-size:12px;">Agent: ${agentRow.name}</div>`:''}
+    </div>` : ''}
+    ${isPersonal ? `
+    <label>Block Title</label>
+    <input type="text" id="appt-edit-label" value="${editLabel}"
+      placeholder="e.g. Personal Time, Vacation, Training..."
+      style="width:100%;box-sizing:border-box;" />` : `
+    <label>Appointment Type</label>
+    <input type="text" id="appt-edit-type" value="${editType}" list="appt-edit-type-list"
+      placeholder="e.g. Discovery Call, Follow-Up..."
+      style="width:100%;box-sizing:border-box;" />
+    <datalist id="appt-edit-type-list">
+      <option value="Discovery Call"><option value="Follow-Up"><option value="Demo">
+      <option value="Proposal Review"><option value="Closing Call">
+      <option value="Check-In"><option value="Onboarding">
+    </datalist>
+    <label style="margin-top:10px;">Label <span style="color:var(--text-muted);font-size:11px;">(optional)</span></label>
+    <input type="text" id="appt-edit-label" value="${editLabel}"
+      placeholder="Short label shown on calendar..."
+      style="width:100%;box-sizing:border-box;" />`}
+    <label style="margin-top:10px;">Date &amp; Time</label>
+    <input type="datetime-local" id="appt-dt" value="${defaultDt}"
+      style="width:100%;box-sizing:border-box;${isAllDayAppt?'display:none;':''}" />
+    <input type="date" id="appt-dt-allday" value="${defaultDateOnly}"
+      style="width:100%;box-sizing:border-box;${isAllDayAppt?'':'display:none;'}" />
+    <label style="margin-top:10px;">Duration</label>
+    <select id="appt-duration" onchange="apptDurationChange(this.value)"
+      style="width:100%;box-sizing:border-box;">${durOpts}</select>
+    <label style="margin-top:10px;">Notes</label>
+    <textarea id="appt-edit-notes" rows="2"
+      style="width:100%;box-sizing:border-box;">${a.agent_notes||''}</textarea>
+    ${!isPersonal ? `
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;">
+      <input type="checkbox" id="appt-edit-resend" style="width:14px;height:14px;cursor:pointer;" />
+      <label for="appt-edit-resend" style="font-size:13px;cursor:pointer;margin:0;">Resend confirmation email to contact</label>
+    </div>` : ''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+      ${isPersonal
+        ? `<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">🗑 Delete Block</button>`
+        : `${a.status!=='scheduled'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptSchedule('${id}')">📋 Schedule</button>`:''}
+           ${a.status!=='completed'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptComplete('${id}')">✓ Complete</button>`:''}
+           <button class="btn btn-outline btn-sm" onclick="closeModal();apptReschedule('${id}')">↺ Reschedule</button>
+           ${a.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">✕ Cancel</button>`:''}`}
     </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;">
-      ${a.status!=='scheduled'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptSchedule('${id}')">📋 Schedule</button>`:''}
-      ${a.status!=='completed'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptComplete('${id}')">✓ Complete</button>`:''}
-      <button class="btn btn-outline btn-sm" onclick="closeModal();apptReschedule('${id}')">↺ Reschedule</button>
-      ${a.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">✕ Cancel</button>`:''}
-    </div>
-  `, null);
+  `, async () => {
+    const isDurAllDay = document.getElementById('appt-duration')?.value === 'allday';
+    const dtEl = isDurAllDay
+      ? document.getElementById('appt-dt-allday')
+      : document.getElementById('appt-dt');
+    const dtVal = dtEl?.value;
+    if (!dtVal) { showToast('Please select a date'); return false; }
+    const scheduled_at = isDurAllDay
+      ? (dtVal + 'T00:00:00.000Z')
+      : new Date(dtVal).toISOString();
+    const duration_minutes  = isDurAllDay ? 1440 : (parseInt(document.getElementById('appt-duration')?.value)||30);
+    const agent_notes        = document.getElementById('appt-edit-notes')?.value?.trim()||null;
+    const appointment_label  = document.getElementById('appt-edit-label')?.value?.trim()||null;
+    const updates = {scheduled_at, duration_minutes, agent_notes, appointment_label};
+    if (!isPersonal) {
+      updates.appointment_type = document.getElementById('appt-edit-type')?.value?.trim()||null;
+    }
+    const {error} = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
+    if (error) { showToast('Error: '+error.message); return false; }
+    if (!isPersonal && document.getElementById('appt-edit-resend')?.checked) {
+      const toEmail = a.booker_email||contacts.find(c=>c.id===a.contact_id)?.email||'';
+      if (toEmail) {
+        try {
+          const eurl = new URL(APPS_SCRIPT_URL);
+          eurl.searchParams.set('action','appointment_confirm');
+          eurl.searchParams.set('agent_id',currentAgent.id);
+          eurl.searchParams.set('booking_intent_id',id);
+          eurl.searchParams.set('to',toEmail);
+          eurl.searchParams.set('to_name',a.booker_name||a.contact_name||'');
+          eurl.searchParams.set('datetime_iso',scheduled_at);
+          if (agent_notes) eurl.searchParams.set('notes',agent_notes);
+          fetch(eurl.toString());
+        } catch(_) {}
+        showToast('✓ Saved & confirmation resent!');
+      } else {
+        showToast('✓ Saved (no email on file)');
+      }
+    } else {
+      showToast(isPersonal ? '✓ Block updated!' : '✓ Appointment updated!');
+    }
+    const idx = calAppointments.findIndex(x=>x.id===id);
+    if (idx >= 0) Object.assign(calAppointments[idx], updates);
+    calDate = new Date(scheduled_at);
+    _calRenderView();
+  }, 'Save Changes');
 }
 
 // ── CRUD ACTIONS (update + refresh calendar) ──
