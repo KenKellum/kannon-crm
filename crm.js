@@ -2369,8 +2369,8 @@ function buildContactSearch(selectedId, prefix, pipeline) {
     var meta    = [c.company, c.type].filter(Boolean).join(' · ');
     var display = c.name + (c.company ? ' — ' + c.company : '');
     // strip chars that would break the inline event attribute
-    var safeId  = (c.id  || '').replace(/['"\]/g, '');
-    var safeDsp = display.replace(/['"\<>]/g, '');
+    var safeId  = (c.id  || '').replace(/['"]/g, '');
+    var safeDsp = display.replace(/['"<>]/g, '');
     return '<div class="csd-opt" onmousedown="selectContactOpt(&#39;' + safeId + '&#39;,&#39;' + safeDsp + '&#39;,&#39;' + prefix + '&#39;)">'
       + '<div class="csd-name">' + c.name + '</div>'
       + (meta ? '<div class="csd-meta">' + meta + '</div>' : '')
