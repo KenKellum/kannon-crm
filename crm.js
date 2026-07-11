@@ -4345,9 +4345,10 @@ function _calMonth() {
 
     const chips = dayAppts.slice(0,3).map(a => {
       const st = _calStatus(a.status);
-      const name = a.booker_name || a.contact_name || 'Appointment';
+      const name = a.booker_name || a.contact_name || a.appointment_type || 'Appointment';
+      const stc = (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
       const time = a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
-      return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${st.bg};border-left:2px solid ${st.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
+      return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${stc.bg};border-left:2px solid ${stc.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
     }).join('');
     const more = dayAppts.length > 3 ? `<div style="font-size:10px;color:var(--text-muted);padding-left:4px;">+${dayAppts.length-3} more</div>` : '';
 
@@ -4403,13 +4404,14 @@ function _calWeek() {
       const hr = dt.getHours(), mn = dt.getMinutes();
       const top = Math.max(0,(hr-7)*56 + Math.round(mn/60*56));
       const st = _calStatus(a.status);
+      const stc = (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
       const name = a.booker_name || a.contact_name || a.appointment_type || 'Appt';
       const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       const isAllDay = a.duration_minutes === 1440;
         const timeDiv = isAllDay ? '' : '<div style="font-size:9px;color:var(--text-muted);">' + timeStr + '</div>';
         const blockH = isAllDay ? 22 : Math.max(24, Math.round((a.duration_minutes||30)/60*56));
         const blockTop = isAllDay ? 2 : top;
-      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${blockTop}px;height:${blockH}px;background:${st.bg};border-left:3px solid ${st.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:pointer;overflow:hidden;z-index:${isAllDay?2:1};">
+      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${blockTop}px;height:${blockH}px;background:${stc.bg};border-left:3px solid ${stc.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:pointer;overflow:hidden;z-index:${isAllDay?2:1};">
         <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}${isAllDay?' — All Day':''}</div>
         ${timeDiv}
       </div>`;
@@ -4464,12 +4466,16 @@ function _calDay() {
     const hr = dt.getHours(), mn = dt.getMinutes();
     const top = Math.max(0,(hr-7)*64 + Math.round(mn/60*64));
     const st = _calStatus(a.status);
-    const name = a.booker_name || a.contact_name || 'Appointment';
-    const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    const name = a.booker_name || a.contact_name || a.appointment_type || 'Appointment';
+    const isAllDay = a.duration_minutes === 1440;
+    const stc = (!a.contact_id || isAllDay) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
+    const timeStr = isAllDay ? 'All Day' : dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    const _apptLabel = a.appointment_label||a.appointment_type||'';
+    const typeDiv = isAllDay ? '' : '<div style="font-size:11px;color:var(--text-muted);">' + (timeStr + (_apptLabel ? '  |  '+_apptLabel : '')) + '</div>';
     const agentRow = allAgents.find(x=>x.id===a.agent_id);
-    return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:4px;right:4px;top:${top}px;height:58px;background:${st.bg};border-left:4px solid ${st.border};border-radius:6px;padding:5px 10px;cursor:pointer;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-      <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}</div>
-      <div style="font-size:11px;color:var(--text-muted);">${timeStr}  |  ${a.appointment_label||a.appointment_type||'Appointment'}</div>
+    return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:4px;right:4px;top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:pointer;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+      <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}${isAllDay?' — All Day':''}</div>
+      ${typeDiv}
       ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
     </div>`;
   }).join('');
