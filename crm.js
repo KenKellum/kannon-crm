@@ -3118,7 +3118,7 @@ async function renderContacts() {
       <input id="contact-search-input" type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}"
              oninput="contactSearch=this.value;contactPage=0;renderContacts();" style="max-width:280px;" />
       <select onchange="contactSort=this.value;contactPage=0;renderContacts();"
-              style="padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;color:#1e293b;background:#fff;cursor:pointer;">
+              style="padding:7px 10px;border:0.5px solid var(--border);border-radius:6px;font-size:13px;color:var(--text-primary);background:var(--surface-2);cursor:pointer;">
         <option value="created_at_desc" ${contactSort==='created_at_desc'?'selected':''}>&#128197; Newest First</option>
         <option value="created_at_asc"  ${contactSort==='created_at_asc'?'selected':''}>&#128197; Oldest First</option>
         <option value="name_asc"        ${contactSort==='name_asc'?'selected':''}>A&#8594;Z Name</option>
@@ -4769,7 +4769,21 @@ async function apptLog() {
     <label>Contact</label>
     <select id="appt-contact"><option value="">— No contact —</option>${contactOptions}</select>
     <label>Appointment Type</label>
-    <input type="text" id="appt-type" placeholder="e.g. Discovery Call, Benefits Review..." />
+    <input type="text" id="appt-type" placeholder="e.g. Discovery Call..." list="appt-type-list" autocomplete="off" />
+    <datalist id="appt-type-list">
+      <option value="Discovery Call">
+      <option value="Benefits Review">
+      <option value="Benefits Presentation">
+      <option value="Enrollment Meeting">
+      <option value="Needs Analysis">
+      <option value="Policy Review">
+      <option value="Follow-Up Call">
+      <option value="Annual Review">
+      <option value="Group Benefits Overview">
+      <option value="Recruiting Call">
+      <option value="Onboarding Meeting">
+      <option value="Claims Review">
+    </datalist>
     <label>Date &amp; Time</label>
     <input type="datetime-local" id="appt-dt" />
     <label>Duration</label>
