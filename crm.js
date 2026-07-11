@@ -4764,6 +4764,10 @@ async function apptCancel(id) {
 }
 
 async function apptLog() {
+  // Default to tomorrow at 9:00 AM
+  var _d = new Date(); _d.setDate(_d.getDate() + 1); _d.setHours(9, 0, 0, 0);
+  var _pad = function(n) { return String(n).padStart(2,'0'); };
+  var _defaultDt = _d.getFullYear() + '-' + _pad(_d.getMonth()+1) + '-' + _pad(_d.getDate()) + 'T09:00';
   showModal('Log Appointment', `
     <label>Contact</label>
     ${buildContactSearch('', 'appt-contact', null)}
@@ -4784,7 +4788,7 @@ async function apptLog() {
       <option value="Claims Review">
     </datalist>
     <label>Date &amp; Time</label>
-    <input type="datetime-local" id="appt-dt" />
+    <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;" />
     <label>Duration</label>
     <select id="appt-duration">
       <option value="15">15 minutes</option>
