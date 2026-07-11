@@ -4780,6 +4780,18 @@ async function apptLog() {
     if (bc) { bc.style.background = isC ? 'var(--fill-accent)' : 'var(--surface-2)'; bc.style.color = isC ? '#fff' : 'var(--text-secondary)'; }
     if (bp) { bp.style.background = isC ? 'var(--surface-2)' : 'var(--fill-accent)'; bp.style.color = isC ? 'var(--text-secondary)' : '#fff'; }
   };
+  window.apptDurationChange = function(val) {
+    var d = document.getElementById('appt-dt');
+    var a = document.getElementById('appt-dt-allday');
+    if (!d || !a) return;
+    if (val === 'allday') {
+      a.value = d.value ? d.value.split('T')[0] : a.value;
+      d.style.display = 'none'; a.style.display = '';
+    } else {
+      d.value = a.value ? a.value + 'T09:00' : d.value;
+      a.style.display = 'none'; d.style.display = '';
+    }
+  };
   showModal('Add Appointment', `
     <div style="display:flex;margin-bottom:16px;border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
       <button id="appt-mode-contact" onclick="apptModeSwitch('contact')"
@@ -4815,14 +4827,16 @@ async function apptLog() {
     </div>
     <label>Date &amp; Time</label>
     <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;" />
+    <input type="date" id="appt-dt-allday" value="${_defaultDt.split('T')[0]}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;display:none;" />
     <label>Duration</label>
-    <select id="appt-duration">
+    <select id="appt-duration" onchange="apptDurationChange(this.value)">
       <option value="15">15 minutes</option>
       <option value="30" selected>30 minutes</option>
       <option value="45">45 minutes</option>
       <option value="60">1 hour</option>
       <option value="90">1 hour 30 minutes</option>
       <option value="120">2 hours</option>
+      <option value="allday">All Day</option>
     </select>
     <label>Notes</label>
     <textarea id="appt-notes" placeholder="Any context or details..."></textarea>
@@ -4843,8 +4857,12 @@ async function apptLog() {
       if (!apptType) { showToast('Appointment type required'); return false; }
       contact = contactId ? contacts.find(function(c) { return c.id === contactId; }) : null;
     }
-    var dt        = ((document.getElementById('appt-dt') || {}).value || '');
-    var duration  = parseInt(((document.getElementById('appt-duration') || {}).value) || '30') || 30;
+    var _durVal   = ((document.getElementById('appt-duration') || {}).value) || '30';
+    var _isAllDay = _durVal === 'allday';
+    var dt        = _isAllDay
+      ? (((document.getElementById('appt-dt-allday') || {}).value || '') + 'T00:00')
+      : ((document.getElementById('appt-dt') || {}).value || '');
+    var duration  = _isAllDay ? 1440 : (parseInt(_durVal) || 30);
     var notes     = ((document.getElementById('appt-notes') || {}).value || '').trim();
     var sendEmail = !isPersonal && ((document.getElementById('appt-send-email') || {}).checked);
     var newAppt = {
