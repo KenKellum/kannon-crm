@@ -4348,11 +4348,11 @@ function _calMonth() {
       const name = a.booker_name || a.contact_name || a.appointment_type || 'Appointment';
       const stc = (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
       const time = a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
-      return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${stc.bg};border-left:2px solid ${stc.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
+      return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${stc.bg};border-left:2px solid ${stc.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
     }).join('');
     const more = dayAppts.length > 3 ? `<div style="font-size:10px;color:var(--text-muted);padding-left:4px;">+${dayAppts.length-3} more</div>` : '';
 
-    cells += `<div onclick="calDayClick('${dateKey}')" style="min-height:90px;padding:6px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);cursor:pointer;background:${isToday ? 'rgba(200,168,75,0.08)' : 'transparent'};transition:background .1s;" onmouseover="this.style.background='${isToday ? 'rgba(200,168,75,0.12)' : 'var(--surface-1)'}'" onmouseout="this.style.background='${isToday ? 'rgba(200,168,75,0.08)' : 'transparent'}'">
+    cells += `<div onclick="calDayClick('${dateKey}')" ondragover="event.preventDefault();this.style.outline='2px solid #8b5cf6';this.style.outlineOffset='-2px';" ondragleave="this.style.outline='';" ondrop="calDrop(event,'month','${dateKey}');this.style.outline='';" style="min-height:90px;padding:6px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);cursor:pointer;background:${isToday ? 'rgba(200,168,75,0.08)' : 'transparent'};transition:background .1s;" onmouseover="this.style.background='${isToday ? 'rgba(200,168,75,0.12)' : 'var(--surface-1)'}'" onmouseout="this.style.background='${isToday ? 'rgba(200,168,75,0.08)' : 'transparent'}'">
       <div style="font-size:13px;font-weight:${isToday?'700':'500'};color:${!isCurrentMo?'var(--text-muted)':isToday?'var(--text-accent)':'var(--text-primary)'};${isToday?'width:24px;height:24px;background:var(--fill-accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#000;font-size:12px;margin-bottom:4px;':''}">${day}</div>
       <div>${chips}${more}</div>
     </div>`;
@@ -4411,7 +4411,7 @@ function _calWeek() {
         const timeDiv = isAllDay ? '' : '<div style="font-size:9px;color:var(--text-muted);">' + timeStr + '</div>';
         const blockH = isAllDay ? 22 : Math.max(24, Math.round((a.duration_minutes||30)/60*56));
         const blockTop = isAllDay ? 2 : top;
-      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${blockTop}px;height:${blockH}px;background:${stc.bg};border-left:3px solid ${stc.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:pointer;overflow:hidden;z-index:${isAllDay?2:1};">
+      return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:2px;right:2px;top:${blockTop}px;height:${blockH}px;background:${stc.bg};border-left:3px solid ${stc.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:grab;overflow:hidden;z-index:${isAllDay?2:1};">
         <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}${isAllDay?' — All Day':''}</div>
         ${timeDiv}
       </div>`;
@@ -4424,7 +4424,7 @@ function _calWeek() {
         <div style="font-size:10px;font-weight:600;color:${isToday?'var(--text-accent)':'var(--text-muted)'};text-transform:uppercase;letter-spacing:0.4px;">${dow}</div>
         <div style="font-size:${isToday?'18px':'14px'};font-weight:700;color:${isToday?'var(--text-accent)':'var(--text-primary)'};">${dom}</div>
       </div>
-      <div style="position:relative;height:${14*56}px;">${eventBlocks}</div>
+      <div ondragover="event.preventDefault();this.style.background='rgba(139,92,246,0.05)';" ondragleave="this.style.background='';" ondrop="calDrop(event,'week','${dk}');this.style.background='';" style="position:relative;height:${14*56}px;">${eventBlocks}</div>
     </div>`;
   }).join('');
 
@@ -4448,6 +4448,43 @@ function _calWeek() {
 }
 
 // ── DAY VIEW ──
+async function calDrop(event, view, dateStr) {
+  event.preventDefault();
+  const id = event.dataTransfer.getData('text/plain');
+  if (!id) return;
+  const appt = calAppointments.find(a => a.id === id);
+  if (!appt) return;
+  const origDt  = appt.scheduled_at ? new Date(appt.scheduled_at) : new Date();
+  const isAllDay = appt.duration_minutes === 1440;
+  const [yr, mo, dy] = dateStr.split('-').map(Number);
+  let newDt;
+  if (isAllDay || view === 'month') {
+    // Keep time of day, just move to new date (All Day → midnight)
+    newDt = new Date(origDt);
+    newDt.setFullYear(yr); newDt.setMonth(mo-1); newDt.setDate(dy);
+    if (isAllDay) newDt.setHours(0,0,0,0);
+  } else {
+    // week / day: derive time from drop Y position
+    const pxPerHour = view === 'week' ? 56 : 64;
+    const rect      = event.currentTarget.getBoundingClientRect();
+    const rawY      = Math.max(0, event.clientY - rect.top);
+    const hourFrac  = rawY / pxPerHour + 7;
+    const hour      = Math.min(21, Math.max(7, Math.floor(hourFrac)));
+    const minute    = Math.min(45, Math.max(0, Math.round((hourFrac - hour) * 60 / 15) * 15));
+    newDt = new Date(yr, mo-1, dy, hour, minute, 0, 0);
+  }
+  const newScheduledAt = newDt.toISOString();
+  if (newScheduledAt === appt.scheduled_at) return;
+  const { error } = await supabaseClient.from('booking_intents')
+    .update({ scheduled_at: newScheduledAt }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  const idx = calAppointments.findIndex(a => a.id === id);
+  if (idx >= 0) calAppointments[idx].scheduled_at = newScheduledAt;
+  calDate = newDt;
+  _calRenderView();
+  showToast('✓ Appointment moved!');
+}
+
 function _calDay() {
   const titleEl = document.getElementById('cal-title');
   const body    = document.getElementById('cal-body');
@@ -4473,7 +4510,7 @@ function _calDay() {
     const _apptLabel = a.appointment_label||a.appointment_type||'';
     const typeDiv = isAllDay ? '' : '<div style="font-size:11px;color:var(--text-muted);">' + (timeStr + (_apptLabel ? '  |  '+_apptLabel : '')) + '</div>';
     const agentRow = allAgents.find(x=>x.id===a.agent_id);
-    return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:4px;right:4px;top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:pointer;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+    return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:4px;right:4px;top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:grab;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}${isAllDay?' — All Day':''}</div>
       ${typeDiv}
       ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
@@ -4495,7 +4532,7 @@ function _calDay() {
       </div>
       <div style="display:flex;">
         <div style="width:52px;flex-shrink:0;border-right:0.5px solid var(--border);">${timeCol}</div>
-        <div style="flex:1;position:relative;min-height:${14*64}px;">${noAppts}${eventBlocks}</div>
+        <div ondragover="event.preventDefault();this.style.background='rgba(139,92,246,0.04)';" ondragleave="this.style.background='';" ondrop="calDrop(event,'day','${dateKey}');this.style.background='';" style="flex:1;position:relative;min-height:${14*64}px;">${noAppts}${eventBlocks}</div>
       </div>
     </div>`;
 }
