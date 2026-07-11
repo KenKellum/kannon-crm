@@ -4403,12 +4403,15 @@ function _calWeek() {
       const hr = dt.getHours(), mn = dt.getMinutes();
       const top = Math.max(0,(hr-7)*56 + Math.round(mn/60*56));
       const st = _calStatus(a.status);
-      const name = a.booker_name || a.contact_name || 'Appt';
+      const name = a.booker_name || a.contact_name || a.appointment_type || 'Appt';
       const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-      const blockH = Math.max(24, Math.round((a.duration_minutes||30)/60*56));
-      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${top}px;height:${blockH}px;background:${st.bg};border-left:3px solid ${st.border};border-radius:4px;padding:3px 5px;cursor:pointer;overflow:hidden;z-index:1;">
-        <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}</div>
-        <div style="font-size:9px;color:var(--text-muted);">${timeStr}</div>
+      const isAllDay = a.duration_minutes === 1440;
+        const timeDiv = isAllDay ? '' : '<div style="font-size:9px;color:var(--text-muted);">' + timeStr + '</div>';
+        const blockH = isAllDay ? 22 : Math.max(24, Math.round((a.duration_minutes||30)/60*56));
+        const blockTop = isAllDay ? 2 : top;
+      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${blockTop}px;height:${blockH}px;background:${st.bg};border-left:3px solid ${st.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:pointer;overflow:hidden;z-index:${isAllDay?2:1};">
+        <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}${isAllDay?' — All Day':''}</div>
+        ${timeDiv}
       </div>`;
     }).join('');
 
@@ -4569,7 +4572,7 @@ function apptDetail(id) {
       ${a.company?`<div><span style="color:var(--text-muted);">Company:</span> ${a.company}</div>`:''}
       ${a.booker_email?`<div><span style="color:var(--text-muted);">Email:</span> ${a.booker_email}</div>`:''}
       <div><span style="color:var(--text-muted);">Date/Time:</span> ${dtStr}</div>
-      <div><span style="color:var(--text-muted);">Duration:</span> ${a.duration_minutes===60?'1 hour':a.duration_minutes===90?'1 hr 30 min':a.duration_minutes===120?'2 hours':(a.duration_minutes||30)+' min'}</div>
+      <div><span style="color:var(--text-muted);">Duration:</span> ${a.duration_minutes===1440?'All Day':a.duration_minutes===60?'1 hour':a.duration_minutes===90?'1 hr 30 min':a.duration_minutes===120?'2 hours':(a.duration_minutes||30)+' min'}</div>
       ${agentRow?`<div><span style="color:var(--text-muted);">Agent:</span> ${agentRow.name}</div>`:''}
       ${a.note?`<div><span style="color:var(--text-muted);">Note:</span> <em>${a.note}</em></div>`:''}
       ${a.agent_notes?`<div><span style="color:var(--text-muted);">Internal notes:</span> ${a.agent_notes}</div>`:''}
