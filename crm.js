@@ -4578,6 +4578,15 @@ function apptDetail(id) {
   }
   const editLabel = (a.appointment_label||'').replace(/"/g,'&quot;');
   const editType  = (a.appointment_type||'').replace(/"/g,'&quot;');
+  const APPT_TYPES = [
+    'Discovery Call','Benefits Review','Benefits Presentation','Enrollment Meeting',
+    'Needs Analysis','Policy Review','Follow-Up Call','Annual Review',
+    'Group Benefits Overview','Recruiting Call','Onboarding Meeting','Claims Review'
+  ];
+  const typeIsKnown = APPT_TYPES.includes(a.appointment_type||'');
+  const typeOptsHtml = APPT_TYPES.map(t =>
+    `<option value="${t}"${a.appointment_type===t?' selected':''}>${t}</option>`
+  ).join('') + `<option value="__other__"${!typeIsKnown&&(a.appointment_type||'')?` selected`:''}>Other (type your own)...</option>`;
   // Duration options — match apptLog exactly (no 20 min; full label text)
   const _dm = a.duration_minutes;
   const durOpts = [
@@ -4623,22 +4632,14 @@ function apptDetail(id) {
       placeholder="e.g. Personal Time, Vacation, Training..."
       style="width:100%;box-sizing:border-box;" />` : `
     <label>Appointment Type</label>
-    <input type="text" id="appt-edit-type" value="${editType}" list="appt-edit-type-list"
-      placeholder="e.g. Discovery Call..." style="width:100%;box-sizing:border-box;" />
-    <datalist id="appt-edit-type-list">
-      <option value="Discovery Call">
-      <option value="Benefits Review">
-      <option value="Benefits Presentation">
-      <option value="Enrollment Meeting">
-      <option value="Needs Analysis">
-      <option value="Policy Review">
-      <option value="Follow-Up Call">
-      <option value="Annual Review">
-      <option value="Group Benefits Overview">
-      <option value="Recruiting Call">
-      <option value="Onboarding Meeting">
-      <option value="Claims Review">
-    </datalist>
+    <select id="appt-edit-type-sel" style="width:100%;box-sizing:border-box;"
+      onchange="var _o=document.getElementById('appt-edit-type-other');if(_o)_o.style.display=this.value==='__other__'?'':'none';">
+      <option value="">— Select type —</option>
+      ${typeOptsHtml}
+    </select>
+    <input type="text" id="appt-edit-type-other" value="${!typeIsKnown&&editType?editType:''}"
+      placeholder="Custom appointment type..."
+      style="width:100%;box-sizing:border-box;margin-top:6px;${!typeIsKnown&&editType?'':'display:none;'}" />
     <label style="margin-top:10px;">Label <span style="color:var(--text-muted);font-size:11px;">(optional)</span></label>
     <input type="text" id="appt-edit-label" value="${editLabel}"
       placeholder="Short label shown on calendar..."
@@ -4684,7 +4685,10 @@ function apptDetail(id) {
     const appointment_label  = document.getElementById('appt-edit-label')?.value?.trim()||null;
     const updates = {scheduled_at, duration_minutes, agent_notes, appointment_label};
     if (!isPersonal) {
-      updates.appointment_type = document.getElementById('appt-edit-type')?.value?.trim()||null;
+      const _tSel = document.getElementById('appt-edit-type-sel')?.value||'';
+      updates.appointment_type = _tSel === '__other__'
+        ? (document.getElementById('appt-edit-type-other')?.value?.trim()||null)
+        : (_tSel||null);
     }
     const {error} = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
     if (error) { showToast('Error: '+error.message); return false; }
