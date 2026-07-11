@@ -4405,7 +4405,8 @@ function _calWeek() {
       const st = _calStatus(a.status);
       const name = a.booker_name || a.contact_name || 'Appt';
       const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${top}px;height:50px;background:${st.bg};border-left:3px solid ${st.border};border-radius:4px;padding:3px 5px;cursor:pointer;overflow:hidden;z-index:1;">
+      const blockH = Math.max(24, Math.round((a.duration_minutes||30)/60*56));
+      return `<div onclick="apptDetail('${a.id}')" style="position:absolute;left:2px;right:2px;top:${top}px;height:${blockH}px;background:${st.bg};border-left:3px solid ${st.border};border-radius:4px;padding:3px 5px;cursor:pointer;overflow:hidden;z-index:1;">
         <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}</div>
         <div style="font-size:9px;color:var(--text-muted);">${timeStr}</div>
       </div>`;
@@ -4568,6 +4569,7 @@ function apptDetail(id) {
       ${a.company?`<div><span style="color:var(--text-muted);">Company:</span> ${a.company}</div>`:''}
       ${a.booker_email?`<div><span style="color:var(--text-muted);">Email:</span> ${a.booker_email}</div>`:''}
       <div><span style="color:var(--text-muted);">Date/Time:</span> ${dtStr}</div>
+      <div><span style="color:var(--text-muted);">Duration:</span> ${a.duration_minutes===60?'1 hour':a.duration_minutes===90?'1 hr 30 min':a.duration_minutes===120?'2 hours':(a.duration_minutes||30)+' min'}</div>
       ${agentRow?`<div><span style="color:var(--text-muted);">Agent:</span> ${agentRow.name}</div>`:''}
       ${a.note?`<div><span style="color:var(--text-muted);">Note:</span> <em>${a.note}</em></div>`:''}
       ${a.agent_notes?`<div><span style="color:var(--text-muted);">Internal notes:</span> ${a.agent_notes}</div>`:''}
@@ -4770,12 +4772,22 @@ async function apptLog() {
     <input type="text" id="appt-type" placeholder="e.g. Discovery Call, Benefits Review..." />
     <label>Date &amp; Time</label>
     <input type="datetime-local" id="appt-dt" />
+    <label>Duration</label>
+    <select id="appt-duration">
+      <option value="15">15 minutes</option>
+      <option value="30" selected>30 minutes</option>
+      <option value="45">45 minutes</option>
+      <option value="60">1 hour</option>
+      <option value="90">1 hour 30 minutes</option>
+      <option value="120">2 hours</option>
+    </select>
     <label>Notes</label>
     <textarea id="appt-notes" placeholder="Any context or details..."></textarea>
   `, async () => {
     const contactId = document.getElementById('appt-contact').value;
     const apptType  = document.getElementById('appt-type').value.trim();
     const dt        = document.getElementById('appt-dt').value;
+    const duration  = parseInt(document.getElementById('appt-duration').value) || 30;
     const notes     = document.getElementById('appt-notes').value.trim();
     if (!apptType) { showToast('Appointment type required'); return false; }
     const contact = contactId ? contacts.find(c=>c.id===contactId) : null;
@@ -4785,6 +4797,7 @@ async function apptLog() {
       booker_email: contact?.email||null, company: contact?.company||null,
       appointment_type: apptType, appointment_label: apptType,
       scheduled_at: dt?new Date(dt).toISOString():null,
+      duration_minutes: duration,
       agent_notes: notes||null, status: dt?'scheduled':'pending',
     };
     const { data, error } = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
