@@ -4764,29 +4764,55 @@ async function apptCancel(id) {
 }
 
 async function apptLog() {
-  // Default to tomorrow at 9:00 AM
   var _d = new Date(); _d.setDate(_d.getDate() + 1); _d.setHours(9, 0, 0, 0);
   var _pad = function(n) { return String(n).padStart(2,'0'); };
   var _defaultDt = _d.getFullYear() + '-' + _pad(_d.getMonth()+1) + '-' + _pad(_d.getDate()) + 'T09:00';
-  showModal('Log Appointment', `
-    <label>Contact</label>
-    ${buildContactSearch('', 'appt-contact', null)}
-    <label>Appointment Type</label>
-    <input type="text" id="appt-type" placeholder="e.g. Discovery Call..." list="appt-type-list" autocomplete="off" />
-    <datalist id="appt-type-list">
-      <option value="Discovery Call">
-      <option value="Benefits Review">
-      <option value="Benefits Presentation">
-      <option value="Enrollment Meeting">
-      <option value="Needs Analysis">
-      <option value="Policy Review">
-      <option value="Follow-Up Call">
-      <option value="Annual Review">
-      <option value="Group Benefits Overview">
-      <option value="Recruiting Call">
-      <option value="Onboarding Meeting">
-      <option value="Claims Review">
-    </datalist>
+  window.apptModeSwitch = function(mode) {
+    var isC = mode === 'contact';
+    var cs  = document.getElementById('appt-contact-section');
+    var ps  = document.getElementById('appt-personal-section');
+    var er  = document.getElementById('appt-email-row');
+    var bc  = document.getElementById('appt-mode-contact');
+    var bp  = document.getElementById('appt-mode-personal');
+    if (cs) cs.style.display = isC ? '' : 'none';
+    if (ps) ps.style.display = isC ? 'none' : '';
+    if (er) er.style.display = isC ? 'flex' : 'none';
+    if (bc) { bc.style.background = isC ? 'var(--fill-accent)' : 'var(--surface-2)'; bc.style.color = isC ? '#fff' : 'var(--text-secondary)'; }
+    if (bp) { bp.style.background = isC ? 'var(--surface-2)' : 'var(--fill-accent)'; bp.style.color = isC ? 'var(--text-secondary)' : '#fff'; }
+  };
+  showModal('Add Appointment', `
+    <div style="display:flex;margin-bottom:16px;border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
+      <button id="appt-mode-contact" onclick="apptModeSwitch('contact')"
+        style="flex:1;padding:10px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--fill-accent);color:#fff;transition:all .15s;">
+        &#128100; Contact Appointment</button>
+      <button id="appt-mode-personal" onclick="apptModeSwitch('personal')"
+        style="flex:1;padding:10px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--surface-2);color:var(--text-secondary);transition:all .15s;">
+        &#128197; Personal Block</button>
+    </div>
+    <div id="appt-contact-section">
+      <label>Contact</label>
+      ${buildContactSearch('', 'appt-contact', null)}
+      <label>Appointment Type</label>
+      <input type="text" id="appt-type" placeholder="e.g. Discovery Call..." list="appt-type-list" autocomplete="off" />
+      <datalist id="appt-type-list">
+        <option value="Discovery Call">
+        <option value="Benefits Review">
+        <option value="Benefits Presentation">
+        <option value="Enrollment Meeting">
+        <option value="Needs Analysis">
+        <option value="Policy Review">
+        <option value="Follow-Up Call">
+        <option value="Annual Review">
+        <option value="Group Benefits Overview">
+        <option value="Recruiting Call">
+        <option value="Onboarding Meeting">
+        <option value="Claims Review">
+      </datalist>
+    </div>
+    <div id="appt-personal-section" style="display:none;">
+      <label>Block Title</label>
+      <input type="text" id="appt-personal-title" placeholder="e.g. Team Meeting, Lunch, Out of Office..." />
+    </div>
     <label>Date &amp; Time</label>
     <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;" />
     <label>Duration</label>
@@ -4800,29 +4826,63 @@ async function apptLog() {
     </select>
     <label>Notes</label>
     <textarea id="appt-notes" placeholder="Any context or details..."></textarea>
+    <div id="appt-email-row" style="margin-top:12px;display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface-0);border-radius:var(--radius);border:0.5px solid var(--border-accent);">
+      <input type="checkbox" id="appt-send-email" checked style="width:15px;height:15px;accent-color:var(--fill-accent);flex-shrink:0;cursor:pointer;" />
+      <label for="appt-send-email" style="font-size:13px;margin:0;cursor:pointer;font-weight:400;color:var(--text-primary);">Send confirmation email to contact</label>
+    </div>
   `, async () => {
-    const contactId = document.getElementById('appt-contact').value;
-    const apptType  = document.getElementById('appt-type').value.trim();
-    const dt        = document.getElementById('appt-dt').value;
-    const duration  = parseInt(document.getElementById('appt-duration').value) || 30;
-    const notes     = document.getElementById('appt-notes').value.trim();
-    if (!apptType) { showToast('Appointment type required'); return false; }
-    const contact = contactId ? contacts.find(c=>c.id===contactId) : null;
-    const newAppt = {
-      agent_id: currentAgent.id, contact_id: contactId||null,
-      contact_name: contact?.name||null, booker_name: contact?.name||null,
-      booker_email: contact?.email||null, company: contact?.company||null,
-      appointment_type: apptType, appointment_label: apptType,
-      scheduled_at: dt?new Date(dt).toISOString():null,
-      duration_minutes: duration,
-      agent_notes: notes||null, status: dt?'scheduled':'pending',
+    var isPersonal = (document.getElementById('appt-personal-section') || {}).style.display !== 'none';
+    var contactId, apptType, contact;
+    if (isPersonal) {
+      apptType = ((document.getElementById('appt-personal-title') || {}).value || '').trim();
+      if (!apptType) { showToast('Please enter a block title'); return false; }
+      contactId = null; contact = null;
+    } else {
+      contactId = ((document.getElementById('appt-contact') || {}).value || '').trim() || null;
+      apptType  = ((document.getElementById('appt-type') || {}).value || '').trim();
+      if (!apptType) { showToast('Appointment type required'); return false; }
+      contact = contactId ? contacts.find(function(c) { return c.id === contactId; }) : null;
+    }
+    var dt        = ((document.getElementById('appt-dt') || {}).value || '');
+    var duration  = parseInt(((document.getElementById('appt-duration') || {}).value) || '30') || 30;
+    var notes     = ((document.getElementById('appt-notes') || {}).value || '').trim();
+    var sendEmail = !isPersonal && ((document.getElementById('appt-send-email') || {}).checked);
+    var newAppt = {
+      agent_id:          currentAgent.id,
+      contact_id:        contactId || null,
+      contact_name:      contact ? contact.name    : null,
+      booker_name:       contact ? contact.name    : null,
+      booker_email:      contact ? contact.email   : null,
+      company:           contact ? contact.company : null,
+      appointment_type:  apptType,
+      appointment_label: apptType,
+      scheduled_at:      dt ? new Date(dt).toISOString() : null,
+      duration_minutes:  duration,
+      agent_notes:       notes || null,
+      status:            dt ? 'scheduled' : 'pending',
     };
-    const { data, error } = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
-    if (error) { showToast('Error: '+error.message); return false; }
-    calAppointments.push(data);
-    // Jump calendar to the appointment date if scheduled
-    if (dt) { calDate = new Date(dt); calView = calDate.toDateString()===new Date().toDateString()?calView:'month'; }
-    showToast('✓ Appointment added!');
+    var ins = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
+    if (ins.error) { showToast('Error: ' + ins.error.message); return false; }
+    calAppointments.push(ins.data);
+    if (dt) { calDate = new Date(dt); calView = calDate.toDateString() === new Date().toDateString() ? calView : 'month'; }
+    if (sendEmail && contact && contact.email && dt) {
+      try {
+        var eUrl = new URL(APPS_SCRIPT_URL);
+        eUrl.searchParams.set('action',            'appointment_confirm');
+        eUrl.searchParams.set('agent_id',          currentAgent.id);
+        eUrl.searchParams.set('booking_intent_id', ins.data.id);
+        eUrl.searchParams.set('to',                contact.email);
+        eUrl.searchParams.set('to_name',           contact.name || '');
+        eUrl.searchParams.set('datetime_iso',      new Date(dt).toISOString());
+        if (notes) eUrl.searchParams.set('notes', notes);
+        fetch(eUrl.toString());
+        showToast('Appointment added — confirmation sent to ' + (contact.name || contact.email) + '!');
+      } catch(e) {
+        showToast('Appointment added (email error: ' + e.message + ')');
+      }
+    } else {
+      showToast(isPersonal ? 'Personal block added to calendar!' : '✓ Appointment added!');
+    }
     _calRenderView();
   });
 }
