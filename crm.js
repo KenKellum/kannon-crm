@@ -2338,60 +2338,104 @@ async function drop(e, stage) {
 }
 
 // ── Contact search dropdown helpers ─────────────────────────────────────────
-function buildContactSearch(selectedId, prefix) {
+// Pipeline -> relevant contact types (primary = shown first + highlighted)
+var CSD_TYPE_MAP = {
+  'group-employer':    ['Group/Employer'],
+  'individual-family': ['Individual/Family'],
+  'agent-insured':     ['Agent - Insured America','Insured America Agent'],
+  'agent-kannon':      ['Agent - Kannon Financial','Kannon Financial Agent','Recruit']
+};
+
+function buildContactSearch(selectedId, prefix, pipeline) {
+  var relevantTypes = (pipeline && CSD_TYPE_MAP[pipeline]) ? CSD_TYPE_MAP[pipeline] : null;
+
+  // Sort all contacts A-Z by name
   var sorted = contacts.slice().sort(function(a, b) {
     return (a.name || '').localeCompare(b.name || '');
   });
-  var sel = selectedId ? sorted.find(function(c) { return c.id === selectedId; }) : null;
-  var initVal = sel ? (sel.name + (sel.company ? ' — ' + sel.company : '')) : '';
-  var opts = '<div class="csd-opt" onmousedown="selectContactOpt(\'\',\'\',\''+prefix+'\')">'
-    + '<div class="csd-name">— No contact —</div></div>';
-  opts += sorted.map(function(c) {
-    var meta = [c.company, c.type].filter(Boolean).join(' · ');
-    var lbl  = c.name + (c.company ? ' — ' + c.company : '');
-    var safeId  = c.id.replace(/'/g, '');
-    var safeLbl = lbl.replace(/\\/g, '').replace(/'/g, '').replace(/"/g, '');
-    return '<div class="csd-opt" onmousedown="selectContactOpt(&#39;'+safeId+'&#39;,&#39;'+safeLbl+'&#39;,&#39;'+prefix+'&#39;)">'
+
+  // Split into primary (type matches pipeline) and secondary (everything else)
+  var primary   = relevantTypes
+    ? sorted.filter(function(c) { return relevantTypes.indexOf(c.type) !== -1; })
+    : sorted;
+  var secondary = relevantTypes
+    ? sorted.filter(function(c) { return relevantTypes.indexOf(c.type) === -1; })
+    : [];
+
+  var sel      = selectedId ? contacts.find(function(c) { return c.id === selectedId; }) : null;
+  var initVal  = sel ? (sel.name + (sel.company ? ' — ' + sel.company : '')) : '';
+
+  function makeOpt(c) {
+    var meta    = [c.company, c.type].filter(Boolean).join(' · ');
+    var display = c.name + (c.company ? ' — ' + c.company : '');
+    // strip chars that would break the inline event attribute
+    var safeId  = (c.id  || '').replace(/['"\]/g, '');
+    var safeDsp = display.replace(/['"\<>]/g, '');
+    return '<div class="csd-opt" onmousedown="selectContactOpt(&#39;' + safeId + '&#39;,&#39;' + safeDsp + '&#39;,&#39;' + prefix + '&#39;)">'
       + '<div class="csd-name">' + c.name + '</div>'
       + (meta ? '<div class="csd-meta">' + meta + '</div>' : '')
       + '</div>';
-  }).join('');
+  }
+
+  var noContact = '<div class="csd-opt" onmousedown="selectContactOpt(&#39;&#39;,&#39;&#39;,&#39;' + prefix + '&#39;)">'
+    + '<div class="csd-name" style="color:var(--text-muted);">— No contact —</div></div>';
+
+  var listHTML = noContact + primary.map(makeOpt).join('');
+  if (secondary.length) {
+    listHTML += '<div style="padding:6px 12px;font-size:10px;font-weight:700;text-transform:uppercase;'
+      + 'letter-spacing:0.8px;color:var(--text-muted);background:var(--surface-3);border-top:1px solid var(--border);">'
+      + 'All contacts</div>'
+      + secondary.map(makeOpt).join('');
+  }
+
   return '<div class="csd-wrap">'
     + '<input type="text" class="csd-input" id="' + prefix + '-srch" value="' + initVal + '" '
-    + 'placeholder="Type to search contacts..." autocomplete="off" '
+    + 'placeholder="Type to search..." autocomplete="off" '
     + 'oninput="filterContactOpts(&#39;' + prefix + '&#39;)" '
     + 'onfocus="document.getElementById(&#39;' + prefix + '-list&#39;).style.display=&#39;block&#39;" '
-    + 'onblur="setTimeout(function(){var l=document.getElementById(&#39;' + prefix + '-list&#39;);if(l)l.style.display=&#39;none&#39;},150)" />'
+    + 'onblur="setTimeout(function(){var l=document.getElementById(&#39;' + prefix + '-list&#39;);if(l)l.style.display=&#39;none&#39;},220)" />'
     + '<input type="hidden" id="' + prefix + '" value="' + (selectedId || '') + '" />'
-    + '<div class="csd-list" id="' + prefix + '-list">' + opts + '</div>'
-    + '</div>';
+    + '<div class="csd-list" id="' + prefix + '-list" onmousedown="event.preventDefault()">'
+    + listHTML + '</div></div>';
 }
 
 function filterContactOpts(prefix) {
-  var q = (document.getElementById(prefix + '-srch').value || '').toLowerCase();
+  var q    = (document.getElementById(prefix + '-srch').value || '').toLowerCase().trim();
   var list = document.getElementById(prefix + '-list');
   if (!list) return;
   list.style.display = 'block';
   Array.from(list.querySelectorAll('.csd-opt')).forEach(function(el) {
     el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
+  // Keep section headers visible only if any opts below them are visible
+  var headers = Array.from(list.children).filter(function(el) {
+    return !el.classList.contains('csd-opt');
+  });
+  headers.forEach(function(h) {
+    var next = h.nextElementSibling;
+    var anyVisible = false;
+    while (next && next.classList.contains('csd-opt')) {
+      if (next.style.display !== 'none') { anyVisible = true; break; }
+      next = next.nextElementSibling;
+    }
+    h.style.display = anyVisible ? '' : 'none';
+  });
 }
 
 function selectContactOpt(id, label, prefix) {
-  var h = document.getElementById(prefix); if (h) h.value = id;
-  var s = document.getElementById(prefix + '-srch'); if (s) s.value = label;
-  var l = document.getElementById(prefix + '-list'); if (l) l.style.display = 'none';
+  var h = document.getElementById(prefix);       if (h) h.value = id;
+  var s = document.getElementById(prefix+'-srch'); if (s) s.value = label;
+  var l = document.getElementById(prefix+'-list'); if (l) l.style.display = 'none';
 }
 
 
 function openAddDeal(stage = '') {
   const pipeline = PIPELINES[currentPipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
   showModal('Add New Deal', `
     <label>Deal / Opportunity Name *</label><input type="text" id="deal-title" placeholder="e.g. Acme Corp Benefits Package" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label>${buildContactSearch('', 'deal-contact', currentPipeline)}
     <label>Deal Value ($)</label><input type="number" id="deal-value" placeholder="0" min="0" />
     <label>Expected Close Date</label><input type="date" id="deal-close-date" />
     <label>Next Step</label><input type="text" id="deal-next-step" placeholder="e.g. Send proposal, Schedule call..." />
@@ -2430,11 +2474,10 @@ function editDeal(id) {
   const deal = deals.find(d => d.id === id); if (!deal) return;
   const pipeline = PIPELINES[deal.pipeline];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===deal.stage?'selected':''}>${s}</option>`).join('');
-  const contactOptions = contacts.map(c => `<option value="${c.id}" ${c.id===deal.contact_id?'selected':''}>${c.name} — ${c.company||c.email||''}</option>`).join('');
   showModal('Edit Deal', `
     <label>Deal Name *</label><input type="text" id="deal-title" value="${deal.title}" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
-    <label>Contact</label><select id="deal-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    <label>Contact</label>${buildContactSearch(deal.contact_id || '', 'deal-contact', deal.pipeline)}
     <label>Deal Value ($)</label><input type="number" id="deal-value" value="${deal.value||''}" min="0" />
     <label>Expected Close Date</label><input type="date" id="deal-close-date" value="${deal.close_date||''}" />
     <label>Next Step</label><input type="text" id="deal-next-step" value="${deal.next_step||''}" placeholder="e.g. Send proposal, Schedule call..." />
