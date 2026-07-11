@@ -4764,10 +4764,9 @@ async function apptCancel(id) {
 }
 
 async function apptLog() {
-  const contactOptions = contacts.map(c=>`<option value="${c.id}">${c.name} — ${c.company||c.email||''}</option>`).join('');
   showModal('Log Appointment', `
     <label>Contact</label>
-    <select id="appt-contact"><option value="">— No contact —</option>${contactOptions}</select>
+    ${buildContactSearch('', 'appt-contact', null)}
     <label>Appointment Type</label>
     <input type="text" id="appt-type" placeholder="e.g. Discovery Call..." list="appt-type-list" autocomplete="off" />
     <datalist id="appt-type-list">
