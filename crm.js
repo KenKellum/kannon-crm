@@ -2299,7 +2299,7 @@ function renderPipelines() {
         <div class="deal-name">${deal.title}</div>
         <div class="deal-contact">&#128100; ${contact ? contact.name : 'No contact'}</div>
         ${deal.value ? `<div class="deal-value">$${parseFloat(deal.value).toLocaleString()}</div>` : ''}
-        ${renewalFmt ? `<div style="font-size:11px;color:#f59e0b;margin-top:5px;">&#128260; Renews ${renewalFmt}</div>` : ''}
+        ${renewalFmt ? `<div style="font-size:11px;color:${(() => { var d=(new Date(deal.renewal_date+'T12:00:00')-new Date())/(1000*60*60*24); return d<=30?'#ef4444':d<=60?'#f97316':'#f59e0b'; })()};margin-top:5px;">&#128260; Renews ${renewalFmt}</div>` : ''}
         ${deal.next_step ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">&#10145; ${deal.next_step.substring(0,55)}${deal.next_step.length>55?'...':''}</div>` : ''}
         <div class="deal-actions" onclick="event.stopPropagation()">
           <button class="btn btn-outline btn-sm" onclick="editDeal('${deal.id}')">Edit</button>
@@ -2336,6 +2336,53 @@ async function drop(e, stage) {
   await supabaseClient.from('deals').update({ stage }).eq('id', draggedDeal);
   draggedDeal = null; renderPipelines(); showToast('Deal moved to ' + stage);
 }
+
+// ── Contact search dropdown helpers ─────────────────────────────────────────
+function buildContactSearch(selectedId, prefix) {
+  var sorted = contacts.slice().sort(function(a, b) {
+    return (a.name || '').localeCompare(b.name || '');
+  });
+  var sel = selectedId ? sorted.find(function(c) { return c.id === selectedId; }) : null;
+  var initVal = sel ? (sel.name + (sel.company ? ' — ' + sel.company : '')) : '';
+  var opts = '<div class="csd-opt" onmousedown="selectContactOpt(\'\',\'\',\''+prefix+'\')">'
+    + '<div class="csd-name">— No contact —</div></div>';
+  opts += sorted.map(function(c) {
+    var meta = [c.company, c.type].filter(Boolean).join(' · ');
+    var lbl  = c.name + (c.company ? ' — ' + c.company : '');
+    var safeId  = c.id.replace(/'/g, '');
+    var safeLbl = lbl.replace(/\\/g, '').replace(/'/g, '').replace(/"/g, '');
+    return '<div class="csd-opt" onmousedown="selectContactOpt(&#39;'+safeId+'&#39;,&#39;'+safeLbl+'&#39;,&#39;'+prefix+'&#39;)">'
+      + '<div class="csd-name">' + c.name + '</div>'
+      + (meta ? '<div class="csd-meta">' + meta + '</div>' : '')
+      + '</div>';
+  }).join('');
+  return '<div class="csd-wrap">'
+    + '<input type="text" class="csd-input" id="' + prefix + '-srch" value="' + initVal + '" '
+    + 'placeholder="Type to search contacts..." autocomplete="off" '
+    + 'oninput="filterContactOpts(&#39;' + prefix + '&#39;)" '
+    + 'onfocus="document.getElementById(&#39;' + prefix + '-list&#39;).style.display=&#39;block&#39;" '
+    + 'onblur="setTimeout(function(){var l=document.getElementById(&#39;' + prefix + '-list&#39;);if(l)l.style.display=&#39;none&#39;},150)" />'
+    + '<input type="hidden" id="' + prefix + '" value="' + (selectedId || '') + '" />'
+    + '<div class="csd-list" id="' + prefix + '-list">' + opts + '</div>'
+    + '</div>';
+}
+
+function filterContactOpts(prefix) {
+  var q = (document.getElementById(prefix + '-srch').value || '').toLowerCase();
+  var list = document.getElementById(prefix + '-list');
+  if (!list) return;
+  list.style.display = 'block';
+  Array.from(list.querySelectorAll('.csd-opt')).forEach(function(el) {
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function selectContactOpt(id, label, prefix) {
+  var h = document.getElementById(prefix); if (h) h.value = id;
+  var s = document.getElementById(prefix + '-srch'); if (s) s.value = label;
+  var l = document.getElementById(prefix + '-list'); if (l) l.style.display = 'none';
+}
+
 
 function openAddDeal(stage = '') {
   const pipeline = PIPELINES[currentPipeline];

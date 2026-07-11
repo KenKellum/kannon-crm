@@ -224,6 +224,15 @@
     /* DEAL PANEL */
     #deal-panel { position: fixed; right: -540px; top: 0; width: 540px; height: 100vh; background: var(--surface-1); z-index: 300; box-shadow: -4px 0 32px rgba(0,0,0,0.5); transition: right 0.3s cubic-bezier(.4,0,.2,1); display: flex; flex-direction: column; overflow: hidden; border-left: 0.5px solid var(--border); }
     #deal-panel.open { right: 0; }
+    /* Contact search dropdown */
+    .csd-wrap { position: relative; }
+    .csd-input { width: 100%; }
+    .csd-list { display: none; position: absolute; top: 100%; left: 0; right: 0; max-height: 220px; overflow-y: auto; background: var(--surface-2); border: 1px solid var(--border); border-radius: 0 0 6px 6px; z-index: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .csd-opt { padding: 9px 12px; cursor: pointer; border-bottom: 0.5px solid var(--border); }
+    .csd-opt:hover { background: var(--surface-3); }
+    .csd-opt:last-child { border-bottom: none; }
+    .csd-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+    .csd-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
     .deal-panel-stage { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-3); color: var(--text-primary); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; border: 0.5px solid var(--border); }
     .deal-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .deal-field { display: flex; flex-direction: column; gap: 3px; }
