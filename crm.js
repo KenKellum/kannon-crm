@@ -2265,7 +2265,7 @@ function openDealPanel(dealId) {
     + '<div class="activity-log-form">'
     + '<select id="act-type-' + dealId + '"><option value="note">&#128221; Note</option><option value="call">&#128222; Call</option><option value="email">&#9993; Email</option></select>'
     + '<textarea id="act-content-' + dealId + '" placeholder="Log a call outcome, note, or email summary..."></textarea>'
-    + '<button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="saveDealActivity('' + dealId + '')">Log It</button>'
+    + '<button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="saveDealActivity(&#39;' + dealId + '&#39;)">Log It</button>'
     + '</div>'
     + '<div class="activity-timeline" id="timeline-' + dealId + '">' + renderActivityTimeline(dealId) + '</div>'
     + '</div>'
@@ -2274,8 +2274,8 @@ function openDealPanel(dealId) {
     + '<div class="panel-footer">'
     + '<button class="btn btn-outline" onclick="closeDealPanel()">Close</button>'
     + footerContact
-    + '<button class="btn btn-danger btn-sm" onclick="closeDealPanel();deleteDeal('' + dealId + '')">Delete</button>'
-    + '<button class="btn btn-primary" onclick="closeDealPanel();editDeal('' + dealId + '')">&#9999;&#65039; Edit Deal</button>'
+    + '<button class="btn btn-danger btn-sm" onclick="closeDealPanel();deleteDeal(&#39;' + dealId + '&#39;)">Delete</button>'
+    + '<button class="btn btn-primary" onclick="closeDealPanel();editDeal(&#39;' + dealId + '&#39;)">&#9999;&#65039; Edit Deal</button>'
     + '</div>';
 
   document.getElementById('panel-overlay').style.display = 'block';
