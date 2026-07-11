@@ -2241,7 +2241,7 @@ function openDealPanel(dealId) {
     : '';
 
   var footerContact = contact
-    ? '<button class="btn btn-outline btn-sm" onclick="closeDealPanel();viewContact('' + contact.id + '','')">&#128100; Contact</button>'
+    ? '<button class="btn btn-outline btn-sm" onclick="closeDealPanel();viewContact(&#39;' + contact.id + '&#39;,&#39;&#39;)">&#128100; Contact</button>'
     : '';
 
   document.getElementById('deal-panel').innerHTML =
