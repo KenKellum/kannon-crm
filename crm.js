@@ -4654,6 +4654,21 @@ function _inviteSectionHtml(existingCohostId, existingCohostEmail, existingCohos
       + '</div>';
   }).join('');
   window._extraAttCount = existingExtra.length;
+  setTimeout(function() {
+    ['sched-dt','appt-dt','appt-scheduled-at','appt-edit-dt','sched-duration','appt-duration','appt-edit-duration'].forEach(function(eid) {
+      var ef = document.getElementById(eid);
+      if (ef && !ef._cohostWatched) {
+        ef._cohostWatched = true;
+        ef.addEventListener('change', function() {
+          var s = document.getElementById('_cohost-sel');
+          if (s && s.value && s.value !== '__ext__') {
+            var op = s.options[s.selectedIndex];
+            _checkCohostAvail(s.value, op ? op.text : '');
+          }
+        });
+      }
+    });
+  }, 200);
   var hasExisting = !!(existingCohostId || existingCohostEmail || existingExtra.length);
   return '<div style="margin-top:14px;border-top:0.5px solid var(--border);padding-top:12px;">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:4px 0;" onclick="var b=document.getElementById(\'_inv-body\');var ic=document.getElementById(\'_inv-ic\');if(b){var op=b.style.display!==\'none\';b.style.display=op?\'none\':\'\';ic.textContent=op?\'expand\':\'collapse\';}">'
@@ -4672,6 +4687,7 @@ function _inviteSectionHtml(existingCohostId, existingCohostEmail, existingCohos
     + '<input type="text" id="_cohost-ext-name" placeholder="Name" value="' + (extSelected ? (existingCohostName||'') : '') + '" style="width:100%;box-sizing:border-box;padding:6px 10px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-0);color:var(--text-primary);font-size:13px;margin-bottom:4px;" />'
     + '<input type="email" id="_cohost-ext-email" placeholder="Email address" value="' + (extSelected ? (existingCohostEmail||'') : '') + '" style="width:100%;box-sizing:border-box;padding:6px 10px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-0);color:var(--text-primary);font-size:13px;" />'
     + '</div>'
+    + '<div id="_cohost-avail"></div>'
     + '<label style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-top:12px;display:block;">Additional Attendees'
     + '<span style="font-weight:400;color:var(--text-muted);"> - any email, all get invite</span></label>'
     + '<div id="_ear-list" style="margin-top:6px;">' + extraHtml + '</div>'
@@ -4687,6 +4703,13 @@ function _inviteSectionHtml(existingCohostId, existingCohostEmail, existingCohos
 window._cohostSelChange = function(sel) {
   var ext = document.getElementById('_cohost-ext');
   if (ext) ext.style.display = sel.value === '__ext__' ? '' : 'none';
+  if (sel.value && sel.value !== '__ext__') {
+    var op = sel.options[sel.selectedIndex];
+    _checkCohostAvail(sel.value, op ? op.text : '');
+  } else {
+    var box = document.getElementById('_cohost-avail');
+    if (box) box.innerHTML = '';
+  }
 };
 
 window._addExtraAtt = function() {
@@ -4775,6 +4798,125 @@ async function _sendCohostInvites(bookingId, inv, apptDetails) {
     } catch(e) {}
   }
 }
+
+// ── CO-HOST AVAILABILITY HELPERS ────────────────────────────────────────────
+// ── CO-HOST AVAILABILITY HELPERS ─────────────────────────────────────────────
+
+window._toggleCohostSched = function(id) {
+  var s  = document.getElementById(id);
+  var ic = document.getElementById(id + '-ic');
+  if (!s) return;
+  var nowHidden = s.style.display === 'none';
+  s.style.display = nowHidden ? '' : 'none';
+  if (ic) ic.textContent = nowHidden ? '▴' : '▾';
+};
+
+function _getProposedApptTime() {
+  var ids = ['sched-dt', 'appt-dt', 'appt-scheduled-at', 'appt-edit-dt'];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el && el.value) {
+      try { return new Date(el.value).toISOString(); } catch(e) {}
+    }
+  }
+  return null;
+}
+
+function _getProposedApptDuration() {
+  var ids = ['sched-duration', 'appt-duration', 'appt-edit-duration'];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el && el.value) {
+      var v = parseInt(el.value);
+      if (!isNaN(v) && v > 0) return v;
+    }
+  }
+  return 60;
+}
+
+async function _checkCohostAvail(agentId, agentName) {
+  var box = document.getElementById('_cohost-avail');
+  if (!box) return;
+  if (!agentId || agentId === '__ext__') { box.innerHTML = ''; return; }
+  var proposedAt  = _getProposedApptTime();
+  var durationMin = _getProposedApptDuration();
+  if (!proposedAt) {
+    box.innerHTML = '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);padding:5px 8px;border:0.5px solid var(--border);border-radius:5px;">Set the appointment date &amp; time above to check availability</div>';
+    return;
+  }
+  box.innerHTML = '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);padding:5px 8px;">Checking availability…</div>';
+  var d  = new Date(proposedAt);
+  var d0 = new Date(d.getTime() - 86400000).toISOString();
+  var d1 = new Date(d.getTime() + 86400000).toISOString();
+  try {
+    var res = await supabaseClient
+      .from('booking_intents')
+      .select('id,scheduled_at,duration_minutes,appointment_label,appointment_type,booker_name,contact_name,status,agent_id,cohost_agent_id')
+      .or('agent_id.eq.' + agentId + ',cohost_agent_id.eq.' + agentId)
+      .gte('scheduled_at', d0)
+      .lte('scheduled_at', d1)
+      .in('status', ['scheduled', 'pending', 'rescheduled'])
+      .order('scheduled_at');
+    if (res.error) { box.innerHTML = ''; return; }
+    var propStart = d.getTime();
+    var propEnd   = propStart + (durationMin || 60) * 60000;
+    var dayAppts  = res.data || [];
+    var conflicts = dayAppts.filter(function(a) {
+      if (!a.scheduled_at) return false;
+      var dur = a.duration_minutes || 60;
+      if (dur === 1440) return false;
+      var aStart = new Date(a.scheduled_at).getTime();
+      var aEnd   = aStart + dur * 60000;
+      return aStart < propEnd && aEnd > propStart;
+    });
+    box.innerHTML = _cohostAvailHtml(conflicts, dayAppts, agentName || 'Co-host', proposedAt, durationMin);
+  } catch(e) { box.innerHTML = ''; }
+}
+
+function _cohostAvailHtml(conflicts, dayAppts, agentName, proposedAt, durationMin) {
+  var bdr  = conflicts.length ? 'rgba(239,68,68,0.35)' : 'rgba(34,197,94,0.35)';
+  var html = '<div style="margin-top:8px;border-radius:6px;border:0.5px solid ' + bdr + ';overflow:hidden;">';
+  if (conflicts.length === 0) {
+    html += '<div style="padding:7px 10px;background:rgba(34,197,94,0.07);display:flex;align-items:center;gap:6px;">'
+      + '<span>✅</span>'
+      + '<span style="font-size:12px;color:var(--text-primary);">' + agentName + ' is available</span>'
+      + '</div>';
+  } else {
+    var cLines = conflicts.map(function(c) {
+      var label = c.appointment_label || c.appointment_type || 'Appointment';
+      var ts = new Date(c.scheduled_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      return label + ' at ' + ts + ' (' + (c.duration_minutes || 60) + ' min)';
+    }).join('; ');
+    html += '<div style="padding:7px 10px;background:rgba(239,68,68,0.07);display:flex;align-items:flex-start;gap:6px;">'
+      + '<span>⚠️</span>'
+      + '<span style="font-size:12px;color:var(--text-primary);"><strong>Conflict:</strong> ' + agentName + ' has ' + cLines + '</span>'
+      + '</div>';
+  }
+  if (dayAppts.length > 0) {
+    var sid = '_cs' + Date.now();
+    html += '<div onclick="window._toggleCohostSched(\'' + sid + '\')" style="border-top:0.5px solid var(--border);padding:5px 10px;cursor:pointer;font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;user-select:none;">'
+      + '<span>' + agentName + '\'s schedule this day</span>'
+      + '<span id="' + sid + '-ic">▾</span></div>'
+      + '<div id="' + sid + '" style="display:none;padding:4px 10px 6px;border-top:0.5px solid var(--border);">';
+    dayAppts.forEach(function(a) {
+      var isC   = conflicts.some(function(c) { return c.id === a.id; });
+      var label = a.appointment_label || a.appointment_type || 'Appointment';
+      var who   = a.booker_name || a.contact_name || '';
+      var ts    = new Date(a.scheduled_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      var dur   = a.duration_minutes || 60;
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px;border-bottom:0.5px solid var(--border);color:' + (isC ? '#ef4444' : 'var(--text-primary)') + ';">'
+        + '<span style="font-weight:600;min-width:52px;">' + ts + '</span>'
+        + '<span style="flex:1;">' + label + (who ? ' · ' + who : '') + ' <span style="color:var(--text-muted);">(' + dur + 'm)</span></span>'
+        + (isC ? '<span style="font-weight:700;font-size:10px;color:#ef4444;">CONFLICT</span>' : '')
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+
 
 
 function apptDetail(id) {
