@@ -4411,7 +4411,7 @@ function _calWeek() {
         const timeDiv = isAllDay ? '' : '<div style="font-size:9px;color:var(--text-muted);">' + timeStr + '</div>';
         const blockH = isAllDay ? 22 : Math.max(24, Math.round((a.duration_minutes||30)/60*56));
         const blockTop = isAllDay ? 2 : top;
-      return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:2px;right:2px;top:${blockTop}px;height:${blockH}px;background:${stc.bg};border-left:3px solid ${stc.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:grab;overflow:hidden;z-index:${isAllDay?2:1};">
+      return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:calc(${a._col}/${a._totalCols}*100% + 2px);width:calc(100%/${a._totalCols} - ${a._totalCols>1?3:4}px);top:${blockTop}px;height:${blockH}px;background:${stc.bg};border-left:3px solid ${stc.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:grab;overflow:hidden;z-index:${isAllDay?2:1};">
         <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}${isAllDay?' — All Day':''}</div>
         ${timeDiv}
       </div>`;
@@ -4448,6 +4448,33 @@ function _calWeek() {
 }
 
 // ── DAY VIEW ──
+function _calLayoutAppts(appts) {
+  // Separate all-day from timed events
+  const allDay = appts.filter(a => a.duration_minutes === 1440)
+    .map(a => ({...a, _col:0, _totalCols:1}));
+  const timed  = appts.filter(a => a.duration_minutes !== 1440)
+    .map(a => ({...a}));
+  // Sort timed by start time
+  timed.sort((a,b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+  // Assign each event to the first lane where it doesn't overlap
+  const lanes = []; // lanes[i] = end-timestamp of last event in lane i
+  timed.forEach(a => {
+    const start = new Date(a.scheduled_at).getTime();
+    const end   = start + (a.duration_minutes||30) * 60000;
+    a._start = start; a._end = end;
+    let col = 0;
+    while (lanes[col] !== undefined && lanes[col] > start) col++;
+    lanes[col] = end;
+    a._col = col;
+  });
+  // For each event, count total lanes needed in its overlap cluster
+  timed.forEach(a => {
+    const overlapping = timed.filter(b => b._start < a._end && b._end > a._start);
+    a._totalCols = Math.max(...overlapping.map(b => b._col)) + 1;
+  });
+  return [...allDay, ...timed];
+}
+
 async function calDrop(event, view, dateStr) {
   event.preventDefault();
   const id = event.dataTransfer.getData('text/plain');
@@ -4511,7 +4538,7 @@ function _calDay() {
     const _apptLabel = a.appointment_label||a.appointment_type||'';
     const typeDiv = isAllDay ? '' : '<div style="font-size:11px;color:var(--text-muted);">' + (timeStr + (_apptLabel ? '  |  '+_apptLabel : '')) + '</div>';
     const agentRow = allAgents.find(x=>x.id===a.agent_id);
-    return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:4px;right:4px;top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:grab;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+    return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:calc(${a._col}/${a._totalCols}*100% + 4px);width:calc(100%/${a._totalCols} - ${a._totalCols>1?6:8}px);top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:grab;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}${isAllDay?' — All Day':''}</div>
       ${typeDiv}
       ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
