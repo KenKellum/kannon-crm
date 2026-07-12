@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 // GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
 const GOOGLE_OAUTH_CLIENT_ID = '500395306800-26vlgl3b34p83t8ik3b4u0hcrk7qq0u8.apps.googleusercontent.com';
 const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
-const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
+const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar';
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
@@ -198,10 +198,13 @@ async function showApp() {
   if (_urlParams.get('gmail') === 'connected') {
     window.history.replaceState({}, '', window.location.pathname);
     currentAgent.gmail_connected = true;
+    currentAgent.calendar_connected = true;
     renderDashboard();
-    showToast('✓ Gmail connected!');
+    showToast('✓ Gmail & Calendar connected!');
   } else if (currentAgent.role === 'agent' && !currentAgent.gmail_connected) {
     setTimeout(() => showGmailSetup(false), 500);
+  } else if (currentAgent.gmail_connected && !currentAgent.calendar_connected) {
+    setTimeout(() => showToast('🗓 Connect your Google Calendar in Settings → Gmail & Calendar for full sync.'), 1500);
   }
 }
 
@@ -4955,6 +4958,30 @@ function _cohostAvailHtml(conflicts, dayAppts, agentName, proposedAt, durationMi
 
 
 
+// Google Calendar sync helper
+async function _syncCalendarEvent(bookingId, apptData, calAction, existingEventId) {
+  if (!currentAgent || !currentAgent.calendar_connected) return;
+  try {
+    var url = new URL(APPS_SCRIPT_URL);
+    url.searchParams.set('action',     'calendar_sync');
+    url.searchParams.set('agent_id',   currentAgent.id);
+    url.searchParams.set('booking_id', bookingId);
+    url.searchParams.set('cal_action', calAction);
+    if (apptData)        url.searchParams.set('event_data', JSON.stringify(apptData));
+    if (existingEventId) url.searchParams.set('event_id',   existingEventId);
+    var resp = await fetch(url.toString());
+    var json = await resp.json();
+    if (json.event_id && calAction !== 'delete') {
+      await supabaseClient.from('booking_intents')
+        .update({ google_calendar_event_id: json.event_id })
+        .eq('id', bookingId);
+      // keep local copy in sync
+      var idx = calAppointments.findIndex(function(a) { return a.id === bookingId; });
+      if (idx >= 0) calAppointments[idx].google_calendar_event_id = json.event_id;
+    }
+  } catch(e) { console.warn('Calendar sync failed:', e); }
+}
+
 function apptDetail(id) {
   const a = calAppointments.find(x=>x.id===id);
   if (!a) return;
@@ -5109,6 +5136,7 @@ function apptDetail(id) {
     }
     const {error} = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
     if (error) { showToast('Error: '+error.message); return false; }
+    _syncCalendarEvent(id, Object.assign({}, a, updates), updates.scheduled_at ? 'update' : 'update', a.google_calendar_event_id||null);
     if (!isPersonal) await _sendCohostInvites(id, inv, {contactName: a.booker_name||a.contact_name||'', appointmentType: appointment_label||a.appointment_label||a.appointment_type||'', dateIso: a.scheduled_at||'', notes: agent_notes||''});
     if (!isPersonal && document.getElementById('appt-edit-resend')?.checked) {
       const toEmail = a.booker_email||contacts.find(c=>c.id===a.contact_id)?.email||'';
@@ -5209,6 +5237,7 @@ async function apptSchedule(id) {
     };
     const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
+    _syncCalendarEvent(id, Object.assign({}, appt, updates), appt&&appt.google_calendar_event_id ? 'update' : 'create', appt&&appt.google_calendar_event_id||null);
     // Fire-and-forget email via Apps Script
     try {
       const url = new URL(APPS_SCRIPT_URL);
@@ -5310,6 +5339,7 @@ async function apptReschedule(id) {
 
 async function apptCancel(id) {
   const appt = calAppointments.find(a=>a.id===id);
+  if (appt && appt.google_calendar_event_id) _syncCalendarEvent(id, appt, 'delete', appt.google_calendar_event_id);
   const who = appt ? (appt.booker_name||appt.contact_name||'this request') : 'this request';
   showModal('Dismiss Request', `
     <p style="font-size:14px;color:var(--text-primary);margin:0 0 8px 0;">Cancel the appointment request from <strong>${who}</strong>?</p>
@@ -5460,6 +5490,7 @@ async function apptLog() {
     var ins = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
     if (ins.error) { showToast('Error: ' + ins.error.message); return false; }
     calAppointments.push(ins.data);
+    if (ins.data.scheduled_at) _syncCalendarEvent(ins.data.id, ins.data, 'create', null);
     if (dt) { calDate = new Date(dt); calView = calDate.toDateString() === new Date().toDateString() ? calView : 'month'; }
     if (sendEmail && contact && contact.email && dt) {
       try {
