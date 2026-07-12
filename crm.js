@@ -4632,11 +4632,13 @@ function calDayClick(dateStr) { calDate = new Date(dateStr+'T12:00:00'); calSwit
 // ── CO-HOST / ATTENDEE INVITE HELPERS ──────────────────────────────────────
 // ── CO-HOST / ATTENDEE INVITE HELPERS ────────────────────────────────────────
 
-function _inviteSectionHtml(existingCohostId, existingCohostEmail, existingCohostName, existingExtra) {
+function _inviteSectionHtml(existingCohostId, existingCohostEmail, existingCohostName, existingExtra, proposedAt, durationMin) {
   existingCohostId    = existingCohostId    || null;
   existingCohostEmail = existingCohostEmail || null;
   existingCohostName  = existingCohostName  || null;
   existingExtra       = existingExtra       || [];
+  if (proposedAt)  window._inviteProposedAt  = proposedAt;
+  if (durationMin) window._inviteProposedDuration = durationMin;
   var ca = currentAgent || {};
   var agencyAgents = (allAgents||[]).filter(function(a) {
     return a.id !== ca.id && (!ca.agency_id || a.agency_id === ca.agency_id);
@@ -4819,7 +4821,7 @@ function _getProposedApptTime() {
       try { return new Date(el.value).toISOString(); } catch(e) {}
     }
   }
-  return null;
+  return window._inviteProposedAt || null;
 }
 
 function _getProposedApptDuration() {
@@ -5019,7 +5021,7 @@ function apptDetail(id) {
       <input type="checkbox" id="appt-edit-resend" style="width:14px;height:14px;cursor:pointer;" />
       <label for="appt-edit-resend" style="font-size:13px;cursor:pointer;margin:0;">Resend confirmation email to contact</label>
     </div>` : ''}
-    ${_inviteSectionHtml(a.cohost_agent_id||null, a.cohost_email||null, a.cohost_name||null, a.extra_attendees||[])}
+    ${_inviteSectionHtml(a.cohost_agent_id||null, a.cohost_email||null, a.cohost_name||null, a.extra_attendees||[], a.scheduled_at||null, a.duration_minutes||60)}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
       ${isPersonal
         ? `<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">🗑 Delete Block</button>`
