@@ -4346,7 +4346,7 @@ function _calMonth() {
     const chips = dayAppts.slice(0,3).map(a => {
       const st = _calStatus(a.status);
       const name = a.booker_name || a.contact_name || a.appointment_type || 'Appointment';
-      const stc = (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
+      const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
       const time = a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
       return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${stc.bg};border-left:2px solid ${stc.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
     }).join('');
@@ -4404,7 +4404,7 @@ function _calWeek() {
       const hr = dt.getHours(), mn = dt.getMinutes();
       const top = Math.max(0,(hr-7)*56 + Math.round(mn/60*56));
       const st = _calStatus(a.status);
-      const stc = (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
+      const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
       const name = a.booker_name || a.contact_name || a.appointment_type || 'Appt';
       const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       const isAllDay = a.duration_minutes === 1440;
@@ -4533,7 +4533,7 @@ function _calDay() {
     const st = _calStatus(a.status);
     const name = a.booker_name || a.contact_name || a.appointment_type || 'Appointment';
     const isAllDay = a.duration_minutes === 1440;
-    const stc = (!a.contact_id || isAllDay) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
+    const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || isAllDay) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
     const timeStr = isAllDay ? 'All Day' : dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
     const _apptLabel = a.appointment_label||a.appointment_type||'';
     const typeDiv = isAllDay ? '' : '<div style="font-size:11px;color:var(--text-muted);">' + (timeStr + (_apptLabel ? '  |  '+_apptLabel : '')) + '</div>';
@@ -4627,6 +4627,156 @@ function calSwitchView(v) { calView = v; _calRenderView(); }
 function calDayClick(dateStr) { calDate = new Date(dateStr+'T12:00:00'); calSwitchView('day'); }
 
 // ── APPOINTMENT DETAIL MODAL ──
+
+
+// ── CO-HOST / ATTENDEE INVITE HELPERS ──────────────────────────────────────
+// ── CO-HOST / ATTENDEE INVITE HELPERS ────────────────────────────────────────
+
+function _inviteSectionHtml(existingCohostId, existingCohostEmail, existingCohostName, existingExtra) {
+  existingCohostId    = existingCohostId    || null;
+  existingCohostEmail = existingCohostEmail || null;
+  existingCohostName  = existingCohostName  || null;
+  existingExtra       = existingExtra       || [];
+  var ca = currentAgent || {};
+  var agencyAgents = (allAgents||[]).filter(function(a) {
+    return a.id !== ca.id && (!ca.agency_id || a.agency_id === ca.agency_id);
+  });
+  var agentOpts = agencyAgents.map(function(a) {
+    return '<option value="' + a.id + '" data-email="' + (a.email||'') + '" data-name="' + (a.name||'') + '"'
+      + (a.id === existingCohostId ? ' selected' : '') + '>' + (a.name||'') + '</option>';
+  }).join('');
+  var extSelected = !!(existingCohostEmail && !agencyAgents.find(function(a) { return a.id === existingCohostId; }));
+  var extraHtml = existingExtra.map(function(e, i) {
+    return '<div class="_earow" id="_ear-' + i + '" style="display:flex;gap:4px;margin-bottom:4px;">'
+      + '<input type="text" placeholder="Name" id="_ean-' + i + '" value="' + ((e.name||'').replace(/"/g,'&quot;')) + '" style="flex:1;min-width:0;padding:6px 8px;border:0.5px solid var(--border);border-radius:4px;background:var(--surface-0);color:var(--text-primary);font-size:12px;" />'
+      + '<input type="email" placeholder="Email" id="_eae-' + i + '" value="' + ((e.email||'').replace(/"/g,'&quot;')) + '" style="flex:2;min-width:0;padding:6px 8px;border:0.5px solid var(--border);border-radius:4px;background:var(--surface-0);color:var(--text-primary);font-size:12px;" />'
+      + '<button type="button" onclick="window._removeExtraAtt(' + i + ')" style="padding:4px 8px;border:0.5px solid var(--danger,#ef4444);background:transparent;color:var(--danger,#ef4444);border-radius:4px;cursor:pointer;font-size:13px;">&times;</button>'
+      + '</div>';
+  }).join('');
+  window._extraAttCount = existingExtra.length;
+  var hasExisting = !!(existingCohostId || existingCohostEmail || existingExtra.length);
+  return '<div style="margin-top:14px;border-top:0.5px solid var(--border);padding-top:12px;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:4px 0;" onclick="var b=document.getElementById(\'_inv-body\');var ic=document.getElementById(\'_inv-ic\');if(b){var op=b.style.display!==\'none\';b.style.display=op?\'none\':\'\';ic.textContent=op?\'expand\':\'collapse\';}">'
+    + '<span style="font-size:12px;font-weight:600;color:var(--text-secondary);">Invite Attendees</span>'
+    + '<span id="_inv-ic" style="font-size:11px;color:var(--text-muted);">' + (hasExisting ? 'collapse' : 'expand') + '</span>'
+    + '</div>'
+    + '<div id="_inv-body" style="' + (hasExisting ? '' : 'display:none;') + 'margin-top:10px;">'
+    + '<label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Co-host'
+    + '<span style="font-weight:400;color:var(--text-muted);"> - gets invite email' + (agencyAgents.length ? ' + CRM calendar entry' : '') + '</span></label>'
+    + '<select id="_cohost-sel" onchange="window._cohostSelChange(this)" style="width:100%;box-sizing:border-box;padding:7px 10px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-0);color:var(--text-primary);font-size:13px;margin-top:4px;">'
+    + '<option value="">-- None --</option>'
+    + agentOpts
+    + '<option value="__ext__"' + (extSelected ? ' selected' : '') + '>Other (enter email)...</option>'
+    + '</select>'
+    + '<div id="_cohost-ext" style="margin-top:6px;' + (extSelected ? '' : 'display:none;') + '">'
+    + '<input type="text" id="_cohost-ext-name" placeholder="Name" value="' + (extSelected ? (existingCohostName||'') : '') + '" style="width:100%;box-sizing:border-box;padding:6px 10px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-0);color:var(--text-primary);font-size:13px;margin-bottom:4px;" />'
+    + '<input type="email" id="_cohost-ext-email" placeholder="Email address" value="' + (extSelected ? (existingCohostEmail||'') : '') + '" style="width:100%;box-sizing:border-box;padding:6px 10px;border:0.5px solid var(--border);border-radius:6px;background:var(--surface-0);color:var(--text-primary);font-size:13px;" />'
+    + '</div>'
+    + '<label style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-top:12px;display:block;">Additional Attendees'
+    + '<span style="font-weight:400;color:var(--text-muted);"> - any email, all get invite</span></label>'
+    + '<div id="_ear-list" style="margin-top:6px;">' + extraHtml + '</div>'
+    + '<button type="button" onclick="window._addExtraAtt()" style="margin-top:4px;padding:5px 12px;border:0.5px solid var(--border);background:var(--surface-1);border-radius:4px;cursor:pointer;font-size:12px;color:var(--text-secondary);">+ Add Attendee</button>'
+    + '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface-0);border-radius:6px;border:0.5px solid var(--border);">'
+    + '<input type="checkbox" id="_inv-send" checked style="width:14px;height:14px;cursor:pointer;" />'
+    + '<label for="_inv-send" style="font-size:12px;margin:0;cursor:pointer;color:var(--text-primary);">Send invitation emails to all invitees</label>'
+    + '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+window._cohostSelChange = function(sel) {
+  var ext = document.getElementById('_cohost-ext');
+  if (ext) ext.style.display = sel.value === '__ext__' ? '' : 'none';
+};
+
+window._addExtraAtt = function() {
+  var list = document.getElementById('_ear-list');
+  if (!list) return;
+  var i = (window._extraAttCount || 0);
+  window._extraAttCount = i + 1;
+  var div = document.createElement('div');
+  div.id = '_ear-' + i;
+  div.className = '_earow';
+  div.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;';
+  div.innerHTML = '<input type="text" placeholder="Name" id="_ean-' + i + '" style="flex:1;min-width:0;padding:6px 8px;border:0.5px solid var(--border);border-radius:4px;background:var(--surface-0);color:var(--text-primary);font-size:12px;" />'
+    + '<input type="email" placeholder="Email" id="_eae-' + i + '" style="flex:2;min-width:0;padding:6px 8px;border:0.5px solid var(--border);border-radius:4px;background:var(--surface-0);color:var(--text-primary);font-size:12px;" />'
+    + '<button type="button" onclick="window._removeExtraAtt(' + i + ')" style="padding:4px 8px;border:0.5px solid var(--danger,#ef4444);background:transparent;color:var(--danger,#ef4444);border-radius:4px;cursor:pointer;font-size:13px;">&times;</button>';
+  list.appendChild(div);
+};
+
+window._removeExtraAtt = function(i) {
+  var el = document.getElementById('_ear-' + i);
+  if (el) el.remove();
+};
+
+function _readInviteSection() {
+  var sel = document.getElementById('_cohost-sel');
+  var selVal = sel ? sel.value : '';
+  var cohostAgentId = null, cohostEmail = null, cohostName = null;
+  if (selVal && selVal !== '__ext__') {
+    cohostAgentId = selVal;
+    var opt = sel.options[sel.selectedIndex];
+    cohostEmail = opt ? (opt.getAttribute('data-email') || '') : '';
+    cohostName  = opt ? (opt.getAttribute('data-name')  || '') : '';
+  } else if (selVal === '__ext__') {
+    cohostName  = (document.getElementById('_cohost-ext-name')  ? document.getElementById('_cohost-ext-name').value.trim()  : '') || null;
+    cohostEmail = (document.getElementById('_cohost-ext-email') ? document.getElementById('_cohost-ext-email').value.trim() : '') || null;
+  }
+  var rows = document.querySelectorAll('._earow');
+  var extraAttendees = [];
+  rows.forEach(function(row) {
+    var idx = (row.id||'').replace('_ear-','');
+    var nm  = document.getElementById('_ean-' + idx);
+    var em  = document.getElementById('_eae-' + idx);
+    var nmv = nm ? nm.value.trim() : '';
+    var emv = em ? em.value.trim() : '';
+    if (emv && emv.indexOf('@') > -1) extraAttendees.push({ name: nmv || emv.split('@')[0], email: emv });
+  });
+  var sendChk = document.getElementById('_inv-send');
+  var sendEmail = sendChk ? sendChk.checked !== false : true;
+  return { cohostAgentId: cohostAgentId, cohostEmail: cohostEmail, cohostName: cohostName, extraAttendees: extraAttendees, sendEmail: sendEmail };
+}
+
+async function _sendCohostInvites(bookingId, inv, apptDetails) {
+  if (!inv || !inv.sendEmail) return;
+  if (inv.cohostEmail) {
+    try {
+      var u = new URL(APPS_SCRIPT_URL);
+      u.searchParams.set('action','invite_cohost');
+      u.searchParams.set('booking_intent_id', bookingId);
+      u.searchParams.set('cohost_email', inv.cohostEmail);
+      u.searchParams.set('cohost_name',  inv.cohostName  || '');
+      if (inv.cohostAgentId) u.searchParams.set('cohost_agent_id', inv.cohostAgentId);
+      u.searchParams.set('agent_id',          currentAgent.id);
+      u.searchParams.set('agent_name',         currentAgent.name||'');
+      u.searchParams.set('contact_name',       apptDetails.contactName      || '');
+      u.searchParams.set('appointment_type',   apptDetails.appointmentType  || '');
+      u.searchParams.set('datetime_iso',       apptDetails.dateIso          || '');
+      if (apptDetails.notes) u.searchParams.set('notes', apptDetails.notes);
+      fetch(u.toString());
+    } catch(e) {}
+  }
+  var extras = inv.extraAttendees || [];
+  for (var ai = 0; ai < extras.length; ai++) {
+    var at = extras[ai];
+    try {
+      var u2 = new URL(APPS_SCRIPT_URL);
+      u2.searchParams.set('action','invite_attendee');
+      u2.searchParams.set('booking_intent_id', bookingId);
+      u2.searchParams.set('to',      at.email);
+      u2.searchParams.set('to_name', at.name  || '');
+      u2.searchParams.set('agent_id',          currentAgent.id);
+      u2.searchParams.set('agent_name',         currentAgent.name||'');
+      u2.searchParams.set('contact_name',       apptDetails.contactName     || '');
+      u2.searchParams.set('appointment_type',   apptDetails.appointmentType || '');
+      u2.searchParams.set('datetime_iso',       apptDetails.dateIso         || '');
+      if (apptDetails.notes) u2.searchParams.set('notes', apptDetails.notes);
+      fetch(u2.toString());
+    } catch(e) {}
+  }
+}
+
+
 function apptDetail(id) {
   const a = calAppointments.find(x=>x.id===id);
   if (!a) return;
@@ -4727,6 +4877,7 @@ function apptDetail(id) {
       <input type="checkbox" id="appt-edit-resend" style="width:14px;height:14px;cursor:pointer;" />
       <label for="appt-edit-resend" style="font-size:13px;cursor:pointer;margin:0;">Resend confirmation email to contact</label>
     </div>` : ''}
+    ${_inviteSectionHtml(a.cohost_agent_id||null, a.cohost_email||null, a.cohost_name||null, a.extra_attendees||[])}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
       ${isPersonal
         ? `<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">🗑 Delete Block</button>`
@@ -4748,7 +4899,11 @@ function apptDetail(id) {
     const duration_minutes  = isDurAllDay ? 1440 : (parseInt(document.getElementById('appt-duration')?.value)||30);
     const agent_notes        = document.getElementById('appt-edit-notes')?.value?.trim()||null;
     const appointment_label  = document.getElementById('appt-edit-label')?.value?.trim()||null;
-    const updates = {scheduled_at, duration_minutes, agent_notes, appointment_label};
+    const inv = _readInviteSection();
+    const updates = {scheduled_at, duration_minutes, agent_notes, appointment_label,
+      cohost_agent_id: inv.cohostAgentId||null, cohost_email: inv.cohostEmail||null,
+      cohost_name: inv.cohostName||null, cohost_status: inv.cohostAgentId?'pending':null,
+      extra_attendees: inv.extraAttendees};
     if (!isPersonal) {
       const _tSel = document.getElementById('appt-edit-type-sel')?.value||'';
       updates.appointment_type = _tSel === '__other__'
@@ -4757,6 +4912,7 @@ function apptDetail(id) {
     }
     const {error} = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
     if (error) { showToast('Error: '+error.message); return false; }
+    if (!isPersonal) await _sendCohostInvites(id, inv, {contactName: a.booker_name||a.contact_name||'', appointmentType: appointment_label||a.appointment_label||a.appointment_type||'', dateIso: a.scheduled_at||'', notes: agent_notes||''});
     if (!isPersonal && document.getElementById('appt-edit-resend')?.checked) {
       const toEmail = a.booker_email||contacts.find(c=>c.id===a.contact_id)?.email||'';
       if (toEmail) {
@@ -4833,6 +4989,7 @@ async function apptSchedule(id) {
     </div>
     <label style="margin-top:12px;">Notes to prospect (optional)</label>
     <input type="text" id="sched-notes" placeholder="Zoom link, phone number, location, etc." style="width:100%;box-sizing:border-box;" />
+  ${_inviteSectionHtml(appt&&appt.cohost_agent_id||null, appt&&appt.cohost_email||null, appt&&appt.cohost_name||null, appt&&appt.extra_attendees||[])}
   `, async () => {
     const dtVal  = document.getElementById('sched-dt').value;
     const toEmail = document.getElementById('sched-email').value.trim();
@@ -4842,11 +4999,15 @@ async function apptSchedule(id) {
     const notes  = document.getElementById('sched-notes').value.trim();
     const parsed = new Date(dtVal);
     const isPropose = schedType === 'propose';
+    const inv = _readInviteSection();
     const updates = {
       status:         isPropose ? 'rescheduled' : 'scheduled',
       scheduled_at:   parsed.toISOString(),
       rescheduled_by: isPropose ? 'agent' : null,
       booker_email:   toEmail,
+      cohost_agent_id: inv.cohostAgentId||null, cohost_email: inv.cohostEmail||null,
+      cohost_name: inv.cohostName||null, cohost_status: inv.cohostAgentId?'pending':null,
+      extra_attendees: inv.extraAttendees,
       ...(notes ? { agent_notes: notes } : {})
     };
     const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id', id);
@@ -4866,6 +5027,7 @@ async function apptSchedule(id) {
     showToast(isPropose ? '📧 Reschedule proposal sent!' : '📋 Appointment confirmed!');
     const idx = calAppointments.findIndex(a => a.id === id);
     if (idx >= 0) Object.assign(calAppointments[idx], updates);
+    await _sendCohostInvites(id, inv, {contactName: name, appointmentType: appt&&appt.appointment_label||appt&&appt.appointment_type||'', dateIso: parsed.toISOString(), notes: notes||''});
     calDate = parsed;
     _calRenderView();
   });
@@ -5046,6 +5208,7 @@ async function apptLog() {
       <input type="checkbox" id="appt-send-email" checked style="width:15px;height:15px;accent-color:var(--fill-accent);flex-shrink:0;cursor:pointer;" />
       <label for="appt-send-email" style="font-size:13px;margin:0;cursor:pointer;font-weight:400;color:var(--text-primary);">Send confirmation email to contact</label>
     </div>
+  ${_inviteSectionHtml(null,null,null,[])}
   `, async () => {
     var isPersonal = (document.getElementById('appt-personal-section') || {}).style.display !== 'none';
     var contactId, apptType, contact;
@@ -5067,6 +5230,7 @@ async function apptLog() {
     var duration  = _isAllDay ? 1440 : (parseInt(_durVal) || 30);
     var notes     = ((document.getElementById('appt-notes') || {}).value || '').trim();
     var sendEmail = !isPersonal && ((document.getElementById('appt-send-email') || {}).checked);
+    var inv = _readInviteSection();
     var newAppt = {
       agent_id:          currentAgent.id,
       contact_id:        contactId || null,
@@ -5080,6 +5244,11 @@ async function apptLog() {
       duration_minutes:  duration,
       agent_notes:       notes || null,
       status:            dt ? 'scheduled' : 'pending',
+      cohost_agent_id:   inv.cohostAgentId   || null,
+      cohost_email:      inv.cohostEmail      || null,
+      cohost_name:       inv.cohostName       || null,
+      cohost_status:     inv.cohostAgentId    ? 'pending' : null,
+      extra_attendees:   inv.extraAttendees,
     };
     var ins = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
     if (ins.error) { showToast('Error: ' + ins.error.message); return false; }
