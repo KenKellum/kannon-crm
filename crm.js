@@ -4398,8 +4398,8 @@ function _calWeek() {
     const isToday = dk === today;
     const dayAppts = (byDate[dk]||[]);
 
-    // Position events by hour
-    const eventBlocks = dayAppts.map(a => {
+    // Position events by hour (side-by-side columns for overlaps)
+    const eventBlocks = _calLayoutAppts(dayAppts).map(a => {
       const dt = new Date(a.scheduled_at);
       const hr = dt.getHours(), mn = dt.getMinutes();
       const top = Math.max(0,(hr-7)*56 + Math.round(mn/60*56));
@@ -4498,7 +4498,8 @@ function _calDay() {
   const dayAppts = calAppointments.filter(a => a.scheduled_at && _calDateKey(a.scheduled_at)===dateKey);
   const HOURS = Array.from({length:14},(_,i)=>i+7);
 
-  const eventBlocks = dayAppts.map(a => {
+  // Side-by-side columns for overlapping events
+  const eventBlocks = _calLayoutAppts(dayAppts).map(a => {
     const dt = new Date(a.scheduled_at);
     const hr = dt.getHours(), mn = dt.getMinutes();
     const top = Math.max(0,(hr-7)*64 + Math.round(mn/60*64));
