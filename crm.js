@@ -4172,11 +4172,13 @@ async function renderSettings() {
         <div class="dash-card-title"><i class="ti ti-mail"></i>Gmail Connection</div>
         <div class="action-item">
           <div class="action-item-info">
-            <div class="action-item-name">Gmail Account</div>
+            <div class="action-item-name">Gmail &amp; Calendar</div>
             <div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected — email sequences will not send'}</div>
           </div>
-          ${currentAgent.gmail_connected
-            ? `<span class="badge badge-active"><i class="ti ti-check"></i> Connected</span>`
+          ${currentAgent.gmail_connected && currentAgent.calendar_connected
+            ? `<span class="badge badge-active"><i class="ti ti-check"></i> Gmail &amp; Calendar</span>`
+            : currentAgent.gmail_connected
+            ? `<span style="display:flex;align-items:center;gap:6px;"><span class="badge badge-active"><i class="ti ti-check"></i> Gmail</span><button class="btn btn-primary btn-sm" onclick="connectCalendar()" title="Re-authorize to add Calendar sync">&#128197; Add Calendar</button></span>`
             : `<button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>`}
         </div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:8px;line-height:1.6;">Gmail must be connected so the CRM can send outreach emails on your behalf through your Gmail account.</div>
