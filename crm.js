@@ -4875,6 +4875,27 @@ async function _checkCohostAvail(agentId, agentName) {
   } catch(e) { box.innerHTML = ''; }
 }
 
+function _cohostFreeWindows(dayAppts, proposedDurationMin, refTime) {
+  var dur = proposedDurationMin || 60;
+  var ref = refTime ? new Date(refTime) : (dayAppts.length ? new Date(dayAppts[0].scheduled_at) : new Date());
+  var dayStart = new Date(ref); dayStart.setHours(7,0,0,0);
+  var dayEnd   = new Date(ref); dayEnd.setHours(19,0,0,0);
+  var busy = dayAppts
+    .filter(function(a) { return a.scheduled_at && a.duration_minutes !== 1440; })
+    .map(function(a) {
+      var s = new Date(a.scheduled_at).getTime();
+      return { s: s, e: s + (a.duration_minutes || 60) * 60000 };
+    })
+    .sort(function(a, b) { return a.s - b.s; });
+  var free = [], cursor = dayStart.getTime();
+  busy.forEach(function(b) {
+    if (b.s >= cursor + dur * 60000) free.push({ start: cursor, end: b.s });
+    if (b.e > cursor) cursor = b.e;
+  });
+  if (dayEnd.getTime() >= cursor + dur * 60000) free.push({ start: cursor, end: dayEnd.getTime() });
+  return free;
+}
+
 function _cohostAvailHtml(conflicts, dayAppts, agentName, proposedAt, durationMin) {
   var bdr  = conflicts.length ? 'rgba(239,68,68,0.35)' : 'rgba(34,197,94,0.35)';
   var html = '<div style="margin-top:8px;border-radius:6px;border:0.5px solid ' + bdr + ';overflow:hidden;">';
@@ -4893,6 +4914,19 @@ function _cohostAvailHtml(conflicts, dayAppts, agentName, proposedAt, durationMi
       + '<span>⚠️</span>'
       + '<span style="font-size:12px;color:var(--text-primary);"><strong>Conflict:</strong> ' + agentName + ' has ' + cLines + '</span>'
       + '</div>';
+    var fw = _cohostFreeWindows(dayAppts, durationMin, proposedAt);
+    html += '<div style="padding:6px 10px;border-top:0.5px solid var(--border);">';
+    if (fw.length > 0) {
+      html += '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:3px;">Open windows this day:</div>';
+      fw.slice(0, 5).forEach(function(w) {
+        var s = new Date(w.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        var e = new Date(w.end).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        html += '<div style="font-size:11px;color:var(--text-primary);padding:1px 0;">\u2705 ' + s + ' \u2013 ' + e + '</div>';
+      });
+    } else {
+      html += '<div style="font-size:11px;color:var(--text-muted);">No open windows 7 AM \u2013 7 PM</div>';
+    }
+    html += '</div>';
   }
   if (dayAppts.length > 0) {
     var sid = '_cs' + Date.now();
