@@ -747,7 +747,7 @@ function renderDashboardAgent() {
         <div class="dash-card">
           ${_ctitle('ti-settings-automation', 'Automation status')}
           <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email outreach</div><div class="action-item-sub">Apps Script trigger</div></div><span class="badge badge-active"><i class="ti ti-check"></i> Active</span></div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Your Gmail</div><div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected'}</div></div>${currentAgent.gmail_connected ? `<span class="badge badge-active"><i class="ti ti-check"></i> Connected</span>` : `<button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect</button>`}</div>
+          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Gmail &amp; Calendar</div><div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected'}</div></div>${currentAgent.gmail_connected && currentAgent.calendar_connected ? `<span class="badge badge-active"><i class="ti ti-check"></i> Gmail &amp; Calendar</span>` : currentAgent.gmail_connected ? `<span style="display:flex;align-items:center;gap:6px;"><span class="badge badge-active"><i class="ti ti-check"></i> Gmail</span><button class="btn btn-primary btn-sm" onclick="connectCalendar()" title="Re-authorize to add Calendar sync">&#128197; Add Calendar</button></span>` : `<button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect</button>`}</div>
         </div>
       </div>
     </div>
@@ -1657,6 +1657,30 @@ async function pollGmailConnection() {
     const { data } = await supabaseClient.from('agents').select('gmail_connected,gmail_email').eq('id', currentAgent.id).single();
     if (data && data.gmail_connected) onGmailConnected(data.gmail_email || '');
     else setTimeout(tick, 3000);
+  };
+  setTimeout(tick, 3000);
+}
+function connectCalendar() {
+  if (!GOOGLE_OAUTH_CLIENT_ID || GOOGLE_OAUTH_CLIENT_ID === 'PASTE_CLIENT_ID_HERE') {
+    alert('Gmail OAuth not configured yet.'); return;
+  }
+  var url = 'https://accounts.google.com/o/oauth2/auth'
+    + '?client_id='    + GOOGLE_OAUTH_CLIENT_ID
+    + '&redirect_uri=' + encodeURIComponent(APPS_SCRIPT_URL)
+    + '&scope='        + encodeURIComponent(GMAIL_SCOPES)
+    + '&response_type=code&access_type=offline&prompt=consent'
+    + '&state='        + encodeURIComponent(currentAgent.id);
+  window.open(url, 'gmail-oauth', 'width=520,height=640,left=200,top=80');
+  showToast('\u23f3 Waiting for Calendar authorization...');
+  var n = 0;
+  var tick = async function() {
+    if (++n > 60) { showToast('Timed out — please try again.'); return; }
+    var r = await supabaseClient.from('agents').select('calendar_connected').eq('id', currentAgent.id).single();
+    if (r.data && r.data.calendar_connected) {
+      currentAgent.calendar_connected = true;
+      renderDashboard();
+      showToast('\ud83d\uddd3 Google Calendar connected!');
+    } else { setTimeout(tick, 3000); }
   };
   setTimeout(tick, 3000);
 }
