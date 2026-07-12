@@ -5037,25 +5037,31 @@ function apptDetail(id) {
     <input type="text" id="appt-edit-label" value="${editLabel}"
       placeholder="Short label shown on calendar..."
       style="width:100%;box-sizing:border-box;" />`}
-    <label style="margin-top:10px;">Duration</label>
-    <select id="appt-duration" onchange="apptDurationChange(this.value)"
-      style="width:100%;box-sizing:border-box;">${durOpts}</select>
-    <label style="margin-top:10px;">Date &amp; Time</label>
-    <input type="datetime-local" id="appt-dt" value="${defaultDt}"
-      onclick="try{this.showPicker()}catch(e){}"
-      style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'display:none;':''}" />
-    <input type="date" id="appt-dt-allday" value="${defaultDateOnly}"
-      onclick="try{this.showPicker()}catch(e){}"
-      style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'':'display:none;'}" />
-    <label style="margin-top:10px;">Notes</label>
-    <textarea id="appt-edit-notes" rows="2"
-      style="width:100%;box-sizing:border-box;">${a.agent_notes||''}</textarea>
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px;">
+      <div style="flex:1.5;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Date &amp; Time</label>
+        <input type="datetime-local" id="appt-dt" value="${defaultDt}"
+          onclick="try{this.showPicker()}catch(e){}"
+          style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'display:none;':''}" />
+        <input type="date" id="appt-dt-allday" value="${defaultDateOnly}"
+          onclick="try{this.showPicker()}catch(e){}"
+          style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'':'display:none;'}" />
+      </div>
+      <div style="flex:1;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Duration</label>
+        <select id="appt-duration" onchange="apptDurationChange(this.value)"
+          style="width:100%;box-sizing:border-box;">${durOpts}</select>
+      </div>
+    </div>
     ${!isPersonal ? `
-    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;">
       <input type="checkbox" id="appt-edit-resend" style="width:14px;height:14px;cursor:pointer;" />
       <label for="appt-edit-resend" style="font-size:13px;cursor:pointer;margin:0;">Resend confirmation email to contact</label>
     </div>` : ''}
     ${_inviteSectionHtml(a.cohost_agent_id||null, a.cohost_email||null, a.cohost_name||null, a.extra_attendees||[], a.scheduled_at||null, a.duration_minutes||60)}
+    <label style="margin-top:10px;">Notes</label>
+    <textarea id="appt-edit-notes" rows="2"
+      style="width:100%;box-sizing:border-box;">${a.agent_notes||''}</textarea>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
       ${isPersonal
         ? `<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">🗑 Delete Block</button>`
@@ -5165,9 +5171,9 @@ async function apptSchedule(id) {
       <label style="margin-top:12px;display:block;">Date &amp; Time <span style="font-size:11px;color:var(--text-muted);">(locked — switch to Propose to change)</span></label>
       <input type="datetime-local" id="sched-dt" value="${defaultDt}" disabled style="width:100%;box-sizing:border-box;" />
     </div>
+  ${_inviteSectionHtml(appt&&appt.cohost_agent_id||null, appt&&appt.cohost_email||null, appt&&appt.cohost_name||null, appt&&appt.extra_attendees||[])}
     <label style="margin-top:12px;">Notes to prospect (optional)</label>
     <input type="text" id="sched-notes" placeholder="Zoom link, phone number, location, etc." style="width:100%;box-sizing:border-box;" />
-  ${_inviteSectionHtml(appt&&appt.cohost_agent_id||null, appt&&appt.cohost_email||null, appt&&appt.cohost_name||null, appt&&appt.extra_attendees||[])}
   `, async () => {
     const dtVal  = document.getElementById('sched-dt').value;
     const toEmail = document.getElementById('sched-email').value.trim();
@@ -5312,11 +5318,13 @@ async function apptLog() {
   window.apptModeSwitch = function(mode) {
     var isC = mode === 'contact';
     var cs  = document.getElementById('appt-contact-section');
+    var cr  = document.getElementById('appt-contact-row');
     var ps  = document.getElementById('appt-personal-section');
     var er  = document.getElementById('appt-email-row');
     var bc  = document.getElementById('appt-mode-contact');
     var bp  = document.getElementById('appt-mode-personal');
     if (cs) cs.style.display = isC ? '' : 'none';
+    if (cr) cr.style.display = isC ? '' : 'none';
     if (ps) ps.style.display = isC ? 'none' : '';
     if (er) er.style.display = isC ? 'flex' : 'none';
     if (bc) { bc.style.background = isC ? 'var(--fill-accent)' : 'var(--surface-2)'; bc.style.color = isC ? '#fff' : 'var(--text-secondary)'; }
@@ -5344,10 +5352,8 @@ async function apptLog() {
         &#128197; Personal Block</button>
     </div>
     <div id="appt-contact-section">
-      <label>Contact</label>
-      ${buildContactSearch('', 'appt-contact', null)}
       <label>Appointment Type</label>
-      <input type="text" id="appt-type" placeholder="e.g. Discovery Call..." list="appt-type-list" autocomplete="off" />
+      <input type="text" id="appt-type" placeholder="e.g. Discovery Call..." list="appt-type-list" autocomplete="off" style="width:100%;box-sizing:border-box;" />
       <datalist id="appt-type-list">
         <option value="Discovery Call">
         <option value="Benefits Review">
@@ -5365,28 +5371,38 @@ async function apptLog() {
     </div>
     <div id="appt-personal-section" style="display:none;">
       <label>Block Title</label>
-      <input type="text" id="appt-personal-title" placeholder="e.g. Team Meeting, Lunch, Out of Office..." />
+      <input type="text" id="appt-personal-title" placeholder="e.g. Team Meeting, Lunch, Out of Office..." style="width:100%;box-sizing:border-box;" />
     </div>
-    <label>Duration</label>
-    <select id="appt-duration" onchange="apptDurationChange(this.value)">
-      <option value="15">15 minutes</option>
-      <option value="30" selected>30 minutes</option>
-      <option value="45">45 minutes</option>
-      <option value="60">1 hour</option>
-      <option value="90">1 hour 30 minutes</option>
-      <option value="120">2 hours</option>
-      <option value="allday">All Day</option>
-    </select>
-    <label>Date &amp; Time</label>
-    <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;" />
-    <input type="date" id="appt-dt-allday" value="${_defaultDt.split('T')[0]}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;display:none;" />
-    <label>Notes</label>
-    <textarea id="appt-notes" placeholder="Any context or details..."></textarea>
-    <div id="appt-email-row" style="margin-top:12px;display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface-0);border-radius:var(--radius);border:0.5px solid var(--border-accent);">
-      <input type="checkbox" id="appt-send-email" checked style="width:15px;height:15px;accent-color:var(--fill-accent);flex-shrink:0;cursor:pointer;" />
-      <label for="appt-send-email" style="font-size:13px;margin:0;cursor:pointer;font-weight:400;color:var(--text-primary);">Send confirmation email to contact</label>
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px;">
+      <div style="flex:1.5;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Date &amp; Time</label>
+        <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;width:100%;box-sizing:border-box;" />
+        <input type="date" id="appt-dt-allday" value="${_defaultDt.split('T')[0]}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;width:100%;box-sizing:border-box;display:none;" />
+      </div>
+      <div style="flex:1;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Duration</label>
+        <select id="appt-duration" onchange="apptDurationChange(this.value)" style="width:100%;box-sizing:border-box;">
+          <option value="15">15 minutes</option>
+          <option value="30" selected>30 minutes</option>
+          <option value="45">45 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="90">1 hr 30 min</option>
+          <option value="120">2 hours</option>
+          <option value="allday">All Day</option>
+        </select>
+      </div>
+    </div>
+    <div id="appt-contact-row">
+      <label style="margin-top:10px;">Contact</label>
+      ${buildContactSearch('', 'appt-contact', null)}
+      <div id="appt-email-row" style="margin-top:8px;display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface-0);border-radius:var(--radius);border:0.5px solid var(--border-accent);">
+        <input type="checkbox" id="appt-send-email" checked style="width:15px;height:15px;accent-color:var(--fill-accent);flex-shrink:0;cursor:pointer;" />
+        <label for="appt-send-email" style="font-size:13px;margin:0;cursor:pointer;font-weight:400;color:var(--text-primary);">Send confirmation email to contact</label>
+      </div>
     </div>
   ${_inviteSectionHtml(null,null,null,[])}
+    <label style="margin-top:10px;">Notes</label>
+    <textarea id="appt-notes" placeholder="Any context or details..." style="width:100%;box-sizing:border-box;"></textarea>
   `, async () => {
     var isPersonal = (document.getElementById('appt-personal-section') || {}).style.display !== 'none';
     var contactId, apptType, contact;
