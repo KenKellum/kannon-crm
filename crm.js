@@ -5006,6 +5006,19 @@ function apptDetail(id) {
       da.style.display = 'none'; dt.style.display = '';
     }
   };
+  setTimeout(function() {
+    ['appt-dt', 'appt-dt-allday'].forEach(function(eid) {
+      var el = document.getElementById(eid);
+      if (!el) return;
+      el.addEventListener('change', function() {
+        var orig = eid === 'appt-dt-allday' ? defaultDateOnly : defaultDt;
+        if (this.value && this.value !== orig) {
+          var cb = document.getElementById('appt-edit-resend');
+          if (cb && !cb.checked) cb.checked = true;
+        }
+      });
+    });
+  }, 200);
   showModal(title, `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
       ${isPersonal
