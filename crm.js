@@ -4374,10 +4374,12 @@ function _calMonth() {
 
     const chips = dayAppts.slice(0,3).map(a => {
       const st = _calStatus(a.status);
-      const name = a.booker_name || a.contact_name || a.appointment_label || a.appointment_type || 'Appointment';
-      const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
+      const _isPb = !a.contact_id || a.duration_minutes === 1440;
+      const name = _isPb ? (a.appointment_label || a.appointment_type || 'Personal Block') : (a.appointment_type || 'Appointment');
+      const nameTip = _isPb ? '' : (a.booker_name || a.contact_name || '').replace(/"/g,'&quot;');
+      const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : _isPb ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
       const time = a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
-      return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${stc.bg};border-left:2px solid ${stc.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
+      return `<div title="${nameTip}" onclick="event.stopPropagation();apptDetail('${a.id}')" draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${stc.bg};border-left:2px solid ${stc.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
     }).join('');
     const more = dayAppts.length > 3 ? `<div style="font-size:10px;color:var(--text-muted);padding-left:4px;">+${dayAppts.length-3} more</div>` : '';
 
@@ -4434,13 +4436,15 @@ function _calWeek() {
       const top = Math.max(0,(hr-7)*56 + Math.round(mn/60*56));
       const st = _calStatus(a.status);
       const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
-      const name = a.booker_name || a.contact_name || a.appointment_label || a.appointment_type || 'Appt';
+      const _isPbW = !a.contact_id || a.duration_minutes === 1440;
+      const name = _isPbW ? (a.appointment_label || a.appointment_type || 'Personal Block') : (a.appointment_type || 'Appt');
+      const nameTipW = _isPbW ? '' : (a.booker_name || a.contact_name || '').replace(/"/g,'&quot;');
       const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       const isAllDay = a.duration_minutes === 1440;
         const timeDiv = isAllDay ? '' : '<div style="font-size:9px;color:var(--text-muted);">' + timeStr + '</div>';
         const blockH = isAllDay ? 22 : Math.max(24, Math.round((a.duration_minutes||30)/60*56));
         const blockTop = isAllDay ? 2 : top;
-      return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:calc(${a._col}/${a._totalCols}*100% + 2px);width:calc(100%/${a._totalCols} - ${a._totalCols>1?3:4}px);top:${blockTop}px;height:${blockH}px;background:${stc.bg};border-left:3px solid ${stc.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:grab;overflow:hidden;z-index:${isAllDay?2:1};">
+      return `<div title="${nameTipW}" onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:calc(${a._col}/${a._totalCols}*100% + 2px);width:calc(100%/${a._totalCols} - ${a._totalCols>1?3:4}px);top:${blockTop}px;height:${blockH}px;background:${stc.bg};border-left:3px solid ${stc.border};border-radius:4px;padding:${isAllDay?'2px 5px':'3px 5px'};cursor:grab;overflow:hidden;z-index:${isAllDay?2:1};">
         <div style="font-size:10px;font-weight:600;color:var(--text-primary);line-height:1.2;">${name}${isAllDay?' — All Day':''}</div>
         ${timeDiv}
       </div>`;
@@ -4560,14 +4564,16 @@ function _calDay() {
     const hr = dt.getHours(), mn = dt.getMinutes();
     const top = Math.max(0,(hr-7)*64 + Math.round(mn/60*64));
     const st = _calStatus(a.status);
-    const name = a.booker_name || a.contact_name || a.appointment_label || a.appointment_type || 'Appointment';
+    const _isPbDv = !a.contact_id || a.duration_minutes === 1440;
+    const name = _isPbDv ? (a.appointment_label || a.appointment_type || 'Personal Block') : (a.appointment_type || 'Appointment');
+    const nameTipDv = _isPbDv ? '' : (a.booker_name || a.contact_name || '').replace(/"/g,'&quot;');
     const isAllDay = a.duration_minutes === 1440;
-    const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || isAllDay) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
+    const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : _isPbDv ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
     const timeStr = isAllDay ? 'All Day' : dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    const _apptLabel = a.appointment_label||a.appointment_type||'';
-    const typeDiv = isAllDay ? '' : '<div style="font-size:11px;color:var(--text-muted);">' + (timeStr + (_apptLabel ? '  |  '+_apptLabel : '')) + '</div>';
+    const _who = _isPbDv ? '' : (a.booker_name || a.contact_name || '');
+    const typeDiv = isAllDay ? '' : '<div style="font-size:11px;color:var(--text-muted);">' + (timeStr + (_who ? '  |  '+_who : '')) + '</div>';
     const agentRow = allAgents.find(x=>x.id===a.agent_id);
-    return `<div onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:calc(${a._col}/${a._totalCols}*100% + 4px);width:calc(100%/${a._totalCols} - ${a._totalCols>1?6:8}px);top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:grab;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+    return `<div title="${nameTipDv}" onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:calc(${a._col}/${a._totalCols}*100% + 4px);width:calc(100%/${a._totalCols} - ${a._totalCols>1?6:8}px);top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:grab;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}${isAllDay?' — All Day':''}</div>
       ${typeDiv}
       ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
@@ -5078,13 +5084,6 @@ function apptDetail(id) {
         ? `<span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(139,92,246,0.15);border:1px solid #8b5cf6;color:#7c3aed;">Personal Block</span>`
         : `<span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:${st.bg};border:1px solid ${st.border};color:var(--text-primary);">${st.label}</span>`}
     </div>
-    ${!isPersonal ? `
-    <div style="margin-bottom:12px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;font-size:13px;">
-      <div style="font-weight:600;">${a.booker_name||a.contact_name||'—'}</div>
-      ${a.company?`<div style="color:var(--text-muted);">${a.company}</div>`:''}
-      ${a.booker_email?`<div style="color:var(--text-muted);">${a.booker_email}</div>`:''}
-      ${agentRow?`<div style="color:var(--text-muted);font-size:12px;">Agent: ${agentRow.name}</div>`:''}
-    </div>` : ''}
     ${isPersonal ? `
     <label>Block Title</label>
     <input type="text" id="appt-edit-label" value="${editLabel}"
@@ -5099,9 +5098,9 @@ function apptDetail(id) {
     <input type="text" id="appt-edit-type-other" value="${!typeIsKnown&&editType?editType:''}"
       placeholder="Custom appointment type..."
       style="width:100%;box-sizing:border-box;margin-top:6px;${!typeIsKnown&&editType?'':'display:none;'}" />
-    <label style="margin-top:10px;">Label <span style="color:var(--text-muted);font-size:11px;">(optional)</span></label>
+    <label style="margin-top:10px;">Calendar Display Name <span style="color:var(--text-muted);font-size:11px;">(optional)</span></label>
     <input type="text" id="appt-edit-label" value="${editLabel}"
-      placeholder="Short label shown on calendar..."
+      placeholder="Custom name shown on calendar (defaults to type)..."
       style="width:100%;box-sizing:border-box;" />`}
     <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px;">
       <div style="flex:1.5;min-width:0;">
@@ -5120,9 +5119,15 @@ function apptDetail(id) {
       </div>
     </div>
     ${!isPersonal ? `
-    <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;">
-      <input type="checkbox" id="appt-edit-resend" style="width:14px;height:14px;cursor:pointer;" />
-      <label for="appt-edit-resend" style="font-size:13px;cursor:pointer;margin:0;">Resend confirmation email to contact</label>
+    <div style="margin-top:10px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;font-size:13px;">
+      <div style="font-weight:600;">${a.booker_name||a.contact_name||'—'}</div>
+      ${a.company?`<div style="color:var(--text-muted);">${a.company}</div>`:''}
+      ${a.booker_email?`<div style="color:var(--text-muted);">${a.booker_email}</div>`:''}
+      ${agentRow?`<div style="color:var(--text-muted);font-size:12px;">Agent: ${agentRow.name}</div>`:''}
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);">
+        <input type="checkbox" id="appt-edit-resend" style="width:14px;height:14px;cursor:pointer;" />
+        <label for="appt-edit-resend" style="font-size:13px;cursor:pointer;margin:0;">Resend confirmation email to contact</label>
+      </div>
     </div>` : ''}
     ${_inviteSectionHtml(a.cohost_agent_id||null, a.cohost_email||null, a.cohost_name||null, a.extra_attendees||[], a.scheduled_at||null, a.duration_minutes||60)}
     <label style="margin-top:10px;">Notes</label>
