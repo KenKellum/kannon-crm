@@ -2152,6 +2152,7 @@ async function viewContact(contactId, email) {
         ${c.company ? `<div class="panel-field"><span class="panel-field-icon">&#127970;</span>${c.company}</div>` : ''}
         ${!c.email && !c.phone && !c.company ? '<div style="font-size:13px;color:var(--muted);">No contact info on file.</div>' : ''}
       </div>
+      ${(c.linkedin_url||c.facebook_url||c.instagram_handle||c.twitter_handle||c.whatsapp_number||c.tiktok_handle||c.telegram_handle) ? `<div class="panel-section"><div class="panel-label">&#128279; Social Media</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">${c.linkedin_url ? `<a href="${(c.linkedin_url.indexOf('http')===0?'':'https://')+c.linkedin_url}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#128279; LinkedIn</a>` : ''}${c.facebook_url ? `<a href="${(c.facebook_url.indexOf('http')===0?'':'https://')+c.facebook_url}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#128101; Facebook</a>` : ''}${c.instagram_handle ? `<a href="https://www.instagram.com/${c.instagram_handle}/" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#128247; Instagram</a>` : ''}${c.twitter_handle ? `<a href="https://x.com/${c.twitter_handle}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">X / Twitter</a>` : ''}${c.whatsapp_number ? `<a href="https://wa.me/${c.whatsapp_number.replace(/[^0-9]/g,'')}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;color:#25d366;border-color:#25d366;text-decoration:none;">&#128172; WhatsApp</a>` : ''}${c.tiktok_handle ? `<a href="https://www.tiktok.com/@${c.tiktok_handle}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#127925; TikTok</a>` : ''}${c.telegram_handle ? `<a href="https://t.me/${c.telegram_handle}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#9992; Telegram</a>` : ''}</div></div>` : ''}
       ${ownerAgent ? `<div class="panel-section"><div class="panel-label">Owner</div><div class="panel-field"><span class="panel-field-icon">&#128100;</span>${ownerAgent.name} &mdash; <span style="color:var(--muted);font-size:12px;">${ownerAgent.agencies?.name||'No agency'}</span></div></div>` : ''}
       <div class="panel-section">
         <div class="panel-label">Outreach Sequence</div>
@@ -3339,6 +3340,18 @@ function openAddContact() {
     <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes" placeholder="Any relevant notes..."></textarea>
+    <div style="border-top:1px solid #e2e8f0;margin-top:12px;padding-top:12px;">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Social Media <span style="font-weight:400;font-size:11px;opacity:0.7;">(optional)</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><label style="font-size:12px;">&#128279; LinkedIn</label><input type="text" id="new-linkedin" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;">&#128101; Facebook</label><input type="text" id="new-facebook" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;">&#128247; Instagram</label><input type="text" id="new-instagram" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;">X / Twitter</label><input type="text" id="new-twitter" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;">&#128172; WhatsApp</label><input type="tel" id="new-whatsapp" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;">&#127925; TikTok</label><input type="text" id="new-tiktok" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;">&#9992; Telegram</label><input type="text" id="new-telegram" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
+      </div>
+    </div>
   `, async () => {
     const name = document.getElementById('con-name').value.trim();
     if (!name) { showToast('Name is required'); return false; }
@@ -3352,6 +3365,13 @@ function openAddContact() {
       company: document.getElementById('con-company').value.trim() || null,
       type: document.getElementById('con-type').value || null,
       notes: document.getElementById('con-notes').value.trim() || null,
+      linkedin_url: document.getElementById('new-linkedin').value.trim() || null,
+      facebook_url: document.getElementById('new-facebook').value.trim() || null,
+      instagram_handle: (document.getElementById('new-instagram').value.trim().replace(/^@/, '') || null),
+      twitter_handle: (document.getElementById('new-twitter').value.trim().replace(/^@/, '') || null),
+      whatsapp_number: document.getElementById('new-whatsapp').value.trim() || null,
+      tiktok_handle: (document.getElementById('new-tiktok').value.trim().replace(/^@/, '') || null),
+      telegram_handle: (document.getElementById('new-telegram').value.trim().replace(/^@/, '') || null),
       user_id: currentUser.id,
       agent_id: assignedAgentId,
       agency_id: assignedAgent.agency_id || null
@@ -4285,6 +4305,13 @@ async function saveSettings() {
   const lifeEl   = document.getElementById('s-life');
   const healthEl = document.getElementById('s-health');
   const invEl    = document.getElementById('s-investment');
+  const linkedinEl  = document.getElementById('s-linkedin');
+  const facebookEl  = document.getElementById('s-facebook');
+  const instagramEl = document.getElementById('s-instagram');
+  const twitterEl   = document.getElementById('s-twitter');
+  const whatsappEl  = document.getElementById('s-whatsapp');
+  const tiktokEl    = document.getElementById('s-tiktok');
+  const telegramEl  = document.getElementById('s-telegram');
   if (!nameEl) return;
 
   const updates = {
