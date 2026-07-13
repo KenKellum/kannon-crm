@@ -4288,7 +4288,40 @@ async function renderSettings() {
         </div>
       </div>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title">&#128279; Social Media</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">LinkedIn</label>
+            <input type="text" id="s-linkedin" value="${currentAgent.linkedin_url||''}" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Facebook</label>
+            <input type="text" id="s-facebook" value="${currentAgent.facebook_url||''}" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Instagram</label>
+            <input type="text" id="s-instagram" value="${currentAgent.instagram_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">X / Twitter</label>
+            <input type="text" id="s-twitter" value="${currentAgent.twitter_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">WhatsApp</label>
+            <input type="tel" id="s-whatsapp" value="${currentAgent.whatsapp_number||''}" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">TikTok</label>
+            <input type="text" id="s-tiktok" value="${currentAgent.tiktok_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Telegram</label>
+            <input type="text" id="s-telegram" value="${currentAgent.telegram_handle||''}" placeholder="@username" style="width:100%;box-sizing:border-box;" />
+          </div>
+        </div>
+      </div>
+<div style="display:flex;justify-content:space-between;align-items:center;">
         <button class="btn btn-outline btn-sm" onclick="signOut()"><i class="ti ti-logout"></i> Sign out</button>
         <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-device-floppy"></i> Save Settings</button>
       </div>
@@ -4323,6 +4356,13 @@ async function saveSettings() {
     has_life_license:      lifeEl.checked,
     has_health_license:    healthEl.checked,
     has_investment_license: invEl.checked,
+    linkedin_url:     linkedinEl ? linkedinEl.value.trim() || null : null,
+    facebook_url:     facebookEl ? facebookEl.value.trim() || null : null,
+    instagram_handle: instagramEl ? instagramEl.value.trim().replace(/^@/, '') || null : null,
+    twitter_handle:   twitterEl  ? twitterEl.value.trim().replace(/^@/, '') || null : null,
+    whatsapp_number:  whatsappEl ? whatsappEl.value.trim() || null : null,
+    tiktok_handle:    tiktokEl   ? tiktokEl.value.trim().replace(/^@/, '') || null : null,
+    telegram_handle:  telegramEl ? telegramEl.value.trim().replace(/^@/, '') || null : null,
   };
 
   const { error } = await supabaseClient.from('agents').update(updates).eq('id', currentAgent.id);
