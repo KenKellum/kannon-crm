@@ -3127,60 +3127,7 @@ async function clearDnc(id) {
 // ============================================================
 // CONTACTS
 // ============================================================
-async async function cleanupContacts() {
-  showToast('Scanning for unreachable contacts...');
-  const { data: raw, error } = await supabaseClient
-    .from('contacts')
-    .select('id,name,email,phone,email_status,linkedin_url,facebook_url,instagram_handle,twitter_handle,whatsapp_number,tiktok_handle,telegram_handle')
-    .eq('agent_id', currentAgent.id)
-    .or('email.is.null,email_status.in.(bounced,invalid,bad-domain,bad-syntax)');
-  if (error) { showToast('Error: ' + error.message); return; }
-  const dead = (raw || []).filter(function(c) {
-    const hasPhone  = c.phone && c.phone.trim();
-    const hasSocial = c.linkedin_url || c.facebook_url || c.instagram_handle ||
-                      c.twitter_handle || c.whatsapp_number || c.tiktok_handle || c.telegram_handle;
-    return !hasPhone && !hasSocial;
-  });
-  if (!dead.length) { showToast('No unreachable contacts - list is clean!'); return; }
-  window._cleanupSelectAll = function(checked) {
-    document.querySelectorAll('.cleanup-chk').forEach(function(el) { el.checked = checked; });
-  };
-  var rows = dead.map(function(c) {
-    var reasons = [];
-    if (!c.email)                             reasons.push('no email');
-    else if (c.email_status === 'bounced')    reasons.push('bounced email');
-    else if (c.email_status === 'invalid')    reasons.push('invalid email');
-    else if (c.email_status === 'bad-domain') reasons.push('bad domain');
-    else if (c.email_status === 'bad-syntax') reasons.push('bad syntax');
-    reasons.push('no phone');
-    reasons.push('no social');
-    var rStr = reasons.join(' - ');
-    var nm = (c.name || '(no name)').replace(/"/g, '&quot;');
-    return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:0.5px solid var(--border);cursor:pointer;">'
-      + '<input type="checkbox" class="cleanup-chk" data-id="' + c.id + '" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" />'
-      + '<span style="line-height:1.4;"><strong style="font-size:13px;color:var(--text-primary);">' + nm + '</strong>'
-      + '<span style="font-size:11px;color:var(--text-muted);display:block;">' + rStr + '</span></span></label>';
-  }).join('');
-  showModal('Contacts Cleanup',
-    '<div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Found <strong style="color:var(--text-primary);">'
-    + dead.length + ' unreachable contact' + (dead.length !== 1 ? 's' : '')
-    + '</strong> with no email, phone, or social. Uncheck any to keep.</div>'
-    + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);margin-bottom:10px;cursor:pointer;">'
-    + '<input type="checkbox" id="cleanup-select-all" checked onchange="window._cleanupSelectAll(this.checked);" style="width:14px;height:14px;" /> Select / Deselect All</label>'
-    + '<div style="max-height:320px;overflow-y:auto;border:0.5px solid var(--border);border-radius:6px;padding:0 10px;">'
-    + rows + '</div>',
-    async function() {
-      var toDelete = Array.from(document.querySelectorAll('.cleanup-chk:checked')).map(function(el) { return el.dataset.id; });
-      if (!toDelete.length) { showToast('Nothing selected.'); return false; }
-      var res = await supabaseClient.from('contacts').delete().in('id', toDelete);
-      if (res.error) { showToast('Error: ' + res.error.message); return false; }
-      showToast('Deleted ' + toDelete.length + ' contact' + (toDelete.length !== 1 ? 's' : '') + '.');
-      renderContacts();
-    }
-  );
-}
-
-function renderContacts() {
+async function renderContacts() {
   const pg = document.getElementById('page-contacts');
   const PAGE_SIZE = 100;
   const typeClass  = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
@@ -3208,7 +3155,6 @@ function renderContacts() {
       </select>
       <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
       <button class="btn btn-outline" onclick="verifyAllEmails()" style="font-size:13px;" title="SMTP-verify unverified emails">&#128269; Verify All Emails</button>
-      <button class="btn btn-outline" onclick="cleanupContacts()" style="font-size:13px;color:#dc2626;border-color:#dc2626;" title="Find and delete unreachable contacts">&#129529; Clean Up</button>
       <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
     </div>
     <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
@@ -3406,18 +3352,6 @@ function editContact(id) {
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
     <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Social Media</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div><label style="font-size:12px;">&#128279; LinkedIn</label><input type="text" id="con-linkedin" value="${c.linkedin_url||''}" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128101; Facebook</label><input type="text" id="con-facebook" value="${c.facebook_url||''}" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128247; Instagram</label><input type="text" id="con-instagram" value="${c.instagram_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">X / Twitter</label><input type="text" id="con-twitter" value="${c.twitter_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128172; WhatsApp</label><input type="tel" id="con-whatsapp" value="${c.whatsapp_number||''}" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#127925; TikTok</label><input type="text" id="con-tiktok" value="${c.tiktok_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#9992; Telegram</label><input type="text" id="con-telegram" value="${c.telegram_handle||''}" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
-      </div>
-    </div>
-    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Compliance</div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
         <input type="checkbox" id="con-optout" ${c.opt_out_email?'checked':''} style="width:16px;height:16px;">
@@ -3442,7 +3376,7 @@ function editContact(id) {
       : newOptOut ? 'opted_out'
       : (c.email_status === 'opted_out' && !newOptOut) ? null
       : c.email_status || null;
-    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
+    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
