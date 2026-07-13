@@ -1222,6 +1222,61 @@ function startDialerSession(filterType) {
   showPage('dialer');
 }
 
+// ── Social Outreach Helpers ─────────────────────────────────────
+async function logOutreach(contactId, platform, prefillNote) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) { showToast('Contact not found'); return; }
+  const platforms = ['LinkedIn','Facebook','Instagram','X / Twitter','WhatsApp','TikTok','Telegram','Phone Call','Text / SMS','In Person','Other'];
+  const opts = platforms.map(p => '<option value="' + p + '"' + (p === platform ? ' selected' : '') + '>' + p + '</option>').join('');
+  showModal('Log Outreach',
+    '<div style="margin-bottom:10px;"><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">Platform</label>'
+    + '<select id="log-platform" style="width:100%;box-sizing:border-box;">' + opts + '</select></div>'
+    + '<div><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">What happened / what you sent</label>'
+    + '<textarea id="log-note" rows="4" placeholder="e.g. Sent intro message, awaiting reply." style="width:100%;box-sizing:border-box;">' + (prefillNote || '') + '</textarea></div>',
+    async function() {
+      const plat = document.getElementById('log-platform').value;
+      const note = document.getElementById('log-note').value.trim();
+      if (!note) { showToast('Please enter a note'); return false; }
+      const ts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      const entry = '[' + plat + ' \u2022 ' + ts + ']\n' + note;
+      const newNotes = c.notes ? entry + '\n\n' + c.notes.trim() : entry;
+      const { error } = await supabaseClient.from('contacts').update({ notes: newNotes }).eq('id', contactId);
+      if (error) { showToast('Error: ' + error.message); return false; }
+      c.notes = newNotes;
+      showToast('\u2713 Outreach logged to ' + c.name);
+    }
+  );
+}
+
+function openWhatsApp(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) { showToast('Contact not found'); return; }
+  const num = (c.whatsapp_number || c.phone || '').replace(/[^0-9+]/g, '');
+  const firstName = (c.name || '').split(' ')[0] || 'there';
+  const agentFirst = (currentAgent.name || 'your advisor').split(' ')[0];
+  const defaultMsg = 'Hi ' + firstName + ', this is ' + agentFirst + ' from Kannon Financial Group. I wanted to reach out and connect regarding your financial goals. Would love to chat when you have a moment!';
+  showModal('WhatsApp Message — ' + (c.name || 'Contact'),
+    '<div style="margin-bottom:10px;"><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">WhatsApp Number</label>'
+    + '<input type="tel" id="wa-num" value="' + num + '" placeholder="+14065550000" style="width:100%;box-sizing:border-box;" /></div>'
+    + '<div><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">Message (edit before sending)</label>'
+    + '<textarea id="wa-msg" rows="5" style="width:100%;box-sizing:border-box;">' + defaultMsg + '</textarea></div>'
+    + '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">&#128172; Opens WhatsApp with message pre-filled. Outreach is auto-logged to this contact.</div>',
+    async function() {
+      const phone = document.getElementById('wa-num').value.replace(/[^0-9+]/g, '');
+      const msg   = document.getElementById('wa-msg').value.trim();
+      if (!phone) { showToast('Please enter a WhatsApp number'); return false; }
+      if (!msg)   { showToast('Please enter a message'); return false; }
+      window.open('https://wa.me/' + phone.replace(/^\+/, '') + '?text=' + encodeURIComponent(msg), '_blank');
+      const ts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      const entry = '[WhatsApp \u2022 ' + ts + ']\n' + msg;
+      const newNotes = c.notes ? entry + '\n\n' + c.notes.trim() : entry;
+      await supabaseClient.from('contacts').update({ notes: newNotes }).eq('id', contactId);
+      c.notes = newNotes;
+      showToast('\u2713 WhatsApp opened + outreach logged');
+    }
+  );
+}
+
 function renderDialer() {
   const el = document.getElementById('page-dialer');
   if (!el) return;
@@ -1281,6 +1336,13 @@ function renderDialer() {
               <span class="badge ${typeClass}">${contact.type || 'Contact'}</span>
               <span class="badge ${statusClass}">${contact.sequence_status || 'Not started'}</span>
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+              <button class="btn btn-outline btn-sm" onclick="logOutreach('${contact.id}','','')" style="font-size:11px;">&#128221; Log Outreach</button>
+              ${(contact.whatsapp_number||contact.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${contact.id}')" style="font-size:11px;color:#25d366;border-color:#25d366;">&#128172; WhatsApp</button>` : ''}
+              ${contact.linkedin_url ? `<button class="btn btn-outline btn-sm" onclick="window.open((contact.linkedin_url.indexOf('http')===0?contact.linkedin_url:'https://'+contact.linkedin_url),'_blank')" style="font-size:11px;">&#128279; LinkedIn</button>` : ''}
+              ${contact.instagram_handle ? `<button class="btn btn-outline btn-sm" onclick="window.open('https://www.instagram.com/'+contact.instagram_handle+'/','_blank')" style="font-size:11px;">&#128247; Instagram</button>` : ''}
+              ${contact.twitter_handle ? `<button class="btn btn-outline btn-sm" onclick="window.open('https://x.com/'+contact.twitter_handle,'_blank')" style="font-size:11px;">X / Twitter</button>` : ''}
             </div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
@@ -2176,6 +2238,8 @@ async function viewContact(contactId, email) {
     </div>
     <div class="panel-footer">
       <button class="btn btn-outline" onclick="closeContactPanel()">Close</button>
+      <button class="btn btn-outline btn-sm" onclick="logOutreach('${c.id}','','')" style="font-size:12px;" title="Log social or phone outreach">&#128221; Log Outreach</button>
+      ${(c.whatsapp_number||c.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${c.id}')" style="font-size:12px;color:#25d366;border-color:#25d366;" title="Send WhatsApp + auto-log">&#128172; WhatsApp</button>` : ''}
       ${_canSend
         ? `<button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>`
         : `<button class="btn btn-outline btn-sm" disabled title="Email must be Verified before transferring" style="opacity:0.4;cursor:not-allowed;"><i class="ti ti-arrows-exchange"></i> Transfer</button>`}
