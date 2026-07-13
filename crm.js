@@ -3127,7 +3127,7 @@ async function clearDnc(id) {
 // ============================================================
 // CONTACTS
 // ============================================================
-async async function cleanupContacts() {
+async function cleanupContacts() {
   showToast('Scanning for unreachable contacts...');
   const { data: raw, error } = await supabaseClient
     .from('contacts')
@@ -3180,7 +3180,7 @@ async async function cleanupContacts() {
   );
 }
 
-function renderContacts() {
+async function renderContacts() {
   const pg = document.getElementById('page-contacts');
   const PAGE_SIZE = 100;
   const typeClass  = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
