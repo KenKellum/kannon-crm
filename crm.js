@@ -1277,6 +1277,72 @@ function openWhatsApp(contactId) {
   );
 }
 
+// ── Not Interested / Reset Status ───────────────────────────────
+async function showNotInterested(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) { showToast('Contact not found'); return; }
+  showModal('Not Interested — ' + (c.name || 'Contact'),
+    '<div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Choose what to apply. You can select any combination.</div>'
+    + '<div style="display:flex;flex-direction:column;gap:12px;">'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-status" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Mark as Not Interested</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Sets sequence status to ‘Not Interested’</span></span></label>'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-sequence" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Remove from Email Sequence / Drip Campaign</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Stops all automated drip emails — sets status to Stopped</span></span></label>'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-optout" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Email Opt-Out</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Flags them as opted out — no future emails</span></span></label>'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-dnc" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Do Not Call</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Flags this contact as do not call</span></span></label>'
+    + '</div>',
+    async function() {
+      const markStatus = document.getElementById('ni-status').checked;
+      const stopSeq    = document.getElementById('ni-sequence').checked;
+      const optOut     = document.getElementById('ni-optout').checked;
+      const dnc        = document.getElementById('ni-dnc').checked;
+      if (!markStatus && !stopSeq && !optOut && !dnc) { showToast('Select at least one action'); return false; }
+      const updates = {};
+      if (markStatus) updates.sequence_status = 'Not Interested';
+      else if (stopSeq) updates.sequence_status = 'Stopped';
+      if (optOut) updates.opt_out_email = true;
+      if (dnc)    updates.do_not_call   = true;
+      const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
+      if (error) { showToast('Error: ' + error.message); return false; }
+      Object.assign(c, updates);
+      const actions = [markStatus && 'not interested', (!markStatus && stopSeq) && 'removed from drip',
+                       optOut && 'opted out', dnc && 'DNC'].filter(Boolean).join(', ');
+      showToast('✓ ' + (c.name || 'Contact') + ' — ' + actions);
+      dialerNext();
+    }
+  );
+}
+
+async function showResetStatus(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) { showToast('Contact not found'); return; }
+  showModal('Reset Status — ' + (c.name || 'Contact'),
+    '<div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Choose what to reset for this contact.</div>'
+    + '<div style="display:flex;flex-direction:column;gap:12px;">'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-status" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Reset sequence status to ‘Not Started’</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Clears Not Interested, Stopped, etc.</span></span></label>'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-step" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Reset email sequence step to 0</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Allows the sequence to restart from email 1</span></span></label>'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-optout" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Remove email opt-out flag</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Re-enables email outreach for this contact</span></span></label>'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-dnc" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Remove Do Not Call flag</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Re-enables calling for this contact</span></span></label>'
+    + '</div>',
+    async function() {
+      const rstStatus = document.getElementById('rs-status').checked;
+      const rstStep   = document.getElementById('rs-step').checked;
+      const rstOptOut = document.getElementById('rs-optout').checked;
+      const rstDnc    = document.getElementById('rs-dnc').checked;
+      if (!rstStatus && !rstStep && !rstOptOut && !rstDnc) { showToast('Select at least one action'); return false; }
+      const updates = {};
+      if (rstStatus) updates.sequence_status = 'Not Started';
+      if (rstStep)   updates.sequence_step   = 0;
+      if (rstOptOut) updates.opt_out_email   = false;
+      if (rstDnc)    updates.do_not_call     = false;
+      const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
+      if (error) { showToast('Error: ' + error.message); return false; }
+      Object.assign(c, updates);
+      const actions = [rstStatus && 'status reset', rstStep && 'step reset to 0',
+                       rstOptOut && 'opt-out cleared', rstDnc && 'DNC cleared'].filter(Boolean).join(', ');
+      showToast('✓ ' + (c.name || 'Contact') + ' — ' + actions);
+    }
+  );
+}
+
 function renderDialer() {
   const el = document.getElementById('page-dialer');
   if (!el) return;
@@ -1377,7 +1443,9 @@ function renderDialer() {
             ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')">&#128222; Call</button>`
             : `<button class="btn btn-outline" disabled style="opacity:0.45;cursor:not-allowed;">&#128222; No phone</button>`}
           <button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>
-          <button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="dialerMarkInterested('${contact.id}')">&#129309; Interested</button>
+          <button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="if(confirm('Mark ' + (contact ? contact.name : 'this contact') + ' as Interested? A deal will be created in your pipeline.')) dialerMarkInterested('${contact.id}')" title="Mark as Interested and create a pipeline deal">&#129309; Interested</button>
+          <button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>
+          <button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>
           <button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>
           <button class="btn btn-primary" onclick="dialerNext()">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>
         </div>
