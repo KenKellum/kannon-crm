@@ -4374,7 +4374,7 @@ function _calMonth() {
 
     const chips = dayAppts.slice(0,3).map(a => {
       const st = _calStatus(a.status);
-      const name = a.booker_name || a.contact_name || a.appointment_type || 'Appointment';
+      const name = a.booker_name || a.contact_name || a.appointment_label || a.appointment_type || 'Appointment';
       const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
       const time = a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
       return `<div onclick="event.stopPropagation();apptDetail('${a.id}')" draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="font-size:10px;padding:2px 5px;border-radius:3px;background:${stc.bg};border-left:2px solid ${stc.border};color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab;margin-bottom:2px;">${time ? time+' ' : ''}${name}</div>`;
@@ -4434,7 +4434,7 @@ function _calWeek() {
       const top = Math.max(0,(hr-7)*56 + Math.round(mn/60*56));
       const st = _calStatus(a.status);
       const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || a.duration_minutes === 1440) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
-      const name = a.booker_name || a.contact_name || a.appointment_type || 'Appt';
+      const name = a.booker_name || a.contact_name || a.appointment_label || a.appointment_type || 'Appt';
       const timeStr = dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       const isAllDay = a.duration_minutes === 1440;
         const timeDiv = isAllDay ? '' : '<div style="font-size:9px;color:var(--text-muted);">' + timeStr + '</div>';
@@ -4560,7 +4560,7 @@ function _calDay() {
     const hr = dt.getHours(), mn = dt.getMinutes();
     const top = Math.max(0,(hr-7)*64 + Math.round(mn/60*64));
     const st = _calStatus(a.status);
-    const name = a.booker_name || a.contact_name || a.appointment_type || 'Appointment';
+    const name = a.booker_name || a.contact_name || a.appointment_label || a.appointment_type || 'Appointment';
     const isAllDay = a.duration_minutes === 1440;
     const stc = (a.cohost_agent_id && a.cohost_agent_id===(currentAgent&&currentAgent.id) && a.cohost_status==='confirmed') ? {bg:'rgba(56,189,248,0.15)',border:'#38bdf8'} : (!a.contact_id || isAllDay) ? {bg:'rgba(139,92,246,0.18)',border:'#8b5cf6'} : st;
     const timeStr = isAllDay ? 'All Day' : dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
