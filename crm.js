@@ -1343,6 +1343,455 @@ async function showResetStatus(contactId) {
   );
 }
 
+// ── Intake Form ─────────────────────────────────────────────────────────────
+
+const INTAKE_FIELD_DEFS = {
+  // ── Shared ──────────────────────────────────────────────────────────────
+  name:                  { label: 'Full Name',              type: 'text',   section: 'Contact Info' },
+  email:                 { label: 'Email',                  type: 'email',  section: 'Contact Info' },
+  phone:                 { label: 'Phone',                  type: 'tel',    section: 'Contact Info' },
+  dob:                   { label: 'Date of Birth',          type: 'date',   section: 'Contact Info' },
+  best_time:             { label: 'Best Time to Reach',     type: 'select', section: 'Contact Info',
+                           options: ['Morning','Afternoon','Evening','Anytime'] },
+  marital_status:        { label: 'Marital Status',         type: 'select', section: 'Contact Info',
+                           options: ['Single','Married','Divorced','Widowed'] },
+  // ── Financial Services ───────────────────────────────────────────────────
+  household_income:      { label: 'Household Income',       type: 'select', section: 'Finances',
+                           options: ['Under $30k','$30k–$50k','$50k–$75k','$75k–$100k','$100k–$150k','$150k+'] },
+  dependents_count:      { label: '# of Dependents',        type: 'number', section: 'Finances' },
+  dependents_ages:       { label: 'Dependent Ages',         type: 'text',   section: 'Finances',
+                           placeholder: 'e.g. 5, 8, 12' },
+  has_life_insurance:    { label: 'Has Life Insurance?',    type: 'select', section: 'Life Insurance',
+                           options: ['Yes','No','Not sure'] },
+  life_coverage_amount:  { label: 'Coverage Amount',        type: 'text',   section: 'Life Insurance',
+                           placeholder: 'e.g. $250,000' },
+  has_investments:       { label: 'Has Investments?',       type: 'select', section: 'Investments',
+                           options: ['Yes','No','Not sure'] },
+  goal_debt:             { label: 'Goal: Debt Freedom',     type: 'checkbox', section: 'Goals' },
+  goal_protection:       { label: 'Goal: Family Protection',type: 'checkbox', section: 'Goals' },
+  goal_retirement:       { label: 'Goal: Retirement',       type: 'checkbox', section: 'Goals' },
+  goal_college:          { label: 'Goal: College Funding',  type: 'checkbox', section: 'Goals' },
+  goal_business:         { label: 'Goal: Business Planning',type: 'checkbox', section: 'Goals' },
+  notes_financial:       { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  // ── Health – Individual/Family ──────────────────────────────────────────
+  household_size:        { label: 'Household Size',         type: 'number', section: 'Household' },
+  member_ages:           { label: 'Member Ages',            type: 'text',   section: 'Household',
+                           placeholder: 'e.g. 35, 32, 7' },
+  aca_income:            { label: 'Est. Annual Income (ACA)',type: 'select', section: 'Household',
+                           options: ['Under $20k','$20k–$40k','$40k–$60k','$60k–$80k','$80k–$100k','$100k+'] },
+  currently_insured:     { label: 'Currently Insured?',     type: 'select', section: 'Current Coverage',
+                           options: ['Yes','No'] },
+  current_carrier:       { label: 'Current Carrier',        type: 'text',   section: 'Current Coverage' },
+  current_premium:       { label: 'Current Monthly Premium',type: 'text',   section: 'Current Coverage',
+                           placeholder: 'e.g. $450' },
+  employer_plan_available:{ label: 'Employer Plan Available?', type: 'select', section: 'Current Coverage',
+                            options: ['Yes','No'] },
+  coverage_start_date:   { label: 'Desired Start Date',     type: 'date',   section: 'Coverage Needs' },
+  health_priority:       { label: 'Priority',               type: 'select', section: 'Coverage Needs',
+                           options: ['Lowest premium','Best network','Low deductible','Rx coverage','Dental/Vision'] },
+  notes_health:          { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  // ── Health – Group/Employer ─────────────────────────────────────────────
+  business_name:         { label: 'Business Name',          type: 'text',   section: 'Business' },
+  employee_count:        { label: '# of Employees',         type: 'number', section: 'Business' },
+  enrollment_count:      { label: 'Expected Enrollment',    type: 'number', section: 'Business' },
+  avg_age_range:         { label: 'Avg Employee Age Range', type: 'select', section: 'Business',
+                           options: ['Under 30','30–40','40–50','50+','Mixed'] },
+  has_current_plan:      { label: 'Has Current Group Plan?',type: 'select', section: 'Current Coverage',
+                           options: ['Yes','No'] },
+  current_group_carrier: { label: 'Current Group Carrier',  type: 'text',   section: 'Current Coverage' },
+  group_start_date:      { label: 'Desired Start Date',     type: 'date',   section: 'Coverage Needs' },
+  cov_medical:           { label: 'Medical',                type: 'checkbox', section: 'Coverage Needs' },
+  cov_dental:            { label: 'Dental',                 type: 'checkbox', section: 'Coverage Needs' },
+  cov_vision:            { label: 'Vision',                 type: 'checkbox', section: 'Coverage Needs' },
+  cov_life:              { label: 'Group Life',             type: 'checkbox', section: 'Coverage Needs' },
+  cov_disability:        { label: 'Short/Long Term Disability', type: 'checkbox', section: 'Coverage Needs' },
+  notes_group:           { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  // ── Career – KFG (Primerica) ────────────────────────────────────────────
+  current_employer:      { label: 'Current Employer',       type: 'text',   section: 'Background' },
+  current_occupation:    { label: 'Current Occupation',     type: 'text',   section: 'Background' },
+  current_income:        { label: 'Current Annual Income',  type: 'select', section: 'Background',
+                           options: ['Under $30k','$30k–$50k','$50k–$75k','$75k–$100k','$100k+'] },
+  licensed_life:         { label: 'Licensed — Life?',       type: 'select', section: 'Licensing',
+                           options: ['Yes','No','In progress'] },
+  licensed_health:       { label: 'Licensed — Health?',     type: 'select', section: 'Licensing',
+                           options: ['Yes','No','In progress'] },
+  full_part_time:        { label: 'Full-time or Part-time?',type: 'select', section: 'Availability',
+                           options: ['Full-time','Part-time','Either'] },
+  income_goal_12mo:      { label: 'Income Goal (12 mo)',    type: 'select', section: 'Goals',
+                           options: ['Under $30k','$30k–$60k','$60k–$100k','$100k–$150k','$150k+'] },
+  why_interested:        { label: 'Why Interested?',        type: 'textarea', section: 'Goals' },
+  notes_career:          { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  // ── Career – Insured America ────────────────────────────────────────────
+  states_licensed:       { label: 'States Licensed',        type: 'text',   section: 'Licensing',
+                           placeholder: 'e.g. TX, FL, GA' },
+  monthly_production:    { label: 'Monthly Production ($)',  type: 'text',   section: 'Production',
+                           placeholder: 'e.g. $5,000' },
+  own_book:              { label: 'Own Book of Business?',  type: 'select', section: 'Production',
+                           options: ['Yes','No'] },
+  products_sold:         { label: 'Products Sold',          type: 'text',   section: 'Production',
+                           placeholder: 'e.g. ACA, Medicare, Life' },
+};
+
+const INTAKE_TYPE_DEFAULTS = {
+  'financial':       ['dob','marital_status','best_time','household_income','dependents_count','dependents_ages',
+                      'has_life_insurance','life_coverage_amount','has_investments',
+                      'goal_debt','goal_protection','goal_retirement'],
+  'health-individual':['dob','best_time','household_size','member_ages','aca_income',
+                       'currently_insured','current_carrier','current_premium',
+                       'employer_plan_available','coverage_start_date','health_priority'],
+  'health-group':    ['business_name','best_time','employee_count','enrollment_count','avg_age_range',
+                      'has_current_plan','current_group_carrier','group_start_date',
+                      'cov_medical','cov_dental','cov_vision'],
+  'career-kfg':      ['dob','best_time','current_employer','current_occupation','current_income',
+                      'licensed_life','licensed_health','full_part_time','income_goal_12mo','why_interested'],
+  'career-ia':       ['best_time','current_employer','licensed_life','licensed_health',
+                      'states_licensed','monthly_production','own_book','products_sold','full_part_time'],
+};
+
+const INTAKE_TYPE_LABELS = {
+  'financial':        'Life & Financial',
+  'health-individual':'Health – Individual/Family',
+  'health-group':     'Health – Group/Employer',
+  'career-kfg':       'Career – KFG (Primerica)',
+  'career-ia':        'Career – Insured America',
+};
+
+// All field IDs grouped by logical section for the checklist panel
+const INTAKE_ALL_FIELDS = [
+  { section: 'Contact Info',    ids: ['name','email','phone','dob','marital_status','best_time'] },
+  { section: 'Finances',        ids: ['household_income','dependents_count','dependents_ages','has_investments'] },
+  { section: 'Life Insurance',  ids: ['has_life_insurance','life_coverage_amount'] },
+  { section: 'Goals',           ids: ['goal_debt','goal_protection','goal_retirement','goal_college','goal_business',
+                                       'income_goal_12mo','why_interested'] },
+  { section: 'Household',       ids: ['household_size','member_ages','aca_income'] },
+  { section: 'Business',        ids: ['business_name','employee_count','enrollment_count','avg_age_range'] },
+  { section: 'Current Coverage',ids: ['currently_insured','current_carrier','current_premium',
+                                       'employer_plan_available','has_current_plan','current_group_carrier'] },
+  { section: 'Coverage Needs',  ids: ['coverage_start_date','health_priority','group_start_date',
+                                       'cov_medical','cov_dental','cov_vision','cov_life','cov_disability'] },
+  { section: 'Background',      ids: ['current_employer','current_occupation','current_income'] },
+  { section: 'Licensing',       ids: ['licensed_life','licensed_health','states_licensed'] },
+  { section: 'Availability',    ids: ['full_part_time'] },
+  { section: 'Production',      ids: ['monthly_production','own_book','products_sold'] },
+  { section: 'Notes',           ids: ['notes_financial','notes_health','notes_group','notes_career'] },
+];
+
+let _intakeContactId = null;
+let _intakeFormType = 'financial';
+let _intakeChecked = new Set();
+
+function _intakeTypeFromContact(c) {
+  if (!c) return 'financial';
+  const t = (c.type || c.contact_type || '').toLowerCase();
+  if (t.includes('individual') || t.includes('family')) return 'health-individual';
+  if (t.includes('group') || t.includes('employer')) return 'health-group';
+  if (t.includes('insured america') || t.includes('insuredamerica')) return 'career-ia';
+  if (t.includes('kannon') || t.includes('kfg') || t.includes('recruit') || t.includes('primerica')) return 'career-kfg';
+  return 'financial';
+}
+
+async function showIntakeForm(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) { showToast('Contact not found'); return; }
+  _intakeContactId = contactId;
+  _intakeFormType  = _intakeTypeFromContact(c);
+  _intakeChecked   = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
+
+  // Build overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'intakeOverlay';
+  overlay.style.cssText = [
+    'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);',
+    'display:flex;align-items:center;justify-content:center;padding:16px;',
+  ].join('');
+
+  const box = document.createElement('div');
+  box.id = 'intakeBox';
+  box.style.cssText = [
+    'background:var(--surface);border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.4);',
+    'display:flex;flex-direction:column;width:min(1100px,96vw);max-height:92vh;overflow:hidden;',
+  ].join('');
+
+  box.innerHTML = `
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+      <div>
+        <div style="font-weight:600;font-size:16px;">${c.name || 'Contact'} — Intake Form</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${c.type || c.contact_type || ''}</div>
+      </div>
+      <button onclick="closeIntakeForm()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text-muted);padding:4px 8px;">&times;</button>
+    </div>
+
+    <!-- Type selector -->
+    <div id="intakeTypeBar" style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;"></div>
+
+    <!-- Split body -->
+    <div style="display:flex;flex:1;overflow:hidden;">
+      <!-- LEFT: field checklist -->
+      <div id="intakeFieldList" style="width:280px;min-width:240px;border-right:1px solid var(--border);overflow-y:auto;padding:12px 0;flex-shrink:0;"></div>
+      <!-- RIGHT: live form -->
+      <div id="intakeFormPanel" style="flex:1;overflow-y:auto;padding:20px 24px;"></div>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;flex-shrink:0;">
+      <button class="btn btn-outline" onclick="closeIntakeForm()" style="color:var(--text-muted);">Cancel</button>
+      <button class="btn btn-outline" id="intakeSendBtn" style="border-color:#3b82f6;color:#3b82f6;" onclick="sendIntakeLink()">&#9993; Send Link via Gmail</button>
+      <button class="btn btn-primary" onclick="saveIntakeToCRM()">&#10003; Save to CRM</button>
+    </div>
+  `;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  _intakeRenderTypeBar();
+  _intakeRenderFieldList();
+  _intakeRenderForm();
+}
+
+function closeIntakeForm() {
+  const el = document.getElementById('intakeOverlay');
+  if (el) el.remove();
+}
+
+function _intakeRenderTypeBar() {
+  const bar = document.getElementById('intakeTypeBar');
+  if (!bar) return;
+  bar.innerHTML = Object.entries(INTAKE_TYPE_LABELS).map(([k, label]) => `
+    <button onclick="setIntakeFormType('${k}')" id="intakeTypeBtn_${k}"
+      style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);cursor:pointer;font-size:12px;font-weight:500;
+             background:${_intakeFormType===k?'var(--primary)':'var(--bg)'};
+             color:${_intakeFormType===k?'#fff':'var(--text)'};transition:all 0.15s;">
+      ${label}
+    </button>
+  `).join('');
+}
+
+function setIntakeFormType(type) {
+  _intakeFormType = type;
+  _intakeChecked  = new Set(INTAKE_TYPE_DEFAULTS[type] || []);
+  _intakeRenderTypeBar();
+  _intakeRenderFieldList();
+  _intakeRenderForm();
+}
+
+function _intakeRenderFieldList() {
+  const panel = document.getElementById('intakeFieldList');
+  if (!panel) return;
+  let html = '';
+  for (const grp of INTAKE_ALL_FIELDS) {
+    const visibleIds = grp.ids.filter(id => INTAKE_FIELD_DEFS[id]);
+    if (!visibleIds.length) continue;
+    html += `<div style="padding:8px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">${grp.section}</div>`;
+    for (const id of visibleIds) {
+      const def = INTAKE_FIELD_DEFS[id];
+      const chk = _intakeChecked.has(id) ? 'checked' : '';
+      html += `
+        <label style="display:flex;align-items:center;gap:9px;padding:5px 14px;cursor:pointer;font-size:13px;
+                       border-radius:4px;transition:background .1s;"
+               onmouseover="this.style.background='var(--hover)'" onmouseout="this.style.background=''">
+          <input type="checkbox" ${chk} onchange="toggleIntakeField('${id}',this.checked)"
+            style="width:14px;height:14px;flex-shrink:0;accent-color:var(--primary);" />
+          <span>${def.label}</span>
+        </label>`;
+    }
+  }
+  panel.innerHTML = html;
+}
+
+function toggleIntakeField(id, checked) {
+  if (checked) _intakeChecked.add(id);
+  else         _intakeChecked.delete(id);
+  _intakeRenderForm();
+}
+
+function _intakeRenderForm() {
+  const panel = document.getElementById('intakeFormPanel');
+  if (!panel) return;
+  const c = contacts.find(x => x.id === _intakeContactId) || {};
+  const prefill = {
+    name:  c.name  || '',
+    email: c.email || '',
+    phone: c.phone || '',
+    dob:   c.dob   || c.date_of_birth || '',
+    business_name: c.company || '',
+  };
+
+  // Group checked fields by section
+  const sections = {};
+  for (const grp of INTAKE_ALL_FIELDS) {
+    for (const id of grp.ids) {
+      if (_intakeChecked.has(id) && INTAKE_FIELD_DEFS[id]) {
+        if (!sections[grp.section]) sections[grp.section] = [];
+        sections[grp.section].push(id);
+      }
+    }
+  }
+
+  if (!Object.keys(sections).length) {
+    panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding-top:40px;text-align:center;">Select fields from the left panel.</div>';
+    return;
+  }
+
+  let html = `<div style="max-width:600px;">`;
+  for (const [sec, ids] of Object.entries(sections)) {
+    html += `<div style="margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:10px;">${sec}</div>
+      <div style="display:flex;flex-direction:column;gap:12px;">`;
+    for (const id of ids) {
+      html += _intakeRenderField(id, INTAKE_FIELD_DEFS[id], prefill[id] || '');
+    }
+    html += `</div></div>`;
+  }
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+function _intakeRenderField(id, def, prefillVal) {
+  const val = prefillVal ? ` value="${prefillVal.replace(/"/g,'&quot;')}"` : '';
+  const ph  = def.placeholder ? ` placeholder="${def.placeholder}"` : '';
+  const base = `id="ifield_${id}" name="${id}"`;
+  const inputStyle = 'width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box;';
+
+  let control = '';
+  if (def.type === 'select') {
+    const opts = (def.options || []).map(o => `<option value="${o}"${prefillVal===o?' selected':''}>${o}</option>`).join('');
+    control = `<select ${base} style="${inputStyle}"><option value="">Select...</option>${opts}</select>`;
+  } else if (def.type === 'textarea') {
+    control = `<textarea ${base} rows="3"${ph} style="${inputStyle}resize:vertical;">${prefillVal || ''}</textarea>`;
+  } else if (def.type === 'checkbox') {
+    control = `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+      <input type="checkbox" ${base} style="width:16px;height:16px;accent-color:var(--primary);" />
+      <span>${def.label}</span></label>`;
+    return `<div>${control}</div>`;
+  } else {
+    control = `<input type="${def.type}" ${base}${val}${ph} style="${inputStyle}" />`;
+  }
+  return `<div>
+    <label for="ifield_${id}" style="display:block;font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:4px;">${def.label}</label>
+    ${control}
+  </div>`;
+}
+
+function _intakeCollectResponses() {
+  const responses = {};
+  for (const id of _intakeChecked) {
+    const el = document.getElementById('ifield_' + id);
+    if (!el) continue;
+    if (el.type === 'checkbox') responses[id] = el.checked;
+    else responses[id] = el.value;
+  }
+  return responses;
+}
+
+async function saveIntakeToCRM() {
+  const c = contacts.find(x => x.id === _intakeContactId);
+  if (!c) return;
+  const responses = _intakeCollectResponses();
+  const selectedFields = Array.from(_intakeChecked);
+
+  const btn = document.querySelector('#intakeBox .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  try {
+    // 1. Create intake_session row
+    const { data: sess, error: sessErr } = await supabaseClient
+      .from('intake_sessions')
+      .insert({
+        contact_id:      _intakeContactId,
+        agent_id:        currentAgent ? currentAgent.id : null,
+        form_type:       _intakeFormType,
+        selected_fields: selectedFields,
+        responses:       responses,
+        status:          'completed',
+        completed_at:    new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (sessErr) throw sessErr;
+
+    // 2. Update contact: sequence_status = 'Interested' + key fields from responses
+    const contactUpdates = { sequence_status: 'Interested' };
+    const fieldMap = {
+      dob: 'dob', email: 'email', phone: 'phone',
+      business_name: 'company', marital_status: 'marital_status',
+    };
+    for (const [fid, col] of Object.entries(fieldMap)) {
+      if (responses[fid] !== undefined && responses[fid] !== '') contactUpdates[col] = responses[fid];
+    }
+    await supabaseClient.from('contacts').update(contactUpdates).eq('id', _intakeContactId);
+
+    // 3. Log a note
+    const noteText = '[Intake Form] ' + INTAKE_TYPE_LABELS[_intakeFormType] + ' — completed by agent';
+    await supabaseClient.from('activity_log').insert({
+      contact_id: _intakeContactId,
+      agent_id:   currentAgent ? currentAgent.id : null,
+      type:       'note',
+      note:       noteText,
+      created_at: new Date().toISOString(),
+    }).catch(() => {});
+
+    showToast('✓ Intake saved — ' + (c.name || 'Contact') + ' marked Interested');
+    closeIntakeForm();
+    dialerNext();
+  } catch(e) {
+    showToast('Error saving: ' + (e.message || e));
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Save to CRM'; }
+  }
+}
+
+async function sendIntakeLink() {
+  const c = contacts.find(x => x.id === _intakeContactId);
+  if (!c) return;
+  if (!c.email) { showToast('No email address on file for this contact'); return; }
+
+  const btn = document.getElementById('intakeSendBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  try {
+    const selectedFields = Array.from(_intakeChecked);
+    // Create pending session
+    const { data: sess, error: sessErr } = await supabaseClient
+      .from('intake_sessions')
+      .insert({
+        contact_id:      _intakeContactId,
+        agent_id:        currentAgent ? currentAgent.id : null,
+        form_type:       _intakeFormType,
+        selected_fields: selectedFields,
+        responses:       {},
+        status:          'pending',
+        sent_at:         new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (sessErr) throw sessErr;
+
+    // Derive intake URL (same origin, intake.html)
+    const intakeUrl = window.location.origin + '/intake.html?s=' + sess.id;
+
+    // Call Apps Script to send email
+    const appsUrl = new URL(APPS_SCRIPT_URL);
+    appsUrl.searchParams.set('action', 'send_intake_link');
+    appsUrl.searchParams.set('agent_id', currentAgent ? currentAgent.id : '');
+    appsUrl.searchParams.set('to', c.email);
+    appsUrl.searchParams.set('to_name', c.name || '');
+    appsUrl.searchParams.set('contact_id', _intakeContactId);
+    appsUrl.searchParams.set('session_id', sess.id);
+    appsUrl.searchParams.set('intake_url', intakeUrl);
+    appsUrl.searchParams.set('form_type', _intakeFormType);
+    appsUrl.searchParams.set('form_type_label', INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType);
+
+    const res = await fetch(appsUrl.toString());
+    const json = await res.json().catch(() => ({}));
+    if (json.error) throw new Error(json.error);
+
+    showToast('✓ Intake link sent to ' + c.email);
+    closeIntakeForm();
+  } catch(e) {
+    showToast('Error sending link: ' + (e.message || e));
+    if (btn) { btn.disabled = false; btn.textContent = '✉ Send Link via Gmail'; }
+  }
+}
+
 function renderDialer() {
   const el = document.getElementById('page-dialer');
   if (!el) return;
@@ -1443,7 +1892,7 @@ function renderDialer() {
             ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')">&#128222; Call</button>`
             : `<button class="btn btn-outline" disabled style="opacity:0.45;cursor:not-allowed;">&#128222; No phone</button>`}
           <button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>
-          <button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="if(confirm('Mark as Interested and create a pipeline deal?')) dialerMarkInterested('${contact.id}')" title="Mark as Interested and create a pipeline deal">&#129309; Interested</button>
+          <button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>
           <button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>
           <button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>
           <button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>

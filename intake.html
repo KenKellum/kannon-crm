@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Information Form — Kannon Financial Group</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f7f4; color: #1a1a1a; min-height: 100vh; }
+  .header { background: #1a1a2e; color: #fff; padding: 1.5rem 2rem; display: flex; align-items: center; gap: 16px; }
+  .header-logo { width: 40px; height: 40px; background: #c8a96e; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; color: #1a1a2e; flex-shrink: 0; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header p { font-size: 13px; opacity: 0.7; margin-top: 2px; }
+  .container { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+  .card { background: #fff; border-radius: 12px; border: 1px solid #e5e3de; padding: 2rem; margin-bottom: 1.5rem; }
+  .card-title { font-size: 15px; font-weight: 600; margin-bottom: 1.25rem; padding-bottom: 12px; border-bottom: 1px solid #f0ede8; color: #1a1a2e; }
+  .field-group { margin-bottom: 1.25rem; }
+  label { display: block; font-size: 13px; font-weight: 500; color: #555; margin-bottom: 6px; }
+  input[type=text], input[type=email], input[type=tel], input[type=date], input[type=number], select, textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+    font-size: 14px; font-family: inherit; color: #1a1a1a; background: #fff;
+    transition: border-color 0.15s;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #c8a96e; box-shadow: 0 0 0 3px rgba(200,169,110,0.15); }
+  textarea { min-height: 90px; resize: vertical; }
+  .radio-group, .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .radio-opt, .check-opt { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; font-size: 13px; transition: all 0.15s; user-select: none; }
+  .radio-opt input, .check-opt input { width: 14px; height: 14px; accent-color: #c8a96e; cursor: pointer; }
+  .radio-opt:hover, .check-opt:hover { border-color: #c8a96e; background: #fdf8ef; }
+  .goal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btn-primary { width: 100%; padding: 14px; background: #1a1a2e; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; letter-spacing: 0.3px; transition: background 0.15s; margin-top: 0.5rem; }
+  .btn-primary:hover { background: #2a2a4e; }
+  .btn-primary:disabled { background: #999; cursor: not-allowed; }
+  .loader { text-align: center; padding: 4rem 1rem; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #f0ede8; border-top-color: #c8a96e; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .success-screen { text-align: center; padding: 3rem 1rem; }
+  .success-icon { width: 72px; height: 72px; background: #e6f9f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 32px; }
+  .success-screen h2 { font-size: 22px; margin-bottom: 8px; }
+  .success-screen p { color: #666; font-size: 15px; line-height: 1.6; }
+  .pre-filled { background: #f8f7f4 !important; color: #888 !important; }
+  .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #bbb; margin: 1.5rem 0 1rem; border-top: 1px solid #f5f3ef; padding-top: 1.25rem; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .privacy-note { background: #f8f7f4; border: 1px dashed #ddd; border-radius: 12px; padding: 1.25rem; text-align: center; margin-bottom: 1.5rem; }
+  .privacy-note p { font-size: 12px; color: #888; line-height: 1.7; }
+  @media (max-width: 520px) { .two-col { grid-template-columns: 1fr; } .goal-grid { grid-template-columns: 1fr; } .card { padding: 1.25rem; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">K</div>
+  <div>
+    <h1>Kannon Financial Group</h1>
+    <p>Secure Information Form</p>
+  </div>
+</div>
+
+<div class="container">
+  <div id="loader" class="loader card">
+    <div class="spinner"></div>
+    <p style="color:#888;font-size:14px;">Loading your form…</p>
+  </div>
+  <div id="error-screen" class="card" style="display:none;text-align:center;padding:3rem 1rem;">
+    <div style="font-size:48px;margin-bottom:1rem;">🔍</div>
+    <h2 style="margin-bottom:8px;color:#c0392b;">Form not found</h2>
+    <p style="color:#666;font-size:15px;">This link may have expired or been completed already.<br>Please contact your advisor for assistance.</p>
+  </div>
+  <div id="form-container" style="display:none;"></div>
+  <div id="success-screen" class="success-screen card" style="display:none;">
+    <div class="success-icon">✓</div>
+    <h2>Thank you!</h2>
+    <p>Your information has been received.<br>Your Kannon Financial Group advisor<br>will be in touch with you soon.</p>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL  = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+
+async function supa(path, opts) {
+  const r = await fetch(SUPABASE_URL + path, {
+    headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + SUPABASE_ANON, 'Content-Type': 'application/json', Prefer: 'return=representation', ...((opts||{}).headers||{}) },
+    ...opts
+  });
+  if (!r.ok) return null;
+  const t = await r.text();
+  try { return JSON.parse(t); } catch(e) { return null; }
+}
+
+const FIELD_DEFS = {
+  dob:                  { label: 'Date of birth', type: 'date' },
+  marital_status:       { label: 'Marital status', type: 'select', options: ['Single','Married','Divorced','Widowed'] },
+  best_time:            { label: 'Best time to reach you', type: 'select', options: ['Morning (8am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)','Anytime'] },
+  household_income:     { label: 'Annual household income', type: 'select', options: ['Under $25,000','$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','$100,000–$150,000','Over $150,000'] },
+  dependents_count:     { label: 'Number of dependents', type: 'number' },
+  dependents_ages:      { label: 'Ages of dependents', type: 'text', placeholder: 'e.g. 8, 12, 15' },
+  has_life_insurance:   { label: 'Currently have life insurance?', type: 'radio', options: ['Yes','No'] },
+  life_coverage_amount: { label: 'Current life insurance coverage', type: 'select', options: ['Under $50k','$50k–$100k','$100k–$250k','$250k–$500k','Over $500k','Not sure'] },
+  has_investments:      { label: 'Have savings or retirement investments?', type: 'radio', options: ['Yes','No'] },
+  goal_debt:            { label: 'Debt elimination', type: 'checkbox-field', group: 'goals' },
+  goal_protection:      { label: 'Income protection', type: 'checkbox-field', group: 'goals' },
+  goal_college:         { label: 'College funding', type: 'checkbox-field', group: 'goals' },
+  goal_retirement:      { label: 'Retirement savings', type: 'checkbox-field', group: 'goals' },
+  goal_wealth:          { label: 'Wealth building', type: 'checkbox-field', group: 'goals' },
+  household_size:       { label: 'Number of people in household', type: 'number' },
+  member_ages:          { label: 'Ages of all household members', type: 'text', placeholder: 'e.g. 34, 32, 6, 4' },
+  aca_income:           { label: 'Estimated annual household income', type: 'select', options: ['Under $25,000','$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','Over $100,000'] },
+  currently_insured:    { label: 'Currently have health insurance?', type: 'radio', options: ['Yes','No'] },
+  current_carrier:      { label: 'Current insurance carrier', type: 'text', placeholder: 'e.g. Blue Cross, Cigna' },
+  current_premium:      { label: 'Current monthly premium', type: 'text', placeholder: 'e.g. $450/month' },
+  employer_plan_available: { label: 'Employer-sponsored plan available?', type: 'radio', options: ['Yes','No'] },
+  coverage_start_date:  { label: 'Coverage needed by', type: 'date' },
+  preferred_network:    { label: 'Preferred doctors or hospitals', type: 'text', placeholder: 'Any specific providers?' },
+  health_priority:      { label: 'Coverage priority', type: 'select', options: ['Lowest monthly premium','Lowest deductible','Keep specific doctors','Balance of cost and coverage'] },
+  preexisting_conditions: { label: 'Any pre-existing conditions?', type: 'radio', options: ['Yes','No','Prefer not to say'] },
+  business_name:        { label: 'Business name', type: 'text' },
+  employee_count:       { label: 'Number of full-time employees', type: 'number' },
+  enrollment_count:     { label: 'Number of employees to enroll', type: 'number' },
+  avg_age_range:        { label: 'Average employee age range', type: 'select', options: ['18–30','30–40','40–50','50+','Mixed ages'] },
+  has_current_plan:     { label: 'Currently have a group health plan?', type: 'radio', options: ['Yes','No'] },
+  current_group_carrier:{ label: 'Current group carrier', type: 'text' },
+  current_cost_per_emp: { label: 'Current cost per employee/month', type: 'text', placeholder: 'e.g. $350/employee' },
+  group_start_date:     { label: 'Coverage start date needed', type: 'date' },
+  employee_states:      { label: 'States where employees work', type: 'text', placeholder: 'e.g. MT, WY, ID' },
+  cov_medical:          { label: 'Medical', type: 'checkbox-field', group: 'coverage' },
+  cov_dental:           { label: 'Dental', type: 'checkbox-field', group: 'coverage' },
+  cov_vision:           { label: 'Vision', type: 'checkbox-field', group: 'coverage' },
+  cov_life:             { label: 'Life insurance', type: 'checkbox-field', group: 'coverage' },
+  cov_disability:       { label: 'Disability', type: 'checkbox-field', group: 'coverage' },
+  cov_hsa:              { label: 'HSA / FSA', type: 'checkbox-field', group: 'coverage' },
+  group_budget:         { label: 'Budget per employee per month', type: 'text', placeholder: 'e.g. $400' },
+  current_employer:     { label: 'Current employer', type: 'text' },
+  current_occupation:   { label: 'Current occupation / title', type: 'text' },
+  current_income:       { label: 'Current annual income', type: 'select', options: ['Under $30,000','$30,000–$50,000','$50,000–$75,000','$75,000–$100,000','Over $100,000'] },
+  education:            { label: 'Highest education level', type: 'select', options: ['High school / GED','Some college','Associate\'s degree','Bachelor\'s degree','Master\'s or higher'] },
+  sales_experience:     { label: 'Years of sales or finance experience', type: 'select', options: ['None','1–2 years','3–5 years','5+ years'] },
+  licensed_life:        { label: 'Life insurance licensed?', type: 'radio', options: ['Yes','No','In progress'] },
+  licensed_health:      { label: 'Health insurance licensed?', type: 'radio', options: ['Yes','No','In progress'] },
+  licensed_series:      { label: 'Series 6 / 65 licensed?', type: 'radio', options: ['Yes','No','In progress'] },
+  full_part_time:       { label: 'Full-time or part-time interest', type: 'radio', options: ['Full-time','Part-time','Either'] },
+  income_goal_12mo:     { label: 'Income goal in 12 months', type: 'select', options: ['$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','Over $100,000'] },
+  start_availability:   { label: 'Earliest availability to start', type: 'select', options: ['Immediately','Within 30 days','30–60 days','60–90 days'] },
+  why_interested:       { label: 'Why are you interested in this opportunity?', type: 'textarea', placeholder: 'Tell us a little about what draws you to this role…' },
+  states_licensed:      { label: 'States you are licensed in', type: 'text', placeholder: 'e.g. MT, WY, CO' },
+  monthly_production:   { label: 'Current monthly premium production', type: 'select', options: ['Under $5,000','$5,000–$15,000','$15,000–$30,000','$30,000–$50,000','Over $50,000'] },
+  own_book:             { label: 'Have your own book of business?', type: 'radio', options: ['Yes','No'] },
+  products_sold:        { label: 'Products you currently sell', type: 'text', placeholder: 'e.g. Term life, ACA health, Medicare Advantage' },
+  looking_higher_contracts: { label: 'Higher contracts', type: 'checkbox-field', group: 'looking' },
+  looking_better_leads: { label: 'Better leads', type: 'checkbox-field', group: 'looking' },
+  looking_more_support: { label: 'More support / training', type: 'checkbox-field', group: 'looking' },
+  looking_flexibility:  { label: 'More flexibility', type: 'checkbox-field', group: 'looking' },
+  notes:                { label: 'Anything else you\'d like us to know', type: 'textarea', placeholder: 'Questions, comments, special circumstances…' }
+};
+
+const CHECKBOX_GROUP_LABELS = {
+  goals:    'Financial goals — select all that apply',
+  coverage: 'Coverage types needed — select all that apply',
+  looking:  'What are you looking for? — select all that apply'
+};
+
+function renderField(id, def, prefillVal) {
+  if (def.type === 'checkbox-field') return '';
+  const val = prefillVal || '';
+  const isPrefilled = !!val;
+  let input = '';
+  if (['text','email','tel','number'].includes(def.type)) {
+    input = `<input type="${def.type}" id="f_${id}" name="${id}" value="${val.toString().replace(/"/g,'&quot;')}" placeholder="${def.placeholder||''}"${isPrefilled?' class="pre-filled"':''}>`;
+  } else if (def.type === 'date') {
+    input = `<input type="date" id="f_${id}" name="${id}" value="${val}">`;
+  } else if (def.type === 'select') {
+    const opts = (def.options||[]).map(o => `<option value="${o}"${o===val?' selected':''}>${o}</option>`).join('');
+    input = `<select id="f_${id}" name="${id}"><option value="">Select…</option>${opts}</select>`;
+  } else if (def.type === 'radio') {
+    const radios = (def.options||[]).map(o => `<label class="radio-opt"><input type="radio" name="${id}" value="${o}"${o===val?' checked':''}> ${o}</label>`).join('');
+    input = `<div class="radio-group">${radios}</div>`;
+  } else if (def.type === 'textarea') {
+    input = `<textarea id="f_${id}" name="${id}" placeholder="${def.placeholder||''}">${val}</textarea>`;
+  }
+  return `<div class="field-group"><label for="f_${id}">${def.label}</label>${input}</div>`;
+}
+
+function renderCheckboxGroup(groupKey, ids) {
+  const label = CHECKBOX_GROUP_LABELS[groupKey] || groupKey;
+  const items = ids.map(id => `<label class="check-opt"><input type="checkbox" name="${id}" value="yes"> ${FIELD_DEFS[id].label}</label>`).join('');
+  return `<div class="field-group"><label>${label}</label><div class="checkbox-group goal-grid">${items}</div></div>`;
+}
+
+async function init() {
+  const params = new URLSearchParams(location.search);
+  const sessionId = params.get('s');
+  if (!sessionId) { showError(); return; }
+
+  const data = await supa('/rest/v1/intake_sessions?id=eq.' + sessionId + '&select=*');
+  if (!data || !data.length) { showError(); return; }
+  const session = data[0];
+
+  if (session.status === 'completed') {
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('success-screen').style.display = '';
+    return;
+  }
+
+  let contact = {};
+  if (session.contact_id) {
+    const cd = await supa('/rest/v1/contacts?id=eq.' + session.contact_id + '&select=name,email,phone,company,date_of_birth');
+    if (cd && cd.length) contact = cd[0];
+  }
+
+  renderForm(session, contact);
+}
+
+function renderForm(session, contact) {
+  const sf = new Set(session.selected_fields || []);
+  const prefill = {
+    name: contact.name || '', email: contact.email || '', phone: contact.phone || '',
+    business_name: contact.company || '', dob: contact.date_of_birth || ''
+  };
+
+  const typeLabel = {
+    'financial': 'Life &amp; Financial Services',
+    'health-individual': 'Health Insurance — Individual &amp; Family',
+    'health-group': 'Health Insurance — Group Benefits',
+    'career-kfg': 'Career Opportunity — Kannon Financial Group',
+    'career-ia': 'Career Opportunity — Insured America'
+  }[session.form_type] || 'Information Form';
+
+  // Collect checkbox groups
+  const groups = {};
+  sf.forEach(id => {
+    const def = FIELD_DEFS[id];
+    if (def && def.type === 'checkbox-field' && def.group) {
+      groups[def.group] = groups[def.group] || [];
+      groups[def.group].push(id);
+    }
+  });
+
+  const skipPersonal = new Set(['dob','marital_status','best_time','notes']);
+  const alwaysOn = new Set(['name','email','phone']);
+
+  let html = `
+  <div class="card">
+    <p style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">Information Request</p>
+    <h2 style="font-size:22px;margin-bottom:8px;color:#1a1a2e;">${typeLabel}</h2>
+    <p style="font-size:14px;color:#666;line-height:1.6;">Please take a moment to fill out the information below. This helps us prepare for your consultation.</p>
+  </div>
+  <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}')">
+  <div class="card">
+    <div class="card-title">Your contact information</div>
+    <div class="two-col">
+      <div class="field-group"><label>Full name</label><input type="text" name="name" value="${prefill.name.replace(/"/g,'&quot;')}" class="pre-filled" readonly></div>
+      <div class="field-group"><label>Email address</label><input type="email" name="email" value="${prefill.email.replace(/"/g,'&quot;')}"${prefill.email?' class="pre-filled"':''}></div>
+    </div>
+    <div class="field-group"><label>Phone number</label><input type="tel" name="phone" value="${prefill.phone.replace(/"/g,'&quot;')}"${prefill.phone?' class="pre-filled"':''}></div>`;
+
+  // Personal fields (dob, marital_status, best_time)
+  const personalSelected = ['dob','marital_status','best_time'].filter(id => sf.has(id));
+  if (personalSelected.length) {
+    html += `<div class="section-label">Personal details</div>`;
+    personalSelected.forEach(id => { html += renderField(id, FIELD_DEFS[id], prefill[id]||''); });
+  }
+  html += '</div>';
+
+  // Main fields
+  const mainFields = [...sf].filter(id => !skipPersonal.has(id) && !alwaysOn.has(id) && FIELD_DEFS[id] && FIELD_DEFS[id].type !== 'checkbox-field' && id !== 'notes');
+  if (mainFields.length || Object.keys(groups).length) {
+    html += `<div class="card"><div class="card-title">Details</div>`;
+    mainFields.forEach(id => { html += renderField(id, FIELD_DEFS[id], prefill[id]||''); });
+    Object.entries(groups).forEach(([gk, ids]) => { html += renderCheckboxGroup(gk, ids); });
+    html += '</div>';
+  }
+
+  // Notes
+  if (sf.has('notes')) {
+    html += `<div class="card"><div class="card-title">Anything else?</div>${renderField('notes', FIELD_DEFS['notes'], '')}</div>`;
+  }
+
+  html += `<div class="privacy-note"><p>🔒 Your information is secure and confidential. It will only be used to prepare for your consultation with Kannon Financial Group. We will never sell or share your data.</p></div>
+  <button type="submit" class="btn-primary" id="submit-btn">Submit My Information →</button>
+  </form>`;
+
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('form-container').style.display = '';
+  document.getElementById('form-container').innerHTML = html;
+}
+
+async function submitForm(e, sessionId, contactId, formType) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+
+  const form = document.getElementById('intake-form');
+  const data = new FormData(form);
+  const responses = {};
+  for (const [k, v] of data.entries()) {
+    if (responses[k]) { responses[k] = [].concat(responses[k], v); }
+    else { responses[k] = v; }
+  }
+
+  const now = new Date().toISOString();
+  await supa('/rest/v1/intake_sessions?id=eq.' + sessionId, {
+    method: 'PATCH',
+    body: JSON.stringify({ responses, status: 'completed', completed_at: now })
+  });
+
+  if (contactId) {
+    const contactUpdate = { sequence_status: 'Interested' };
+    if (responses.email) contactUpdate.email = responses.email;
+    if (responses.phone) contactUpdate.phone = responses.phone;
+    if (responses.dob) contactUpdate.date_of_birth = responses.dob;
+    if (responses.business_name) contactUpdate.company = responses.business_name;
+
+    const ts = new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    const typeLabel = {'financial':'Life & Financial','health-individual':'Health — Individual','health-group':'Health — Group','career-kfg':'Career — KFG','career-ia':'Career — IA'}[formType]||formType;
+    let noteLines = `[Intake Form • ${typeLabel} • ${ts}]`;
+    Object.entries(responses).forEach(([k,v]) => {
+      const label = (FIELD_DEFS[k]||{}).label || k.replace(/_/g,' ');
+      const val = Array.isArray(v) ? v.join(', ') : v;
+      if (val && k !== 'name') noteLines += `\n  ${label}: ${val}`;
+    });
+
+    const cd = await supa('/rest/v1/contacts?id=eq.' + contactId + '&select=notes');
+    const cur = (cd && cd[0] && cd[0].notes) ? cd[0].notes : '';
+    contactUpdate.notes = noteLines + (cur ? '\n\n' + cur : '');
+    await supa('/rest/v1/contacts?id=eq.' + contactId, { method: 'PATCH', body: JSON.stringify(contactUpdate) });
+  }
+
+  document.getElementById('form-container').style.display = 'none';
+  document.getElementById('success-screen').style.display = '';
+}
+
+function showError() {
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('error-screen').style.display = '';
+}
+
+init();
+</script>
+</body>
+</html>
