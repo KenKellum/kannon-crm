@@ -1510,7 +1510,7 @@ function _dialerActionRow(contact, isLast) {
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">`
     + callBtn
     + `<button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>`
-    + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="dialerMarkInterested('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>`
+    + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>`
     + `<button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>`
     + `<button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>`
     + skipBtn + nextBtn
@@ -1518,6 +1518,9 @@ function _dialerActionRow(contact, isLast) {
 }
 
 async function showNotInterested(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  const name = c ? (c.name || 'this contact') : 'this contact';
+  if (!confirm('Mark ' + name + ' as Not Interested?\nThis will remove them from your active sequence.')) return;
   try {
     await supabaseClient.from('contacts').update({ sequence_status: 'NotInterested' }).eq('id', contactId);
     const idx = contacts.findIndex(c => c.id === contactId);
@@ -1530,8 +1533,11 @@ async function showNotInterested(contactId) {
 }
 
 function showIntakeForm(contactId) {
-  // Intake form — open contact view as placeholder until intake form is built
-  if (contactId) viewContact(contactId, '');
+  // Open contact editor — on save, mark as Replied (Interested/pipeline-ready)
+  if (!contactId) return;
+  editContact(contactId, function() {
+    dialerMarkInterested(contactId);
+  });
 }
 
 async function dialerSendBookingLink(contactId) {
