@@ -1533,11 +1533,67 @@ async function showNotInterested(contactId) {
 }
 
 function showIntakeForm(contactId) {
-  // Open contact editor — on save, mark as Replied (Interested/pipeline-ready)
-  if (!contactId) return;
-  editContact(contactId, function() {
-    dialerMarkInterested(contactId);
-  });
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) return;
+  const name = c.name || 'Contact';
+
+  const FORM_TYPES = [
+    { value: 'health_individual', label: '&#127968; Individual Health'       },
+    { value: 'health_family',     label: '&#128106; Family Health'           },
+    { value: 'health_group',      label: '&#127970; Group / Employer Health' },
+    { value: 'career_new',        label: '&#127891; New Career Candidate'    },
+    { value: 'career_existing',   label: '&#128188; Existing Agent'          },
+    { value: 'life_individual',   label: '&#128149; Life Insurance'          },
+  ];
+
+  const typeOpts = FORM_TYPES.map(function(f) {
+    return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;'
+         + 'border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;margin-bottom:6px;">'
+         + '<input type="radio" name="intake-type" value="' + f.value + '" style="accent-color:#0f4c8a;">'
+         + '<span style="font-size:14px;">' + f.label + '</span>'
+         + '</label>';
+  }).join('');
+
+  const bodyHtml =
+    '<p style="color:#64748b;font-size:13px;margin:0 0 14px;">Select the intake form type for this prospect.</p>'
+    + '<div id="intake-type-list">' + typeOpts + '</div>'
+    + '<div style="margin-top:14px;">'
+    + '<label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;'
+    + 'letter-spacing:.05em;">Notes (optional)</label>'
+    + '<textarea id="intake-notes" placeholder="Key info captured during the call..." '
+    + 'style="width:100%;box-sizing:border-box;min-height:80px;margin-top:4px;"></textarea>'
+    + '</div>';
+
+  showModal('&#129309; Start Intake — ' + name, bodyHtml, async function() {
+    const typeEl = document.querySelector('input[name="intake-type"]:checked');
+    if (!typeEl) { showToast('Please select a form type'); return false; }
+    const notes = (document.getElementById('intake-notes').value || '').trim();
+    const responses = notes ? { notes: notes } : {};
+
+    const { error } = await supabaseClient
+      .from('intake_sessions')
+      .insert({
+        contact_id:      contactId,
+        agent_id:        currentAgent.id,
+        form_type:       typeEl.value,
+        selected_fields: [],
+        responses:       responses,
+        status:          'pending'
+      });
+    if (error) { showToast('Error creating intake session'); return false; }
+
+    // Mark contact as Replied
+    await supabaseClient.from('contacts').update({ sequence_status: 'Replied' }).eq('id', contactId);
+    const idx = contacts.findIndex(function(x) { return x.id === contactId; });
+    if (idx > -1) contacts[idx].sequence_status = 'Replied';
+    const qi = dialerQueue ? dialerQueue.findIndex(function(x) { return x.id === contactId; }) : -1;
+    if (qi > -1) dialerQueue[qi].sequence_status = 'Replied';
+
+    showToast('&#129309; Intake started! Contact marked as Replied.');
+    if (dialerQueue && dialerQueue.length > 0) {
+      setTimeout(function() { dialerNext(); }, 400);
+    }
+  }, { confirmLabel: '&#129309; Start Intake' });
 }
 
 async function dialerSendBookingLink(contactId) {
