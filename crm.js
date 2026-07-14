@@ -1294,72 +1294,6 @@ function startDialerSession(filterType) {
   showPage('dialer');
 }
 
-// ── Social Outreach Helpers ─────────────────────────────────────
-async function logOutreach(contactId, platform, prefillNote) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) { showToast('Contact not found'); return; }
-  const platforms = ['Phone Call','Text / SMS','LinkedIn','Facebook','Instagram','X / Twitter','WhatsApp','TikTok','Telegram','In Person','Other'];
-  const opts = platforms.map(p => '<option value="' + p + '"' + (p === (platform||'Phone Call') ? ' selected' : '') + '>' + p + '</option>').join('');
-  showModal('Log Outreach — ' + (c.name || 'Contact'),
-    '<div style="margin-bottom:10px;">'
-    + '<label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">Channel</label>'
-    + '<select id="log-platform" style="width:100%;box-sizing:border-box;">' + opts + '</select></div>'
-    + '<div><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">What happened</label>'
-    + '<textarea id="log-note" rows="4" placeholder="e.g. Left voicemail, will follow up Friday." style="width:100%;box-sizing:border-box;">' + (prefillNote || '') + '</textarea></div>',
-    async function() {
-      const plat = document.getElementById('log-platform').value;
-      const note = document.getElementById('log-note').value.trim();
-      if (!note) { showToast('Please describe what happened'); return false; }
-      const ts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-      const entry = '[' + plat + ' • ' + ts + ']
-' + note;
-      const newNotes = c.notes ? entry + '
-
-' + c.notes.trim() : entry;
-      const { error } = await supabaseClient.from('contacts').update({ notes: newNotes }).eq('id', contactId);
-      if (error) { showToast('Error: ' + error.message); return false; }
-      c.notes = newNotes;
-      const qi = dialerQueue ? dialerQueue.findIndex(x => x.id === contactId) : -1;
-      if (qi > -1) dialerQueue[qi].notes = newNotes;
-      showToast('✓ Outreach logged — ' + plat);
-      if (typeof renderDialer === 'function' && dialerQueue && dialerQueue.length) renderDialer();
-    }
-  );
-}
-
-function openWhatsApp(contactId) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) { showToast('Contact not found'); return; }
-  const num = (c.whatsapp_number || c.phone || '').replace(/[^0-9+]/g, '');
-  const firstName = (c.name || '').split(' ')[0] || 'there';
-  const agentFirst = (currentAgent.name || 'your advisor').split(' ')[0];
-  const defaultMsg = 'Hi ' + firstName + ', this is ' + agentFirst + ' from Kannon Financial Group. I wanted to reach out regarding your financial goals — would love to connect when you have a moment!';
-  showModal('WhatsApp — ' + (c.name || 'Contact'),
-    '<div style="margin-bottom:10px;">'
-    + '<label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">WhatsApp Number</label>'
-    + '<input type="tel" id="wa-num" value="' + num + '" placeholder="+14065550000" style="width:100%;box-sizing:border-box;" /></div>'
-    + '<div><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">Message</label>'
-    + '<textarea id="wa-msg" rows="5" style="width:100%;box-sizing:border-box;">' + defaultMsg + '</textarea></div>'
-    + '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">&#128172; Opens WhatsApp with your message pre-filled and logs the outreach.</div>',
-    async function() {
-      const phone = document.getElementById('wa-num').value.replace(/[^0-9+]/g, '');
-      const msg   = document.getElementById('wa-msg').value.trim();
-      if (!phone) { showToast('Please enter a WhatsApp number'); return false; }
-      if (!msg)   { showToast('Please enter a message'); return false; }
-      window.open('https://wa.me/' + phone.replace(/^\+/, '') + '?text=' + encodeURIComponent(msg), '_blank');
-      const ts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-      const entry = '[WhatsApp • ' + ts + ']
-' + msg;
-      const newNotes = c.notes ? entry + '
-
-' + c.notes.trim() : entry;
-      await supabaseClient.from('contacts').update({ notes: newNotes }).eq('id', contactId);
-      c.notes = newNotes;
-      showToast('✓ WhatsApp opened + outreach logged');
-    }
-  );
-}
-
 function renderDialer() {
   const el = document.getElementById('page-dialer');
   if (!el) return;
@@ -1415,7 +1349,7 @@ function renderDialer() {
         <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
           <div style="width:58px;height:58px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;flex-shrink:0;">${initials}</div>
           <div style="flex:1;min-width:0;">
-            <div style="font-size:22px;font-weight:700;color:var(--text-primary);margin-bottom:3px;">${contact.name || '—'}</div>
+            <div style="font-size:22px;font-weight:700;color:var(--primary);margin-bottom:3px;">${contact.name || '—'}</div>
             <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">${[contact.company, contact.city ? contact.city + (contact.state ? ', ' + contact.state : '') : ''].filter(Boolean).join(' &nbsp;&middot;&nbsp; ') || '&mdash;'}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <span class="badge ${typeClass}">${contact.type || 'Contact'}</span>
@@ -1433,27 +1367,27 @@ function renderDialer() {
           </div>
           <div style="text-align:right;flex-shrink:0;">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Added</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:2px;">${contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:2px;">${contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</div>
           </div>
         </div>
 
         <!-- Meta grid -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;background:var(--surface-3);border-radius:10px;margin-bottom:20px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;background:#f8fafc;border-radius:10px;margin-bottom:20px;">
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Email</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;word-break:break-all;">${contact.email || '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;word-break:break-all;">${contact.email || '—'}</div>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Phone</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">${contact.phone || '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.phone || '—'}</div>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Company</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">${contact.company || '—'}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">${contact.company || '—'}</div>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Sequence step</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">Email ${contact.sequence_step || 0} of 3</div>
+            <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:3px;">Email ${contact.sequence_step || 0} of 3</div>
           </div>
         </div>
 
@@ -1472,13 +1406,8 @@ function renderDialer() {
 
         <!-- Notes area -->
         <div style="border-top:1px solid var(--border);padding-top:16px;">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border);">
-            <button class="btn btn-outline btn-sm" onclick="logOutreach('${contact.id}','Phone Call','')" style="font-size:12px;">&#128221; Log Outreach</button>
-            ${(contact.whatsapp_number||contact.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${contact.id}')" style="font-size:12px;color:#25d366;border-color:#25d366;">&#128172; WhatsApp</button>` : ''}
-            ${contact.linkedin_url ? `<button class="btn btn-outline btn-sm" onclick="window.open((contact.linkedin_url.indexOf('http')===0?contact.linkedin_url:'https://'+contact.linkedin_url),'_blank')" style="font-size:12px;">&#128279; LinkedIn</button>` : ''}
-          </div>
           <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Quick note</div>
-          ${contact.notes ? `<div style="font-size:13px;color:var(--text);background:var(--surface-3);padding:10px 12px;border-radius:8px;margin-bottom:10px;border-left:3px solid var(--accent);">${contact.notes}</div>` : ''}
+          ${contact.notes ? `<div style="font-size:13px;color:var(--text);background:#f8fafc;padding:10px 12px;border-radius:8px;margin-bottom:10px;border-left:3px solid var(--accent);">${contact.notes}</div>` : ''}
           <div style="display:flex;gap:8px;">
             <input id="dialer-note-input" placeholder="Log a call, leave a note..." style="flex:1;font-size:13px;" value="" />
             <button class="btn btn-outline" onclick="dialerSaveNote('${contact.id}')">Save note</button>
