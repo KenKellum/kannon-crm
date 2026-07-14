@@ -1184,547 +1184,115 @@ async function bookingLinkLookupContact(email) {
 // ============================================================
 // WORK MY LEADS — Power Dialer
 // ============================================================
+// ── Work My Leads: cooldown helpers ─────────────────────────────
+function dialerCooldownReady(contact, cooldownHours) {
+  if (!cooldownHours || !contact.last_called_at) return true;
+  return (Date.now() - new Date(contact.last_called_at).getTime()) / 3600000 >= cooldownHours;
+}
+function dialerSmartCooldown(contact) {
+  const s = contact.sequence_status;
+  if (s === 'Interested') return 0;
+  if (s === 'Replied')    return 48;
+  if (s === 'Active')     return 72;
+  return 24;
+}
+
 function startDialerSession(filterType) {
-  // If no filter specified, show picker modal
   if (!filterType) {
-    const hotCount   = contacts.filter(c => c.sequence_status === 'Replied').length;
-    const freshCount = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started').length;
-    const allCount   = totalContactCountFull || contacts.length;
+    function bCnt(arr, h) {
+      const ready = arr.filter(c => dialerCooldownReady(c, h)).length;
+      return { ready, cooling: arr.length - ready, total: arr.length };
+    }
+    function bLbl(ready, cooling) {
+      return cooling > 0
+        ? `${ready} ready &nbsp;&middot;&nbsp; <span style="color:#94a3b8;font-weight:400;">${cooling} cooling &#10052;</span>`
+        : `${ready}`;
+    }
+    const interested = contacts.filter(c => c.sequence_status === 'Interested');
+    const replied    = contacts.filter(c => c.sequence_status === 'Replied');
+    const active     = contacts.filter(c => c.sequence_status === 'Active');
+    const fresh      = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started');
+    const iC = bCnt(interested, 0);
+    const rC = bCnt(replied, 48);
+    const aC = bCnt(active, 72);
+    const fC = bCnt(fresh, 24);
+    const allCount = totalContactCountFull || contacts.length;
+    const typeBtns = CONTACT_TYPES.map(t => {
+      const arr = contacts.filter(c => c.type === t);
+      if (!arr.length) return '';
+      const ready = arr.filter(c => dialerCooldownReady(c, dialerSmartCooldown(c))).length;
+      const cooling = arr.length - ready;
+      return `<button class="btn btn-outline btn-sm" onclick="closeModal();startDialerSession('type:${t}')" ${!ready ? 'disabled style="opacity:0.45;"' : ''}>
+        ${t} <span style="font-size:11px;color:#94a3b8;">(${ready}${cooling ? '/'+arr.length : ''})</span>
+      </button>`;
+    }).join('');
     showModal('&#9889; Start a Lead Session', `
-      <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Choose which leads to work through. You can stop anytime.</p>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        ${hotCount > 0 ? `<button class="btn btn-accent btn-full" onclick="closeModal();startDialerSession('replied')">
-          &#128293; Hot leads — Replied (${hotCount})
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">Choose which leads to work. Cooldown windows prevent over-contacting.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${iC.total > 0 ? `<button class="btn btn-accent btn-full" onclick="closeModal();startDialerSession('interested')" ${!iC.ready ? 'disabled style="opacity:0.5;"' : ''}>
+          <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
+            <span>&#129657; Interested &mdash; Ready to Quote</span>
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;">${bLbl(iC.ready,iC.cooling)}</span>
+          </div>
         </button>` : ''}
-        <button class="btn btn-primary btn-full" onclick="closeModal();startDialerSession('not_started')">
-          &#128101; Fresh leads — Not yet contacted (${freshCount})
+        ${rC.total > 0 ? `<button class="btn btn-accent btn-full" onclick="closeModal();startDialerSession('replied')" ${!rC.ready ? 'disabled style="opacity:0.5;"' : ''}>
+          <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
+            <span>&#128293; Hot Leads &mdash; Replied <span style="font-size:11px;font-weight:400;opacity:0.8;">(48h cooldown)</span></span>
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;">${bLbl(rC.ready,rC.cooling)}</span>
+          </div>
+        </button>` : ''}
+        ${aC.total > 0 ? `<button class="btn btn-primary btn-full" onclick="closeModal();startDialerSession('active')" ${!aC.ready ? 'disabled style="opacity:0.5;"' : ''}>
+          <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
+            <span>&#128140; Active Sequence &mdash; Supplement Email <span style="font-size:11px;font-weight:400;opacity:0.8;">(72h)</span></span>
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;">${bLbl(aC.ready,aC.cooling)}</span>
+          </div>
+        </button>` : ''}
+        <button class="btn btn-primary btn-full" onclick="closeModal();startDialerSession('not_started')" ${!fC.ready ? 'disabled style="opacity:0.5;"' : ''}>
+          <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
+            <span>&#128101; Fresh Leads &mdash; Not Yet Contacted <span style="font-size:11px;font-weight:400;opacity:0.8;">(24h)</span></span>
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;">${bLbl(fC.ready,fC.cooling)}</span>
+          </div>
         </button>
         <button class="btn btn-outline btn-full" onclick="closeModal();startDialerSession('all')">
-          &#128203; All my contacts (${allCount})
+          <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
+            <span>&#128203; All My Contacts (no cooldown filter)</span>
+            <span style="font-size:12px;font-weight:600;">${allCount}</span>
+          </div>
         </button>
+        ${typeBtns ? `<div style="border-top:1px solid #e2e8f0;margin-top:4px;padding-top:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Or work by contact type</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">${typeBtns}</div>
+        </div>` : ''}
       </div>
-    `);
+    `, null, { hideConfirm: true });
     return;
   }
 
+  // Build queue respecting cooldown windows
   let queue;
-  if (filterType === 'replied')     queue = contacts.filter(c => c.sequence_status === 'Replied');
-  else if (filterType === 'not_started') queue = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started');
-  else queue = [...contacts];
+  if (filterType === 'interested')
+    queue = contacts.filter(c => c.sequence_status === 'Interested' && dialerCooldownReady(c, 0));
+  else if (filterType === 'replied')
+    queue = contacts.filter(c => c.sequence_status === 'Replied' && dialerCooldownReady(c, 48));
+  else if (filterType === 'active')
+    queue = contacts.filter(c => c.sequence_status === 'Active' && dialerCooldownReady(c, 72));
+  else if (filterType === 'not_started')
+    queue = contacts.filter(c => (!c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started') && dialerCooldownReady(c, 24));
+  else if (filterType.startsWith('type:')) {
+    const t = filterType.slice(5);
+    queue = contacts.filter(c => c.type === t && dialerCooldownReady(c, dialerSmartCooldown(c)));
+  } else {
+    queue = [...contacts];
+  }
 
   if (queue.length === 0) {
-    showToast('No contacts in this queue!');
+    showToast('No contacts ready in this queue — all are in cooldown!');
     return;
   }
-
   dialerQueue = queue;
   dialerIndex = 0;
   showPage('dialer');
 }
-
-// ── Social Outreach Helpers ─────────────────────────────────────
-async function logOutreach(contactId, platform, prefillNote) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) { showToast('Contact not found'); return; }
-  const platforms = ['LinkedIn','Facebook','Instagram','X / Twitter','WhatsApp','TikTok','Telegram','Phone Call','Text / SMS','In Person','Other'];
-  const opts = platforms.map(p => '<option value="' + p + '"' + (p === platform ? ' selected' : '') + '>' + p + '</option>').join('');
-  showModal('Log Outreach',
-    '<div style="margin-bottom:10px;"><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">Platform</label>'
-    + '<select id="log-platform" style="width:100%;box-sizing:border-box;">' + opts + '</select></div>'
-    + '<div><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">What happened / what you sent</label>'
-    + '<textarea id="log-note" rows="4" placeholder="e.g. Sent intro message, awaiting reply." style="width:100%;box-sizing:border-box;">' + (prefillNote || '') + '</textarea></div>',
-    async function() {
-      const plat = document.getElementById('log-platform').value;
-      const note = document.getElementById('log-note').value.trim();
-      if (!note) { showToast('Please enter a note'); return false; }
-      const ts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-      const entry = '[' + plat + ' \u2022 ' + ts + ']\n' + note;
-      const newNotes = c.notes ? entry + '\n\n' + c.notes.trim() : entry;
-      const { error } = await supabaseClient.from('contacts').update({ notes: newNotes }).eq('id', contactId);
-      if (error) { showToast('Error: ' + error.message); return false; }
-      c.notes = newNotes;
-      showToast('\u2713 Outreach logged to ' + c.name);
-    }
-  );
-}
-
-function openWhatsApp(contactId) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) { showToast('Contact not found'); return; }
-  const num = (c.whatsapp_number || c.phone || '').replace(/[^0-9+]/g, '');
-  const firstName = (c.name || '').split(' ')[0] || 'there';
-  const agentFirst = (currentAgent.name || 'your advisor').split(' ')[0];
-  const defaultMsg = 'Hi ' + firstName + ', this is ' + agentFirst + ' from Kannon Financial Group. I wanted to reach out and connect regarding your financial goals. Would love to chat when you have a moment!';
-  showModal('WhatsApp Message — ' + (c.name || 'Contact'),
-    '<div style="margin-bottom:10px;"><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">WhatsApp Number</label>'
-    + '<input type="tel" id="wa-num" value="' + num + '" placeholder="+14065550000" style="width:100%;box-sizing:border-box;" /></div>'
-    + '<div><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;">Message (edit before sending)</label>'
-    + '<textarea id="wa-msg" rows="5" style="width:100%;box-sizing:border-box;">' + defaultMsg + '</textarea></div>'
-    + '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">&#128172; Opens WhatsApp with message pre-filled. Outreach is auto-logged to this contact.</div>',
-    async function() {
-      const phone = document.getElementById('wa-num').value.replace(/[^0-9+]/g, '');
-      const msg   = document.getElementById('wa-msg').value.trim();
-      if (!phone) { showToast('Please enter a WhatsApp number'); return false; }
-      if (!msg)   { showToast('Please enter a message'); return false; }
-      window.open('https://wa.me/' + phone.replace(/^\+/, '') + '?text=' + encodeURIComponent(msg), '_blank');
-      const ts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-      const entry = '[WhatsApp \u2022 ' + ts + ']\n' + msg;
-      const newNotes = c.notes ? entry + '\n\n' + c.notes.trim() : entry;
-      await supabaseClient.from('contacts').update({ notes: newNotes }).eq('id', contactId);
-      c.notes = newNotes;
-      showToast('\u2713 WhatsApp opened + outreach logged');
-    }
-  );
-}
-
-// ── Not Interested / Reset Status ───────────────────────────────
-async function showNotInterested(contactId) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) { showToast('Contact not found'); return; }
-  showModal('Not Interested — ' + (c.name || 'Contact'),
-    '<div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Choose what to apply. You can select any combination.</div>'
-    + '<div style="display:flex;flex-direction:column;gap:12px;">'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-status" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Mark as Not Interested</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Sets sequence status to ‘Not Interested’</span></span></label>'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-sequence" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Remove from Email Sequence / Drip Campaign</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Stops all automated drip emails — sets status to Stopped</span></span></label>'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-optout" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Email Opt-Out</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Flags them as opted out — no future emails</span></span></label>'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="ni-dnc" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" /><span style="font-size:13px;"><strong>Do Not Call</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Flags this contact as do not call</span></span></label>'
-    + '</div>',
-    async function() {
-      const markStatus = document.getElementById('ni-status').checked;
-      const stopSeq    = document.getElementById('ni-sequence').checked;
-      const optOut     = document.getElementById('ni-optout').checked;
-      const dnc        = document.getElementById('ni-dnc').checked;
-      if (!markStatus && !stopSeq && !optOut && !dnc) { showToast('Select at least one action'); return false; }
-      const updates = {};
-      if (markStatus) updates.sequence_status = 'Not Interested';
-      else if (stopSeq) updates.sequence_status = 'Stopped';
-      if (optOut) updates.opt_out_email = true;
-      if (dnc)    updates.do_not_call   = true;
-      const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
-      if (error) { showToast('Error: ' + error.message); return false; }
-      Object.assign(c, updates);
-      const actions = [markStatus && 'not interested', (!markStatus && stopSeq) && 'removed from drip',
-                       optOut && 'opted out', dnc && 'DNC'].filter(Boolean).join(', ');
-      showToast('✓ ' + (c.name || 'Contact') + ' — ' + actions);
-      dialerNext();
-    }
-  );
-}
-
-async function showResetStatus(contactId) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) { showToast('Contact not found'); return; }
-  showModal('Reset Status — ' + (c.name || 'Contact'),
-    '<div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Choose what to reset for this contact.</div>'
-    + '<div style="display:flex;flex-direction:column;gap:12px;">'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-status" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Reset sequence status to ‘Not Started’</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Clears Not Interested, Stopped, etc.</span></span></label>'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-step" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Reset email sequence step to 0</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Allows the sequence to restart from email 1</span></span></label>'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-optout" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Remove email opt-out flag</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Re-enables email outreach for this contact</span></span></label>'
-    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;"><input type="checkbox" id="rs-dnc" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" /><span style="font-size:13px;"><strong>Remove Do Not Call flag</strong><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Re-enables calling for this contact</span></span></label>'
-    + '</div>',
-    async function() {
-      const rstStatus = document.getElementById('rs-status').checked;
-      const rstStep   = document.getElementById('rs-step').checked;
-      const rstOptOut = document.getElementById('rs-optout').checked;
-      const rstDnc    = document.getElementById('rs-dnc').checked;
-      if (!rstStatus && !rstStep && !rstOptOut && !rstDnc) { showToast('Select at least one action'); return false; }
-      const updates = {};
-      if (rstStatus) updates.sequence_status = 'Not Started';
-      if (rstStep)   updates.sequence_step   = 0;
-      if (rstOptOut) updates.opt_out_email   = false;
-      if (rstDnc)    updates.do_not_call     = false;
-      const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
-      if (error) { showToast('Error: ' + error.message); return false; }
-      Object.assign(c, updates);
-      const actions = [rstStatus && 'status reset', rstStep && 'step reset to 0',
-                       rstOptOut && 'opt-out cleared', rstDnc && 'DNC cleared'].filter(Boolean).join(', ');
-      showToast('✓ ' + (c.name || 'Contact') + ' — ' + actions);
-    }
-  );
-}
-
-// ── Intake Form ─────────────────────────────────────────────────────────────
-
-const INTAKE_FIELD_DEFS = {
-  name:                    { label:'Full Name',                         type:'text',         section:'Contact Info' },
-  email:                   { label:'Email',                             type:'email',        section:'Contact Info' },
-  phone:                   { label:'Phone',                             type:'tel',          section:'Contact Info' },
-  dob:                     { label:'Date of Birth',                     type:'date',         section:'Contact Info' },
-  best_time:               { label:'Best Time to Reach',                type:'select',       section:'Contact Info',    options:['Morning','Afternoon','Evening','Anytime'] },
-  marital_status:          { label:'Marital Status',                    type:'select',       section:'Contact Info',    options:['Single','Married','Divorced','Widowed'] },
-  household_income:        { label:'Household Income',                  type:'select',       section:'Finances',        options:['Under $30k','$30k–$50k','$50k–$75k','$75k–$100k','$100k–$150k','$150k+'] },
-  dependents_count:        { label:'# of Dependents',                  type:'number',       section:'Finances' },
-  dependents_ages:         { label:'Dependent Ages',                    type:'text',         section:'Finances',        placeholder:'e.g. 5, 8, 12' },
-  has_life_insurance:      { label:'Has Life Insurance?',               type:'select',       section:'Life Insurance',  options:['Yes','No','Not sure'] },
-  life_coverage_amount:    { label:'Coverage Amount',                   type:'text',         section:'Life Insurance',  placeholder:'e.g. $250,000' },
-  has_investments:         { label:'Has Investments?',                  type:'select',       section:'Investments',     options:['Yes','No','Not sure'] },
-  goal_debt:               { label:'Goal: Debt Freedom',                type:'checkbox',     section:'Goals' },
-  goal_protection:         { label:'Goal: Family Protection',           type:'checkbox',     section:'Goals' },
-  goal_retirement:         { label:'Goal: Retirement',                  type:'checkbox',     section:'Goals' },
-  goal_college:            { label:'Goal: College Funding',             type:'checkbox',     section:'Goals' },
-  goal_business:           { label:'Goal: Business Planning',           type:'checkbox',     section:'Goals' },
-  notes_financial:         { label:'Notes',                             type:'textarea',     section:'Notes' },
-  household_size:          { label:'Household Size',                    type:'number',       section:'Household' },
-  member_ages:             { label:'Member Ages',                       type:'text',         section:'Household',       placeholder:'e.g. 35, 32, 7' },
-  aca_income:              { label:'Est. Annual Income (ACA)',           type:'select',       section:'Household',       options:['Under $20k','$20k–$40k','$40k–$60k','$60k–$80k','$80k–$100k','$100k+'] },
-  currently_insured:       { label:'Currently Insured?',                type:'select',       section:'Current Coverage', options:['Yes','No'] },
-  current_carrier:         { label:'Current Carrier',                   type:'text',         section:'Current Coverage' },
-  current_premium:         { label:'Current Monthly Premium',           type:'text',         section:'Current Coverage', placeholder:'e.g. $450' },
-  employer_plan_available: { label:'Employer Plan Available?',          type:'select',       section:'Current Coverage', options:['Yes','No'] },
-  coverage_start_date:     { label:'Desired Start Date',                type:'date',         section:'Coverage Needs' },
-  health_priority:         { label:'Priority',                          type:'select',       section:'Coverage Needs',  options:['Lowest premium','Best network','Low deductible','Rx coverage','Dental/Vision'] },
-  notes_health:            { label:'Notes',                             type:'textarea',     section:'Notes' },
-  business_name:           { label:'Business Name',                     type:'text',         section:'Business' },
-  employee_count:          { label:'# of Employees',                    type:'number',       section:'Business' },
-  enrollment_count:        { label:'Expected Enrollment',               type:'number',       section:'Business' },
-  avg_age_range:           { label:'Avg Employee Age Range',            type:'select',       section:'Business',        options:['Under 30','30–40','40–50','50+','Mixed'] },
-  company_type:            { label:'Company / Entity Type',             type:'select',       section:'Business',        options:['Sole Proprietor','LLC','S-Corp','C-Corp','Partnership','Non-Profit / Charitable Org','Other'] },
-  has_current_plan:        { label:'Has Current Group Plan?',           type:'select',       section:'Current Coverage', options:['Yes','No'] },
-  current_group_carrier:   { label:'Current Group Carrier',             type:'text',         section:'Current Coverage' },
-  group_start_date:        { label:'Desired Start Date',                type:'date',         section:'Coverage Needs' },
-  cov_medical:             { label:'Major Medical',                     type:'checkbox',     section:'Coverage Needs' },
-  cov_dental:              { label:'Dental',                            type:'checkbox',     section:'Coverage Needs' },
-  cov_vision:              { label:'Vision',                            type:'checkbox',     section:'Coverage Needs' },
-  cov_life:                { label:'Group Life / AD&D',                 type:'checkbox',     section:'Coverage Needs' },
-  cov_std:                 { label:'Short-Term Disability (STD)',       type:'checkbox',     section:'Coverage Needs' },
-  cov_ltd:                 { label:'Long-Term Disability (LTD)',        type:'checkbox',     section:'Coverage Needs' },
-  cov_excess_accident:     { label:'Excess Accident',                   type:'checkbox',     section:'Coverage Needs' },
-  cov_critical_illness:    { label:'Critical Illness',                  type:'checkbox',     section:'Coverage Needs' },
-  cov_hospital_indemnity:  { label:'Hospital Indemnity',                type:'checkbox',     section:'Coverage Needs' },
-  cov_hsa:                 { label:'HSA (Health Savings Account)',      type:'checkbox',     section:'Benefits / Accounts' },
-  cov_fsa:                 { label:'FSA (Flexible Spending Account)',   type:'checkbox',     section:'Benefits / Accounts' },
-  cov_msa:                 { label:'MSA (Medical Savings Account)',     type:'checkbox',     section:'Benefits / Accounts' },
-  cov_831b:                { label:'831(b) Small Insurance Company Plan', type:'checkbox',   section:'Benefits / Accounts' },
-  cov_retirement:          { label:'Group Retirement Plan',             type:'checkboxgroup',section:'Benefits / Accounts',
-                             options:['401(k)','Simple IRA','SEP IRA','Profit Sharing','Pension / Defined Benefit','Roth 401(k)','Other'] },
-  notes_group:             { label:'Notes',                             type:'textarea',     section:'Notes' },
-  current_employer:        { label:'Current Employer',                  type:'text',         section:'Background' },
-  current_occupation:      { label:'Current Occupation',                type:'text',         section:'Background' },
-  current_income:          { label:'Current Annual Income',             type:'select',       section:'Background',      options:['Under $30k','$30k–$50k','$50k–$75k','$75k–$100k','$100k+'] },
-  licensed_life:           { label:'Life Insurance License?',           type:'select',       section:'Licensing',       options:['Yes','No','In progress'] },
-  licensed_health:         { label:'Health Insurance License?',         type:'select',       section:'Licensing',       options:['Yes','No','In progress'] },
-  has_securities_license:  { label:'Securities Licensed?',              type:'select',       section:'Licensing',       options:['Yes','No'] },
-  securities_license_type: { label:'Securities License Type(s)',        type:'checkboxgroup',section:'Licensing',       options:['S.I.E.','Series 6','Series 63','Series 6 & 63','Series 65','Series 26','Series 7','Other'] },
-  has_mlo_license:         { label:'MLO (Mortgage Loan Originator) License?', type:'select', section:'Licensing',      options:['Yes','No'] },
-  states_licensed:         { label:'States Licensed',                   type:'text',         section:'Licensing',       placeholder:'e.g. TX, FL, GA' },
-  full_part_time:          { label:'Full-time or Part-time?',           type:'select',       section:'Availability',    options:['Full-time','Part-time','Either'] },
-  income_goal_12mo:        { label:'Income Goal (12 mo)',               type:'select',       section:'Goals',           options:['Under $30k','$30k–$60k','$60k–$100k','$100k–$150k','$150k+'] },
-  why_interested:          { label:'Why Interested?',                   type:'textarea',     section:'Goals' },
-  monthly_production:      { label:'Monthly Production ($)',            type:'text',         section:'Production',      placeholder:'e.g. $5,000' },
-  own_book:                { label:'Own Book of Business?',             type:'select',       section:'Production',      options:['Yes','No'] },
-  products_sold:           { label:'Products Sold',                     type:'text',         section:'Production',      placeholder:'e.g. ACA, Medicare, Life' },
-  notes_career:            { label:'Notes',                             type:'textarea',     section:'Notes' },
-};
-
-const INTAKE_TYPE_DEFAULTS = {
-  'financial':        ['dob','marital_status','best_time','household_income','dependents_count','dependents_ages',
-                       'has_life_insurance','life_coverage_amount','has_investments',
-                       'goal_debt','goal_protection','goal_retirement'],
-  'health-individual':['dob','best_time','household_size','member_ages','aca_income',
-                       'currently_insured','current_carrier','current_premium',
-                       'employer_plan_available','coverage_start_date','health_priority'],
-  'health-group':     ['business_name','best_time','company_type','employee_count','enrollment_count','avg_age_range',
-                       'has_current_plan','current_group_carrier','group_start_date',
-                       'cov_medical','cov_dental','cov_vision','cov_life','cov_std','cov_ltd'],
-  'career-kfg':       ['dob','best_time','current_employer','current_occupation','current_income',
-                       'licensed_life','licensed_health','has_securities_license','securities_license_type',
-                       'has_mlo_license','full_part_time','income_goal_12mo','why_interested'],
-  'career-ia':        ['best_time','current_employer','licensed_life','licensed_health','states_licensed',
-                       'has_securities_license','securities_license_type','has_mlo_license',
-                       'monthly_production','own_book','products_sold','full_part_time'],
-};
-
-const INTAKE_TYPE_LABELS = {
-  'financial':        'Life & Financial',
-  'health-individual':'Health – Individual/Family',
-  'health-group':     'Health – Group/Employer',
-  'career-kfg':       'Career – KFG (Primerica)',
-  'career-ia':        'Career – Insured America',
-};
-
-const INTAKE_ALL_FIELDS = [
-  { section:'Contact Info',    ids:['name','email','phone','dob','marital_status','best_time'] },
-  { section:'Finances',        ids:['household_income','dependents_count','dependents_ages','has_investments'] },
-  { section:'Life Insurance',  ids:['has_life_insurance','life_coverage_amount'] },
-  { section:'Goals',           ids:['goal_debt','goal_protection','goal_retirement','goal_college','goal_business','income_goal_12mo','why_interested'] },
-  { section:'Household',       ids:['household_size','member_ages','aca_income'] },
-  { section:'Business',           ids:['business_name','company_type','employee_count','enrollment_count','avg_age_range'] },
-  { section:'Current Coverage',  ids:['currently_insured','current_carrier','current_premium','employer_plan_available','has_current_plan','current_group_carrier'] },
-  { section:'Coverage Needs',    ids:['coverage_start_date','health_priority','group_start_date','cov_medical','cov_dental','cov_vision','cov_life','cov_std','cov_ltd','cov_excess_accident','cov_critical_illness','cov_hospital_indemnity'] },
-  { section:'Benefits / Accounts',ids:['cov_hsa','cov_fsa','cov_msa','cov_831b','cov_retirement'] },
-  { section:'Background',      ids:['current_employer','current_occupation','current_income'] },
-  { section:'Licensing',       ids:['licensed_life','licensed_health','has_securities_license','securities_license_type','has_mlo_license','states_licensed'] },
-  { section:'Availability',    ids:['full_part_time'] },
-  { section:'Production',      ids:['monthly_production','own_book','products_sold'] },
-  { section:'Notes',           ids:['notes_financial','notes_health','notes_group','notes_career'] },
-];
-
-let _intakeContactId = null;
-let _intakeFormType  = 'financial';
-let _intakeChecked   = new Set();
-
-function _intakeTypeFromContact(c) {
-  if (!c) return 'financial';
-  const t = (c.type || c.contact_type || '').toLowerCase();
-  if (t.includes('individual') || t.includes('family'))                          return 'health-individual';
-  if (t.includes('group')      || t.includes('employer'))                         return 'health-group';
-  if (t.includes('insured america') || t.includes('insuredamerica'))              return 'career-ia';
-  if (t.includes('kannon') || t.includes('kfg') || t.includes('recruit') || t.includes('primerica')) return 'career-kfg';
-  return 'financial';
-}
-
-async function showIntakeForm(contactId) {
-  const c = contacts.find(x => x.id === contactId);
-  if (!c) { showToast('Contact not found'); return; }
-  _intakeContactId = contactId;
-  _intakeFormType  = _intakeTypeFromContact(c);
-  _intakeChecked   = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
-
-  // Detect current theme (try all common patterns)
-  const isDark = document.body.classList.contains('dark-mode') ||
-                 document.documentElement.classList.contains('dark') ||
-                 document.body.classList.contains('dark') ||
-                 document.documentElement.getAttribute('data-theme') === 'dark' ||
-                 document.body.getAttribute('data-theme') === 'dark';
-
-  const iv = isDark ? {
-    s:'#1a2235', s2:'#1e2a40', s3:'#162035',
-    b:'#2d3f5a', t:'#e2e8f0', m:'#94a3b8',
-    i:'#111827', h:'#243050', p:'#3b82f6', btn:'rgba(59,130,246,0.12)',
-  } : {
-    s:'#ffffff', s2:'#f8fafc', s3:'#f1f5f9',
-    b:'#e2e8f0', t:'#1e293b', m:'#64748b',
-    i:'#ffffff', h:'#eff6ff', p:'#1a3a5c', btn:'#eef2ff',
-  };
-
-  const overlay = document.createElement('div');
-  overlay.id = 'intakeOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;padding:16px;';
-  // Inject theme tokens — cascade to all children via CSS custom properties
-  const tokens = { '--is':iv.s,'--is2':iv.s2,'--is3':iv.s3,'--ib':iv.b,'--it':iv.t,'--im':iv.m,'--ii':iv.i,'--ih':iv.h,'--ip':iv.p,'--ibtn':iv.btn };
-  Object.entries(tokens).forEach(([k,v]) => overlay.style.setProperty(k, v));
-
-  const box = document.createElement('div');
-  box.id = 'intakeBox';
-  box.style.cssText = 'background:var(--is);border-radius:12px;box-shadow:0 8px 48px rgba(0,0,0,0.5);display:flex;flex-direction:column;width:min(1100px,96vw);max-height:92vh;overflow:hidden;';
-
-  box.innerHTML = `
-    <div style="padding:16px 20px;border-bottom:1px solid var(--ib);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--is);">
-      <div>
-        <div style="font-weight:700;font-size:16px;color:var(--it);">${c.name || 'Contact'} — Intake Form</div>
-        <div style="font-size:12px;color:var(--im);margin-top:2px;">${c.type || c.contact_type || ''}</div>
-      </div>
-      <button onclick="closeIntakeForm()" style="background:none;border:none;cursor:pointer;font-size:22px;color:var(--im);padding:4px 10px;line-height:1;border-radius:6px;" onmouseover="this.style.background='var(--ih)'" onmouseout="this.style.background=''">&times;</button>
-    </div>
-    <div id="intakeTypeBar" style="padding:10px 16px;border-bottom:1px solid var(--ib);display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;background:var(--is2);"></div>
-    <div style="display:flex;flex:1;overflow:hidden;">
-      <div id="intakeFieldList" style="width:260px;min-width:220px;border-right:1px solid var(--ib);overflow-y:auto;padding:8px 0;flex-shrink:0;background:var(--is3);"></div>
-      <div id="intakeFormPanel" style="flex:1;overflow-y:auto;padding:20px 24px;background:var(--is);"></div>
-    </div>
-    <div style="padding:12px 20px;border-top:1px solid var(--ib);display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-shrink:0;background:var(--is2);">
-      <button class="btn btn-outline" onclick="closeIntakeForm()" style="color:var(--im);border-color:var(--ib);">Cancel</button>
-      <button class="btn btn-outline" id="intakeSendBtn" style="border-color:#3b82f6;color:#3b82f6;" onclick="sendIntakeLink()">&#9993; Send Link via Gmail</button>
-      <button class="btn btn-primary" onclick="saveIntakeToCRM()">&#10003; Save to CRM</button>
-    </div>`;
-
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  _intakeRenderTypeBar();
-  _intakeRenderFieldList();
-  _intakeRenderForm();
-}
-
-function closeIntakeForm() {
-  const el = document.getElementById('intakeOverlay');
-  if (el) el.remove();
-}
-
-function _intakeRenderTypeBar() {
-  const bar = document.getElementById('intakeTypeBar');
-  if (!bar) return;
-  bar.innerHTML = Object.entries(INTAKE_TYPE_LABELS).map(([k, label]) => `
-    <button onclick="setIntakeFormType('${k}')" id="intakeTypeBtn_${k}"
-      style="padding:5px 14px;border-radius:20px;border:1px solid var(--ib);cursor:pointer;font-size:12px;font-weight:600;
-             background:${_intakeFormType===k?'var(--ip)':'var(--ibtn)'};
-             color:${_intakeFormType===k?'#fff':'var(--it)'};transition:all 0.15s;">${label}</button>`).join('');
-}
-
-function setIntakeFormType(type) {
-  _intakeFormType = type;
-  _intakeChecked  = new Set(INTAKE_TYPE_DEFAULTS[type] || []);
-  _intakeRenderTypeBar();
-  _intakeRenderFieldList();
-  _intakeRenderForm();
-}
-
-function _intakeRenderFieldList() {
-  const panel = document.getElementById('intakeFieldList');
-  if (!panel) return;
-  let html = '';
-  for (const grp of INTAKE_ALL_FIELDS) {
-    const vis = grp.ids.filter(id => INTAKE_FIELD_DEFS[id]);
-    if (!vis.length) continue;
-    html += `<div style="padding:8px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--im);">${grp.section}</div>`;
-    for (const id of vis) {
-      const def = INTAKE_FIELD_DEFS[id];
-      const chk = _intakeChecked.has(id) ? 'checked' : '';
-      html += `<label style="display:flex;align-items:center;gap:9px;padding:5px 12px;cursor:pointer;font-size:12.5px;color:var(--it);border-radius:4px;transition:background .1s;"
-        onmouseover="this.style.background='var(--ih)'" onmouseout="this.style.background=''">
-        <input type="checkbox" ${chk} onchange="toggleIntakeField('${id}',this.checked)"
-          style="width:14px;height:14px;flex-shrink:0;accent-color:var(--ip);" />
-        <span>${def.label}</span></label>`;
-    }
-  }
-  panel.innerHTML = html;
-}
-
-function toggleIntakeField(id, checked) {
-  if (checked) _intakeChecked.add(id);
-  else         _intakeChecked.delete(id);
-  _intakeRenderForm();
-}
-
-function _intakeRenderForm() {
-  const panel = document.getElementById('intakeFormPanel');
-  if (!panel) return;
-  const c = contacts.find(x => x.id === _intakeContactId) || {};
-  const pre = { name:c.name||'', email:c.email||'', phone:c.phone||'', dob:c.dob||c.date_of_birth||'', business_name:c.company||'' };
-  const sections = {};
-  for (const grp of INTAKE_ALL_FIELDS) {
-    for (const id of grp.ids) {
-      if (_intakeChecked.has(id) && INTAKE_FIELD_DEFS[id])
-        (sections[grp.section] = sections[grp.section] || []).push(id);
-    }
-  }
-  if (!Object.keys(sections).length) {
-    panel.innerHTML = '<div style="color:var(--im);font-size:13px;padding-top:60px;text-align:center;opacity:.7;">← Select fields from the left panel</div>';
-    return;
-  }
-  let html = '<div style="max-width:620px;">';
-  for (const [sec, ids] of Object.entries(sections)) {
-    html += `<div style="margin-bottom:22px;">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--im);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--ib);">${sec}</div>
-      <div style="display:flex;flex-direction:column;gap:12px;">`;
-    for (const id of ids) html += _intakeRenderField(id, INTAKE_FIELD_DEFS[id], pre[id] || '');
-    html += '</div></div>';
-  }
-  html += '</div>';
-  panel.innerHTML = html;
-}
-
-function _intakeRenderField(id, def, prefillVal) {
-  const base = `id="ifield_${id}" name="${id}"`;
-  const st   = 'width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--ib);background:var(--ii);color:var(--it);font-size:13px;box-sizing:border-box;';
-  const ph   = def.placeholder ? ` placeholder="${def.placeholder}"` : '';
-  const val  = prefillVal ? ` value="${String(prefillVal).replace(/"/g,'&quot;')}"` : '';
-  const lbl  = `<label for="ifield_${id}" style="display:block;font-size:12px;font-weight:600;color:var(--im);margin-bottom:4px;">${def.label}</label>`;
-
-  if (def.type === 'checkboxgroup') {
-    const opts = (def.options||[]).map(o =>
-      `<label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--it);cursor:pointer;padding:3px 0;white-space:nowrap;">
-        <input type="checkbox" name="${id}[]" value="${o}" style="width:14px;height:14px;accent-color:var(--ip);" />${o}</label>`
-    ).join('');
-    return `<div>
-      <label style="display:block;font-size:12px;font-weight:600;color:var(--im);margin-bottom:6px;">${def.label}</label>
-      <div style="display:flex;flex-wrap:wrap;gap:4px 20px;padding:10px 12px;border-radius:6px;border:1px solid var(--ib);background:var(--ii);">${opts}</div></div>`;
-  }
-  if (def.type === 'select') {
-    const opts = (def.options||[]).map(o => `<option value="${o}"${prefillVal===o?' selected':''}>${o}</option>`).join('');
-    return `<div>${lbl}<select ${base} style="${st}"><option value="">Select…</option>${opts}</select></div>`;
-  }
-  if (def.type === 'textarea') {
-    return `<div>${lbl}<textarea ${base} rows="3"${ph} style="${st}resize:vertical;">${prefillVal||''}</textarea></div>`;
-  }
-  if (def.type === 'checkbox') {
-    return `<div><label style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--it);cursor:pointer;">
-      <input type="checkbox" ${base} style="width:16px;height:16px;accent-color:var(--ip);" /><span>${def.label}</span></label></div>`;
-  }
-  return `<div>${lbl}<input type="${def.type}" ${base}${val}${ph} style="${st}" /></div>`;
-}
-
-function _intakeCollectResponses() {
-  const r = {};
-  for (const id of _intakeChecked) {
-    const def = INTAKE_FIELD_DEFS[id];
-    if (!def) continue;
-    if (def.type === 'checkboxgroup') {
-      r[id] = [...document.querySelectorAll(`input[name="${id}[]"]:checked`)].map(el => el.value);
-    } else {
-      const el = document.getElementById('ifield_' + id);
-      if (!el) continue;
-      r[id] = el.type === 'checkbox' ? el.checked : el.value;
-    }
-  }
-  return r;
-}
-
-async function saveIntakeToCRM() {
-  const c = contacts.find(x => x.id === _intakeContactId);
-  if (!c) return;
-  const responses      = _intakeCollectResponses();
-  const selectedFields = Array.from(_intakeChecked);
-  const btn = document.querySelector('#intakeBox .btn-primary');
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
-  try {
-    const { data: sess, error: sessErr } = await supabaseClient
-      .from('intake_sessions')
-      .insert({ contact_id:_intakeContactId, agent_id:currentAgent?.id||null, form_type:_intakeFormType,
-                selected_fields:selectedFields, responses, status:'completed', completed_at:new Date().toISOString() })
-      .select().single();
-    if (sessErr) throw sessErr;
-    const cu = { sequence_status:'Interested' };
-    const fm = { dob:'dob', email:'email', phone:'phone', business_name:'company', marital_status:'marital_status' };
-    for (const [fid, col] of Object.entries(fm)) { if (responses[fid]) cu[col] = responses[fid]; }
-    await supabaseClient.from('contacts').update(cu).eq('id', _intakeContactId);
-    await supabaseClient.from('activity_log').insert({
-      contact_id:_intakeContactId, agent_id:currentAgent?.id||null, type:'note',
-      note:'[Intake Form] ' + (INTAKE_TYPE_LABELS[_intakeFormType]||_intakeFormType) + ' — completed by agent',
-      created_at:new Date().toISOString()
-    }).catch(() => {});
-    showToast('✓ Intake saved — ' + (c.name||'Contact') + ' marked Interested');
-    closeIntakeForm();
-    dialerNext();
-  } catch(e) {
-    showToast('Error saving: ' + (e.message||e));
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Save to CRM'; }
-  }
-}
-
-async function sendIntakeLink() {
-  const c = contacts.find(x => x.id === _intakeContactId);
-  if (!c) return;
-  if (!c.email) { showToast('No email address on file for this contact'); return; }
-  const btn = document.getElementById('intakeSendBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
-  try {
-    const { data: sess, error: sessErr } = await supabaseClient
-      .from('intake_sessions')
-      .insert({ contact_id:_intakeContactId, agent_id:currentAgent?.id||null, form_type:_intakeFormType,
-                selected_fields:Array.from(_intakeChecked), responses:{}, status:'pending', sent_at:new Date().toISOString() })
-      .select().single();
-    if (sessErr) throw sessErr;
-    const intakeUrl = window.location.origin + '/intake.html?s=' + sess.id;
-    const appsUrl = new URL(APPS_SCRIPT_URL);
-    appsUrl.searchParams.set('action',          'send_intake_link');
-    appsUrl.searchParams.set('agent_id',        currentAgent?.id || '');
-    appsUrl.searchParams.set('to',              c.email);
-    appsUrl.searchParams.set('to_name',         c.name || '');
-    appsUrl.searchParams.set('contact_id',      _intakeContactId);
-    appsUrl.searchParams.set('session_id',      sess.id);
-    appsUrl.searchParams.set('intake_url',      intakeUrl);
-    appsUrl.searchParams.set('form_type',       _intakeFormType);
-    appsUrl.searchParams.set('form_type_label', INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType);
-    const res  = await fetch(appsUrl.toString());
-    const json = await res.json().catch(() => ({}));
-    if (json.error) throw new Error(json.error);
-    showToast('✓ Intake link sent to ' + c.email);
-    closeIntakeForm();
-  } catch(e) {
-    showToast('Error sending link: ' + (e.message||e));
-    if (btn) { btn.disabled = false; btn.textContent = '✉ Send Link via Gmail'; }
-  }
-}
-
 
 function renderDialer() {
   const el = document.getElementById('page-dialer');
@@ -1749,6 +1317,8 @@ function renderDialer() {
   const progress = Math.round((dialerIndex / dialerQueue.length) * 100);
   const remaining = dialerQueue.length - dialerIndex - 1;
   const isLast = dialerIndex === dialerQueue.length - 1;
+  const _lcd = contact.last_called_at ? Math.max(0,Math.floor((Date.now()-new Date(contact.last_called_at).getTime())/86400000)) : null;
+  const _lcl = _lcd === null ? '' : _lcd === 0 ? 'Called today' : `Called ${_lcd}d ago`;
 
   const statusClass = contact.sequence_status === 'Replied' ? 'badge-replied'
     : contact.sequence_status === 'Active' ? 'badge-active' : 'badge-completed';
@@ -1785,6 +1355,7 @@ function renderDialer() {
               <span class="badge ${typeClass}">${contact.type || 'Contact'}</span>
               <span class="badge ${statusClass}">${contact.sequence_status || 'Not started'}</span>
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
+              ${_lcl ? `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;">&#9990; ${_lcl} &middot; ${contact.call_count||1}x</span>` : ''}
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
               <button class="btn btn-outline btn-sm" onclick="logOutreach('${contact.id}','','')" style="font-size:11px;">&#128221; Log Outreach</button>
@@ -1914,10 +1485,22 @@ async function dialerSaveNote(contactId) {
 
 function dialerSkip() {
   showToast('Skipped &rarr;');
-  dialerNext();
+  dialerNext(true);
 }
 
-function dialerNext() {
+async function dialerNext(skipStamp = false) {
+  const contact = dialerQueue[dialerIndex];
+  if (!skipStamp && contact) {
+    try {
+      const now = new Date().toISOString();
+      const newCount = (contact.call_count || 0) + 1;
+      await supabaseClient.from('contacts').update({ last_called_at: now, call_count: newCount }).eq('id', contact.id);
+      contact.last_called_at = now;
+      contact.call_count = newCount;
+      const ci = contacts.findIndex(c => c.id === contact.id);
+      if (ci > -1) { contacts[ci].last_called_at = now; contacts[ci].call_count = newCount; }
+    } catch(e) { /* non-critical */ }
+  }
   if (dialerIndex < dialerQueue.length - 1) {
     dialerIndex++;
     renderDialer();
