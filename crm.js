@@ -36,6 +36,7 @@ let currentPipeline = 'group-employer';
 let contactSearch = '';
 let contactTypeFilter = '';
 let opensFilter = [];
+let _quickFilterLabel = '';
 let contactPage = 0;
 let contactSort = 'created_at_desc';
 let applications = [];
@@ -644,6 +645,7 @@ function renderDashboardAgency() {
 
 
 
+
 function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
@@ -651,6 +653,7 @@ function renderDashboardAgent() {
   const totalContacts = totalContactCountFull || contacts.length;
   const hotLeads      = contacts.filter(c => c.sequence_status === 'Replied' || c.sequence_status === 'Interested');
   const freshLeads    = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started' || c.sequence_status === 'Fresh');
+  const inSequence    = contacts.filter(c => c.sequence_status === 'Active').length;
   const activeDeals   = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
 
   const today         = new Date().toISOString().slice(0, 10);
@@ -661,14 +664,6 @@ function renderDashboardAgent() {
     const d = (a.start_time || a.scheduled_at || a.date || '').slice(0, 10);
     return d === today;
   });
-
-  const ctaParts = [];
-  if (hotLeads.length)   ctaParts.push('<strong style="color:#a78bfa;">' + hotLeads.length + ' hot lead' + (hotLeads.length !== 1 ? 's' : '') + '</strong> need follow-up');
-  if (tasksDueCount)     ctaParts.push('<strong style="color:#f59e0b;">' + tasksDueCount + ' task' + (tasksDueCount !== 1 ? 's' : '') + '</strong> due');
-  if (todayAppts.length) ctaParts.push('<strong style="color:#34d399;">' + todayAppts.length + ' appt' + (todayAppts.length !== 1 ? 's' : '') + '</strong> today');
-  const ctaText = ctaParts.length
-    ? ctaParts.join(' &middot; ')
-    : '<strong style="color:var(--text-accent);">' + freshLeads.length + ' fresh lead' + (freshLeads.length !== 1 ? 's' : '') + '</strong> ready to work';
 
   const stageOrder = PIPELINES['group-employer'].stages.slice(0, 4);
   const stageMap   = {};
@@ -682,22 +677,58 @@ function renderDashboardAgent() {
     </div>
 
     <div class="dash-card" style="margin-bottom:10px;background:var(--surface-1);border-color:var(--border);">
-      <div style="font-size:14px;font-weight:500;color:var(--text-primary);">${ctaText}</div>
-      <div style="display:flex;gap:6px;margin-top:10px;">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+        <button onclick="showPage('dialer')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(167,139,250,0.35);background:rgba(167,139,250,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
+          🔥 <strong style="color:#a78bfa;">${hotLeads.length}</strong> Hot Lead${hotLeads.length !== 1 ? 's' : ''}
+        </button>
+        <button onclick="viewEmailOpeners()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(56,189,248,0.35);background:rgba(56,189,248,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
+          📧 <strong style="color:#38bdf8;" id="dash-opens-count">—</strong> Email Opens
+        </button>
+        <button onclick="viewFreshLeads()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
+          🌱 <strong style="color:#f59e0b;">${freshLeads.length}</strong> Fresh Lead${freshLeads.length !== 1 ? 's' : ''}
+        </button>
+      </div>
+      <div style="display:flex;gap:6px;">
         <button class="btn btn-primary" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Work my leads</button>
         <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add new lead</button>
       </div>
     </div>
 
-    <div class="stats-grid" style="grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:10px;">
-      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">My contacts</div></div>
-      <div class="stat-card" style="border-left-color:#a78bfa;background:rgba(167,139,250,0.05);cursor:pointer;" onclick="showPage('dialer')"><div class="stat-num">${hotLeads.length}</div><div class="stat-label">Hot leads</div></div>
-      <div class="stat-card" style="border-left-color:#f59e0b;background:rgba(245,158,11,0.05);cursor:pointer;" onclick="showPage('pipelines')"><div class="stat-num">${tasksDueCount}</div><div class="stat-label">Tasks due</div></div>
-      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
-      <div class="stat-card" style="border-left-color:#38bdf8;background:rgba(56,189,248,0.05);cursor:pointer;" onclick="viewEmailOpeners()"><div class="stat-num" id="dash-opens-count">&#8212;</div><div class="stat-label">Email opens (48h)</div></div>
+    <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px;">
+      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div></div>
+      <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
+      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);cursor:pointer;" onclick="showPage('pipelines')"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
     </div>
 
     <div class="dash-grid">
+
+      <div style="display:flex;flex-direction:column;gap:10px;">
+
+        <div class="dash-card">
+          ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
+          ${todayAppts.length === 0
+            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-calendar" style="font-size:22px;display:block;margin-bottom:4px;"></i>No appointments today</div>
+               <div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="shareBookingLink()">Share booking link</button></div>`
+            : todayAppts.map(a => {
+                const apptName = a.prospect_name || a.name || 'Appointment';
+                const apptTime = a.start_time
+                  ? new Date(a.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                  : (a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
+                const apptType = a.appointment_type || a.type || '';
+                return `<div class="action-item" style="padding:6px 0;">
+                  <div class="action-item-info">
+                    <div class="action-item-name" style="font-size:12px;">${apptName}</div>
+                    <div class="action-item-sub">${apptTime}${apptType ? ' &middot; ' + apptType : ''}</div>
+                  </div>
+                  <span class="badge badge-active">Today</span>
+                </div>`;
+              }).join('')}
+        </div>
+
+        ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : ''}
+
+      </div>
+
       <div style="display:flex;flex-direction:column;gap:10px;">
 
         <div class="dash-card">
@@ -733,63 +764,30 @@ function renderDashboardAgent() {
           ${hotLeads.length > 0 ? `<div style="margin-top:6px;"><button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button></div>` : ''}
         </div>
 
-        ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : ''}
-
-        <div class="dash-card">
-          ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
-          ${todayAppts.length === 0
-            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-calendar" style="font-size:22px;display:block;margin-bottom:4px;"></i>No appointments today</div>
-               <div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="shareBookingLink()">Share booking link</button></div>`
-            : todayAppts.map(a => {
-                const apptName = a.prospect_name || a.name || 'Appointment';
-                const apptTime = a.start_time
-                  ? new Date(a.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-                  : (a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
-                const apptType = a.appointment_type || a.type || '';
-                return `<div class="action-item" style="padding:6px 0;">
-                  <div class="action-item-info">
-                    <div class="action-item-name" style="font-size:12px;">${apptName}</div>
-                    <div class="action-item-sub">${apptTime}${apptType ? ' &middot; ' + apptType : ''}</div>
-                  </div>
-                  <span class="badge badge-active">Today</span>
-                </div>`;
-              }).join('')}
-        </div>
-
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:10px;">
-
-        <div class="dash-card">
-          ${_ctitle('ti-layout-kanban', 'Pipeline snapshot')}
-          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;">
-            ${stageOrder.map(stage => {
-              const stagDeals = stageMap[stage] || [];
-              return `<div style="min-width:108px;background:var(--surface-1);border-radius:8px;padding:8px;flex-shrink:0;border:0.5px solid var(--border);">
-                <div style="font-size:10px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">${stage}</div>
-                ${stagDeals.length === 0
-                  ? '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">&#8212;</div>'
-                  : stagDeals.slice(0, 3).map(d => `<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:5px 7px;margin-bottom:3px;"><div style="font-size:11px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.title}</div>${d.value ? `<div style="font-size:11px;color:var(--text-success);">$${parseFloat(d.value).toLocaleString()}</div>` : ''}</div>`).join('')}
-              </div>`;
-            }).join('')}
-          </div>
-          <div style="margin-top:10px;">
-            <button class="btn btn-outline btn-sm btn-full" onclick="showPage('pipelines')"><i class="ti ti-external-link"></i> Full pipeline view</button>
-          </div>
-        </div>
-
-        ${freshLeads.length > 0 ? `<div class="dash-card">
-          ${_ctitle('ti-users', 'Fresh leads <span style="background:rgba(251,191,36,0.15);color:var(--text-warning);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + freshLeads.length + '</span>')}
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">${freshLeads.length} lead${freshLeads.length !== 1 ? 's' : ''} haven&#39;t been contacted yet.</div>
-          <button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start a calling session</button>
-        </div>` : ''}
-
         ${!currentAgent.gmail_connected ? `<div class="dash-card" style="border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
           ${_ctitle('ti-mail', 'Gmail not connected')}
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Connect Gmail to send outreach emails directly from Kannon.</div>
           <button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>
         </div>` : ''}
 
+      </div>
+    </div>
+
+    <div class="dash-card" style="margin-top:10px;">
+      ${_ctitle('ti-layout-kanban', 'Pipeline snapshot')}
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">
+        ${stageOrder.map(stage => {
+          const stagDeals = stageMap[stage] || [];
+          return `<div style="background:var(--surface-1);border-radius:8px;padding:8px;border:0.5px solid var(--border);">
+            <div style="font-size:10px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">${stage}</div>
+            ${stagDeals.length === 0
+              ? '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">&#8212;</div>'
+              : stagDeals.slice(0, 3).map(d => `<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:5px 7px;margin-bottom:3px;"><div style="font-size:11px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.title}</div>${d.value ? `<div style="font-size:11px;color:var(--text-success);">$${parseFloat(d.value).toLocaleString()}</div>` : ''}</div>`).join('')}
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn btn-outline btn-sm btn-full" onclick="showPage('pipelines')"><i class="ti ti-external-link"></i> Full pipeline view</button>
       </div>
     </div>
   `;
@@ -809,6 +807,17 @@ async function loadDashEmailOpens() {
 function viewEmailOpeners() {
   const opens = window._dashOpens || [];
   opensFilter = [...new Set(opens.map(o => (o.contact_email || '').toLowerCase()).filter(Boolean))];
+  _quickFilterLabel = 'Recent Email Openers';
+  contactSearch = '';
+  contactTypeFilter = '';
+  showPage('contacts');
+  renderContacts();
+}
+
+function viewFreshLeads() {
+  const fresh = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started' || c.sequence_status === 'Fresh');
+  opensFilter = [...new Set(fresh.map(c => (c.email || '').toLowerCase()).filter(Boolean))];
+  _quickFilterLabel = 'Fresh Leads';
   contactSearch = '';
   contactTypeFilter = '';
   showPage('contacts');
@@ -3426,8 +3435,8 @@ async function renderContacts() {
   pg.innerHTML = `
     ${opensFilter.length ? `<div style="display:flex;align-items:center;gap:10px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);border-radius:8px;padding:8px 12px;margin-bottom:10px;">
       <i class="ti ti-mail-opened" style="color:#38bdf8;font-size:16px;"></i>
-      <span style="font-size:13px;color:var(--text-primary);flex:1;">Showing <strong>${opensFilter.length}</strong> recent email opener${opensFilter.length !== 1 ? 's' : ''}</span>
-      <button class="btn btn-outline btn-sm" onclick="opensFilter=[];renderContacts();">&#10005; Clear filter</button>
+      <span style="font-size:13px;color:var(--text-primary);flex:1;">Showing <strong>${opensFilter.length}</strong> ${_quickFilterLabel || 'filtered contacts'}</span>
+      <button class="btn btn-outline btn-sm" onclick="opensFilter=[];_quickFilterLabel='';renderContacts();">&#10005; Clear filter</button>
     </div>` : ''}
     <div class="contacts-toolbar">
       <input id="contact-search-input" type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}"
