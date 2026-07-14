@@ -1370,8 +1370,6 @@ function startDialerSession(filterType) {
     queue = [...contacts];
   }
 
-  if (!window._dashOpens) loadDashEmailOpens();
-  queue.sort((a, b) => _dialerScore(b) - _dialerScore(a));
   if (queue.length === 0) {
     showToast('No contacts ready in this queue — all are in cooldown!');
     return;
@@ -1441,49 +1439,6 @@ function openWhatsApp(contactId) {
   );
 }
 
-function _dialerScore(contact) {
-  // Higher score = work first in the session queue
-  let score = 0;
-  const statusMap = { 'Replied': 1000, 'Interested': 900, 'Active': 500 };
-  score += (statusMap[contact.sequence_status] || 0);
-  // Email open recency boost
-  const opens = window._dashOpens || [];
-  const op = opens.find(o => (o.contact_email || '').toLowerCase() === (contact.email || '').toLowerCase());
-  if (op) {
-    const hrs = (Date.now() - new Date(op.opened_at).getTime()) / 3600000;
-    score += hrs < 2 ? 200 : hrs < 24 ? 100 : 40;
-  }
-  // Deeper in sequence = warmer lead
-  score += (contact.sequence_step || 0) * 5;
-  // More overdue for follow-up = higher priority
-  if (contact.last_called_at) {
-    const days = (Date.now() - new Date(contact.last_called_at).getTime()) / 86400000;
-    score += Math.min(Math.floor(days) * 3, 30);
-  }
-  return score;
-}
-
-function _dialerSignal(contact) {
-  // Returns context explaining WHY this lead is in the queue and what to do next
-  const opens = window._dashOpens || [];
-  const op = opens.find(o => (o.contact_email || '').toLowerCase() === (contact.email || '').toLowerCase());
-  if (contact.sequence_status === 'Replied') {
-    return { emoji: '🔥', label: 'Replied to your email — hot lead!', action: 'Schedule an appointment now', color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.25)' };
-  }
-  if (contact.sequence_status === 'Interested') {
-    return { emoji: '🤝', label: 'Expressed interest', action: 'Send intake form or book an appointment', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' };
-  }
-  if (op) {
-    const hrs = Math.floor((Date.now() - new Date(op.opened_at).getTime()) / 3600000);
-    const t = hrs < 1 ? 'just now' : hrs < 24 ? hrs + 'h ago' : Math.floor(hrs / 24) + 'd ago';
-    return { emoji: '📧', label: 'Opened your email ' + t + ' — you\'re top of mind', action: 'Follow up now while warm', color: '#38bdf8', bg: 'rgba(56,189,248,0.08)', border: 'rgba(56,189,248,0.25)' };
-  }
-  if ((contact.sequence_step || 0) > 0) {
-    return { emoji: '⏰', label: 'Email ' + contact.sequence_step + ' sent — awaiting response', action: 'Touch base by phone to supplement the email', color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.25)' };
-  }
-  return { emoji: '🌱', label: 'Fresh lead — first contact', action: 'Introduce yourself and start the conversation', color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.25)' };
-}
-
 function renderDialer() {
   const el = document.getElementById('page-dialer');
   if (!el) return;
@@ -1515,7 +1470,6 @@ function renderDialer() {
   const typeClass = contact.type === 'Recruit' ? 'badge-agent'
     : contact.type === 'Group/Employer' ? 'badge-group' : 'badge-individual';
 
-  const _signal = _dialerSignal(contact);
   el.innerHTML = `
     <div style="max-width:700px;margin:0 auto;">
 
@@ -1555,14 +1509,6 @@ function renderDialer() {
           </div>
         </div>
 
-        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;margin-bottom:16px;background:${_signal.bg};border:1px solid ${_signal.border};">
-          <span style="font-size:20px;line-height:1;">${_signal.emoji}</span>
-          <div style="flex:1;">
-            <div style="font-size:12px;font-weight:700;color:${_signal.color};">${_signal.label}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">→ ${_signal.action}</div>
-          </div>
-        </div>
-
         <!-- Meta grid -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;background:var(--surface-3);border-radius:10px;margin-bottom:20px;">
           <div style="grid-column:1/-1;display:flex;justify-content:flex-end;margin:-4px 0 6px;">
@@ -1596,7 +1542,7 @@ function renderDialer() {
           <button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>
           <button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>
           <button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>
-          <button class="btn btn-primary" onclick="dialerNext(true)">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>
+          <button class="btn btn-primary" onclick="dialerNext()">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>
         </div>
 
         <!-- Notes area -->
@@ -1672,10 +1618,7 @@ async function dialerSaveNote(contactId) {
   const note = input?.value?.trim();
   if (!note) return;
   try {
-    const now = new Date().toISOString();
-    const qi = dialerQueue.findIndex(c => c.id === contactId);
-    const newCount = qi > -1 ? (dialerQueue[qi].call_count || 0) + 1 : 1;
-    await supabaseClient.from('contacts').update({ notes: note, last_called_at: now, call_count: newCount }).eq('id', contactId);
+    await supabaseClient.from('contacts').update({ notes: note }).eq('id', contactId);
     const idx = contacts.findIndex(c => c.id === contactId);
     if (idx > -1) contacts[idx].notes = note;
     const qi = dialerQueue.findIndex(c => c.id === contactId);
