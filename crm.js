@@ -1517,6 +1517,23 @@ function _dialerActionRow(contact, isLast) {
     + `</div>`;
 }
 
+async function showNotInterested(contactId) {
+  try {
+    await supabaseClient.from('contacts').update({ sequence_status: 'NotInterested' }).eq('id', contactId);
+    const idx = contacts.findIndex(c => c.id === contactId);
+    if (idx > -1) contacts[idx].sequence_status = 'NotInterested';
+    const qi = dialerQueue.findIndex(c => c.id === contactId);
+    if (qi > -1) dialerQueue[qi].sequence_status = 'NotInterested';
+    showToast('Marked as Not Interested');
+    dialerNext();
+  } catch(e) { showToast('Error updating contact'); }
+}
+
+function showIntakeForm(contactId) {
+  // Intake form — open contact view as placeholder until intake form is built
+  if (contactId) viewContact(contactId, '');
+}
+
 async function dialerSendBookingLink(contactId) {
   const c = dialerQueue.find(x => x.id === contactId) || contacts.find(x => x.id === contactId);
   if (!c?.email) { showToast('No email address on file for this contact'); return; }
