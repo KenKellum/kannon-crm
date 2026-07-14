@@ -642,6 +642,7 @@ function renderDashboardAgency() {
 }
 
 
+
 function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
@@ -687,11 +688,12 @@ function renderDashboardAgent() {
       </div>
     </div>
 
-    <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:10px;">
+    <div class="stats-grid" style="grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:10px;">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">My contacts</div></div>
       <div class="stat-card" style="border-left-color:#a78bfa;background:rgba(167,139,250,0.05);cursor:pointer;" onclick="showPage('dialer')"><div class="stat-num">${hotLeads.length}</div><div class="stat-label">Hot leads</div></div>
       <div class="stat-card" style="border-left-color:#f59e0b;background:rgba(245,158,11,0.05);cursor:pointer;" onclick="showPage('pipelines')"><div class="stat-num">${tasksDueCount}</div><div class="stat-label">Tasks due</div></div>
       <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
+      <div class="stat-card" style="border-left-color:#38bdf8;background:rgba(56,189,248,0.05);cursor:pointer;" onclick="viewEmailOpeners()"><div class="stat-num" id="dash-opens-count">&#8212;</div><div class="stat-label">Email opens (48h)</div></div>
     </div>
 
     <div class="dash-grid">
@@ -758,14 +760,6 @@ function renderDashboardAgent() {
       <div style="display:flex;flex-direction:column;gap:10px;">
 
         <div class="dash-card">
-          ${_ctitle('ti-mail-opened', 'Recent email opens')}
-          <div id="dash-email-opens" style="min-height:60px;">
-            <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-loader" style="font-size:18px;display:block;margin-bottom:4px;opacity:0.6;"></i>Loading&#8230;</div>
-          </div>
-          <div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')"><i class="ti ti-external-link"></i> All email opens</button></div>
-        </div>
-
-        <div class="dash-card">
           ${_ctitle('ti-layout-kanban', 'Pipeline snapshot')}
           <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;">
             ${stageOrder.map(stage => {
@@ -803,30 +797,21 @@ function renderDashboardAgent() {
 }
 
 async function loadDashEmailOpens() {
-  const el = document.getElementById('dash-email-opens');
-  if (!el) return;
   const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
   const { data: opens, error } = await supabaseClient.from('email_opens')
     .select('*').gte('opened_at', cutoff).order('opened_at', { ascending: false }).limit(50);
-  if (error || !opens || !opens.length) {
-    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-mail" style="font-size:22px;display:block;margin-bottom:4px;"></i>No email opens in the last 48 hours</div>';
-    return;
-  }
-  const rows = opens.slice(0, 8).map(o => {
-    const contact = contacts.find(c => c.email && c.email.toLowerCase() === (o.contact_email || '').toLowerCase());
-    const name    = contact ? (contact.name || o.contact_email) : (o.contact_email || 'Unknown');
-    const timeAgo = _dashTimeAgo(o.opened_at);
-    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--border);">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
-        <div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject || 'Email'} &middot; ${timeAgo}</div>
-      </div>
-      ${contact ? `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">View</button>` : ''}
-    </div>`;
-  }).join('');
-  el.innerHTML = `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${opens.length} open${opens.length !== 1 ? 's' : ''} in last 48h</div>`
-    + rows
-    + (opens.length > 8 ? `<div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View all ${opens.length} &rarr;</button></div>` : '');
+  window._dashOpens = (error || !opens) ? [] : opens;
+  const el = document.getElementById('dash-opens-count');
+  if (el) el.textContent = window._dashOpens.length || '0';
+}
+
+function viewEmailOpeners() {
+  const opens = window._dashOpens || [];
+  opensFilter = [...new Set(opens.map(o => (o.contact_email || '').toLowerCase()).filter(Boolean))];
+  contactSearch = '';
+  contactTypeFilter = '';
+  showPage('contacts');
+  renderContacts();
 }
 
 function _dashTimeAgo(isoStr) {
