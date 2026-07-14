@@ -1478,6 +1478,60 @@ function _dialerSignal(contact) {
     return { icon: 'ti-clock', label: 'Email ' + contact.sequence_step + ' sent, awaiting response', sub: 'Touch base by phone to supplement the email', color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.25)' };
   }
   return { icon: 'ti-plant-2', label: 'Fresh lead, first contact', sub: 'Introduce yourself and start the conversation', color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.25)' };
+function _dialerActionRow(contact, isLast) {
+  const isHot   = contact.sequence_status === 'Replied' || contact.sequence_status === 'Interested';
+  const bookUrl = `${window.location.origin}/book.html?agent=${currentAgent?.id||''}&cid=${encodeURIComponent(contact.id)}`;
+  const skipBtn = `<button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>`;
+  const nextBtn = `<button class="btn btn-primary" onclick="dialerNext(true)">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>`;
+
+  if (isHot) {
+    const callBtnSmall = contact.phone
+      ? `<button class="btn btn-outline" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="font-size:12px;">&#128222; Call</button>`
+      : '';
+    return `<div style="margin-bottom:16px;">`
+      + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
+      + `<button class="btn btn-primary" style="background:#1a3a5c;flex:1;font-size:14px;padding:10px 16px;border-radius:8px;" onclick="window.open('${bookUrl}','_blank')">&#128197; Book Appointment</button>`
+      + `<button class="btn btn-outline" style="border-color:#1a3a5c;color:#1a3a5c;" onclick="dialerSendBookingLink('${contact.id}')">&#128139; Send Link</button>`
+      + `</div>`
+      + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
+      + callBtnSmall
+      + `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">&#128140; View</button>`
+      + `<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')">&#10006; Not Interested</button>`
+      + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
+      + skipBtn + nextBtn
+      + `</div></div>`;
+  }
+
+  const callBtn = contact.phone
+    ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" >&#128222; Call</button>`
+    : `<button class="btn btn-outline" disabled style="opacity:0.45;cursor:not-allowed;">&#128222; No phone</button>`;
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">`
+    + callBtn
+    + `<button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>`
+    + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>`
+    + `<button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>`
+    + `<button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>`
+    + skipBtn + nextBtn
+    + `</div>`;
+}
+
+async function dialerSendBookingLink(contactId) {
+  const c = dialerQueue.find(x => x.id === contactId) || contacts.find(x => x.id === contactId);
+  if (!c?.email) { showToast('No email address on file for this contact'); return; }
+  try {
+    showToast('Sending booking link...');
+    const url = new URL(APPS_SCRIPT_URL);
+    url.searchParams.set('action',     'send_booking_link');
+    url.searchParams.set('agent_id',   currentAgent.id);
+    url.searchParams.set('to',         c.email);
+    url.searchParams.set('to_name',    c.name || '');
+    url.searchParams.set('contact_id', contactId);
+    const resp = await fetch(url.toString());
+    const data = await resp.json().catch(() => ({}));
+    showToast(data.ok !== false
+      ? '&#128197; Booking link sent to ' + (c.name || c.email) + '!'
+      : 'Error sending booking link — try again');
+  } catch(e) { showToast('Error sending booking link'); }
 }
 
 function renderDialer() {
@@ -1578,22 +1632,12 @@ function renderDialer() {
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Sequence step</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">Email ${contact.sequence_step || 0} of 3</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">Email ${contact.sequence_step || 0} of 4</div>
           </div>
         </div>
 
         <!-- Action buttons -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
-          ${contact.phone
-            ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')">&#128222; Call</button>`
-            : `<button class="btn btn-outline" disabled style="opacity:0.45;cursor:not-allowed;">&#128222; No phone</button>`}
-          <button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>
-          <button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>
-          <button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>
-          <button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>
-          <button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>
-          <button class="btn btn-primary" onclick="dialerNext(true)">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>
-        </div>
+        ${_dialerActionRow(contact, isLast)}
 
         <!-- Notes area -->
         <div style="border-top:1px solid var(--border);padding-top:16px;">
