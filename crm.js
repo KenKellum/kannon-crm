@@ -645,21 +645,38 @@ function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
 
+  // ── Counts ──────────────────────────────────────────────────────────────────
   const totalContacts = totalContactCountFull || contacts.length;
-  const inSequence   = contacts.filter(c => c.sequence_status === 'Active').length;
-  const replied      = contacts.filter(c => c.sequence_status === 'Replied').length;
-  const activeDeals  = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
-  const notStarted   = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started');
-  const hotLeads     = contacts.filter(c => c.sequence_status === 'Replied');
+  const hotLeads      = contacts.filter(c => c.sequence_status === 'Replied' || c.sequence_status === 'Interested');
+  const freshLeads    = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started' || c.sequence_status === 'Fresh');
+  const activeDeals   = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
 
-  // Pipeline snapshot by stage — use real PIPELINES stages
+  const today         = new Date().toISOString().slice(0, 10);
+  const openTasks     = (typeof dealTasks !== 'undefined' ? dealTasks : []).filter(t => !t.completed);
+  const tasksDueCount = openTasks.filter(t => t.due_date && t.due_date <= today).length;
+
+  const todayAppts = (calAppointments || []).filter(a => {
+    const d = (a.start_time || a.scheduled_at || a.date || '').slice(0, 10);
+    return d === today;
+  });
+
+  // ── CTA banner text ─────────────────────────────────────────────────────────
+  const ctaParts = [];
+  if (hotLeads.length)    ctaParts.push('<strong style="color:#a78bfa;">' + hotLeads.length + ' hot lead' + (hotLeads.length !== 1 ? 's' : '') + '</strong> need follow-up');
+  if (tasksDueCount)      ctaParts.push('<strong style="color:#f59e0b;">' + tasksDueCount + ' task' + (tasksDueCount !== 1 ? 's' : '') + '</strong> due');
+  if (todayAppts.length)  ctaParts.push('<strong style="color:#34d399;">' + todayAppts.length + ' appt' + (todayAppts.length !== 1 ? 's' : '') + '</strong> today');
+  const ctaText = ctaParts.length
+    ? ctaParts.join(' &middot; ')
+    : '<strong style="color:var(--text-accent);">' + freshLeads.length + ' fresh lead' + (freshLeads.length !== 1 ? 's' : '') + '</strong> ready to work';
+
+  // ── Pipeline snapshot data ──────────────────────────────────────────────────
   const stageOrder = PIPELINES['group-employer'].stages.slice(0, 4);
-  const stageMap = {};
+  const stageMap   = {};
   deals.forEach(d => { if (!stageMap[d.stage]) stageMap[d.stage] = []; stageMap[d.stage].push(d); });
 
-  // Avatar initials helper
-  const initials = name => (name||'??').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const initials = name => (name || '??').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
+  // ── Render ──────────────────────────────────────────────────────────────────
   el.innerHTML = `
     <div class="dash-header" style="margin-bottom:10px;">
       <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr}</div></div>
@@ -667,56 +684,96 @@ function renderDashboardAgent() {
     </div>
 
     <div class="dash-card" style="margin-bottom:10px;background:var(--surface-1);border-color:var(--border);">
-      <div style="font-size:14px;font-weight:500;color:var(--text-primary);">You have <strong style="color:var(--text-accent);">${notStarted.length} lead${notStarted.length !== 1 ? 's' : ''}</strong> to work${replied > 0 ? ` and <strong style="color:var(--text-success);">${replied} email open${replied !== 1 ? 's' : ''}</strong> waiting` : ''}.</div>
+      <div style="font-size:14px;font-weight:500;color:var(--text-primary);">${ctaText}</div>
       <div style="display:flex;gap:6px;margin-top:10px;">
-        <button class="btn btn-primary" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start working leads</button>
+        <button class="btn btn-primary" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Work my leads</button>
         <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add new lead</button>
       </div>
     </div>
 
     <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:10px;">
-      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">My contacts</div></div>
-      <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
-      <div class="stat-card" style="border-left-color:#c8a84b;background:rgba(200,168,75,0.05);"><div class="stat-num">${replied}</div><div class="stat-label">Replied</div></div>
-      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
+      <div class="stat-card">
+        <div class="stat-num">${totalContacts.toLocaleString()}</div>
+        <div class="stat-label">My contacts</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#a78bfa;background:rgba(167,139,250,0.05);cursor:pointer;" onclick="showPage('dialer')">
+        <div class="stat-num">${hotLeads.length}</div>
+        <div class="stat-label">Hot leads</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#f59e0b;background:rgba(245,158,11,0.05);cursor:pointer;" onclick="showPage('pipelines')">
+        <div class="stat-num">${tasksDueCount}</div>
+        <div class="stat-label">Tasks due</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);">
+        <div class="stat-num">${activeDeals}</div>
+        <div class="stat-label">Active deals</div>
+      </div>
     </div>
 
     <div class="dash-grid">
+
+      <!-- ── LEFT COLUMN ──────────────────────────────────────────────────── -->
       <div style="display:flex;flex-direction:column;gap:10px;">
+
+        <!-- Hot Leads -->
         <div class="dash-card">
-          ${_ctitle('ti-flame', `Hot leads — follow up now ${hotLeads.length > 0 ? `<span style="background:rgba(139,92,246,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">${hotLeads.length}</span>` : ''}`)}
+          ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
           ${hotLeads.length === 0
-            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No replies yet — keep the sequence running!</div>`
-            : hotLeads.slice(0, 5).map(c => `
+            ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
+            : hotLeads.slice(0, 6).map(c => `
             <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border);">
               <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
               <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name||'—'}</div>
-                <div style="font-size:11px;color:var(--text-muted);">${c.company||c.email||'—'}</div>
+                <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || '&#8212;'}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${c.company || c.email || '&#8212;'}</div>
               </div>
-              <span class="badge badge-active">Replied</span>
+              <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:${c.sequence_status === 'Interested' ? 'rgba(251,191,36,0.15)' : 'rgba(52,211,153,0.15)'};color:${c.sequence_status === 'Interested' ? '#f59e0b' : '#34d399'};">${c.sequence_status}</span>
               <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
             </div>`).join('')}
-          ${hotLeads.length > 5 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button></div>` : ''}
+          ${hotLeads.length > 6 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button></div>` : ''}
+          ${hotLeads.length > 0 ? `<div style="margin-top:6px;"><button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button></div>` : ''}
         </div>
 
+        <!-- Tasks -->
+        ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : ''}
+
+        <!-- Today's Appointments -->
         <div class="dash-card">
-          ${_ctitle('ti-alert-circle', `Not yet contacted <span style="background:rgba(251,191,36,0.15);color:var(--text-warning);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">${notStarted.length}</span>`)}
-          ${notStarted.length === 0
-            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:5px;color:var(--text-success);"></i>All contacts are in the sequence!</div>`
-            : notStarted.slice(0, 4).map(c => `
-            <div class="action-item">
-              <div class="action-item-info">
-                <div class="action-item-name">${c.name||'—'}</div>
-                <div class="action-item-sub">${c.company||c.email||'—'}</div>
-              </div>
-              <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
-            </div>`).join('')}
-          ${notStarted.length > 4 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${notStarted.length} &rarr;</button></div>` : ''}
+          ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
+          ${todayAppts.length === 0
+            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-calendar" style="font-size:22px;display:block;margin-bottom:4px;"></i>No appointments today</div>
+               <div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="shareBookingLink()">Share booking link</button></div>`
+            : todayAppts.map(a => {
+                const apptName = a.prospect_name || a.name || 'Appointment';
+                const apptTime = a.start_time
+                  ? new Date(a.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                  : (a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
+                const apptType = a.appointment_type || a.type || '';
+                return `<div class="action-item" style="padding:6px 0;">
+                  <div class="action-item-info">
+                    <div class="action-item-name" style="font-size:12px;">${apptName}</div>
+                    <div class="action-item-sub">${apptTime}${apptType ? ' &middot; ' + apptType : ''}</div>
+                  </div>
+                  <span class="badge badge-active">Today</span>
+                </div>`;
+              }).join('')}
         </div>
+
       </div>
 
+      <!-- ── RIGHT COLUMN ─────────────────────────────────────────────────── -->
       <div style="display:flex;flex-direction:column;gap:10px;">
+
+        <!-- Recent Email Opens (async-loaded) -->
+        <div class="dash-card">
+          ${_ctitle('ti-mail-opened', 'Recent email opens')}
+          <div id="dash-email-opens" style="min-height:60px;">
+            <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-loader" style="font-size:18px;display:block;margin-bottom:4px;opacity:0.6;"></i>Loading&#8230;</div>
+          </div>
+          <div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')"><i class="ti ti-external-link"></i> All email opens</button></div>
+        </div>
+
+        <!-- Pipeline Snapshot -->
         <div class="dash-card">
           ${_ctitle('ti-layout-kanban', 'Pipeline snapshot')}
           <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;">
@@ -725,8 +782,8 @@ function renderDashboardAgent() {
               return `<div style="min-width:108px;background:var(--surface-1);border-radius:8px;padding:8px;flex-shrink:0;border:0.5px solid var(--border);">
                 <div style="font-size:10px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">${stage}</div>
                 ${stagDeals.length === 0
-                  ? `<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">—</div>`
-                  : stagDeals.slice(0,3).map(d => `<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:5px 7px;margin-bottom:3px;"><div style="font-size:11px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.title}</div>${d.value ? `<div style="font-size:11px;color:var(--text-success);">$${parseFloat(d.value).toLocaleString()}</div>` : ''}</div>`).join('')}
+                  ? '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">&#8212;</div>'
+                  : stagDeals.slice(0, 3).map(d => `<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:5px 7px;margin-bottom:3px;"><div style="font-size:11px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.title}</div>${d.value ? `<div style="font-size:11px;color:var(--text-success);">$${parseFloat(d.value).toLocaleString()}</div>` : ''}</div>`).join('')}
               </div>`;
             }).join('')}
           </div>
@@ -735,24 +792,68 @@ function renderDashboardAgent() {
           </div>
         </div>
 
-        <div class="dash-card">
-          ${_ctitle('ti-mail-opened', 'Outreach sequence')}
-          ${_seqTable(contacts, totalContacts)}
-        </div>
+        <!-- Fresh Leads (shown only when there are uncontacted leads) -->
+        ${freshLeads.length > 0 ? `<div class="dash-card">
+          ${_ctitle('ti-users', 'Fresh leads <span style="background:rgba(251,191,36,0.15);color:var(--text-warning);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + freshLeads.length + '</span>')}
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">${freshLeads.length} lead${freshLeads.length !== 1 ? 's' : ''} haven&#39;t been contacted yet.</div>
+          <button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start a calling session</button>
+        </div>` : ''}
 
-        <div class="dash-card">
-          ${renderTasksWidget()}
-        </div>
+        <!-- Gmail warning (only if not connected) -->
+        ${!currentAgent.gmail_connected ? `<div class="dash-card" style="border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
+          ${_ctitle('ti-mail', 'Gmail not connected')}
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Connect Gmail to send outreach emails directly from Kannon.</div>
+          <button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>
+        </div>` : ''}
 
-        <div class="dash-card">
-          ${_ctitle('ti-settings-automation', 'Automation status')}
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email outreach</div><div class="action-item-sub">Apps Script trigger</div></div><span class="badge badge-active"><i class="ti ti-check"></i> Active</span></div>
-          <div class="action-item"><div class="action-item-info"><div class="action-item-name">Gmail &amp; Calendar</div><div class="action-item-sub">${currentAgent.gmail_connected ? (currentAgent.gmail_email || 'Connected') : 'Not connected'}</div></div>${currentAgent.gmail_connected && currentAgent.calendar_connected ? `<span class="badge badge-active"><i class="ti ti-check"></i> Gmail &amp; Calendar</span>` : currentAgent.gmail_connected ? `<span style="display:flex;align-items:center;gap:6px;"><span class="badge badge-active"><i class="ti ti-check"></i> Gmail</span><button class="btn btn-primary btn-sm" onclick="connectCalendar()" title="Re-authorize to add Calendar sync">&#128197; Add Calendar</button></span>` : `<button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect</button>`}</div>
-        </div>
       </div>
     </div>
   `;
+
+  // Async-fetch recent email opens (updates #dash-email-opens after render)
+  loadDashEmailOpens();
 }
+
+// ── Async email opens loader ──────────────────────────────────────────────────
+async function loadDashEmailOpens() {
+  const el = document.getElementById('dash-email-opens');
+  if (!el) return;
+  const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+  const { data: opens, error } = await supabaseClient.from('email_opens')
+    .select('*').gte('opened_at', cutoff).order('opened_at', { ascending: false }).limit(50);
+  if (error || !opens || !opens.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-mail" style="font-size:22px;display:block;margin-bottom:4px;"></i>No email opens in the last 48 hours</div>';
+    return;
+  }
+  const rows = opens.slice(0, 8).map(o => {
+    const contact = contacts.find(c => c.email && c.email.toLowerCase() === (o.contact_email || '').toLowerCase());
+    const name    = contact ? (contact.name || o.contact_email) : (o.contact_email || 'Unknown');
+    const timeAgo = _dashTimeAgo(o.opened_at);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--border);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
+        <div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email_subject || 'Email'} &middot; ${timeAgo}</div>
+      </div>
+      ${contact ? `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">View</button>` : ''}
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${opens.length} open${opens.length !== 1 ? 's' : ''} in last 48h</div>`
+    + rows
+    + (opens.length > 8 ? `<div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View all ${opens.length} &rarr;</button></div>` : '');
+}
+
+// ── Time-ago helper (used by loadDashEmailOpens) ──────────────────────────────
+function _dashTimeAgo(isoStr) {
+  if (!isoStr) return '';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
 
 // [legacy vars kept for reference — now split into three functions above]
 function renderDashboard_UNUSED() {
