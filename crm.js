@@ -3867,6 +3867,9 @@ function openAddContact() {
         <div><label style="font-size:12px;">&#9992; Telegram</label><input type="text" id="new-telegram" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
       </div>
     </div>
+    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:12px;display:flex;justify-content:flex-end;">
+      <button type="button" onclick="window._addContactStartIntake=true;handleModalSave();" style="background:#0f4c8a;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;">&#129309; Save &amp; Start Intake</button>
+    </div>
   `, async () => {
     const name = document.getElementById('con-name').value.trim();
     if (!name) { showToast('Name is required'); return false; }
@@ -3900,6 +3903,10 @@ function openAddContact() {
     }
 
     contacts.unshift(data); showToast('Contact added!'); renderContacts();
+    if (window._addContactStartIntake) {
+      window._addContactStartIntake = false;
+      setTimeout(() => showIntakeForm(data.id), 300);
+    }
   });
 }
 
@@ -3911,6 +3918,8 @@ function editContact(id) {
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
   const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
+  const SEQ_STATUSES = ['Not Started','Active','Drip','Replied','Interested','Not Interested','Closed'];
+  const seqOptions = SEQ_STATUSES.map(s => `<option value="${s}" ${(c.sequence_status||'Not Started')===s?'selected':''}>${s}</option>`).join('');
   const _verifiedAt = c.email_verified_at ? ` (verified ${new Date(c.email_verified_at).toLocaleDateString()})` : '';
   const _markBtn = `<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;margin-left:6px;font-size:11px;color:#16a34a;border-color:#16a34a;" onclick="markEmailVerified('${c.id}')">&#10003; Mark as Verified</button>`;
   const emailStatusNote = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
@@ -3952,6 +3961,8 @@ function editContact(id) {
         <div><label style="font-size:12px;">&#9992; Telegram</label><input type="text" id="con-telegram" value="${c.telegram_handle||''}" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
       </div>
     </div>
+    <label>Status <span style="font-size:11px;color:var(--muted);">(sequence stage)</span></label>
+    <select id="con-seqstatus">${seqOptions}</select>
     <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Compliance</div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
@@ -3963,13 +3974,21 @@ function editContact(id) {
         <span>📵 Do Not Call</span>
       </label>
     </div>
+    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Intake History</div>
+        <button type="button" onclick="closeModal();setTimeout(()=>showIntakeForm('${id}'),150);" style="background:#0f4c8a;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;">&#129309; New Intake</button>
+      </div>
+      <div id="intake-history-panel"><em style="color:#94a3b8;font-size:12px;">Loading...</em></div>
+    </div>
   `, async () => {
     const name = document.getElementById('con-name').value.trim();
     if (!name) { showToast('Name is required'); return false; }
     const assignedAgentId = canAssign ? (document.getElementById('con-agent').value || c.agent_id) : c.agent_id;
     const assignedAgent = allAgents.find(a => a.id === assignedAgentId) || currentAgent;
-    const newOptOut  = document.getElementById('con-optout').checked;
-    const newDnc     = document.getElementById('con-dnc').checked;
+    const newOptOut    = document.getElementById('con-optout').checked;
+    const newDnc       = document.getElementById('con-dnc').checked;
+    const newSeqStatus = document.getElementById('con-seqstatus').value || 'Not Started';
     const newEmail   = document.getElementById('con-email').value.trim() || null;
     // If email was bounced and a new email was entered, clear the bounce status
     // When email changes, clear status so trigger re-verifies it
@@ -3977,7 +3996,7 @@ function editContact(id) {
       : newOptOut ? 'opted_out'
       : (c.email_status === 'opted_out' && !newOptOut) ? null
       : c.email_status || null;
-    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
+    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -3990,6 +4009,42 @@ function editContact(id) {
 
     Object.assign(c, updates); showToast('Contact updated!'); renderContacts(); closeContactPanel();
   });
+  loadIntakeHistoryPanel(id);
+}
+
+async function loadIntakeHistoryPanel(contactId) {
+  const panel = document.getElementById('intake-history-panel');
+  if (!panel) return;
+  const { data: sessions, error } = await supabaseClient
+    .from('intake_sessions')
+    .select('id,form_type,status,created_at,completed_at')
+    .eq('contact_id', contactId)
+    .order('created_at', { ascending: false });
+  if (error || !sessions || sessions.length === 0) {
+    panel.innerHTML = '<em style="color:#94a3b8;font-size:12px;">No intake sessions yet. Click New Intake to start one.</em>';
+    return;
+  }
+  const LABELS = {
+    health_individual: 'Individual Health',
+    health_family:     'Family Health',
+    health_group:      'Group / Employer Health',
+    career_new:        'New Career',
+    career_existing:   'Existing Agent',
+    life_individual:   'Life Insurance'
+  };
+  panel.innerHTML = sessions.map(s => {
+    const badge = s.status === 'completed'
+      ? 'background:#dcfce7;color:#16a34a;border:1px solid #86efac;'
+      : 'background:#fef9c3;color:#854d0e;border:1px solid #fde047;';
+    const dt = new Date(s.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f1f5f9;gap:8px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${LABELS[s.form_type]||s.form_type}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${dt}</div>
+      </div>
+      <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;${badge}">${s.status.toUpperCase()}</span>
+    </div>`;
+  }).join('');
 }
 
 async function deleteContact(id) {
