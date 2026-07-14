@@ -641,11 +641,11 @@ function renderDashboardAgency() {
   `;
 }
 
+
 function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
 
-  // ── Counts ──────────────────────────────────────────────────────────────────
   const totalContacts = totalContactCountFull || contacts.length;
   const hotLeads      = contacts.filter(c => c.sequence_status === 'Replied' || c.sequence_status === 'Interested');
   const freshLeads    = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started' || c.sequence_status === 'Fresh');
@@ -660,23 +660,19 @@ function renderDashboardAgent() {
     return d === today;
   });
 
-  // ── CTA banner text ─────────────────────────────────────────────────────────
   const ctaParts = [];
-  if (hotLeads.length)    ctaParts.push('<strong style="color:#a78bfa;">' + hotLeads.length + ' hot lead' + (hotLeads.length !== 1 ? 's' : '') + '</strong> need follow-up');
-  if (tasksDueCount)      ctaParts.push('<strong style="color:#f59e0b;">' + tasksDueCount + ' task' + (tasksDueCount !== 1 ? 's' : '') + '</strong> due');
-  if (todayAppts.length)  ctaParts.push('<strong style="color:#34d399;">' + todayAppts.length + ' appt' + (todayAppts.length !== 1 ? 's' : '') + '</strong> today');
+  if (hotLeads.length)   ctaParts.push('<strong style="color:#a78bfa;">' + hotLeads.length + ' hot lead' + (hotLeads.length !== 1 ? 's' : '') + '</strong> need follow-up');
+  if (tasksDueCount)     ctaParts.push('<strong style="color:#f59e0b;">' + tasksDueCount + ' task' + (tasksDueCount !== 1 ? 's' : '') + '</strong> due');
+  if (todayAppts.length) ctaParts.push('<strong style="color:#34d399;">' + todayAppts.length + ' appt' + (todayAppts.length !== 1 ? 's' : '') + '</strong> today');
   const ctaText = ctaParts.length
     ? ctaParts.join(' &middot; ')
     : '<strong style="color:var(--text-accent);">' + freshLeads.length + ' fresh lead' + (freshLeads.length !== 1 ? 's' : '') + '</strong> ready to work';
 
-  // ── Pipeline snapshot data ──────────────────────────────────────────────────
   const stageOrder = PIPELINES['group-employer'].stages.slice(0, 4);
   const stageMap   = {};
   deals.forEach(d => { if (!stageMap[d.stage]) stageMap[d.stage] = []; stageMap[d.stage].push(d); });
-
   const initials = name => (name || '??').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   el.innerHTML = `
     <div class="dash-header" style="margin-bottom:10px;">
       <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr}</div></div>
@@ -692,52 +688,50 @@ function renderDashboardAgent() {
     </div>
 
     <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:10px;">
-      <div class="stat-card">
-        <div class="stat-num">${totalContacts.toLocaleString()}</div>
-        <div class="stat-label">My contacts</div>
-      </div>
-      <div class="stat-card" style="border-left-color:#a78bfa;background:rgba(167,139,250,0.05);cursor:pointer;" onclick="showPage('dialer')">
-        <div class="stat-num">${hotLeads.length}</div>
-        <div class="stat-label">Hot leads</div>
-      </div>
-      <div class="stat-card" style="border-left-color:#f59e0b;background:rgba(245,158,11,0.05);cursor:pointer;" onclick="showPage('pipelines')">
-        <div class="stat-num">${tasksDueCount}</div>
-        <div class="stat-label">Tasks due</div>
-      </div>
-      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);">
-        <div class="stat-num">${activeDeals}</div>
-        <div class="stat-label">Active deals</div>
-      </div>
+      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">My contacts</div></div>
+      <div class="stat-card" style="border-left-color:#a78bfa;background:rgba(167,139,250,0.05);cursor:pointer;" onclick="showPage('dialer')"><div class="stat-num">${hotLeads.length}</div><div class="stat-label">Hot leads</div></div>
+      <div class="stat-card" style="border-left-color:#f59e0b;background:rgba(245,158,11,0.05);cursor:pointer;" onclick="showPage('pipelines')"><div class="stat-num">${tasksDueCount}</div><div class="stat-label">Tasks due</div></div>
+      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
     </div>
 
     <div class="dash-grid">
-
-      <!-- ── LEFT COLUMN ──────────────────────────────────────────────────── -->
       <div style="display:flex;flex-direction:column;gap:10px;">
 
-        <!-- Hot Leads -->
         <div class="dash-card">
           ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
           ${hotLeads.length === 0
             ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
-            : hotLeads.slice(0, 6).map(c => `
-            <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border);">
-              <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || '&#8212;'}</div>
-                <div style="font-size:11px;color:var(--text-muted);">${c.company || c.email || '&#8212;'}</div>
-              </div>
-              <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:${c.sequence_status === 'Interested' ? 'rgba(251,191,36,0.15)' : 'rgba(52,211,153,0.15)'};color:${c.sequence_status === 'Interested' ? '#f59e0b' : '#34d399'};">${c.sequence_status}</span>
-              <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
-            </div>`).join('')}
+            : hotLeads.slice(0, 6).map(c => {
+                const noteLines   = (c.notes || '').trim().split('\n');
+                const noteSnippet = noteLines.find(l => l.trim() && !l.startsWith('[')) || '';
+                const stepCtx     = c.sequence_step ? 'After Email ' + c.sequence_step : '';
+                return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border);">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || '&#8212;'}</div>
+                      <div style="font-size:11px;color:var(--text-muted);">${c.company || c.email || '&#8212;'}</div>
+                    </div>
+                    <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;background:${c.sequence_status==='Interested'?'rgba(251,191,36,0.15)':'rgba(52,211,153,0.15)'};color:${c.sequence_status==='Interested'?'#f59e0b':'#34d399'};">${c.sequence_status}</span>
+                  </div>
+                  ${stepCtx || noteSnippet
+                    ? '<div style="margin:4px 0 0 36px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">'
+                      + (stepCtx ? '<span style="font-size:10px;background:rgba(99,102,241,0.12);color:#818cf8;border-radius:6px;padding:1px 6px;white-space:nowrap;">' + stepCtx + '</span>' : '')
+                      + (noteSnippet ? '<span style="font-size:11px;color:var(--text-muted);">' + (noteSnippet.length > 70 ? noteSnippet.slice(0, 70) + '...' : noteSnippet) + '</span>' : '')
+                      + '</div>'
+                    : ''}
+                  <div style="margin:6px 0 0 36px;display:flex;gap:6px;">
+                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="logOutreach('${c.id}','Phone Call','')">&#128222; Log call</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewContact('${c.id}','')">View contact &rarr;</button>
+                  </div>
+                </div>`;
+              }).join('')}
           ${hotLeads.length > 6 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button></div>` : ''}
           ${hotLeads.length > 0 ? `<div style="margin-top:6px;"><button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button></div>` : ''}
         </div>
 
-        <!-- Tasks -->
         ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : ''}
 
-        <!-- Today's Appointments -->
         <div class="dash-card">
           ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
           ${todayAppts.length === 0
@@ -761,10 +755,8 @@ function renderDashboardAgent() {
 
       </div>
 
-      <!-- ── RIGHT COLUMN ─────────────────────────────────────────────────── -->
       <div style="display:flex;flex-direction:column;gap:10px;">
 
-        <!-- Recent Email Opens (async-loaded) -->
         <div class="dash-card">
           ${_ctitle('ti-mail-opened', 'Recent email opens')}
           <div id="dash-email-opens" style="min-height:60px;">
@@ -773,7 +765,6 @@ function renderDashboardAgent() {
           <div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')"><i class="ti ti-external-link"></i> All email opens</button></div>
         </div>
 
-        <!-- Pipeline Snapshot -->
         <div class="dash-card">
           ${_ctitle('ti-layout-kanban', 'Pipeline snapshot')}
           <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;">
@@ -792,14 +783,12 @@ function renderDashboardAgent() {
           </div>
         </div>
 
-        <!-- Fresh Leads (shown only when there are uncontacted leads) -->
         ${freshLeads.length > 0 ? `<div class="dash-card">
           ${_ctitle('ti-users', 'Fresh leads <span style="background:rgba(251,191,36,0.15);color:var(--text-warning);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + freshLeads.length + '</span>')}
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">${freshLeads.length} lead${freshLeads.length !== 1 ? 's' : ''} haven&#39;t been contacted yet.</div>
           <button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start a calling session</button>
         </div>` : ''}
 
-        <!-- Gmail warning (only if not connected) -->
         ${!currentAgent.gmail_connected ? `<div class="dash-card" style="border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
           ${_ctitle('ti-mail', 'Gmail not connected')}
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Connect Gmail to send outreach emails directly from Kannon.</div>
@@ -810,11 +799,9 @@ function renderDashboardAgent() {
     </div>
   `;
 
-  // Async-fetch recent email opens (updates #dash-email-opens after render)
   loadDashEmailOpens();
 }
 
-// ── Async email opens loader ──────────────────────────────────────────────────
 async function loadDashEmailOpens() {
   const el = document.getElementById('dash-email-opens');
   if (!el) return;
@@ -842,7 +829,6 @@ async function loadDashEmailOpens() {
     + (opens.length > 8 ? `<div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('opens')">View all ${opens.length} &rarr;</button></div>` : '');
 }
 
-// ── Time-ago helper (used by loadDashEmailOpens) ──────────────────────────────
 function _dashTimeAgo(isoStr) {
   if (!isoStr) return '';
   const diff = Date.now() - new Date(isoStr).getTime();
