@@ -648,6 +648,7 @@ function renderDashboardAgency() {
 
 
 
+
 function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
@@ -730,7 +731,7 @@ function renderDashboardAgent() {
 
       <div style="display:flex;flex-direction:column;gap:10px;">
 
-        <div class="dash-card">
+        <div class="dash-card" style="flex:1;">
           ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
           ${hotLeads.length === 0
             ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
