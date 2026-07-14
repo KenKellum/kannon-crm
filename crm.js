@@ -647,6 +647,7 @@ function renderDashboardAgency() {
 
 
 
+
 function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
@@ -677,6 +678,12 @@ function renderDashboardAgent() {
       <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
     </div>
 
+    <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px;">
+      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div></div>
+      <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
+      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);cursor:pointer;" onclick="showPage('pipelines')"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
+    </div>
+
     <div class="dash-card" style="margin-bottom:10px;background:var(--surface-1);border-color:var(--border);">
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
         <button onclick="showPage('dialer')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(167,139,250,0.35);background:rgba(167,139,250,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
@@ -688,14 +695,8 @@ function renderDashboardAgent() {
         <button onclick="viewFreshLeads()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
           🌱 <strong style="color:#f59e0b;">${freshLeads.length}</strong> Fresh Lead${freshLeads.length !== 1 ? 's' : ''}
         </button>
-        <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()" style="margin-left:auto;"><i class="ti ti-plus"></i> Add new lead</button>
+        <button onclick="showPage('contacts');openAddContact()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 0 8px rgba(22,163,74,0.4);"><i class="ti ti-plus"></i> Add new lead</button>
       </div>
-    </div>
-
-    <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px;">
-      <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div></div>
-      <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
-      <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);cursor:pointer;" onclick="showPage('pipelines')"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
     </div>
 
     <div class="dash-grid">
