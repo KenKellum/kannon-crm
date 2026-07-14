@@ -35,6 +35,7 @@ let draggedDeal = null;
 let currentPipeline = 'group-employer';
 let contactSearch = '';
 let contactTypeFilter = '';
+let opensFilter = [];
 let contactPage = 0;
 let contactSort = 'created_at_desc';
 let applications = [];
@@ -3423,6 +3424,11 @@ async function renderContacts() {
   // Render shell immediately so tabs show while DB query runs
   const _searchFocused = document.activeElement && document.activeElement.id === 'contact-search-input';
   pg.innerHTML = `
+    ${opensFilter.length ? `<div style="display:flex;align-items:center;gap:10px;background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);border-radius:8px;padding:8px 12px;margin-bottom:10px;">
+      <i class="ti ti-mail-opened" style="color:#38bdf8;font-size:16px;"></i>
+      <span style="font-size:13px;color:var(--text-primary);flex:1;">Showing <strong>${opensFilter.length}</strong> recent email opener${opensFilter.length !== 1 ? 's' : ''}</span>
+      <button class="btn btn-outline btn-sm" onclick="opensFilter=[];renderContacts();">&#10005; Clear filter</button>
+    </div>` : ''}
     <div class="contacts-toolbar">
       <input id="contact-search-input" type="text" placeholder="&#128269; Search contacts..." value="${contactSearch}"
              oninput="contactSearch=this.value;contactPage=0;renderContacts();" style="max-width:280px;" />
@@ -3472,6 +3478,7 @@ async function renderContacts() {
   }
   if (contactTypeFilter) q = q.eq('type', contactTypeFilter);
   if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%`);
+  if (opensFilter.length) q = q.in('email', opensFilter);
   const offset = (contactPage || 0) * PAGE_SIZE;
   q = q.order(sortOpt.col, { ascending: sortOpt.asc }).range(offset, offset + PAGE_SIZE - 1);
 
