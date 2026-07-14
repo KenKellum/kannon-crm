@@ -646,6 +646,7 @@ function renderDashboardAgency() {
 
 
 
+
 function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
@@ -677,7 +678,7 @@ function renderDashboardAgent() {
     </div>
 
     <div class="dash-card" style="margin-bottom:10px;background:var(--surface-1);border-color:var(--border);">
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
         <button onclick="showPage('dialer')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(167,139,250,0.35);background:rgba(167,139,250,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
           🔥 <strong style="color:#a78bfa;">${hotLeads.length}</strong> Hot Lead${hotLeads.length !== 1 ? 's' : ''}
         </button>
@@ -687,10 +688,7 @@ function renderDashboardAgent() {
         <button onclick="viewFreshLeads()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
           🌱 <strong style="color:#f59e0b;">${freshLeads.length}</strong> Fresh Lead${freshLeads.length !== 1 ? 's' : ''}
         </button>
-      </div>
-      <div style="display:flex;gap:6px;">
-        <button class="btn btn-primary" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Work my leads</button>
-        <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()"><i class="ti ti-plus"></i> Add new lead</button>
+        <button class="btn btn-outline btn-sm" onclick="showPage('contacts');openAddContact()" style="margin-left:auto;"><i class="ti ti-plus"></i> Add new lead</button>
       </div>
     </div>
 
