@@ -1533,54 +1533,68 @@ async function showNotInterested(contactId) {
 }
 
 function showIntakeForm(contactId) {
-  const c = contacts.find(x => x.id === contactId);
+  const c = contacts.find(function(x) { return x.id === contactId; });
   if (!c) return;
   const name = c.name || 'Contact';
 
+  // Form types must match intake.html FIELD_DEFS keys (hyphens, not underscores)
   const FORM_TYPES = [
-    { value: 'health_individual', label: '&#127968; Individual Health'       },
-    { value: 'health_family',     label: '&#128106; Family Health'           },
-    { value: 'health_group',      label: '&#127970; Group / Employer Health' },
-    { value: 'career_new',        label: '&#127891; New Career Candidate'    },
-    { value: 'career_existing',   label: '&#128188; Existing Agent'          },
-    { value: 'life_individual',   label: '&#128149; Life Insurance'          },
+    { value: 'financial',         label: '&#128188; Life &amp; Financial Services'       },
+    { value: 'health-individual', label: '&#127968; Health &mdash; Individual &amp; Family' },
+    { value: 'health-group',      label: '&#127970; Health &mdash; Group Benefits'       },
+    { value: 'career-kfg',        label: '&#127891; Career &mdash; Kannon Financial'    },
+    { value: 'career-ia',         label: '&#128203; Career &mdash; Insured America'     },
   ];
 
-  const typeOpts = FORM_TYPES.map(function(f) {
-    return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;'
+  // Default fields per form type (matches intake.html FIELD_DEFS)
+  const PRESET = {
+    'financial':         ['dob','marital_status','household_income','dependents_count','has_life_insurance','life_coverage_amount','has_investments','goal_debt','goal_protection','goal_college','goal_retirement','goal_wealth','best_time','notes'],
+    'health-individual': ['household_size','member_ages','aca_income','currently_insured','current_carrier','current_premium','employer_plan_available','coverage_start_date','health_priority','preexisting_conditions','best_time','notes'],
+    'health-group':      ['business_name','employee_count','enrollment_count','avg_age_range','has_current_plan','current_group_carrier','current_cost_per_emp','group_start_date','employee_states','cov_medical','cov_dental','cov_vision','cov_life','cov_disability','cov_hsa','group_budget','notes'],
+    'career-kfg':        ['current_employer','current_occupation','current_income','education','sales_experience','licensed_life','licensed_health','full_part_time','income_goal_12mo','start_availability','why_interested','notes'],
+    'career-ia':         ['states_licensed','monthly_production','own_book','products_sold','looking_higher_contracts','looking_better_leads','looking_more_support','looking_flexibility','notes']
+  };
+
+  const typeOpts = FORM_TYPES.map(function(t) {
+    return '<label style="display:flex;align-items:center;gap:10px;padding:10px 14px;'
          + 'border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;margin-bottom:6px;">'
-         + '<input type="radio" name="intake-type" value="' + f.value + '" style="accent-color:#0f4c8a;">'
-         + '<span style="font-size:14px;">' + f.label + '</span>'
-         + '</label>';
+         + '<input type="radio" name="intake-form-type" value="' + t.value + '" style="accent-color:#0f4c8a;width:16px;height:16px;">'
+         + '<span style="font-size:14px;">' + t.label + '</span></label>';
   }).join('');
 
+  const emailNote = c.email
+    ? '<p style="color:#64748b;font-size:12px;margin-top:12px;">&#128139; The form opens in a new tab. Copy the URL to send to <strong>' + c.email + '</strong>, or fill it out yourself during the call.</p>'
+    : '<p style="color:#f59e0b;font-size:12px;margin-top:12px;">&#9888; No email on file — you can fill this form out yourself or add an email first.</p>';
+
   const bodyHtml =
-    '<p style="color:#64748b;font-size:13px;margin:0 0 14px;">Select the intake form type for this prospect.</p>'
-    + '<div id="intake-type-list">' + typeOpts + '</div>'
-    + '<div style="margin-top:14px;">'
-    + '<label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;'
-    + 'letter-spacing:.05em;">Notes (optional)</label>'
-    + '<textarea id="intake-notes" placeholder="Key info captured during the call..." '
-    + 'style="width:100%;box-sizing:border-box;min-height:80px;margin-top:4px;"></textarea>'
-    + '</div>';
+    '<p style="color:#64748b;font-size:13px;margin:0 0 14px;">Select the intake form type for <strong>' + name + '</strong>.</p>'
+    + '<div>' + typeOpts + '</div>'
+    + emailNote;
 
-  showModal('&#129309; Start Intake — ' + name, bodyHtml, async function() {
-    const typeEl = document.querySelector('input[name="intake-type"]:checked');
+  showModal('&#129309; New Intake — ' + name, bodyHtml, async function() {
+    const typeEl = document.querySelector('input[name="intake-form-type"]:checked');
     if (!typeEl) { showToast('Please select a form type'); return false; }
-    const notes = (document.getElementById('intake-notes').value || '').trim();
-    const responses = notes ? { notes: notes } : {};
+    const formType = typeEl.value;
+    const selectedFields = PRESET[formType] || [];
 
-    const { error } = await supabaseClient
+    const { data: rows, error } = await supabaseClient
       .from('intake_sessions')
       .insert({
         contact_id:      contactId,
         agent_id:        currentAgent.id,
-        form_type:       typeEl.value,
-        selected_fields: [],
-        responses:       responses,
+        form_type:       formType,
+        selected_fields: selectedFields,
+        responses:       {},
         status:          'pending'
-      });
-    if (error) { showToast('Error creating intake session'); return false; }
+      })
+      .select('id');
+
+    if (error || !rows || !rows.length) {
+      showToast('Error creating intake session'); return false;
+    }
+
+    const intakeUrl = window.location.origin + '/intake.html?s=' + rows[0].id;
+    window.open(intakeUrl, '_blank');
 
     // Mark contact as Replied
     await supabaseClient.from('contacts').update({ sequence_status: 'Replied' }).eq('id', contactId);
@@ -1589,11 +1603,11 @@ function showIntakeForm(contactId) {
     const qi = dialerQueue ? dialerQueue.findIndex(function(x) { return x.id === contactId; }) : -1;
     if (qi > -1) dialerQueue[qi].sequence_status = 'Replied';
 
-    showToast('&#129309; Intake started! Contact marked as Replied.');
+    showToast('&#129309; Intake form opened! Contact marked as Replied.');
     if (dialerQueue && dialerQueue.length > 0) {
-      setTimeout(function() { dialerNext(); }, 400);
+      setTimeout(function() { dialerNext(); }, 600);
     }
-  }, { confirmLabel: '&#129309; Start Intake' });
+  }, { confirmLabel: '&#129309; Create &amp; Open Form' });
 }
 
 async function dialerSendBookingLink(contactId) {
