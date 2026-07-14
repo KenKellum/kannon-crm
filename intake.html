@@ -248,7 +248,7 @@ function renderForm(session, contact) {
   <div class="card">
     <div class="card-title">Your contact information</div>
     <div class="two-col">
-      <div class="field-group"><label>Full name</label><input type="text" name="name" value="${prefill.name.replace(/"/g,'&quot;')}" class="pre-filled" readonly></div>
+      <div class="field-group"><label>Full name</label><input type="text" name="name" value="${prefill.name.replace(/"/g,'&quot;')}"${prefill.name?' class="pre-filled"':''}></div>
       <div class="field-group"><label>Email address</label><input type="email" name="email" value="${prefill.email.replace(/"/g,'&quot;')}"${prefill.email?' class="pre-filled"':''}></div>
     </div>
     <div class="field-group"><label>Phone number</label><input type="tel" name="phone" value="${prefill.phone.replace(/"/g,'&quot;')}"${prefill.phone?' class="pre-filled"':''}></div>`;
