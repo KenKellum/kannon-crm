@@ -649,6 +649,7 @@ function renderDashboardAgency() {
 
 
 
+
 function renderDashboardAgent() {
   const el = document.getElementById('page-dashboard');
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
@@ -731,7 +732,7 @@ function renderDashboardAgent() {
 
       <div style="display:flex;flex-direction:column;gap:10px;">
 
-        <div class="dash-card" style="flex:1;">
+        <div class="dash-card" style="flex:1;display:flex;flex-direction:column;">
           ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
           ${hotLeads.length === 0
             ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
@@ -760,8 +761,10 @@ function renderDashboardAgent() {
                   </div>
                 </div>`;
               }).join('')}
-          ${hotLeads.length > 6 ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button></div>` : ''}
-          ${hotLeads.length > 0 ? `<div style="margin-top:6px;"><button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button></div>` : ''}
+          ${hotLeads.length > 0 ? `<div style="margin-top:auto;padding-top:8px;">
+            ${hotLeads.length > 6 ? `<button class="btn btn-outline btn-sm btn-full" style="margin-bottom:6px;" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button>` : ''}
+            <button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button>
+          </div>` : ''}
         </div>
 
         ${!currentAgent.gmail_connected ? `<div class="dash-card" style="border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
