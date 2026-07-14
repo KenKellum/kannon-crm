@@ -1417,13 +1417,6 @@ function renderDialer() {
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
               ${_lcl ? `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;">&#9990; ${_lcl} &middot; ${contact.call_count||1}x</span>` : ''}
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
-              <button class="btn btn-outline btn-sm" onclick="logOutreach('${contact.id}','','')" style="font-size:11px;">&#128221; Log Outreach</button>
-              ${(contact.whatsapp_number||contact.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${contact.id}')" style="font-size:11px;color:#25d366;border-color:#25d366;">&#128172; WhatsApp</button>` : ''}
-              ${contact.linkedin_url ? `<button class="btn btn-outline btn-sm" onclick="window.open((contact.linkedin_url.indexOf('http')===0?contact.linkedin_url:'https://'+contact.linkedin_url),'_blank')" style="font-size:11px;">&#128279; LinkedIn</button>` : ''}
-              ${contact.instagram_handle ? `<button class="btn btn-outline btn-sm" onclick="window.open('https://www.instagram.com/'+contact.instagram_handle+'/','_blank')" style="font-size:11px;">&#128247; Instagram</button>` : ''}
-              ${contact.twitter_handle ? `<button class="btn btn-outline btn-sm" onclick="window.open('https://x.com/'+contact.twitter_handle,'_blank')" style="font-size:11px;">X / Twitter</button>` : ''}
-            </div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Added</div>
