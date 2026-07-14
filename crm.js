@@ -1684,52 +1684,97 @@ async function showIntakeForm(contactId) {
   _intakeFormType  = _intakeTypeFromContact(c);
   _intakeChecked   = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
 
-  // Build overlay
+  const initials = (c.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+
   const overlay = document.createElement('div');
   overlay.id = 'intakeOverlay';
   overlay.style.cssText = [
-    'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);',
+    'position:fixed;inset:0;z-index:9999;',
+    'background:rgba(10,20,40,0.65);backdrop-filter:blur(2px);',
     'display:flex;align-items:center;justify-content:center;padding:16px;',
   ].join('');
 
   const box = document.createElement('div');
   box.id = 'intakeBox';
   box.style.cssText = [
-    'background:#ffffff;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.4);',
-    'display:flex;flex-direction:column;width:min(1100px,96vw);max-height:92vh;overflow:hidden;',
+    'background:#ffffff;border-radius:14px;',
+    'box-shadow:0 24px 80px rgba(0,0,0,0.45);',
+    'display:flex;flex-direction:column;',
+    'width:min(1140px,96vw);max-height:93vh;overflow:hidden;',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
   ].join('');
 
   box.innerHTML = `
-    <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#ffffff;">
-      <div>
-        <div style="font-weight:600;font-size:16px;">${c.name || 'Contact'} — Intake Form</div>
-        <div style="font-size:12px;color:#64748b;margin-top:2px;">${c.type || c.contact_type || ''}</div>
+    <!-- HEADER -->
+    <div style="padding:18px 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+                background:linear-gradient(135deg,#1a3a5c 0%,#1e4976 100%);">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:42px;height:42px;border-radius:50%;
+                    background:rgba(255,255,255,0.18);
+                    display:flex;align-items:center;justify-content:center;
+                    font-weight:700;font-size:15px;color:#fff;letter-spacing:.5px;flex-shrink:0;">
+          ${initials}
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:16px;color:#fff;letter-spacing:.1px;">${c.name || 'Contact'}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:2px;">
+            Intake Form${(c.type || c.contact_type) ? ' &middot; ' + (c.type || c.contact_type) : ''}
+          </div>
+        </div>
       </div>
-      <button onclick="closeIntakeForm()" style="background:none;border:none;cursor:pointer;font-size:20px;color:#64748b;padding:4px 8px;">&times;</button>
+      <button onclick="closeIntakeForm()"
+        style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
+               border-radius:8px;cursor:pointer;font-size:18px;
+               color:rgba(255,255,255,0.8);width:34px;height:34px;
+               display:flex;align-items:center;justify-content:center;line-height:1;"
+        onmouseover="this.style.background='rgba(255,255,255,0.25)'"
+        onmouseout="this.style.background='rgba(255,255,255,0.12)'">&times;</button>
     </div>
 
-    <!-- Type selector -->
-    <div id="intakeTypeBar" style="padding:12px 20px;border-bottom:1px solid #e2e8f0;display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;background:#f8fafc;"></div>
+    <!-- TYPE TAB BAR -->
+    <div id="intakeTypeBar"
+      style="padding:0 20px;border-bottom:2px solid #e8edf3;
+             display:flex;gap:0;flex-wrap:wrap;flex-shrink:0;background:#fff;"></div>
 
-    <!-- Split body -->
+    <!-- SPLIT BODY -->
     <div style="display:flex;flex:1;overflow:hidden;">
-      <!-- LEFT: field checklist -->
-      <div id="intakeFieldList" style="width:280px;min-width:240px;border-right:1px solid #e2e8f0;overflow-y:auto;padding:12px 0;flex-shrink:0;background:#f8fafc;"></div>
-      <!-- RIGHT: live form -->
-      <div id="intakeFormPanel" style="flex:1;overflow-y:auto;padding:20px 24px;background:#ffffff;"></div>
+      <div id="intakeFieldList"
+        style="width:260px;min-width:220px;border-right:1px solid #e8edf3;
+               overflow-y:auto;flex-shrink:0;background:#f6f8fb;padding-bottom:8px;"></div>
+      <div id="intakeFormPanel"
+        style="flex:1;overflow-y:auto;padding:24px 28px;background:#ffffff;"></div>
     </div>
 
-    <!-- Footer -->
-    <div style="padding:14px 20px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0;background:#f8fafc;">
-      <button class="btn btn-outline" onclick="closeIntakeForm()" style="color:#64748b;">Cancel</button>
-      <button class="btn btn-outline" id="intakeSendBtn" style="border-color:#3b82f6;color:#3b82f6;" onclick="sendIntakeLink()">&#9993; Send Link via Gmail</button>
-      <button class="btn btn-primary" onclick="saveIntakeToCRM()">&#10003; Save to CRM</button>
+    <!-- FOOTER -->
+    <div style="padding:14px 22px;border-top:1px solid #e2e8f0;
+                display:flex;align-items:center;gap:10px;justify-content:flex-end;
+                flex-shrink:0;background:#f8fafc;">
+      <button onclick="closeIntakeForm()"
+        style="padding:8px 18px;border-radius:8px;border:1px solid #d1d5db;
+               background:#fff;color:#6b7280;font-size:13px;font-weight:500;cursor:pointer;"
+        onmouseover="this.style.background='#f3f4f6'"
+        onmouseout="this.style.background='#fff'">Cancel</button>
+
+      <button id="intakeSendBtn" onclick="sendIntakeLink()"
+        style="padding:8px 18px;border-radius:8px;border:1px solid #2563eb;
+               background:#fff;color:#2563eb;font-size:13px;font-weight:500;
+               cursor:pointer;display:flex;align-items:center;gap:7px;"
+        onmouseover="this.style.background='#eff6ff'"
+        onmouseout="this.style.background='#fff'">&#9993; Send Link via Gmail</button>
+
+      <button onclick="saveIntakeToCRM()"
+        style="padding:8px 22px;border-radius:8px;border:none;
+               background:linear-gradient(135deg,#1a3a5c,#1e4976);
+               color:#fff;font-size:13px;font-weight:600;cursor:pointer;
+               display:flex;align-items:center;gap:7px;
+               box-shadow:0 2px 8px rgba(26,58,92,0.3);"
+        onmouseover="this.style.boxShadow='0 4px 16px rgba(26,58,92,0.45)'"
+        onmouseout="this.style.boxShadow='0 2px 8px rgba(26,58,92,0.3)'">&#10003; Save to CRM</button>
     </div>
   `;
 
   overlay.appendChild(box);
   document.body.appendChild(overlay);
-
   _intakeRenderTypeBar();
   _intakeRenderFieldList();
   _intakeRenderForm();
@@ -1743,14 +1788,20 @@ function closeIntakeForm() {
 function _intakeRenderTypeBar() {
   const bar = document.getElementById('intakeTypeBar');
   if (!bar) return;
-  bar.innerHTML = Object.entries(INTAKE_TYPE_LABELS).map(([k, label]) => `
-    <button onclick="setIntakeFormType('${k}')" id="intakeTypeBtn_${k}"
-      style="padding:6px 14px;border-radius:20px;border:1px solid #e2e8f0;cursor:pointer;font-size:12px;font-weight:500;
-             background:${_intakeFormType===k?'#1a3a5c':'#f1f5f9'};
-             color:${_intakeFormType===k?'#fff':'#1e293b'};transition:all 0.15s;">
+  bar.innerHTML = Object.entries(INTAKE_TYPE_LABELS).map(([k, label]) => {
+    const active = _intakeFormType === k;
+    return `<button onclick="setIntakeFormType('${k}')" id="intakeTypeBtn_${k}"
+      style="padding:10px 16px;border:none;
+             border-bottom:3px solid ${active ? '#1a3a5c' : 'transparent'};
+             background:none;cursor:pointer;
+             font-size:12.5px;font-weight:${active ? '700' : '500'};
+             color:${active ? '#1a3a5c' : '#64748b'};
+             white-space:nowrap;transition:color .15s;"
+      onmouseover="if('${k}'!==_intakeFormType){this.style.color='#1e293b';this.style.background='#f8fafc';}"
+      onmouseout="if('${k}'!==_intakeFormType){this.style.color='#64748b';this.style.background='none';}">
       ${label}
-    </button>
-  `).join('');
+    </button>`;
+  }).join('');
 }
 
 function setIntakeFormType(type) {
@@ -1768,19 +1819,31 @@ function _intakeRenderFieldList() {
   for (const grp of INTAKE_ALL_FIELDS) {
     const visibleIds = grp.ids.filter(id => INTAKE_FIELD_DEFS[id]);
     if (!visibleIds.length) continue;
-    html += `<div style="padding:8px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">${grp.section}</div>`;
+    const checkedCount = visibleIds.filter(id => _intakeChecked.has(id)).length;
+    html += `
+      <div style="padding:10px 14px 4px;font-size:10px;font-weight:700;
+                  text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;
+                  display:flex;align-items:center;justify-content:space-between;">
+        <span>${grp.section}</span>
+        ${checkedCount ? `<span style="background:#1a3a5c;color:#fff;border-radius:10px;padding:1px 7px;font-size:9px;">${checkedCount}</span>` : ''}
+      </div>`;
     for (const id of visibleIds) {
       const def = INTAKE_FIELD_DEFS[id];
-      const chk = _intakeChecked.has(id) ? 'checked' : '';
+      const chk = _intakeChecked.has(id);
+      const bg     = chk ? 'rgba(26,58,92,0.07)' : 'transparent';
+      const bgHov  = chk ? 'rgba(26,58,92,0.13)' : '#edf2f7';
       html += `
-        <label style="display:flex;align-items:center;gap:9px;padding:5px 14px;cursor:pointer;font-size:13px;
-                       border-radius:4px;transition:background .1s;"
-               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">
-          <input type="checkbox" ${chk} onchange="toggleIntakeField('${id}',this.checked)"
-            style="width:14px;height:14px;flex-shrink:0;accent-color:#1a3a5c;" />
+        <label style="display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;
+                       font-size:12.5px;color:${chk ? '#1a3a5c' : '#374151'};
+                       font-weight:${chk ? '600' : '400'};background:${bg};transition:background .1s;"
+               onmouseover="this.style.background='${bgHov}'"
+               onmouseout="this.style.background='${bg}'">
+          <input type="checkbox" ${chk ? 'checked' : ''} onchange="toggleIntakeField('${id}',this.checked)"
+            style="width:14px;height:14px;flex-shrink:0;accent-color:#1a3a5c;cursor:pointer;" />
           <span>${def.label}</span>
         </label>`;
     }
+    html += `<div style="margin:4px 14px;border-bottom:1px solid #e8edf3;"></div>`;
   }
   panel.innerHTML = html;
 }
@@ -1788,6 +1851,7 @@ function _intakeRenderFieldList() {
 function toggleIntakeField(id, checked) {
   if (checked) _intakeChecked.add(id);
   else         _intakeChecked.delete(id);
+  _intakeRenderFieldList();
   _intakeRenderForm();
 }
 
@@ -1796,14 +1860,13 @@ function _intakeRenderForm() {
   if (!panel) return;
   const c = contacts.find(x => x.id === _intakeContactId) || {};
   const prefill = {
-    name:  c.name  || '',
-    email: c.email || '',
-    phone: c.phone || '',
-    dob:   c.dob   || c.date_of_birth || '',
+    name:          c.name  || '',
+    email:         c.email || '',
+    phone:         c.phone || '',
+    dob:           c.dob   || c.date_of_birth || '',
     business_name: c.company || '',
   };
 
-  // Group checked fields by section
   const sections = {};
   for (const grp of INTAKE_ALL_FIELDS) {
     for (const id of grp.ids) {
@@ -1815,17 +1878,34 @@ function _intakeRenderForm() {
   }
 
   if (!Object.keys(sections).length) {
-    panel.innerHTML = '<div style="color:#64748b;font-size:13px;padding-top:40px;text-align:center;">Select fields from the left panel.</div>';
+    panel.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;
+                  justify-content:center;min-height:200px;padding-top:40px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;opacity:.3;">&#9776;</div>
+        <div style="font-size:14px;font-weight:500;color:#64748b;">Select fields from the left panel</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Check the fields you want to capture.</div>
+      </div>`;
     return;
   }
 
-  let html = `<div style="max-width:600px;">`;
+  let html = `<div style="max-width:580px;">`;
   for (const [sec, ids] of Object.entries(sections)) {
-    html += `<div style="margin-bottom:20px;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:10px;">${sec}</div>
-      <div style="display:flex;flex-direction:column;gap:12px;">`;
+    html += `
+      <div style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;
+                    padding-bottom:8px;border-bottom:1px solid #f1f5f9;">
+          <div style="width:3px;height:16px;background:#1a3a5c;border-radius:2px;flex-shrink:0;"></div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.1em;color:#1a3a5c;">${sec}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">`;
     for (const id of ids) {
-      html += _intakeRenderField(id, INTAKE_FIELD_DEFS[id], prefill[id] || '');
+      const def = INTAKE_FIELD_DEFS[id];
+      const isWide = def.type === 'textarea'
+        || ['notes_financial','notes_health','notes_group','notes_career',
+            'why_interested','member_ages','dependents_ages'].includes(id);
+      html += `<div style="${isWide ? 'grid-column:1/-1;' : ''}">` +
+              _intakeRenderField(id, def, prefill[id] || '') + '</div>';
     }
     html += `</div></div>`;
   }
@@ -1834,30 +1914,43 @@ function _intakeRenderForm() {
 }
 
 function _intakeRenderField(id, def, prefillVal) {
-  const val = prefillVal ? ` value="${prefillVal.replace(/"/g,'&quot;')}"` : '';
-  const ph  = def.placeholder ? ` placeholder="${def.placeholder}"` : '';
+  const val  = prefillVal ? ` value="${prefillVal.replace(/"/g, '&quot;')}"` : '';
+  const ph   = def.placeholder ? ` placeholder="${def.placeholder}"` : '';
   const base = `id="ifield_${id}" name="${id}"`;
-  const inputStyle = 'width:100%;padding:8px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#ffffff;color:#1e293b;font-size:13px;box-sizing:border-box;';
+  const S    = 'width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid #e2e8f0;' +
+               'background:#fafbfc;color:#1e293b;font-size:13px;box-sizing:border-box;outline:none;' +
+               'transition:border-color .15s,box-shadow .15s;';
+  const F    = `onfocus="this.style.borderColor='#1a3a5c';this.style.boxShadow='0 0 0 3px rgba(26,58,92,0.12)'"` +
+               ` onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow='none'"`;
 
   let control = '';
   if (def.type === 'select') {
-    const opts = (def.options || []).map(o => `<option value="${o}"${prefillVal===o?' selected':''}>${o}</option>`).join('');
-    control = `<select ${base} style="${inputStyle}"><option value="">Select...</option>${opts}</select>`;
+    const opts = (def.options || []).map(o =>
+      `<option value="${o}"${prefillVal === o ? ' selected' : ''}>${o}</option>`
+    ).join('');
+    control = `<select ${base} style="${S}" ${F}><option value="">Select...</option>${opts}</select>`;
   } else if (def.type === 'textarea') {
-    control = `<textarea ${base} rows="3"${ph} style="${inputStyle}resize:vertical;">${prefillVal || ''}</textarea>`;
+    control = `<textarea ${base} rows="3"${ph} style="${S}resize:vertical;" ${F}>${prefillVal || ''}</textarea>`;
   } else if (def.type === 'checkbox') {
-    control = `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-      <input type="checkbox" ${base} style="width:16px;height:16px;accent-color:#1a3a5c;" />
-      <span>${def.label}</span></label>`;
-    return `<div>${control}</div>`;
+    return `<div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;
+                    padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fafbfc;">
+        <input type="checkbox" ${base} style="width:16px;height:16px;accent-color:#1a3a5c;cursor:pointer;" />
+        <span style="color:#1e293b;">${def.label}</span>
+      </label>
+    </div>`;
   } else {
-    control = `<input type="${def.type}" ${base}${val}${ph} style="${inputStyle}" />`;
+    control = `<input type="${def.type}" ${base}${val}${ph} style="${S}" ${F} />`;
   }
   return `<div>
-    <label for="ifield_${id}" style="display:block;font-size:12px;font-weight:500;color:#64748b;margin-bottom:4px;">${def.label}</label>
+    <label for="ifield_${id}"
+      style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;
+             letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">${def.label}</label>
     ${control}
   </div>`;
 }
+
+
 
 function _intakeCollectResponses() {
   const responses = {};
