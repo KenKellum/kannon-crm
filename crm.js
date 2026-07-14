@@ -1596,7 +1596,7 @@ function renderDialer() {
           <button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>
           <button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>
           <button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>
-          <button class="btn btn-primary" onclick="dialerNext()">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>
+          <button class="btn btn-primary" onclick="dialerNext(true)">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>
         </div>
 
         <!-- Notes area -->
@@ -1672,7 +1672,10 @@ async function dialerSaveNote(contactId) {
   const note = input?.value?.trim();
   if (!note) return;
   try {
-    await supabaseClient.from('contacts').update({ notes: note }).eq('id', contactId);
+    const now = new Date().toISOString();
+    const qi = dialerQueue.findIndex(c => c.id === contactId);
+    const newCount = qi > -1 ? (dialerQueue[qi].call_count || 0) + 1 : 1;
+    await supabaseClient.from('contacts').update({ notes: note, last_called_at: now, call_count: newCount }).eq('id', contactId);
     const idx = contacts.findIndex(c => c.id === contactId);
     if (idx > -1) contacts[idx].notes = note;
     const qi = dialerQueue.findIndex(c => c.id === contactId);
