@@ -1508,33 +1508,33 @@ async function showIntakeForm(contactId) {
   const box = document.createElement('div');
   box.id = 'intakeBox';
   box.style.cssText = [
-    'background:var(--surface);border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.4);',
+    'background:#ffffff;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.4);',
     'display:flex;flex-direction:column;width:min(1100px,96vw);max-height:92vh;overflow:hidden;',
   ].join('');
 
   box.innerHTML = `
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#ffffff;">
       <div>
         <div style="font-weight:600;font-size:16px;">${c.name || 'Contact'} — Intake Form</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${c.type || c.contact_type || ''}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px;">${c.type || c.contact_type || ''}</div>
       </div>
-      <button onclick="closeIntakeForm()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text-muted);padding:4px 8px;">&times;</button>
+      <button onclick="closeIntakeForm()" style="background:none;border:none;cursor:pointer;font-size:20px;color:#64748b;padding:4px 8px;">&times;</button>
     </div>
 
     <!-- Type selector -->
-    <div id="intakeTypeBar" style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;"></div>
+    <div id="intakeTypeBar" style="padding:12px 20px;border-bottom:1px solid #e2e8f0;display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;background:#f8fafc;"></div>
 
     <!-- Split body -->
     <div style="display:flex;flex:1;overflow:hidden;">
       <!-- LEFT: field checklist -->
-      <div id="intakeFieldList" style="width:280px;min-width:240px;border-right:1px solid var(--border);overflow-y:auto;padding:12px 0;flex-shrink:0;"></div>
+      <div id="intakeFieldList" style="width:280px;min-width:240px;border-right:1px solid #e2e8f0;overflow-y:auto;padding:12px 0;flex-shrink:0;background:#f8fafc;"></div>
       <!-- RIGHT: live form -->
-      <div id="intakeFormPanel" style="flex:1;overflow-y:auto;padding:20px 24px;"></div>
+      <div id="intakeFormPanel" style="flex:1;overflow-y:auto;padding:20px 24px;background:#ffffff;"></div>
     </div>
 
     <!-- Footer -->
-    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;flex-shrink:0;">
-      <button class="btn btn-outline" onclick="closeIntakeForm()" style="color:var(--text-muted);">Cancel</button>
+    <div style="padding:14px 20px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0;background:#f8fafc;">
+      <button class="btn btn-outline" onclick="closeIntakeForm()" style="color:#64748b;">Cancel</button>
       <button class="btn btn-outline" id="intakeSendBtn" style="border-color:#3b82f6;color:#3b82f6;" onclick="sendIntakeLink()">&#9993; Send Link via Gmail</button>
       <button class="btn btn-primary" onclick="saveIntakeToCRM()">&#10003; Save to CRM</button>
     </div>
@@ -1558,9 +1558,9 @@ function _intakeRenderTypeBar() {
   if (!bar) return;
   bar.innerHTML = Object.entries(INTAKE_TYPE_LABELS).map(([k, label]) => `
     <button onclick="setIntakeFormType('${k}')" id="intakeTypeBtn_${k}"
-      style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);cursor:pointer;font-size:12px;font-weight:500;
-             background:${_intakeFormType===k?'var(--primary)':'var(--bg)'};
-             color:${_intakeFormType===k?'#fff':'var(--text)'};transition:all 0.15s;">
+      style="padding:6px 14px;border-radius:20px;border:1px solid #e2e8f0;cursor:pointer;font-size:12px;font-weight:500;
+             background:${_intakeFormType===k?'#1a3a5c':'#f1f5f9'};
+             color:${_intakeFormType===k?'#fff':'#1e293b'};transition:all 0.15s;">
       ${label}
     </button>
   `).join('');
@@ -1581,16 +1581,16 @@ function _intakeRenderFieldList() {
   for (const grp of INTAKE_ALL_FIELDS) {
     const visibleIds = grp.ids.filter(id => INTAKE_FIELD_DEFS[id]);
     if (!visibleIds.length) continue;
-    html += `<div style="padding:8px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">${grp.section}</div>`;
+    html += `<div style="padding:8px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">${grp.section}</div>`;
     for (const id of visibleIds) {
       const def = INTAKE_FIELD_DEFS[id];
       const chk = _intakeChecked.has(id) ? 'checked' : '';
       html += `
         <label style="display:flex;align-items:center;gap:9px;padding:5px 14px;cursor:pointer;font-size:13px;
                        border-radius:4px;transition:background .1s;"
-               onmouseover="this.style.background='var(--hover)'" onmouseout="this.style.background=''">
+               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">
           <input type="checkbox" ${chk} onchange="toggleIntakeField('${id}',this.checked)"
-            style="width:14px;height:14px;flex-shrink:0;accent-color:var(--primary);" />
+            style="width:14px;height:14px;flex-shrink:0;accent-color:#1a3a5c;" />
           <span>${def.label}</span>
         </label>`;
     }
@@ -1628,14 +1628,14 @@ function _intakeRenderForm() {
   }
 
   if (!Object.keys(sections).length) {
-    panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding-top:40px;text-align:center;">Select fields from the left panel.</div>';
+    panel.innerHTML = '<div style="color:#64748b;font-size:13px;padding-top:40px;text-align:center;">Select fields from the left panel.</div>';
     return;
   }
 
   let html = `<div style="max-width:600px;">`;
   for (const [sec, ids] of Object.entries(sections)) {
     html += `<div style="margin-bottom:20px;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:10px;">${sec}</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:10px;">${sec}</div>
       <div style="display:flex;flex-direction:column;gap:12px;">`;
     for (const id of ids) {
       html += _intakeRenderField(id, INTAKE_FIELD_DEFS[id], prefill[id] || '');
@@ -1650,7 +1650,7 @@ function _intakeRenderField(id, def, prefillVal) {
   const val = prefillVal ? ` value="${prefillVal.replace(/"/g,'&quot;')}"` : '';
   const ph  = def.placeholder ? ` placeholder="${def.placeholder}"` : '';
   const base = `id="ifield_${id}" name="${id}"`;
-  const inputStyle = 'width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box;';
+  const inputStyle = 'width:100%;padding:8px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#ffffff;color:#1e293b;font-size:13px;box-sizing:border-box;';
 
   let control = '';
   if (def.type === 'select') {
@@ -1660,14 +1660,14 @@ function _intakeRenderField(id, def, prefillVal) {
     control = `<textarea ${base} rows="3"${ph} style="${inputStyle}resize:vertical;">${prefillVal || ''}</textarea>`;
   } else if (def.type === 'checkbox') {
     control = `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-      <input type="checkbox" ${base} style="width:16px;height:16px;accent-color:var(--primary);" />
+      <input type="checkbox" ${base} style="width:16px;height:16px;accent-color:#1a3a5c;" />
       <span>${def.label}</span></label>`;
     return `<div>${control}</div>`;
   } else {
     control = `<input type="${def.type}" ${base}${val}${ph} style="${inputStyle}" />`;
   }
   return `<div>
-    <label for="ifield_${id}" style="display:block;font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:4px;">${def.label}</label>
+    <label for="ifield_${id}" style="display:block;font-size:12px;font-weight:500;color:#64748b;margin-bottom:4px;">${def.label}</label>
     ${control}
   </div>`;
 }
