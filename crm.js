@@ -1511,6 +1511,9 @@ function renderDialer() {
 
         <!-- Meta grid -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;background:var(--surface-3);border-radius:10px;margin-bottom:20px;">
+          <div style="grid-column:1/-1;display:flex;justify-content:flex-end;margin:-4px 0 6px;">
+            <button class="btn btn-outline btn-sm" onclick="editContact('${contact.id}', () => renderDialer())"><i class="ti ti-edit"></i> Edit</button>
+          </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Email</div>
             <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;word-break:break-all;">${contact.email || '—'}</div>
