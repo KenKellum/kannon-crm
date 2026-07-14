@@ -3643,7 +3643,7 @@ function openAddContact() {
   });
 }
 
-function editContact(id) {
+function editContact(id, onSave) {
   const c = contacts.find(x => x.id === id); if (!c) return;
   const typeOptions = CONTACT_TYPES.map(t => `<option value="${t}" ${t===c.type?'selected':''}>${t}</option>`).join('');
   const canAssign = currentAgent.role !== 'agent';
@@ -3740,7 +3740,7 @@ function editContact(id) {
       if (ac && ac.length > 0) await supabaseClient.from('contact_companies').insert(ac.map(r => ({ contact_id: id, company_id: r.company_id })));
     }
 
-    Object.assign(c, updates); showToast('Contact updated!'); renderContacts(); closeContactPanel();
+    Object.assign(c, updates); showToast('Contact updated!'); if (typeof onSave === 'function') { onSave(); } else { renderContacts(); closeContactPanel(); }
   });
   loadIntakeHistoryPanel(id);
 }
