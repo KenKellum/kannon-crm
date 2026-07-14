@@ -1510,7 +1510,7 @@ function _dialerActionRow(contact, isLast) {
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">`
     + callBtn
     + `<button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>`
-    + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>`
+    + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="dialerMarkInterested('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>`
     + `<button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>`
     + `<button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>`
     + skipBtn + nextBtn
