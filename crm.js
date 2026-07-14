@@ -2062,7 +2062,8 @@ async function sendIntakeLink() {
 
     const res = await fetch(appsUrl.toString());
     const json = await res.json().catch(() => ({}));
-    if (json.error) throw new Error(json.error);
+    if (json.status === 'error') throw new Error(json.message || 'Failed to send email');
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' from mail server');
 
     showToast('✓ Intake link sent to ' + c.email);
     closeIntakeForm();
