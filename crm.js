@@ -5457,6 +5457,72 @@ async function renderSettings() {
       </div>
 
       <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-link"></i>My Lead Capture Links</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.6;">
+          These links are personalized to you — any lead who submits is automatically assigned to you in the CRM. Share them in ads, emails, social media, or as QR codes.
+        </div>
+
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--accent);margin-bottom:10px;">Kannon Financial Group</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600;">General (Client or Recruit chooser)</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" value="https://kannon-crm.vercel.app/lead.html?co=kfg&agent=${currentAgent.id}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:11px;cursor:text;" />
+              <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/lead.html?co=kfg&agent=${currentAgent.id}').then(()=>showToast('Copied!'))"><i class="ti ti-copy"></i></button>
+              <a href="https://kannon-crm.vercel.app/lead.html?co=kfg&agent=${currentAgent.id}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600;">Client — Coverage Leads</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" value="https://kannon-crm.vercel.app/lead.html?co=kfg&type=client&agent=${currentAgent.id}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:11px;cursor:text;" />
+              <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/lead.html?co=kfg&type=client&agent=${currentAgent.id}').then(()=>showToast('Copied!'))"><i class="ti ti-copy"></i></button>
+              <a href="https://kannon-crm.vercel.app/lead.html?co=kfg&type=client&agent=${currentAgent.id}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600;">Recruit — Career Leads</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" value="https://kannon-crm.vercel.app/lead.html?co=kfg&type=recruit&agent=${currentAgent.id}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:11px;cursor:text;" />
+              <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/lead.html?co=kfg&type=recruit&agent=${currentAgent.id}').then(()=>showToast('Copied!'))"><i class="ti ti-copy"></i></button>
+              <a href="https://kannon-crm.vercel.app/lead.html?co=kfg&type=recruit&agent=${currentAgent.id}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--accent);margin-bottom:10px;border-top:0.5px solid var(--border);padding-top:16px;">Insured America Agency</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600;">General (Client or Recruit chooser)</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" value="https://kannon-crm.vercel.app/lead.html?co=ia&agent=${currentAgent.id}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:11px;cursor:text;" />
+              <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/lead.html?co=ia&agent=${currentAgent.id}').then(()=>showToast('Copied!'))"><i class="ti ti-copy"></i></button>
+              <a href="https://kannon-crm.vercel.app/lead.html?co=ia&agent=${currentAgent.id}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600;">Client — Coverage Leads</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" value="https://kannon-crm.vercel.app/lead.html?co=ia&type=client&agent=${currentAgent.id}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:11px;cursor:text;" />
+              <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/lead.html?co=ia&type=client&agent=${currentAgent.id}').then(()=>showToast('Copied!'))"><i class="ti ti-copy"></i></button>
+              <a href="https://kannon-crm.vercel.app/lead.html?co=ia&type=client&agent=${currentAgent.id}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600;">Recruit — Career Leads</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" value="https://kannon-crm.vercel.app/lead.html?co=ia&type=recruit&agent=${currentAgent.id}" readonly style="flex:1;box-sizing:border-box;background:var(--surface-1);color:var(--text-secondary);font-size:11px;cursor:text;" />
+              <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('https://kannon-crm.vercel.app/lead.html?co=ia&type=recruit&agent=${currentAgent.id}').then(()=>showToast('Copied!'))"><i class="ti ti-copy"></i></button>
+              <a href="https://kannon-crm.vercel.app/lead.html?co=ia&type=recruit&agent=${currentAgent.id}" target="_blank" class="btn btn-outline btn-sm"><i class="ti ti-external-link"></i></a>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);line-height:1.6;">
+          <strong>Tip for ads:</strong> Add <code style="background:var(--surface-0);padding:1px 5px;border-radius:3px;font-size:10px;">&amp;utm_source=facebook&amp;utm_medium=paid_social&amp;utm_campaign=your-campaign</code> to any link for full ad tracking in the CRM.
+        </div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px;">
         <div class="dash-card-title"><i class="ti ti-mail"></i>Gmail Connection</div>
         <div class="action-item">
           <div class="action-item-info">
