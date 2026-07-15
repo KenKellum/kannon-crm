@@ -1322,10 +1322,12 @@ function startDialerSession(filterType) {
     const replied    = contacts.filter(c => c.sequence_status === 'Replied');
     const active     = contacts.filter(c => c.sequence_status === 'Active');
     const fresh      = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started');
+    const pipeline   = contacts.filter(function(c) { return deals.some(function(d) { return d.contact_id === c.id; }); });
     const iC = bCnt(interested, 0);
     const rC = bCnt(replied, 48);
     const aC = bCnt(active, 72);
     const fC = bCnt(fresh, 24);
+    const pC = { ready: pipeline.length, cooling: 0, total: pipeline.length };
     const allCount = totalContactCountFull || contacts.length;
     const typeBtns = CONTACT_TYPES.map(t => {
       const arr = contacts.filter(c => c.type === t);
@@ -1339,6 +1341,12 @@ function startDialerSession(filterType) {
     showModal('&#9889; Start a Lead Session', `
       <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">Choose which leads to work. Cooldown windows prevent over-contacting.</p>
       <div style="display:flex;flex-direction:column;gap:8px;">
+        ${pC.total > 0 ? `<button class="btn btn-full" style="background:#10b981;color:#fff;" onclick="closeModal();startDialerSession('pipeline')">
+          <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
+            <span>&#127807; Work My Pipeline &mdash; Warm Contacts</span>
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;">${pC.total}</span>
+          </div>
+        </button>` : ''}
         ${iC.total > 0 ? `<button class="btn btn-accent btn-full" onclick="closeModal();startDialerSession('interested')" ${!iC.ready ? 'disabled style="opacity:0.5;"' : ''}>
           <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;">
             <span>&#129657; Interested &mdash; Ready to Quote</span>
@@ -1380,7 +1388,9 @@ function startDialerSession(filterType) {
 
   // Build queue respecting cooldown windows
   let queue;
-  if (filterType === 'interested')
+  if (filterType === 'pipeline')
+    queue = contacts.filter(function(c) { return deals.some(function(d) { return d.contact_id === c.id; }); });
+  else if (filterType === 'interested')
     queue = contacts.filter(c => c.sequence_status === 'Interested' && dialerCooldownReady(c, 0));
   else if (filterType === 'replied')
     queue = contacts.filter(c => c.sequence_status === 'Replied' && dialerCooldownReady(c, 48));
@@ -1510,6 +1520,35 @@ function _dialerActionRow(contact, isLast) {
   const bookUrl = `${window.location.origin}/book.html?agent=${currentAgent?.id||''}&cid=${encodeURIComponent(contact.id)}`;
   const skipBtn = `<button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>`;
   const nextBtn = `<button class="btn btn-primary" onclick="dialerNext(true)">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>`;
+
+  const contactDeal = deals.find(function(d) { return d.contact_id === contact.id; });
+  const isWarm = !!contactDeal;
+
+  if (isWarm) {
+    const _wLabels = {'individual-family':'Individual & Family','group-employer':'Group & Employer','agent-kannon':'Career — Kannon','agent-insured':'Career — IA'};
+    const _wPL = _wLabels[contactDeal.pipeline] || contactDeal.pipeline || 'Pipeline';
+    const _wSt = contactDeal.stage || 'In Progress';
+    const _wNx = contactDeal.next_step || '';
+    const callBtnW = contact.phone
+      ? `<button class="btn btn-outline btn-sm" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="font-size:12px;">&#128222; Call</button>`
+      : '';
+    return `<div style="margin-bottom:16px;">`
+      + `<div style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12px;">`
+      + `<span style="color:#10b981;font-weight:700;">&#127807; Pipeline:</span> <span style="color:var(--text-primary);">${_wPL} &#8594; <strong>${_wSt}</strong></span>`
+      + (_wNx ? `<span style="color:var(--muted);"> &nbsp;&middot;&nbsp; Next: ${_wNx}</span>` : '')
+      + `</div>`
+      + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
+      + `<button class="btn btn-primary" style="flex:1;font-size:14px;padding:10px 16px;border-radius:8px;background:#1a3a5c;" onclick="window.open('${bookUrl}','_blank')">&#128197; Book Appointment</button>`
+      + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')">&#129309; Run Intake</button>`
+      + `</div>`
+      + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
+      + callBtnW
+      + `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">&#128140; View / Deal</button>`
+      + `<button class="btn btn-outline btn-sm" onclick="dialerSendBookingLink('${contact.id}')">&#128139; Send Booking</button>`
+      + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
+      + skipBtn + nextBtn
+      + `</div></div>`;
+  }
 
   if (isHot) {
     const callBtnSmall = contact.phone
@@ -2194,6 +2233,8 @@ function renderDialer() {
     : contact.type === 'Group/Employer' ? 'badge-group' : 'badge-individual';
 
   const _signal = _dialerSignal(contact);
+  const _rdDeal = deals.find(function(d) { return d.contact_id === contact.id; });
+  const _rdBorder = _rdDeal ? '#10b981' : 'var(--accent)';
   el.innerHTML = `
     <div style="max-width:700px;margin:0 auto;">
 
@@ -2212,7 +2253,7 @@ function renderDialer() {
       </div>
 
       <!-- Contact card -->
-      <div class="card" style="padding:28px;margin-bottom:16px;border-top:3px solid var(--accent);">
+      <div class="card" style="padding:28px;margin-bottom:16px;border-top:3px solid ${_rdBorder};">
 
         <!-- Header row -->
         <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
@@ -2258,10 +2299,13 @@ function renderDialer() {
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Company</div>
             <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">${contact.company || '—'}</div>
           </div>
-          <div>
+          ${_rdDeal ? `<div>
+            <div style="font-size:10px;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:0.5px;">Pipeline Stage</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">${_rdDeal.stage || '—'}</div>
+          </div>` : `<div>
             <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Sequence step</div>
             <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:3px;">Email ${contact.sequence_step || 0} of 4</div>
-          </div>
+          </div>`}
         </div>
 
         <!-- Action buttons -->
