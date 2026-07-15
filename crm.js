@@ -2439,7 +2439,8 @@ async function showScheduleModal(contactId) {
     });
     if (error) { showToast('Error scheduling: ' + (error.message || error)); return false; }
     var dateLabel = new Date(dt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-    var noteText  = '[Appointment Scheduled • ' + dateLabel + ']\n' + type + (notes ? ' — ' + notes : '');
+    var nowLabel  = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    var noteText  = '[Appointment Scheduled • ' + nowLabel + ']\n' + type + ' on ' + dateLabel + (notes ? ' — ' + notes : '');
     var curNotes  = c.notes || '';
     await supabaseClient.from('contacts').update({
       notes:           noteText + (curNotes ? '\n\n' + curNotes : ''),
