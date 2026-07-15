@@ -7,10 +7,20 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f7f4; color: #1a1a1a; min-height: 100vh; }
-  .header { background: #1a1a2e; color: #fff; padding: 1.5rem 2rem; display: flex; align-items: center; gap: 16px; }
-  .header-logo { width: 40px; height: 40px; background: #c8a96e; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; color: #1a1a2e; flex-shrink: 0; }
-  .header h1 { font-size: 18px; font-weight: 600; }
-  .header p { font-size: 13px; opacity: 0.7; margin-top: 2px; }
+  .header { background: #1a3a5c; padding: 14px 24px; width: 100%; box-sizing: border-box; }
+  .header-inner { display: flex; align-items: center; justify-content: space-between; max-width: 680px; margin: 0 auto; }
+  .header-kfg { display: flex; align-items: center; gap: 12px; }
+  .header-kfg img { width: 52px; height: 52px; display: block; flex-shrink: 0; }
+  .header-kfg h1 { font-size: 13px; font-weight: 700; color: #fff; font-family: Georgia, serif; letter-spacing: 0.5px; margin: 0 0 3px; }
+  .header-kfg p { font-size: 9px; color: #c8a84b; letter-spacing: 2px; font-style: italic; margin: 0; }
+  .header-divider { width: 1px; background: rgba(255,255,255,0.2); align-self: stretch; margin: 0 18px; flex-shrink: 0; }
+  .header-ia { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .header-ia-label { font-size: 9px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 1px; }
+  .header-ia-row { display: flex; align-items: center; gap: 8px; }
+  .header-ia-logo { background: #fff; padding: 3px; line-height: 0; flex-shrink: 0; }
+  .header-ia-logo img { width: 36px; height: 36px; display: block; }
+  .header-ia-name { font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; line-height: 1.3; }
+  .header-ia-motto { font-size: 9px; color: #c8a84b; font-style: italic; margin-top: 2px; white-space: nowrap; }
   .container { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; }
   .card { background: #fff; border-radius: 12px; border: 1px solid #e5e3de; padding: 2rem; margin-bottom: 1.5rem; }
   .card-title { font-size: 15px; font-weight: 600; margin-bottom: 1.25rem; padding-bottom: 12px; border-bottom: 1px solid #f0ede8; color: #1a1a2e; }
@@ -49,10 +59,27 @@
 <body>
 
 <div class="header">
-  <div class="header-logo">K</div>
-  <div>
-    <h1>Kannon Financial Group</h1>
-    <p>Secure Information Form</p>
+  <div class="header-inner">
+    <div class="header-kfg">
+      <img src="https://kannon-crm.vercel.app/kfg_logo_email.png" alt="Kannon Financial Group" onerror="this.style.display='none'">
+      <div>
+        <h1>KANNON FINANCIAL GROUP</h1>
+        <p>&ldquo;Protect &middot; Build &middot; Retire&rdquo;</p>
+      </div>
+    </div>
+    <div class="header-divider"></div>
+    <div class="header-ia">
+      <div class="header-ia-label">In Partnership With</div>
+      <div class="header-ia-row">
+        <div class="header-ia-logo">
+          <img src="https://kannon-crm.vercel.app/ia_logo_email.png" alt="Insured America" onerror="this.style.display='none'">
+        </div>
+        <div>
+          <div class="header-ia-name">THE INSURED<br>AMERICA AGENCY</div>
+          <div class="header-ia-motto">&ldquo;Protect &amp; Build Your Potential&rdquo;</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
