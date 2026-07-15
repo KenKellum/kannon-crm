@@ -2124,7 +2124,7 @@ async function saveIntakeToCRM() {
     }
     await supabaseClient.from('contacts').update(contactUpdates).eq('id', _intakeContactId);
 
-    // 3. Log a note
+    // 3. Log a note (activity_log + contact notes for Last Interaction badge)
     const noteText = '[Intake Form] ' + INTAKE_TYPE_LABELS[_intakeFormType] + ' — completed by agent';
     await supabaseClient.from('activity_log').insert({
       contact_id: _intakeContactId,
@@ -2133,6 +2133,11 @@ async function saveIntakeToCRM() {
       note:       noteText,
       created_at: new Date().toISOString(),
     }).catch(() => {});
+    const _its = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    const _iEntry = '[Intake Completed • ' + _its + ']\n' + (INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType) + ' intake saved to CRM';
+    const _iNewNotes = c.notes ? _iEntry + '\n\n' + c.notes.trim() : _iEntry;
+    await supabaseClient.from('contacts').update({ notes: _iNewNotes }).eq('id', _intakeContactId).catch(() => {});
+    c.notes = _iNewNotes;
 
     // 4. Auto-create pipeline Deal if one doesn't exist for this contact+pipeline
     const _intakePipelineMap = {
@@ -2235,9 +2240,19 @@ async function dialerSendBookingLink(contactId) {
     url.searchParams.set('contact_id', contactId);
     const resp = await fetch(url.toString());
     const data = await resp.json().catch(() => ({}));
-    showToast(data.ok !== false
-      ? '&#128197; Booking link sent to ' + (c.name || c.email) + '!'
-      : 'Error sending booking link — try again');
+    if (data.ok !== false) {
+      showToast('&#128197; Booking link sent to ' + (c.name || c.email) + '!');
+      const ts2 = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      const entry2 = '[Schedule Link Sent • ' + ts2 + ']\nBooking link emailed to ' + (c.name || c.email);
+      const newNotes2 = c.notes ? entry2 + '\n\n' + c.notes.trim() : entry2;
+      await supabaseClient.from('contacts').update({ notes: newNotes2 }).eq('id', contactId).catch(() => {});
+      c.notes = newNotes2;
+      const qi2 = dialerQueue ? dialerQueue.findIndex(x => x.id === contactId) : -1;
+      if (qi2 > -1) dialerQueue[qi2].notes = newNotes2;
+      if (typeof renderDialer === 'function' && dialerQueue && dialerQueue.length) renderDialer();
+    } else {
+      showToast('Error sending booking link — try again');
+    }
   } catch(e) { showToast('Error sending booking link'); }
 }
 
@@ -2419,7 +2434,7 @@ async function showScheduleModal(contactId) {
     });
     if (error) { showToast('Error scheduling: ' + (error.message || error)); return false; }
     var dateLabel = new Date(dt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-    var noteText  = '[Appointment Scheduled] ' + type + ' — ' + dateLabel + (notes ? '\n  ' + notes : '');
+    var noteText  = '[Appointment Scheduled • ' + dateLabel + ']\n' + type + (notes ? ' — ' + notes : '');
     var curNotes  = c.notes || '';
     await supabaseClient.from('contacts').update({
       notes:           noteText + (curNotes ? '\n\n' + curNotes : ''),
