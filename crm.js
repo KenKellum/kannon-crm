@@ -1499,7 +1499,10 @@ function _dialerSignal(contact) {
   const opens = window._dashOpens || [];
   const op = opens.find(o => (o.contact_email || '').toLowerCase() === (contact.email || '').toLowerCase());
   if (contact.sequence_status === 'Replied') {
-    return { icon: 'ti-flame', label: 'Replied to your email', sub: 'Schedule an appointment now', color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.25)' };
+    var _rLines = (contact.notes || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+    var _rCtx = _rLines.find(function(l) { return !l.startsWith('['); }) || '';
+    var _rSub = _rCtx ? _rCtx.slice(0, 150) : 'Check notes below — schedule an appointment or run intake';
+    return { icon: 'ti-flame', label: 'Replied — Ready for next step', sub: _rSub, color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.25)' };
   }
   if (contact.sequence_status === 'Interested') {
     return { icon: 'ti-heart-handshake', label: 'Expressed interest', sub: 'Send intake form or book an appointment', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' };
@@ -1516,51 +1519,68 @@ function _dialerSignal(contact) {
 }
 
 function _dialerActionRow(contact, isLast) {
-  const isHot   = contact.sequence_status === 'Replied' || contact.sequence_status === 'Interested';
-  const bookUrl = `${window.location.origin}/book.html?agent=${currentAgent?.id||''}&cid=${encodeURIComponent(contact.id)}`;
-  const skipBtn = `<button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>`;
-  const nextBtn = `<button class="btn btn-primary" onclick="dialerNext(true)">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>`;
+  const skipBtn  = `<button class="btn btn-outline" onclick="dialerSkip()" style="margin-left:auto;">Skip &rarr;</button>`;
+  const nextBtn  = `<button class="btn btn-primary" onclick="dialerNext(true)">${isLast ? '&#127942; Finish' : 'Next &rarr;'}</button>`;
 
+  // Universal primary buttons — same layout for every lead type
+  const callBig = contact.phone
+    ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="flex:1;font-size:14px;padding:11px 16px;">&#128222; Call</button>`
+    : `<button class="btn btn-outline" disabled style="flex:1;font-size:13px;opacity:0.45;cursor:not-allowed;" title="No phone on file — click Edit to add one">&#128222; No phone &mdash; add in Edit</button>`;
+  const schedBtn = `<button class="btn btn-primary" onclick="showScheduleModal('${contact.id}')" style="flex:1;font-size:14px;padding:11px 16px;background:#1a3a5c;">&#128197; Schedule Appointment</button>`;
+
+  // === PIPELINE (has deal) — WARM ===
   const contactDeal = deals.find(function(d) { return d.contact_id === contact.id; });
-  const isWarm = !!contactDeal;
-
-  if (isWarm) {
+  if (contactDeal) {
     const _wLabels = {'individual-family':'Individual & Family','group-employer':'Group & Employer','agent-kannon':'Career — Kannon','agent-insured':'Career — IA'};
     const _wPL = _wLabels[contactDeal.pipeline] || contactDeal.pipeline || 'Pipeline';
-    const _wSt = contactDeal.stage || 'In Progress';
+    const _wSt = contactDeal.stage || '';
     const _wNx = contactDeal.next_step || '';
-    const callBtnW = contact.phone
-      ? `<button class="btn btn-outline btn-sm" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="font-size:12px;">&#128222; Call</button>`
-      : '';
     return `<div style="margin-bottom:16px;">`
       + `<div style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12px;">`
       + `<span style="color:#10b981;font-weight:700;">&#127807; Pipeline:</span> <span style="color:var(--text-primary);">${_wPL} &#8594; <strong>${_wSt}</strong></span>`
       + (_wNx ? `<span style="color:var(--muted);"> &nbsp;&middot;&nbsp; Next: ${_wNx}</span>` : '')
       + `</div>`
       + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
-      + `<button class="btn btn-primary" style="flex:1;font-size:14px;padding:10px 16px;border-radius:8px;background:#1a3a5c;" onclick="window.open('${bookUrl}','_blank')">&#128197; Book Appointment</button>`
-      + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')">&#129309; Run Intake</button>`
+      + callBig + schedBtn
       + `</div>`
       + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
-      + callBtnW
       + `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">&#128140; View / Deal</button>`
-      + `<button class="btn btn-outline btn-sm" onclick="dialerSendBookingLink('${contact.id}')">&#128139; Send Booking</button>`
+      + `<button class="btn btn-outline btn-sm" onclick="dialerSendBookingLink('${contact.id}')" title="Email the prospect a self-scheduling link">&#128139; Send Schedule Link</button>`
+      + `<button class="btn btn-outline btn-sm" onclick="showIntakeForm('${contact.id}')">&#129309; Run Intake</button>`
       + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
       + skipBtn + nextBtn
       + `</div></div>`;
   }
 
-  if (isHot) {
-    const callBtnSmall = contact.phone
-      ? `<button class="btn btn-outline" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="font-size:12px;">&#128222; Call</button>`
-      : '';
+  // === EMAIL OPENED — HOT SIGNAL ===
+  const opens = window._dashOpens || [];
+  const hasOpen = contact.email && opens.some(function(o) { return (o.contact_email||'').toLowerCase() === contact.email.toLowerCase(); });
+  if (hasOpen) {
+    const callHot = contact.phone
+      ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="flex:1;font-size:14px;padding:11px 16px;background:#0f766e;">&#128222; Call &#8212; They Opened!</button>`
+      : `<button class="btn btn-outline" disabled style="flex:1;opacity:0.45;" title="No phone on file">&#128222; No phone &mdash; add in Edit</button>`;
     return `<div style="margin-bottom:16px;">`
       + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
-      + `<button class="btn btn-primary" style="background:#1a3a5c;flex:1;font-size:14px;padding:10px 16px;border-radius:8px;" onclick="window.open('${bookUrl}','_blank')">&#128197; Book Appointment</button>`
-      + `<button class="btn btn-outline" style="border-color:#1a3a5c;color:#1a3a5c;" onclick="dialerSendBookingLink('${contact.id}')">&#128139; Send Link</button>`
+      + callHot + schedBtn
       + `</div>`
       + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
-      + callBtnSmall
+      + `<button class="btn btn-outline btn-sm" style="border-color:#1a3a5c;color:#1a3a5c;" onclick="dialerMarkInterested('${contact.id}')">&#10003; Mark Replied</button>`
+      + `<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')">&#129309; Interested</button>`
+      + `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">&#128140; View</button>`
+      + `<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')">&#10006; Not Interested</button>`
+      + skipBtn + nextBtn
+      + `</div></div>`;
+  }
+
+  // === HOT — Replied/Interested, no deal yet ===
+  const isHot = contact.sequence_status === 'Replied' || contact.sequence_status === 'Interested';
+  if (isHot) {
+    return `<div style="margin-bottom:16px;">`
+      + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
+      + callBig + schedBtn
+      + `</div>`
+      + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
+      + `<button class="btn btn-outline btn-sm" onclick="dialerSendBookingLink('${contact.id}')" title="Email the prospect a self-scheduling link">&#128139; Send Schedule Link</button>`
       + `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">&#128140; View</button>`
       + `<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')">&#10006; Not Interested</button>`
       + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
@@ -1568,37 +1588,18 @@ function _dialerActionRow(contact, isLast) {
       + `</div></div>`;
   }
 
-  const opens = window._dashOpens || [];
-  const hasOpen = contact.email && opens.some(function(o) { return (o.contact_email||'').toLowerCase() === contact.email.toLowerCase(); });
-
-  if (hasOpen) {
-    const callBtnBig = contact.phone
-      ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="flex:1;font-size:15px;padding:12px 16px;background:#0f766e;">&#128222; Call &#8212; They Opened!</button>`
-      : `<button class="btn btn-outline" disabled style="flex:1;opacity:0.45;cursor:not-allowed;">&#128222; No phone on file</button>`;
-    return `<div style="margin-bottom:16px;">`
-      + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
-      + callBtnBig
-      + `<button class="btn btn-outline" style="border-color:#1a3a5c;color:#1a3a5c;" onclick="dialerMarkInterested('${contact.id}')">&#10003; Mark as Replied</button>`
-      + `</div>`
-      + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
-      + `<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')">&#129309; Interested</button>`
-      + `<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')">&#10006; Not Interested</button>`
-      + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
-      + skipBtn + nextBtn
-      + `</div></div>`;
-  }
-
-  const callBtn = contact.phone
-    ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" >&#128222; Call</button>`
-    : `<button class="btn btn-outline" disabled style="opacity:0.45;cursor:not-allowed;">&#128222; No phone</button>`;
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">`
-    + callBtn
-    + `<button class="btn btn-accent" onclick="viewContact('${contact.id}','')">&#128140; View / Email</button>`
-    + `<button class="btn btn-outline" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')" title="Open Intake Form">&#129309; Interested</button>`
-    + `<button class="btn btn-outline" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')" title="Mark as Not Interested">&#10006; Not Interested</button>`
-    + `<button class="btn btn-outline" style="font-size:11px;color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')" title="Reset this contact's status">&#8635; Reset Status</button>`
+  // === DEFAULT — cold/active lead ===
+  return `<div style="margin-bottom:16px;">`
+    + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
+    + callBig
+    + `<button class="btn btn-primary" onclick="viewContact('${contact.id}','')" style="flex:1;font-size:14px;padding:11px 16px;background:#0e7490;">&#128140; View / Email</button>`
+    + `</div>`
+    + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
+    + `<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')">&#129309; Interested</button>`
+    + `<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')">&#10006; Not Interested</button>`
+    + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
     + skipBtn + nextBtn
-    + `</div>`;
+    + `</div></div>`;
 }
 
 async function showNotInterested(contactId) {
@@ -2249,7 +2250,7 @@ function renderDialer() {
             <div style="height:5px;background:var(--accent);border-radius:3px;width:${progress}%;transition:width 0.35s ease;"></div>
           </div>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="showPage('dashboard')">End session</button>
+        <button class="btn btn-outline btn-sm" onclick="endDialerSession()">End session</button>
       </div>
 
       <!-- Contact card -->
@@ -2327,6 +2328,67 @@ function renderDialer() {
         </div>
       </div>
     </div>`;
+}
+
+function endDialerSession() {
+  if (!confirm('End this session?')) return;
+  dialerQueue = [];
+  dialerIndex = 0;
+  startDialerSession();
+}
+
+async function showScheduleModal(contactId) {
+  const c = contacts.find(function(x) { return x.id === contactId; });
+  if (!c) return;
+  var tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+  tomorrow.setHours(10, 0, 0, 0);
+  var defDt = tomorrow.toISOString().slice(0, 16);
+  var apptTypes = ['Discovery Call','Needs Assessment','Quote Review','Policy Review','Group Presentation','Follow Up Call','Annual Review'];
+  showModal('&#128197; Schedule Appointment — ' + (c.name || 'Contact'), `
+    <div style="display:flex;flex-direction:column;gap:14px;padding-top:4px;">
+      <div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Date &amp; Time</label>
+        <input type="datetime-local" id="sched-dt" value="${defDt}" style="width:100%;margin-top:6px;" />
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Appointment Type</label>
+        <select id="sched-type" style="width:100%;margin-top:6px;">
+          ${apptTypes.map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Notes (optional)</label>
+        <textarea id="sched-notes" rows="3" placeholder="What is this appointment for? Any context..." style="width:100%;margin-top:6px;resize:vertical;"></textarea>
+      </div>
+    </div>
+  `, async function() {
+    var dt    = document.getElementById('sched-dt').value;
+    var type  = document.getElementById('sched-type').value;
+    var notes = document.getElementById('sched-notes').value.trim();
+    if (!dt) { showToast('Please select a date and time'); return false; }
+    var { error } = await supabaseClient.from('booking_intents').insert({
+      agent_id:          currentAgent ? currentAgent.id : null,
+      contact_id:        contactId,
+      contact_name:      c.name || '',
+      appointment_type:  type,
+      appointment_label: type,
+      scheduled_at:      new Date(dt).toISOString(),
+      status:            'confirmed',
+      agent_notes:       notes,
+    });
+    if (error) { showToast('Error scheduling: ' + (error.message || error)); return false; }
+    var dateLabel = new Date(dt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    var noteText  = '[Appointment Scheduled] ' + type + ' — ' + dateLabel + (notes ? '\n  ' + notes : '');
+    var curNotes  = c.notes || '';
+    await supabaseClient.from('contacts').update({
+      notes:           noteText + (curNotes ? '\n\n' + curNotes : ''),
+      sequence_status: 'Replied',
+    }).eq('id', contactId);
+    var ci = contacts.findIndex(function(x) { return x.id === contactId; });
+    if (ci > -1) { contacts[ci].notes = noteText + (curNotes ? '\n\n' + curNotes : ''); contacts[ci].sequence_status = 'Replied'; }
+    showToast('&#128197; Appointment scheduled — ' + dateLabel);
+    dialerNext();
+  }, { confirmLabel: '&#128197; Confirm Appointment' });
 }
 
 async function dialerMarkInterested(contactId) {
