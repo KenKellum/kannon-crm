@@ -2431,17 +2431,32 @@ async function showScheduleModal(contactId) {
     var type  = document.getElementById('sched-type').value;
     var notes = document.getElementById('sched-notes').value.trim();
     if (!dt) { showToast('Please select a date and time'); return false; }
-    var { error } = await supabaseClient.from('booking_intents').insert({
+    var dtIso = new Date(dt).toISOString();
+    var { data: _bi, error } = await supabaseClient.from('booking_intents').insert({
       agent_id:          currentAgent ? currentAgent.id : null,
       contact_id:        contactId,
       contact_name:      c.name || '',
       appointment_type:  type,
       appointment_label: type,
-      scheduled_at:      new Date(dt).toISOString(),
+      scheduled_at:      dtIso,
       status:            'confirmed',
       agent_notes:       notes,
-    });
+    }).select().single();
     if (error) { showToast('Error scheduling: ' + (error.message || error)); return false; }
+    // Send confirmation email via Apps Script (same handler as calendar apptSchedule)
+    if (c.email && _bi) {
+      try {
+        var _ceurl = new URL(APPS_SCRIPT_URL);
+        _ceurl.searchParams.set('action',            'appointment_confirm');
+        _ceurl.searchParams.set('agent_id',          currentAgent ? currentAgent.id : '');
+        _ceurl.searchParams.set('booking_intent_id', _bi.id);
+        _ceurl.searchParams.set('to',                c.email);
+        _ceurl.searchParams.set('to_name',           c.name || '');
+        _ceurl.searchParams.set('datetime_iso',      dtIso);
+        if (notes) _ceurl.searchParams.set('notes', notes);
+        fetch(_ceurl.toString()); // non-blocking
+      } catch(_) {}
+    }
     var dateLabel = new Date(dt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
     var noteText  = '[Appointment Scheduled • ' + dateLabel + ']\n' + type + (notes ? ' — ' + notes : '');
     var curNotes  = c.notes || '';
@@ -2451,7 +2466,7 @@ async function showScheduleModal(contactId) {
     }).eq('id', contactId);
     var ci = contacts.findIndex(function(x) { return x.id === contactId; });
     if (ci > -1) { contacts[ci].notes = noteText + (curNotes ? '\n\n' + curNotes : ''); contacts[ci].sequence_status = 'Replied'; }
-    showToast('&#128197; Appointment scheduled — ' + dateLabel);
+    showToast('&#128197; Appointment confirmed' + (c.email ? ' — confirmation sent to ' + (c.name || c.email) : '') + '!');
     dialerNext();
   }, { confirmLabel: '&#128197; Confirm Appointment' });
 }
