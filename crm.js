@@ -23,6 +23,7 @@ let campaignTab = 'drip';
 let campaignItemsMap = {};
 let currentUser = null;
 let currentAgent = null;        // agents table row
+let _appInitialized = false;    // prevents re-init on token refresh
 let currentAgentCompanies = []; // company names agent belongs to
 let allAgents = [];             // for admin panel + dropdowns
 let allAgencies = [];
@@ -64,11 +65,14 @@ async function init() {
   }
 
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session) {
-      currentUser = session.user;
+    if (session) currentUser = session.user; // always keep currentUser fresh
+    if (event === 'SIGNED_OUT') { _appInitialized = false; return; }
+    if (event === 'SIGNED_IN' && session && !_appInitialized) {
+      _appInitialized = true;
       await loadAgentProfile();
       if (currentAgent) { showApp(); } else { showAuthError('Your account is not set up in the CRM yet. Contact Ken to be added.'); }
     }
+    // TOKEN_REFRESHED / USER_UPDATED — currentUser already updated above, no re-init needed
   });
 }
 
@@ -1526,7 +1530,7 @@ function _dialerActionRow(contact, isLast) {
   const callBig = contact.phone
     ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="flex:1;font-size:14px;padding:11px 16px;">&#128222; Call</button>`
     : `<button class="btn btn-outline" disabled style="flex:1;font-size:13px;opacity:0.45;cursor:not-allowed;" title="No phone on file — click Edit to add one">&#128222; No phone &mdash; add in Edit</button>`;
-  const schedBtn = `<button class="btn btn-primary" onclick="showScheduleModal('${contact.id}')" style="flex:1;font-size:14px;padding:11px 16px;background:#1a3a5c;">&#128197; Schedule Appointment</button>`;
+  const schedBtn = `<button class="btn btn-primary" onclick="showScheduleModal('${contact.id}')" style="flex:1;font-size:14px;padding:11px 16px;background:#1a3a5c;color:#fff;">&#128197; Schedule Appointment</button>`;
 
   // === PIPELINE (has deal) — WARM ===
   const contactDeal = deals.find(function(d) { return d.contact_id === contact.id; });
@@ -2331,9 +2335,9 @@ function renderDialer() {
 }
 
 function endDialerSession() {
-  if (!confirm('End this session?')) return;
   dialerQueue = [];
   dialerIndex = 0;
+  showPage('dashboard');
   startDialerSession();
 }
 
