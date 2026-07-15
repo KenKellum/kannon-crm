@@ -303,6 +303,12 @@ async function submitForm(e, sessionId, contactId, formType) {
     body: JSON.stringify({ responses, status: 'completed', completed_at: now })
   });
 
+  // Auto-create pipeline Deal (server-side via RPC to bypass RLS)
+  await supa('/rest/v1/rpc/create_deal_from_intake', {
+    method: 'POST',
+    body: JSON.stringify({ p_session_id: sessionId })
+  });
+
   if (contactId) {
     const contactUpdate = { sequence_status: 'Interested' };
     if (responses.email) contactUpdate.email = responses.email;

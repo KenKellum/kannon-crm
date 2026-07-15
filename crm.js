@@ -2055,7 +2055,31 @@ async function saveIntakeToCRM() {
       created_at: new Date().toISOString(),
     }).catch(() => {});
 
-    showToast('✓ Intake saved — ' + (c.name || 'Contact') + ' marked Interested');
+    // 4. Auto-create pipeline Deal if one doesn't exist for this contact+pipeline
+    const _intakePipelineMap = {
+      health_individual: { pipeline: 'individual-family', stage: 'Needs Assessment' },
+      health_family:     { pipeline: 'individual-family', stage: 'Needs Assessment' },
+      life_individual:   { pipeline: 'individual-family', stage: 'Needs Assessment' },
+      health_group:      { pipeline: 'group-employer',    stage: 'Discovery Call' },
+      career_new:        { pipeline: 'agent-kannon',      stage: 'Interested' },
+      career_existing:   { pipeline: 'agent-kannon',      stage: 'Interested' },
+    };
+    const _idest = _intakePipelineMap[_intakeFormType] || { pipeline: 'individual-family', stage: 'Needs Assessment' };
+    const _ialready = deals.some(function(d) { return d.contact_id === _intakeContactId && d.pipeline === _idest.pipeline; });
+    if (!_ialready) {
+      const _ititle = c.company || c.name || 'New Deal';
+      const { data: _inewDeal, error: _idealErr } = await supabaseClient.from('deals').insert({
+        title:      _ititle,
+        pipeline:   _idest.pipeline,
+        stage:      _idest.stage,
+        contact_id: _intakeContactId,
+        user_id:    currentUser ? currentUser.id : null,
+        notes:      'Auto-created from intake form (' + _intakeFormType + ')',
+      }).select().single();
+      if (!_idealErr && _inewDeal) deals.unshift(_inewDeal);
+    }
+
+    showToast('✓ Intake saved — ' + (c.name || 'Contact') + ' added to pipeline');
     closeIntakeForm();
     dialerNext();
   } catch(e) {
