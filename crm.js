@@ -2219,6 +2219,11 @@ async function sendIntakeLink() {
     if (!res.ok) throw new Error('HTTP ' + res.status + ' from mail server');
 
     showToast('✓ Intake link sent to ' + c.email);
+    const _ilts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    const _ilEntry = '[Intake Link Sent • ' + _ilts + ']\n' + (INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType) + ' form emailed to client';
+    const _ilNewNotes = c.notes ? _ilEntry + '\n\n' + c.notes.trim() : _ilEntry;
+    await supabaseClient.from('contacts').update({ notes: _ilNewNotes }).eq('id', _intakeContactId).catch(() => {});
+    c.notes = _ilNewNotes;
     closeIntakeForm();
   } catch(e) {
     showToast('Error sending link: ' + (e.message || e));
