@@ -761,65 +761,74 @@ function renderDashboardAgent() {
       </div>
     </div>
 
-    <div class="dash-card" style="margin-bottom:10px;display:flex;flex-direction:column;">
-      ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
-      ${hotLeads.length === 0
-        ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
-        : '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0;">'
-          + hotLeads.slice(0, 6).map(c => {
-              const noteLines   = (c.notes || '').trim().split('\n');
-              const noteSnippet = noteLines.find(l => l.trim() && !l.startsWith('[')) || '';
-              const stepCtx     = c.sequence_step ? 'After Email ' + c.sequence_step : '';
-              return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border);">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
-                  <div style="flex:1;min-width:0;">
-                    <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || '&#8212;'}</div>
-                    <div style="font-size:11px;color:var(--text-muted);">${c.company || c.email || '&#8212;'}</div>
+    <div class="dash-grid" style="align-items:stretch;margin-bottom:10px;">
+
+      <div style="display:grid;grid-template-rows:1fr 1fr;gap:10px;">
+        <div class="dash-card" style="overflow:auto;">
+          ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
+          ${todayAppts.length === 0
+            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-calendar" style="font-size:22px;display:block;margin-bottom:4px;"></i>No appointments today</div>
+               <div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="shareBookingLink()">Share booking link</button></div>`
+            : todayAppts.map(a => {
+                const apptName = a.prospect_name || a.name || 'Appointment';
+                const apptTime = a.start_time
+                  ? new Date(a.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                  : (a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
+                const apptType = a.appointment_type || a.type || '';
+                return `<div class="action-item" style="padding:6px 0;">
+                  <div class="action-item-info">
+                    <div class="action-item-name" style="font-size:12px;">${apptName}</div>
+                    <div class="action-item-sub">${apptTime}${apptType ? ' &middot; ' + apptType : ''}</div>
                   </div>
-                  <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;background:${c.sequence_status==='Interested'?'rgba(251,191,36,0.15)':'rgba(52,211,153,0.15)'};color:${c.sequence_status==='Interested'?'#f59e0b':'#34d399'};">${c.sequence_status}</span>
-                </div>
-                <div style="margin:6px 0 0 36px;display:flex;gap:6px;">
-                  <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="logOutreach('${c.id}','Phone Call','')">&#128222; Log call</button>
-                  <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewContact('${c.id}','')">View &rarr;</button>
-                </div>
-              </div>`;
-            }).join('')
-          + '</div>'}
-      ${hotLeads.length > 0 ? `<div style="margin-top:10px;display:flex;gap:8px;">
-        ${hotLeads.length > 6 ? `<button class="btn btn-outline btn-sm" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button>` : ''}
-        <button class="btn btn-primary btn-sm" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button>
-      </div>` : ''}
-    </div>
-
-    ${!currentAgent.gmail_connected ? `<div class="dash-card" style="margin-bottom:10px;border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
-      ${_ctitle('ti-mail', 'Gmail not connected')}
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Connect Gmail to send outreach emails directly from Kannon.</div>
-      <button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>
-    </div>` : ''}
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div class="dash-card">
-        ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
-        ${todayAppts.length === 0
-          ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-calendar" style="font-size:22px;display:block;margin-bottom:4px;"></i>No appointments today</div>
-             <div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="shareBookingLink()">Share booking link</button></div>`
-          : todayAppts.map(a => {
-              const apptName = a.prospect_name || a.name || 'Appointment';
-              const apptTime = a.start_time
-                ? new Date(a.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-                : (a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
-              const apptType = a.appointment_type || a.type || '';
-              return `<div class="action-item" style="padding:6px 0;">
-                <div class="action-item-info">
-                  <div class="action-item-name" style="font-size:12px;">${apptName}</div>
-                  <div class="action-item-sub">${apptTime}${apptType ? ' &middot; ' + apptType : ''}</div>
-                </div>
-                <span class="badge badge-active">Today</span>
-              </div>`;
-            }).join('')}
+                  <span class="badge badge-active">Today</span>
+                </div>`;
+              }).join('')}
+        </div>
+        ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : '<div class="dash-card"></div>'}
       </div>
-      ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : '<div class="dash-card"></div>'}
+
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div class="dash-card" style="flex:1;display:flex;flex-direction:column;overflow:auto;">
+          ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
+          ${hotLeads.length === 0
+            ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
+            : hotLeads.slice(0, 8).map(c => {
+                const noteLines   = (c.notes || '').trim().split('\n');
+                const noteSnippet = noteLines.find(l => l.trim() && !l.startsWith('[')) || '';
+                const stepCtx     = c.sequence_step ? 'After Email ' + c.sequence_step : '';
+                return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border);">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || '&#8212;'}</div>
+                      <div style="font-size:11px;color:var(--text-muted);">${c.company || c.email || '&#8212;'}</div>
+                    </div>
+                    <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;background:${c.sequence_status==='Interested'?'rgba(251,191,36,0.15)':'rgba(52,211,153,0.15)'};color:${c.sequence_status==='Interested'?'#f59e0b':'#34d399'};">${c.sequence_status}</span>
+                  </div>
+                  ${stepCtx || noteSnippet
+                    ? '<div style="margin:4px 0 0 36px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">'
+                      + (stepCtx ? '<span style="font-size:10px;background:rgba(99,102,241,0.12);color:#818cf8;border-radius:6px;padding:1px 6px;white-space:nowrap;">' + stepCtx + '</span>' : '')
+                      + (noteSnippet ? '<span style="font-size:11px;color:var(--text-muted);">' + (noteSnippet.length > 60 ? noteSnippet.slice(0, 60) + '...' : noteSnippet) + '</span>' : '')
+                      + '</div>'
+                    : ''}
+                  <div style="margin:6px 0 0 36px;display:flex;gap:6px;">
+                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="logOutreach('${c.id}','Phone Call','')">&#128222; Log call</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewContact('${c.id}','')">View contact &rarr;</button>
+                  </div>
+                </div>`;
+              }).join('')}
+          ${hotLeads.length > 0 ? `<div style="margin-top:auto;padding-top:8px;">
+            ${hotLeads.length > 8 ? `<button class="btn btn-outline btn-sm btn-full" style="margin-bottom:6px;" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button>` : ''}
+            <button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button>
+          </div>` : ''}
+        </div>
+        ${!currentAgent.gmail_connected ? `<div class="dash-card" style="border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
+          ${_ctitle('ti-mail', 'Gmail not connected')}
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Connect Gmail to send outreach emails directly from Kannon.</div>
+          <button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>
+        </div>` : ''}
+      </div>
+
     </div>
 
     <div class="dash-card" style="margin-top:0;">
