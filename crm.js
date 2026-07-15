@@ -221,7 +221,7 @@ const PAGE_TITLES = {
 };
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments','oversight'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -239,6 +239,7 @@ function showPage(page) {
   if (page === 'dialer')       renderDialer();
   if (page === 'settings')     renderSettings();
   if (page === 'appointments') renderAppointments();
+  if (page === 'oversight')    renderOversight();
 }
 
 // ============================================================
@@ -269,6 +270,7 @@ function renderSidebarNav() {
       ]},
       { label: 'Agency & team', items: [
         { icon: 'ti-building-community', text: 'Agencies & agents', page: 'admin',   badge: b.inactiveAgents || null, badgeType: 'red' },
+        { icon: 'ti-alert-triangle',     text: 'Oversight',         page: 'oversight' },
       ]},
       { label: 'Funnels', items: [
         { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
@@ -293,7 +295,8 @@ function renderSidebarNav() {
       ]},
       { label: 'Team', items: [
         { icon: 'ti-building-community', text: 'Agents & hiring',  page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
-        { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
+        { icon: 'ti-alert-triangle',     text: 'Oversight',        page: 'oversight' },
+        { icon: 'ti-shield-check',       text: 'Compliance',       page: 'compliance'},
       ]},
       { label: 'Account', items: [
         { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
@@ -312,6 +315,7 @@ function renderSidebarNav() {
         { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'Compliance', items: [
+        { icon: 'ti-alert-triangle',   text: 'Oversight',          page: 'oversight' },
         { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
       ]},
       { label: 'Account', items: [
@@ -5644,6 +5648,212 @@ async function saveSettings() {
   if (ndEl) ndEl.textContent = currentAgent.name;
 
   showToast('✓ Settings saved!');
+}
+
+// ============================================================
+// OVERSIGHT DASHBOARD
+// ============================================================
+async function renderOversight() {
+  const pg = document.getElementById('page-oversight');
+  if (!pg) return;
+
+  const now = new Date();
+  const STALE_SEQ_DAYS  = 5;
+  const STALE_DEAL_DAYS = 7;
+  const WEB_LEAD_DAYS   = 30;
+
+  function daysSince(ds) {
+    if (!ds) return 999;
+    return Math.floor((now - new Date(ds)) / 86400000);
+  }
+  function daysLabel(n) {
+    if (n >= 999) return 'Never contacted';
+    if (n === 0) return 'Today';
+    if (n === 1) return '1 day ago';
+    return n + ' days ago';
+  }
+  function agentLabel(agentId) {
+    var a = allAgents.find(function(ag) { return ag.id === agentId; });
+    return a ? a.name : '—';
+  }
+
+  var isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner';
+  var FINAL_STAGES = ['Enrolled', 'Active Client', 'Contracted', 'Active Agent'];
+
+  // ── EXCEPTION SETS ──
+  var webLeads = contacts.filter(function(c) {
+    return c.sequence_status === 'not started'
+      && c.notes && c.notes.includes('[Web Lead')
+      && daysSince(c.created_at) <= WEB_LEAD_DAYS;
+  }).sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+
+  var stalledSeq = contacts.filter(function(c) {
+    return c.sequence_status === 'Active' && daysSince(c.last_called_at) >= STALE_SEQ_DAYS;
+  }).sort(function(a, b) { return daysSince(b.last_called_at) - daysSince(a.last_called_at); });
+
+  var dripContacts = contacts.filter(function(c) { return c.sequence_status === 'Drip'; })
+    .sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+
+  var actByDeal = {};
+  dealActivities.forEach(function(act) {
+    if (!actByDeal[act.deal_id] || new Date(act.created_at) > new Date(actByDeal[act.deal_id])) {
+      actByDeal[act.deal_id] = act.created_at;
+    }
+  });
+
+  var stalledDeals = deals.filter(function(d) {
+    if (FINAL_STAGES.includes(d.stage)) return false;
+    return daysSince(actByDeal[d.id] || d.created_at) >= STALE_DEAL_DAYS;
+  }).sort(function(a, b) {
+    return daysSince(actByDeal[b.id] || b.created_at) - daysSince(actByDeal[a.id] || a.created_at);
+  });
+
+  var totalExceptions = webLeads.length + stalledSeq.length + stalledDeals.length;
+
+  pg.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h2 class="section-title" style="margin-bottom:4px;">&#9888;&#65039; Oversight Dashboard</h2>
+        <div style="font-size:13px;color:var(--text-muted);">${isOwner ? 'Team-wide exceptions that need a human decision.' : 'Your exceptions that need attention.'}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="renderOversight()"><i class="ti ti-refresh"></i> Refresh</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
+      <div class="stat-card" style="border-left-color:#ef4444;background:rgba(239,68,68,0.05);cursor:pointer;" onclick="document.getElementById('ov-web').scrollIntoView({behavior:'smooth'})">
+        <div class="stat-num" style="color:#ef4444;">${webLeads.length}</div>
+        <div class="stat-label">Web leads untouched</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#f59e0b;background:rgba(245,158,11,0.05);cursor:pointer;" onclick="document.getElementById('ov-seq').scrollIntoView({behavior:'smooth'})">
+        <div class="stat-num" style="color:#f59e0b;">${stalledSeq.length}</div>
+        <div class="stat-label">Stalled in sequence</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#3b82f6;background:rgba(59,130,246,0.05);cursor:pointer;" onclick="document.getElementById('ov-drip').scrollIntoView({behavior:'smooth'})">
+        <div class="stat-num" style="color:#3b82f6;">${dripContacts.length}</div>
+        <div class="stat-label">In drip campaign</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#8b5cf6;background:rgba(139,92,246,0.05);cursor:pointer;" onclick="document.getElementById('ov-deals').scrollIntoView({behavior:'smooth'})">
+        <div class="stat-num" style="color:#8b5cf6;">${stalledDeals.length}</div>
+        <div class="stat-label">Stalled pipeline deals</div>
+      </div>
+    </div>
+
+    ${totalExceptions === 0 && dripContacts.length === 0 ? `
+    <div class="dash-card" style="text-align:center;padding:48px 24px;">
+      <div style="font-size:40px;margin-bottom:12px;">&#10003;</div>
+      <div style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">All clear!</div>
+      <div style="font-size:13px;color:var(--text-muted);">No exceptions right now. Check back later.</div>
+    </div>` : ''}
+
+    <div id="ov-web" class="dash-card" style="margin-bottom:16px;">
+      <div class="dash-card-title" style="color:#ef4444;"><i class="ti ti-world"></i>New Web Leads — Untouched
+        <span style="margin-left:8px;font-size:11px;font-weight:700;background:rgba(239,68,68,0.12);color:#ef4444;padding:2px 8px;border-radius:10px;">${webLeads.length}</span>
+        <span style="margin-left:6px;font-size:11px;font-weight:400;color:var(--text-muted);">(last ${WEB_LEAD_DAYS} days, sequence not started)</span>
+      </div>
+      ${webLeads.length === 0
+        ? '<div style="padding:16px 0;font-size:13px;color:var(--text-muted);text-align:center;">No untouched web leads &#10003;</div>'
+        : webLeads.map(function(c) {
+            var srcMatch = c.notes ? c.notes.match(/Source: ([^\n]+)/) : null;
+            var src = srcMatch ? srcMatch[1] : 'web';
+            var daysOld = daysSince(c.created_at);
+            var ageColor = daysOld === 0 ? '#ef4444' : daysOld <= 2 ? '#ef4444' : '#f59e0b';
+            var ageStr = daysOld === 0 ? 'Today' : daysOld === 1 ? '1 day ago' : daysOld + ' days ago';
+            return '<div class="action-item" style="border:0.5px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:8px;background:rgba(239,68,68,0.02);">'
+              + '<div class="action-item-info">'
+              + '<div class="action-item-name" style="cursor:pointer;display:flex;align-items:center;gap:8px;" onclick="viewContact(\'' + c.id + '\')">'
+              + (c.name || '(no name)')
+              + '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(239,68,68,0.12);color:#ef4444;">Web Lead</span>'
+              + '</div>'
+              + '<div class="action-item-sub" style="margin-top:3px;">'
+              + (c.phone ? c.phone + ' &middot; ' : '') + src
+              + ' &middot; <strong style="color:' + ageColor + ';">' + ageStr + '</strong>'
+              + (isOwner && c.agent_id ? ' &middot; Agent: <strong>' + agentLabel(c.agent_id) + '</strong>' : '')
+              + '</div></div>'
+              + '<button class="btn btn-primary btn-sm" onclick="viewContact(\'' + c.id + '\')"><i class="ti ti-phone"></i> Work Lead</button>'
+              + '</div>';
+          }).join('')
+      }
+    </div>
+
+    <div id="ov-seq" class="dash-card" style="margin-bottom:16px;">
+      <div class="dash-card-title" style="color:#f59e0b;"><i class="ti ti-clock-pause"></i>Stalled in Sequence
+        <span style="margin-left:8px;font-size:11px;font-weight:700;background:rgba(245,158,11,0.12);color:#f59e0b;padding:2px 8px;border-radius:10px;">${stalledSeq.length}</span>
+        <span style="margin-left:6px;font-size:11px;font-weight:400;color:var(--text-muted);">(Active, no action in ${STALE_SEQ_DAYS}+ days)</span>
+      </div>
+      ${stalledSeq.length === 0
+        ? '<div style="padding:16px 0;font-size:13px;color:var(--text-muted);text-align:center;">No stalled sequence contacts &#10003;</div>'
+        : stalledSeq.map(function(c) {
+            var stale = daysSince(c.last_called_at);
+            return '<div class="action-item" style="border:0.5px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:8px;background:rgba(245,158,11,0.02);">'
+              + '<div class="action-item-info">'
+              + '<div class="action-item-name" style="cursor:pointer;" onclick="viewContact(\'' + c.id + '\')">' + (c.name || '(no name)') + '</div>'
+              + '<div class="action-item-sub" style="margin-top:3px;">'
+              + 'Last contacted: <strong style="color:#f59e0b;">' + daysLabel(stale) + '</strong>'
+              + ' &middot; ' + (c.type || '—')
+              + (isOwner && c.agent_id ? ' &middot; Agent: <strong>' + agentLabel(c.agent_id) + '</strong>' : '')
+              + '</div></div>'
+              + '<button class="btn btn-outline btn-sm" onclick="viewContact(\'' + c.id + '\')"><i class="ti ti-eye"></i> View</button>'
+              + '</div>';
+          }).join('')
+      }
+    </div>
+
+    <div id="ov-drip" class="dash-card" style="margin-bottom:16px;">
+      <div class="dash-card-title" style="color:#3b82f6;"><i class="ti ti-send"></i>Drip Campaign Contacts
+        <span style="margin-left:8px;font-size:11px;font-weight:700;background:rgba(59,130,246,0.12);color:#3b82f6;padding:2px 8px;border-radius:10px;">${dripContacts.length}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:10px 12px;background:var(--surface-1);border-radius:8px;border-left:3px solid #3b82f6;margin-bottom:${dripContacts.length > 0 ? '14px' : '0'};">
+        <strong style="color:var(--text-primary);">Goal: Indefinite drip until opt-out.</strong>
+        These contacts completed the main 4-email sequence. They should continue receiving drip content indefinitely.
+        If you are running low on drip emails, this count is your signal to write more.
+        <button class="btn btn-outline btn-sm" style="margin-left:10px;" onclick="showPage('campaigns')"><i class="ti ti-send"></i> Manage Drip Content</button>
+      </div>
+      ${dripContacts.length === 0
+        ? '<div style="padding:8px 0 4px;font-size:13px;color:var(--text-muted);text-align:center;">No contacts in drip campaign yet.</div>'
+        : dripContacts.slice(0, 10).map(function(c) {
+            return '<div class="action-item" style="border:0.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:6px;">'
+              + '<div class="action-item-info">'
+              + '<div class="action-item-name" style="cursor:pointer;font-size:13px;" onclick="viewContact(\'' + c.id + '\')">' + (c.name || '(no name)') + '</div>'
+              + '<div class="action-item-sub">' + (c.type || '—')
+              + (isOwner && c.agent_id ? ' &middot; ' + agentLabel(c.agent_id) : '')
+              + '</div></div>'
+              + '<button class="btn btn-outline btn-sm" onclick="viewContact(\'' + c.id + '\')"><i class="ti ti-eye"></i></button>'
+              + '</div>';
+          }).join('')
+          + (dripContacts.length > 10 ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:8px 0;">+ ' + (dripContacts.length - 10) + ' more in drip campaign</div>' : '')
+      }
+    </div>
+
+    <div id="ov-deals" class="dash-card" style="margin-bottom:16px;">
+      <div class="dash-card-title" style="color:#8b5cf6;"><i class="ti ti-layout-kanban"></i>Stalled Pipeline Deals
+        <span style="margin-left:8px;font-size:11px;font-weight:700;background:rgba(139,92,246,0.12);color:#8b5cf6;padding:2px 8px;border-radius:10px;">${stalledDeals.length}</span>
+        <span style="margin-left:6px;font-size:11px;font-weight:400;color:var(--text-muted);">(no activity in ${STALE_DEAL_DAYS}+ days)</span>
+      </div>
+      ${stalledDeals.length === 0
+        ? '<div style="padding:16px 0;font-size:13px;color:var(--text-muted);text-align:center;">No stalled pipeline deals &#10003;</div>'
+        : stalledDeals.map(function(d) {
+            var lastAct = actByDeal[d.id] || d.created_at;
+            var stale = daysSince(lastAct);
+            var pName = (PIPELINES[d.pipeline] && PIPELINES[d.pipeline].name) || d.pipeline || '—';
+            var contact = contacts.find(function(c) { return c.id === d.contact_id; });
+            return '<div class="action-item" style="border:0.5px solid #e9d5ff;border-radius:8px;padding:10px 14px;margin-bottom:8px;background:rgba(139,92,246,0.02);">'
+              + '<div class="action-item-info">'
+              + '<div class="action-item-name" style="cursor:pointer;display:flex;align-items:center;gap:8px;" onclick="showPage(\'pipelines\')">'
+              + (d.title || '(untitled deal)')
+              + '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:rgba(139,92,246,0.12);color:#8b5cf6;">' + (d.stage || '—') + '</span>'
+              + '</div>'
+              + '<div class="action-item-sub" style="margin-top:3px;">'
+              + pName
+              + (contact ? ' &middot; ' + contact.name : '')
+              + ' &middot; Last activity: <strong style="color:#8b5cf6;">' + daysLabel(stale) + '</strong>'
+              + (d.value ? ' &middot; $' + parseFloat(d.value).toLocaleString() : '')
+              + '</div></div>'
+              + '<button class="btn btn-outline btn-sm" onclick="showPage(\'pipelines\')"><i class="ti ti-layout-kanban"></i> Pipeline</button>'
+              + '</div>';
+          }).join('')
+      }
+    </div>
+  `;
 }
 
 // ============================================================
