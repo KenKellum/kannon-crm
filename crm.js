@@ -796,6 +796,7 @@ function renderDashboardAgent() {
   `;
 
   loadDashEmailOpens();
+  _initEmailOpenRealtime();
 }
 
 async function loadDashEmailOpens() {
@@ -805,6 +806,30 @@ async function loadDashEmailOpens() {
   window._dashOpens = (error || !opens) ? [] : opens;
   const el = document.getElementById('dash-opens-count');
   if (el) el.textContent = window._dashOpens.length || '0';
+}
+
+function _initEmailOpenRealtime() {
+  if (window._emailOpenRealtimeChannel) return;
+  window._emailOpenRealtimeChannel = supabaseClient
+    .channel('email-opens-rt')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'email_opens' }, function(payload) {
+      var row = payload.new;
+      if (!window._dashOpens) window._dashOpens = [];
+      window._dashOpens.unshift(row);
+      var el = document.getElementById('dash-opens-count');
+      if (el) el.textContent = window._dashOpens.length || '0';
+      var email = (row.contact_email || '').toLowerCase();
+      var contact = contacts.find(function(c) { return (c.email||'').toLowerCase() === email; });
+      var name = contact ? (contact.name || email) : (email || 'Someone');
+      showToast('📬 ' + name + ' just opened your email!');
+      if (dialerQueue.length > 0 && dialerIndex >= 0) {
+        var cur = dialerQueue[dialerIndex];
+        if (cur && (cur.email||'').toLowerCase() === email) {
+          renderDialer();
+        }
+      }
+    })
+    .subscribe();
 }
 
 function viewEmailOpeners() {
@@ -1498,6 +1523,26 @@ function _dialerActionRow(contact, isLast) {
       + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
       + callBtnSmall
       + `<button class="btn btn-outline btn-sm" onclick="viewContact('${contact.id}','')">&#128140; View</button>`
+      + `<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')">&#10006; Not Interested</button>`
+      + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
+      + skipBtn + nextBtn
+      + `</div></div>`;
+  }
+
+  const opens = window._dashOpens || [];
+  const hasOpen = contact.email && opens.some(function(o) { return (o.contact_email||'').toLowerCase() === contact.email.toLowerCase(); });
+
+  if (hasOpen) {
+    const callBtnBig = contact.phone
+      ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="flex:1;font-size:15px;padding:12px 16px;background:#0f766e;">&#128222; Call &#8212; They Opened!</button>`
+      : `<button class="btn btn-outline" disabled style="flex:1;opacity:0.45;cursor:not-allowed;">&#128222; No phone on file</button>`;
+    return `<div style="margin-bottom:16px;">`
+      + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
+      + callBtnBig
+      + `<button class="btn btn-outline" style="border-color:#1a3a5c;color:#1a3a5c;" onclick="dialerMarkInterested('${contact.id}')">&#10003; Mark as Replied</button>`
+      + `</div>`
+      + `<div style="display:flex;gap:8px;flex-wrap:wrap;">`
+      + `<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm('${contact.id}')">&#129309; Interested</button>`
       + `<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested('${contact.id}')">&#10006; Not Interested</button>`
       + `<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus('${contact.id}')">&#8635; Reset</button>`
       + skipBtn + nextBtn
