@@ -1623,7 +1623,7 @@ function _dialerActionRow(contact, isLast) {
     ? '<button class="btn btn-primary" onclick="stampPhoneCall(\'' + contact.id + '\');window.open(\'tel:' + contact.phone.replace(/[^0-9+]/g,'') + '\');" style="flex:1;font-size:14px;padding:11px 16px;' + (_arOpen ? 'background:#0f766e;' : '') + '">&#128222; Call' + (_arOpen ? ' — They Opened!' : '') + '</button>'
     : '<button class="btn btn-outline" disabled style="flex:1;font-size:13px;opacity:0.45;cursor:not-allowed;" title="No phone on file — click Edit to add one">&#128222; No phone — add in Edit</button>';
   const schedBtn  = '<button class="btn btn-primary" onclick="showScheduleModal(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;background:#1a3a5c;color:#fff;">&#128197; Schedule Appointment</button>';
-  const sendLinkBtn = '<button class="btn btn-primary" onclick="dialerSendBookingLink(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;background:#0e7490;color:#fff;" title="Email the prospect a self-scheduling link">&#128139; Send Schedule Link</button>';
+  const sendLinkBtn = '<button class="btn btn-primary" onclick="dialerSendBookingLink(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;background:#0e7490;color:#fff;" title="Email the prospect a self-scheduling link">&#128139; Send Booking Link</button>';
 
   const contactDeal = deals.find(function(d) { return d.contact_id === contact.id; });
 
@@ -1638,7 +1638,7 @@ function _dialerActionRow(contact, isLast) {
       + '<span style="color:#10b981;font-weight:700;">&#127807; Pipeline:</span> <span style="color:var(--text-primary);">' + _wPL + ' &#8594; <strong>' + _wSt + '</strong></span>'
       + (_wNx ? '<span style="color:var(--muted);"> &nbsp;&middot;&nbsp; Next: ' + _wNx + '</span>' : '')
       + '</div>'
-      + '<div style="display:flex;gap:8px;margin-bottom:8px;">' + sendLinkBtn + callBtn + schedBtn + '</div>'
+      + '<div style="display:flex;gap:8px;margin-bottom:8px;">' + callBtn + schedBtn + sendLinkBtn + '</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
       + '<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm(\'' + contact.id + '\')">&#129309; Interested</button>'
       + '<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested(\'' + contact.id + '\')">&#10006; Not Interested</button>'
@@ -1649,7 +1649,7 @@ function _dialerActionRow(contact, isLast) {
 
   // === ALL OTHER TYPES — View only, Reset included ===
   return '<div style="margin-bottom:16px;">'
-    + '<div style="display:flex;gap:8px;margin-bottom:8px;">' + sendLinkBtn + callBtn + schedBtn + '</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:8px;">' + callBtn + schedBtn + sendLinkBtn + '</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
     + '<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm(\'' + contact.id + '\')">&#129309; Interested</button>'
     + '<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested(\'' + contact.id + '\')">&#10006; Not Interested</button>'
