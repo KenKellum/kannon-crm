@@ -17,25 +17,81 @@
   .header {
     width: 100%;
     background: #1a3a5c;
-    padding: 16px 24px;
+    padding: 14px 24px;
+    box-sizing: border-box;
+  }
+  .header-inner {
     display: flex;
     align-items: center;
-    gap: 16px;
+    justify-content: space-between;
+    max-width: 600px;
+    margin: 0 auto;
   }
-  .header img { width: 52px; height: 52px; display: block; }
-  .header-text h1 {
-    font-size: 16px;
+  .header-kfg {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .header-kfg img { width: 52px; height: 52px; display: block; flex-shrink: 0; }
+  .header-kfg-text h1 {
+    font-size: 13px;
     font-weight: 700;
     color: #fff;
     font-family: Georgia, serif;
     letter-spacing: 0.5px;
+    margin: 0 0 3px;
   }
-  .header-text p {
-    font-size: 11px;
+  .header-kfg-text p {
+    font-size: 9px;
     color: #c8a84b;
     letter-spacing: 2px;
     font-style: italic;
+    margin: 0;
+  }
+  .header-divider {
+    width: 1px;
+    background: rgba(255,255,255,0.2);
+    align-self: stretch;
+    margin: 0 18px;
+    flex-shrink: 0;
+  }
+  .header-ia {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .header-ia-label {
+    font-size: 9px;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .header-ia-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .header-ia-logo {
+    background: #fff;
+    padding: 3px;
+    line-height: 0;
+    flex-shrink: 0;
+  }
+  .header-ia-logo img { width: 36px; height: 36px; display: block; }
+  .header-ia-text div:first-child {
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    line-height: 1.3;
+  }
+  .header-ia-text div:last-child {
+    font-size: 9px;
+    color: #c8a84b;
+    font-style: italic;
     margin-top: 2px;
+    white-space: nowrap;
   }
   .card {
     background: #fff;
@@ -96,10 +152,27 @@
 <body>
 
 <div class="header">
-  <img src="/kfg_logo_email.png" alt="Kannon Financial Group" onerror="this.style.display='none'">
-  <div class="header-text">
-    <h1>Kannon Financial Group</h1>
-    <p>PROTECTING WHAT MATTERS MOST</p>
+  <div class="header-inner">
+    <div class="header-kfg">
+      <img src="https://kannon-crm.vercel.app/kfg_logo_email.png" alt="Kannon Financial Group">
+      <div class="header-kfg-text">
+        <h1>KANNON FINANCIAL GROUP</h1>
+        <p>&ldquo;Protect &middot; Build &middot; Retire&rdquo;</p>
+      </div>
+    </div>
+    <div class="header-divider"></div>
+    <div class="header-ia">
+      <div class="header-ia-label">In Partnership With</div>
+      <div class="header-ia-row">
+        <div class="header-ia-logo">
+          <img src="https://kannon-crm.vercel.app/ia_logo_email.png" alt="Insured America">
+        </div>
+        <div class="header-ia-text">
+          <div>THE INSURED<br>AMERICA AGENCY</div>
+          <div>&ldquo;Protect &amp; Build Your Potential&rdquo;</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
