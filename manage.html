@@ -50,6 +50,27 @@
   .icon { font-size: 52px; margin-bottom: 16px; }
   h2 { color: #1a3a5c; margin: 0 0 12px; font-size: 22px; }
   p  { color: #64748b; font-size: 14px; line-height: 1.7; margin: 0 0 10px; }
+  label {
+    display: block;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #374151;
+    margin: 18px 0 5px;
+  }
+  input[type="datetime-local"], textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    outline: none;
+  }
+  input[type="datetime-local"]:focus, textarea:focus { border-color: #1a3a5c; }
+  textarea { resize: vertical; }
   .btn-row { display: flex; gap: 12px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
   .btn {
     display: inline-block;
@@ -61,19 +82,14 @@
     text-decoration: none;
     border: none;
     font-family: Arial, sans-serif;
+    transition: opacity 0.15s;
   }
-  .btn-cancel  { background: #fee2e2; color: #dc2626; }
-  .btn-keep    { background: #1a3a5c; color: #fff; }
-  .btn-resched { background: #1a3a5c; color: #fff; }
-  .spinner {
-    width: 40px; height: 40px;
-    border: 4px solid #e2e8f0;
-    border-top-color: #1a3a5c;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: 20px auto 0;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-danger  { background: #fee2e2; color: #dc2626; }
+  .btn-primary { background: #1a3a5c; color: #fff; }
+  .btn-outline { background: #f1f5f9; color: #374151; }
+  .btn-full { width: 100%; margin-top: 20px; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 12px; display: none; }
   .sub { font-size: 12px; color: #94a3b8; margin-top: 20px; }
 </style>
 </head>
@@ -90,54 +106,130 @@
 <div id="app"></div>
 
 <script>
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+const SUPABASE_URL  = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+
 const params = new URLSearchParams(window.location.search);
 const action = params.get('action');
 const id     = params.get('id');
 const app    = document.getElementById('app');
 
-function render(html) { app.innerHTML = html; }
+async function callRPC(bookingId, rpcAction, newDate, notes) {
+  const body = { p_booking_id: bookingId, p_action: rpcAction };
+  if (newDate)  body.p_new_date = newDate;
+  if (notes)    body.p_notes    = notes;
+  const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/prospect_update_booking', {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_ANON,
+      'Authorization': 'Bearer ' + SUPABASE_ANON,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  return res.ok;
+}
 
+// ── INVALID LINK ────────────────────────────────────────────────────────────
 if (!action || !id) {
-  render(`<div class="card">
+  app.innerHTML = `<div class="card">
     <div class="icon">&#128197;</div>
     <h2>Invalid Link</h2>
-    <p>This link is invalid or has expired. Please contact your agent directly.</p>
-  </div>`);
+    <p>This link is invalid or has already been used. Please contact your agent directly.</p>
+  </div>`;
 
+// ── CANCEL ──────────────────────────────────────────────────────────────────
 } else if (action === 'cancel') {
-  // Show confirmation before cancelling
-  render(`<div class="card">
+  app.innerHTML = `<div class="card">
     <div class="icon">&#128197;</div>
     <h2>Cancel Appointment</h2>
-    <p>Are you sure you want to cancel your appointment?</p>
-    <p>If you'd like to reschedule instead, use the button below.</p>
+    <p>Are you sure you want to cancel your appointment with Kannon Financial Group?</p>
+    <p>If you'd prefer to find a different time, choose <strong>Reschedule Instead</strong>.</p>
     <div class="btn-row">
-      <a class="btn btn-cancel" href="${SCRIPT_URL}?action=prospect_cancel&id=${encodeURIComponent(id)}">Yes, Cancel It</a>
-      <a class="btn btn-keep" href="${SCRIPT_URL}?action=prospect_reschedule&id=${encodeURIComponent(id)}">Reschedule Instead</a>
+      <button class="btn btn-danger" id="confirm-cancel-btn">Yes, Cancel It</button>
+      <button class="btn btn-outline" id="resched-instead-btn">Reschedule Instead</button>
     </div>
+    <div class="err" id="cancel-err">Something went wrong — please try again or contact your agent.</div>
     <p class="sub">Changed your mind? You can close this page.</p>
-  </div>`);
+  </div>`;
 
+  document.getElementById('confirm-cancel-btn').addEventListener('click', async function() {
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Cancelling…';
+    const ok = await callRPC(id, 'cancel');
+    if (ok) {
+      app.innerHTML = `<div class="card">
+        <div class="icon">&#10003;</div>
+        <h2>Appointment Cancelled</h2>
+        <p>Your appointment has been cancelled. If you'd like to reconnect in the future, don't hesitate to reach out.</p>
+        <p class="sub">You can close this window.</p>
+      </div>`;
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Yes, Cancel It';
+      const err = document.getElementById('cancel-err');
+      if (err) err.style.display = 'block';
+    }
+  });
+
+  document.getElementById('resched-instead-btn').addEventListener('click', function() {
+    window.location.href = '?action=reschedule&id=' + encodeURIComponent(id);
+  });
+
+// ── RESCHEDULE ───────────────────────────────────────────────────────────────
 } else if (action === 'reschedule') {
-  // Show brief loading state, then redirect to Apps Script reschedule page
-  render(`<div class="card">
-    <div class="icon">&#8635;</div>
-    <h2>Request a New Time</h2>
-    <p>Loading your reschedule options&hellip;</p>
-    <div class="spinner"></div>
-    <p class="sub">You'll be redirected in a moment.</p>
-  </div>`);
-  setTimeout(function() {
-    window.location.href = SCRIPT_URL + '?action=prospect_reschedule&id=' + encodeURIComponent(id);
-  }, 800);
+  // Default to tomorrow at 10am
+  const tmr = new Date(); tmr.setDate(tmr.getDate() + 1); tmr.setHours(10, 0, 0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  const defDt = `${tmr.getFullYear()}-${pad(tmr.getMonth()+1)}-${pad(tmr.getDate())}T10:00`;
+
+  app.innerHTML = `<div class="card" style="text-align:left;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div class="icon">&#8635;</div>
+      <h2>Request a New Time</h2>
+      <p style="text-align:center;">Let us know what works best for you and we'll confirm shortly.</p>
+    </div>
+    <label>Preferred Date &amp; Time</label>
+    <input type="datetime-local" id="resched-dt" value="${defDt}" />
+    <label>Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+    <textarea id="resched-notes" rows="3" placeholder="e.g. mornings work best, prefer video call, etc."></textarea>
+    <button class="btn btn-primary btn-full" id="resched-submit-btn">Submit Reschedule Request</button>
+    <div class="err" id="resched-err">Something went wrong — please try again or contact your agent.</div>
+  </div>`;
+
+  document.getElementById('resched-submit-btn').addEventListener('click', async function() {
+    const btn   = this;
+    const dtVal = document.getElementById('resched-dt').value;
+    const notes = document.getElementById('resched-notes').value.trim();
+    if (!dtVal) { alert('Please select a date and time.'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+    const ok = await callRPC(id, 'reschedule', new Date(dtVal).toISOString(), notes);
+    if (ok) {
+      const fmt = new Date(dtVal).toLocaleString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+      app.innerHTML = `<div class="card">
+        <div class="icon">&#128197;</div>
+        <h2>Request Received!</h2>
+        <p>Your preferred time has been sent to your agent:</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;margin:16px 0;font-size:15px;font-weight:700;color:#166534;">${fmt}</div>
+        <p>Your agent will confirm the new time shortly.</p>
+        <p class="sub">You can close this window.</p>
+      </div>`;
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Submit Reschedule Request';
+      const err = document.getElementById('resched-err');
+      if (err) err.style.display = 'block';
+    }
+  });
 
 } else {
-  render(`<div class="card">
+  app.innerHTML = `<div class="card">
     <div class="icon">&#9888;</div>
     <h2>Unknown Action</h2>
-    <p>This link does not match a known action. Please contact your agent directly.</p>
-  </div>`);
+    <p>This link doesn't match a known action. Please contact your agent directly.</p>
+  </div>`;
 }
 </script>
 </body>
