@@ -114,11 +114,8 @@ const action = params.get('action');
 const id     = params.get('id');
 const app    = document.getElementById('app');
 
-async function callRPC(bookingId, rpcAction, newDate, notes) {
-  const body = { p_booking_id: bookingId, p_action: rpcAction };
-  if (newDate)  body.p_new_date = newDate;
-  if (notes)    body.p_notes    = notes;
-  const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/prospect_update_booking', {
+async function callRPC(endpoint, body) {
+  const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + endpoint, {
     method: 'POST',
     headers: {
       'apikey': SUPABASE_ANON,
@@ -130,8 +127,92 @@ async function callRPC(bookingId, rpcAction, newDate, notes) {
   return res.ok;
 }
 
+// ── UNSUBSCRIBE ──────────────────────────────────────────────────────────────
+if (action === 'unsubscribe') {
+  const email = params.get('email');
+  if (!email) {
+    app.innerHTML = `<div class="card"><div class="icon">&#9888;</div><h2>Invalid Link</h2><p>This unsubscribe link is invalid. Please contact your agent directly.</p></div>`;
+  } else {
+    app.innerHTML = `<div class="card">
+      <div class="icon">&#128234;</div>
+      <h2>Unsubscribe</h2>
+      <p>Are you sure you want to stop receiving emails from Kannon Financial Group at <strong>${email}</strong>?</p>
+      <div class="btn-row">
+        <button class="btn btn-danger" id="unsub-btn">Yes, Unsubscribe Me</button>
+        <button class="btn btn-outline" onclick="window.close()">No, Keep Me Subscribed</button>
+      </div>
+      <div class="err" id="unsub-err">Something went wrong — please try again or contact your agent.</div>
+    </div>`;
+    document.getElementById('unsub-btn').addEventListener('click', async function() {
+      const btn = this;
+      btn.disabled = true; btn.textContent = 'Processing…';
+      const ok = await callRPC('prospect_unsubscribe', { p_email: email });
+      if (ok) {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#10003;</div>
+          <h2>You've Been Unsubscribed</h2>
+          <p>You will not receive any further emails from Kannon Financial Group at <strong>${email}</strong>.</p>
+          <p class="sub">You can close this window.</p>
+        </div>`;
+      } else {
+        btn.disabled = false; btn.textContent = 'Yes, Unsubscribe Me';
+        document.getElementById('unsub-err').style.display = 'block';
+      }
+    });
+  }
+
+// ── PROSPECT CONFIRMS APPOINTMENT ("Yes, This Time Works") ──────────────────
+} else if (action === 'confirm') {
+  if (!id) {
+    app.innerHTML = `<div class="card"><div class="icon">&#9888;</div><h2>Invalid Link</h2><p>Please contact your agent directly.</p></div>`;
+  } else {
+    // Auto-confirm on page load
+    app.innerHTML = `<div class="card"><div class="icon" style="font-size:32px;">&#8987;</div><h2>Confirming…</h2><p>Please wait a moment.</p></div>`;
+    callRPC('prospect_update_booking', { p_booking_id: id, p_action: 'confirm' }).then(ok => {
+      if (ok) {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#128197;</div>
+          <h2>Appointment Confirmed!</h2>
+          <p>Thank you for confirming. We look forward to speaking with you soon.</p>
+          <p class="sub">You can close this window.</p>
+        </div>`;
+      } else {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#9888;</div>
+          <h2>Something Went Wrong</h2>
+          <p>We couldn't record your confirmation. Please reply to the email to confirm directly.</p>
+        </div>`;
+      }
+    });
+  }
+
+// ── CO-HOST CONFIRMS ATTENDANCE ──────────────────────────────────────────────
+} else if (action === 'confirm_cohost') {
+  const bookingId = params.get('booking_id');
+  if (!bookingId) {
+    app.innerHTML = `<div class="card"><div class="icon">&#9888;</div><h2>Invalid Link</h2><p>Please contact your agent directly.</p></div>`;
+  } else {
+    app.innerHTML = `<div class="card"><div class="icon" style="font-size:32px;">&#8987;</div><h2>Confirming…</h2><p>Please wait a moment.</p></div>`;
+    callRPC('cohost_confirm_booking', { p_booking_id: bookingId }).then(ok => {
+      if (ok) {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#10003;</div>
+          <h2>Attendance Confirmed!</h2>
+          <p>Your attendance has been recorded. This appointment will appear on your Kannon CRM calendar.</p>
+          <p class="sub">You can close this window.</p>
+        </div>`;
+      } else {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#9888;</div>
+          <h2>Something Went Wrong</h2>
+          <p>We couldn't record your confirmation. Please reply to the invitation email.</p>
+        </div>`;
+      }
+    });
+  }
+
 // ── INVALID LINK ────────────────────────────────────────────────────────────
-if (!action || !id) {
+} else if (!action || (!id && action !== 'unsubscribe')) {
   app.innerHTML = `<div class="card">
     <div class="icon">&#128197;</div>
     <h2>Invalid Link</h2>
@@ -157,7 +238,7 @@ if (!action || !id) {
     const btn = this;
     btn.disabled = true;
     btn.textContent = 'Cancelling…';
-    const ok = await callRPC(id, 'cancel');
+    const ok = await callRPC('prospect_update_booking', { p_booking_id: id, p_action: 'cancel' });
     if (ok) {
       app.innerHTML = `<div class="card">
         <div class="icon">&#10003;</div>
@@ -205,7 +286,7 @@ if (!action || !id) {
     if (!dtVal) { alert('Please select a date and time.'); return; }
     btn.disabled = true;
     btn.textContent = 'Submitting…';
-    const ok = await callRPC(id, 'reschedule', new Date(dtVal).toISOString(), notes);
+    const ok = await callRPC('prospect_update_booking', { p_booking_id: id, p_action: 'reschedule', p_new_date: new Date(dtVal).toISOString(), p_notes: notes || null });
     if (ok) {
       const fmt = new Date(dtVal).toLocaleString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
       app.innerHTML = `<div class="card">
