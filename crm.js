@@ -585,12 +585,35 @@ function renderDashboardAgency() {
         <button class="btn btn-outline btn-sm" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Work leads</button>
       </div>
     </div>
-    <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+    <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:8px;">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Agency contacts</div></div>
       <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
       <div class="stat-card" style="border-left-color:#c8a84b;background:rgba(200,168,75,0.05);"><div class="stat-num">${openRatePct}%</div><div class="stat-label">Open rate</div></div>
       <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${pendingApps}</div><div class="stat-label">Pending hires</div><div class="${pendingApps > 0 ? 'stat-delta-warn' : 'stat-delta'}">${pendingApps > 0 ? 'Needs review' : 'None pending'}</div></div>
     </div>
+    ${(() => {
+      const _aN = new Date();
+      const _aWL = contacts.filter(c => c.sequence_status === 'not started' && c.notes && c.notes.includes('[Web Lead') && Math.floor((_aN - new Date(c.created_at)) / 86400000) <= 30).length;
+      const _aSt = contacts.filter(c => c.sequence_status === 'Active' && Math.floor((_aN - new Date(c.last_called_at || 0)) / 86400000) >= 5).length;
+      const _aDr = contacts.filter(c => c.sequence_status === 'Drip').length;
+      const _aF  = ['Enrolled','Active Client','Contracted','Active Agent'];
+      const _aAM = {}; dealActivities.forEach(a => { if (!_aAM[a.deal_id] || new Date(a.created_at) > new Date(_aAM[a.deal_id])) _aAM[a.deal_id] = a.created_at; });
+      const _aSD = deals.filter(d => !_aF.includes(d.stage) && Math.floor((_aN - new Date(_aAM[d.id] || d.created_at)) / 86400000) >= 7).length;
+      return '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px;" title="Exceptions — click any to open Oversight">'
+        + '<div style="padding:7px 12px;border-radius:8px;border:0.5px solid #fecaca;background:rgba(239,68,68,0.05);border-left:3px solid #ef4444;cursor:pointer;" onclick="showPage(\'oversight\')">'
+        + '<div style="font-size:16px;font-weight:700;color:#ef4444;line-height:1.2;">' + _aWL + '</div>'
+        + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Web leads untouched</div></div>'
+        + '<div style="padding:7px 12px;border-radius:8px;border:0.5px solid #fde68a;background:rgba(245,158,11,0.05);border-left:3px solid #f59e0b;cursor:pointer;" onclick="showPage(\'oversight\')">'
+        + '<div style="font-size:16px;font-weight:700;color:#f59e0b;line-height:1.2;">' + _aSt + '</div>'
+        + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Stalled in sequence</div></div>'
+        + '<div style="padding:7px 12px;border-radius:8px;border:0.5px solid #bfdbfe;background:rgba(59,130,246,0.05);border-left:3px solid #3b82f6;cursor:pointer;" onclick="showPage(\'oversight\')">'
+        + '<div style="font-size:16px;font-weight:700;color:#3b82f6;line-height:1.2;">' + _aDr + '</div>'
+        + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">In drip campaign</div></div>'
+        + '<div style="padding:7px 12px;border-radius:8px;border:0.5px solid #e9d5ff;background:rgba(139,92,246,0.05);border-left:3px solid #8b5cf6;cursor:pointer;" onclick="showPage(\'oversight\')">'
+        + '<div style="font-size:16px;font-weight:700;color:#8b5cf6;line-height:1.2;">' + _aSD + '</div>'
+        + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Stalled pipeline deals</div></div>'
+        + '</div>';
+    })()}
     <div class="dash-grid">
       <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
@@ -682,16 +705,45 @@ function renderDashboardAgent() {
   deals.forEach(d => { if (!stageMap[d.stage]) stageMap[d.stage] = []; stageMap[d.stage].push(d); });
   const initials = name => (name || '??').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
+  // Oversight mini-bar counts
+  const _ovNow = new Date();
+  const _ovWebLeads = contacts.filter(c => c.sequence_status === 'not started' && c.notes && c.notes.includes('[Web Lead') && Math.floor((_ovNow - new Date(c.created_at)) / 86400000) <= 30).length;
+  const _ovStalled  = contacts.filter(c => c.sequence_status === 'Active' && Math.floor((_ovNow - new Date(c.last_called_at || 0)) / 86400000) >= 5).length;
+  const _ovDrip     = contacts.filter(c => c.sequence_status === 'Drip').length;
+  const _ovFinal    = ['Enrolled','Active Client','Contracted','Active Agent'];
+  const _ovActMap   = {};
+  dealActivities.forEach(a => { if (!_ovActMap[a.deal_id] || new Date(a.created_at) > new Date(_ovActMap[a.deal_id])) _ovActMap[a.deal_id] = a.created_at; });
+  const _ovStalledDeals = deals.filter(d => !_ovFinal.includes(d.stage) && Math.floor((_ovNow - new Date(_ovActMap[d.id] || d.created_at)) / 86400000) >= 7).length;
+
   el.innerHTML = `
     <div class="dash-header" style="margin-bottom:10px;">
       <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr}</div></div>
       <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
     </div>
 
-    <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px;">
+    <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:8px;">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div></div>
       <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
       <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);cursor:pointer;" onclick="showPage('pipelines')"><div class="stat-num">${activeDeals}</div><div class="stat-label">Active deals</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:8px;" title="Exceptions — click any to open Oversight">
+      <div style="padding:7px 12px;border-radius:8px;border:0.5px solid #fecaca;background:rgba(239,68,68,0.05);border-left:3px solid #ef4444;cursor:pointer;" onclick="showPage('oversight')">
+        <div style="font-size:16px;font-weight:700;color:#ef4444;line-height:1.2;">${_ovWebLeads}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Web leads untouched</div>
+      </div>
+      <div style="padding:7px 12px;border-radius:8px;border:0.5px solid #fde68a;background:rgba(245,158,11,0.05);border-left:3px solid #f59e0b;cursor:pointer;" onclick="showPage('oversight')">
+        <div style="font-size:16px;font-weight:700;color:#f59e0b;line-height:1.2;">${_ovStalled}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Stalled in sequence</div>
+      </div>
+      <div style="padding:7px 12px;border-radius:8px;border:0.5px solid #bfdbfe;background:rgba(59,130,246,0.05);border-left:3px solid #3b82f6;cursor:pointer;" onclick="showPage('oversight')">
+        <div style="font-size:16px;font-weight:700;color:#3b82f6;line-height:1.2;">${_ovDrip}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">In drip campaign</div>
+      </div>
+      <div style="padding:7px 12px;border-radius:8px;border:0.5px solid #e9d5ff;background:rgba(139,92,246,0.05);border-left:3px solid #8b5cf6;cursor:pointer;" onclick="showPage('oversight')">
+        <div style="font-size:16px;font-weight:700;color:#8b5cf6;line-height:1.2;">${_ovStalledDeals}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Stalled pipeline deals</div>
+      </div>
     </div>
 
     <div class="dash-card" style="margin-bottom:10px;background:var(--surface-1);border-color:var(--border);">
@@ -709,82 +761,68 @@ function renderDashboardAgent() {
       </div>
     </div>
 
-    <div class="dash-grid">
-
-      <div style="display:flex;flex-direction:column;gap:10px;">
-
-        <div class="dash-card">
-          ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
-          ${todayAppts.length === 0
-            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-calendar" style="font-size:22px;display:block;margin-bottom:4px;"></i>No appointments today</div>
-               <div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="shareBookingLink()">Share booking link</button></div>`
-            : todayAppts.map(a => {
-                const apptName = a.prospect_name || a.name || 'Appointment';
-                const apptTime = a.start_time
-                  ? new Date(a.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-                  : (a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
-                const apptType = a.appointment_type || a.type || '';
-                return `<div class="action-item" style="padding:6px 0;">
-                  <div class="action-item-info">
-                    <div class="action-item-name" style="font-size:12px;">${apptName}</div>
-                    <div class="action-item-sub">${apptTime}${apptType ? ' &middot; ' + apptType : ''}</div>
+    <div class="dash-card" style="margin-bottom:10px;display:flex;flex-direction:column;">
+      ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
+      ${hotLeads.length === 0
+        ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
+        : '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0;">'
+          + hotLeads.slice(0, 6).map(c => {
+              const noteLines   = (c.notes || '').trim().split('\n');
+              const noteSnippet = noteLines.find(l => l.trim() && !l.startsWith('[')) || '';
+              const stepCtx     = c.sequence_step ? 'After Email ' + c.sequence_step : '';
+              return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border);">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || '&#8212;'}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${c.company || c.email || '&#8212;'}</div>
                   </div>
-                  <span class="badge badge-active">Today</span>
-                </div>`;
-              }).join('')}
-        </div>
-
-        ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : ''}
-
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:10px;">
-
-        <div class="dash-card" style="flex:1;display:flex;flex-direction:column;">
-          ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
-          ${hotLeads.length === 0
-            ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
-            : hotLeads.slice(0, 6).map(c => {
-                const noteLines   = (c.notes || '').trim().split('\n');
-                const noteSnippet = noteLines.find(l => l.trim() && !l.startsWith('[')) || '';
-                const stepCtx     = c.sequence_step ? 'After Email ' + c.sequence_step : '';
-                return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border);">
-                  <div style="display:flex;align-items:center;gap:8px;">
-                    <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
-                    <div style="flex:1;min-width:0;">
-                      <div style="font-size:12px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || '&#8212;'}</div>
-                      <div style="font-size:11px;color:var(--text-muted);">${c.company || c.email || '&#8212;'}</div>
-                    </div>
-                    <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;background:${c.sequence_status==='Interested'?'rgba(251,191,36,0.15)':'rgba(52,211,153,0.15)'};color:${c.sequence_status==='Interested'?'#f59e0b':'#34d399'};">${c.sequence_status}</span>
-                  </div>
-                  ${stepCtx || noteSnippet
-                    ? '<div style="margin:4px 0 0 36px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">'
-                      + (stepCtx ? '<span style="font-size:10px;background:rgba(99,102,241,0.12);color:#818cf8;border-radius:6px;padding:1px 6px;white-space:nowrap;">' + stepCtx + '</span>' : '')
-                      + (noteSnippet ? '<span style="font-size:11px;color:var(--text-muted);">' + (noteSnippet.length > 70 ? noteSnippet.slice(0, 70) + '...' : noteSnippet) + '</span>' : '')
-                      + '</div>'
-                    : ''}
-                  <div style="margin:6px 0 0 36px;display:flex;gap:6px;">
-                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="logOutreach('${c.id}','Phone Call','')">&#128222; Log call</button>
-                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewContact('${c.id}','')">View contact &rarr;</button>
-                  </div>
-                </div>`;
-              }).join('')}
-          ${hotLeads.length > 0 ? `<div style="margin-top:auto;padding-top:8px;">
-            ${hotLeads.length > 6 ? `<button class="btn btn-outline btn-sm btn-full" style="margin-bottom:6px;" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button>` : ''}
-            <button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button>
-          </div>` : ''}
-        </div>
-
-        ${!currentAgent.gmail_connected ? `<div class="dash-card" style="border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
-          ${_ctitle('ti-mail', 'Gmail not connected')}
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Connect Gmail to send outreach emails directly from Kannon.</div>
-          <button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>
-        </div>` : ''}
-
-      </div>
+                  <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;background:${c.sequence_status==='Interested'?'rgba(251,191,36,0.15)':'rgba(52,211,153,0.15)'};color:${c.sequence_status==='Interested'?'#f59e0b':'#34d399'};">${c.sequence_status}</span>
+                </div>
+                <div style="margin:6px 0 0 36px;display:flex;gap:6px;">
+                  <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="logOutreach('${c.id}','Phone Call','')">&#128222; Log call</button>
+                  <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewContact('${c.id}','')">View &rarr;</button>
+                </div>
+              </div>`;
+            }).join('')
+          + '</div>'}
+      ${hotLeads.length > 0 ? `<div style="margin-top:10px;display:flex;gap:8px;">
+        ${hotLeads.length > 6 ? `<button class="btn btn-outline btn-sm" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button>` : ''}
+        <button class="btn btn-primary btn-sm" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button>
+      </div>` : ''}
     </div>
 
-    <div class="dash-card" style="margin-top:10px;">
+    ${!currentAgent.gmail_connected ? `<div class="dash-card" style="margin-bottom:10px;border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
+      ${_ctitle('ti-mail', 'Gmail not connected')}
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Connect Gmail to send outreach emails directly from Kannon.</div>
+      <button class="btn btn-primary btn-sm" onclick="showGmailSetup(true)">Connect Gmail</button>
+    </div>` : ''}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="dash-card">
+        ${_ctitle('ti-calendar-event', "Today's appointments" + (todayAppts.length > 0 ? ' <span style="background:rgba(52,211,153,0.15);color:#34d399;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + todayAppts.length + '</span>' : ''))}
+        ${todayAppts.length === 0
+          ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;"><i class="ti ti-calendar" style="font-size:22px;display:block;margin-bottom:4px;"></i>No appointments today</div>
+             <div style="margin-top:6px;"><button class="btn btn-outline btn-sm btn-full" onclick="shareBookingLink()">Share booking link</button></div>`
+          : todayAppts.map(a => {
+              const apptName = a.prospect_name || a.name || 'Appointment';
+              const apptTime = a.start_time
+                ? new Date(a.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                : (a.scheduled_at ? new Date(a.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
+              const apptType = a.appointment_type || a.type || '';
+              return `<div class="action-item" style="padding:6px 0;">
+                <div class="action-item-info">
+                  <div class="action-item-name" style="font-size:12px;">${apptName}</div>
+                  <div class="action-item-sub">${apptTime}${apptType ? ' &middot; ' + apptType : ''}</div>
+                </div>
+                <span class="badge badge-active">Today</span>
+              </div>`;
+            }).join('')}
+      </div>
+      ${typeof renderTasksWidget === 'function' ? renderTasksWidget() : '<div class="dash-card"></div>'}
+    </div>
+
+    <div class="dash-card" style="margin-top:0;">
       ${_ctitle('ti-layout-kanban', 'Pipeline snapshot')}
       <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">
         ${stageOrder.map(stage => {
@@ -5719,22 +5757,22 @@ async function renderOversight() {
       <button class="btn btn-outline btn-sm" onclick="renderOversight()"><i class="ti ti-refresh"></i> Refresh</button>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
-      <div class="stat-card" style="border-left-color:#ef4444;background:rgba(239,68,68,0.05);cursor:pointer;" onclick="document.getElementById('ov-web').scrollIntoView({behavior:'smooth'})">
-        <div class="stat-num" style="color:#ef4444;">${webLeads.length}</div>
-        <div class="stat-label">Web leads untouched</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px;">
+      <div style="padding:10px 14px;border-radius:8px;border:0.5px solid #fecaca;background:rgba(239,68,68,0.05);border-left:3px solid #ef4444;cursor:pointer;" onclick="document.getElementById('ov-web').scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:22px;font-weight:700;color:#ef4444;line-height:1.2;">${webLeads.length}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Web leads untouched</div>
       </div>
-      <div class="stat-card" style="border-left-color:#f59e0b;background:rgba(245,158,11,0.05);cursor:pointer;" onclick="document.getElementById('ov-seq').scrollIntoView({behavior:'smooth'})">
-        <div class="stat-num" style="color:#f59e0b;">${stalledSeq.length}</div>
-        <div class="stat-label">Stalled in sequence</div>
+      <div style="padding:10px 14px;border-radius:8px;border:0.5px solid #fde68a;background:rgba(245,158,11,0.05);border-left:3px solid #f59e0b;cursor:pointer;" onclick="document.getElementById('ov-seq').scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:22px;font-weight:700;color:#f59e0b;line-height:1.2;">${stalledSeq.length}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Stalled in sequence</div>
       </div>
-      <div class="stat-card" style="border-left-color:#3b82f6;background:rgba(59,130,246,0.05);cursor:pointer;" onclick="document.getElementById('ov-drip').scrollIntoView({behavior:'smooth'})">
-        <div class="stat-num" style="color:#3b82f6;">${dripContacts.length}</div>
-        <div class="stat-label">In drip campaign</div>
+      <div style="padding:10px 14px;border-radius:8px;border:0.5px solid #bfdbfe;background:rgba(59,130,246,0.05);border-left:3px solid #3b82f6;cursor:pointer;" onclick="document.getElementById('ov-drip').scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:22px;font-weight:700;color:#3b82f6;line-height:1.2;">${dripContacts.length}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">In drip campaign</div>
       </div>
-      <div class="stat-card" style="border-left-color:#8b5cf6;background:rgba(139,92,246,0.05);cursor:pointer;" onclick="document.getElementById('ov-deals').scrollIntoView({behavior:'smooth'})">
-        <div class="stat-num" style="color:#8b5cf6;">${stalledDeals.length}</div>
-        <div class="stat-label">Stalled pipeline deals</div>
+      <div style="padding:10px 14px;border-radius:8px;border:0.5px solid #e9d5ff;background:rgba(139,92,246,0.05);border-left:3px solid #8b5cf6;cursor:pointer;" onclick="document.getElementById('ov-deals').scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:22px;font-weight:700;color:#8b5cf6;line-height:1.2;">${stalledDeals.length}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Stalled pipeline deals</div>
       </div>
     </div>
 
