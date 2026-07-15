@@ -1445,9 +1445,29 @@ async function logOutreach(contactId, platform, prefillNote) {
       const qi = dialerQueue ? dialerQueue.findIndex(x => x.id === contactId) : -1;
       if (qi > -1) dialerQueue[qi].notes = newNotes;
       showToast('\u2713 Outreach logged \u2014 ' + plat);
+      if (plat === 'Phone Call') {
+        const now2 = new Date().toISOString();
+        const cnt = (c.call_count || 0) + 1;
+        await supabaseClient.from('contacts').update({ last_called_at: now2, call_count: cnt }).eq('id', contactId);
+        c.last_called_at = now2; c.call_count = cnt;
+        const qi2 = dialerQueue ? dialerQueue.findIndex(x => x.id === contactId) : -1;
+        if (qi2 > -1) { dialerQueue[qi2].last_called_at = now2; dialerQueue[qi2].call_count = cnt; }
+      }
       if (typeof renderDialer === 'function' && dialerQueue && dialerQueue.length) renderDialer();
     }
   );
+}
+
+async function stampPhoneCall(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) return;
+  const now = new Date().toISOString();
+  const newCount = (c.call_count || 0) + 1;
+  await supabaseClient.from('contacts').update({ last_called_at: now, call_count: newCount }).eq('id', contactId);
+  c.last_called_at = now;
+  c.call_count = newCount;
+  const qi = dialerQueue ? dialerQueue.findIndex(x => x.id === contactId) : -1;
+  if (qi > -1) { dialerQueue[qi].last_called_at = now; dialerQueue[qi].call_count = newCount; }
 }
 
 function openWhatsApp(contactId) {
@@ -1478,6 +1498,21 @@ function openWhatsApp(contactId) {
       showToast('\u2713 WhatsApp opened + outreach logged');
     }
   );
+}
+
+function _parseLastInteraction(contact) {
+  if (!contact.notes) return null;
+  const m = contact.notes.match(/^\[([^\]]+)\]/);
+  if (!m) return null;
+  const parts = m[1].split(' • ');
+  if (parts.length < 2) return null;
+  const channel = parts[0].trim();
+  const dateStr = parts.slice(1).join(' • ').trim();
+  const d = new Date(dateStr);
+  if (isNaN(d)) return { channel, relDate: 'recently' };
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const relDate = diffDays === 0 ? 'today' : diffDays === 1 ? 'yesterday' : diffDays + 'd ago';
+  return { channel, relDate };
 }
 
 function _dialerScore(contact) {
@@ -1528,7 +1563,7 @@ function _dialerActionRow(contact, isLast) {
 
   // Universal primary buttons — same layout for every lead type
   const callBig = contact.phone
-    ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="flex:1;font-size:14px;padding:11px 16px;">&#128222; Call</button>`
+    ? `<button class="btn btn-primary" onclick="stampPhoneCall('${contact.id}');window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}');" style="flex:1;font-size:14px;padding:11px 16px;">&#128222; Call</button>`
     : `<button class="btn btn-outline" disabled style="flex:1;font-size:13px;opacity:0.45;cursor:not-allowed;" title="No phone on file — click Edit to add one">&#128222; No phone &mdash; add in Edit</button>`;
   const schedBtn = `<button class="btn btn-primary" onclick="showScheduleModal('${contact.id}')" style="flex:1;font-size:14px;padding:11px 16px;background:#1a3a5c;color:#fff;">&#128197; Schedule Appointment</button>`;
 
@@ -1561,7 +1596,7 @@ function _dialerActionRow(contact, isLast) {
   const hasOpen = contact.email && opens.some(function(o) { return (o.contact_email||'').toLowerCase() === contact.email.toLowerCase(); });
   if (hasOpen) {
     const callHot = contact.phone
-      ? `<button class="btn btn-primary" onclick="window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}')" style="flex:1;font-size:14px;padding:11px 16px;background:#0f766e;">&#128222; Call &#8212; They Opened!</button>`
+      ? `<button class="btn btn-primary" onclick="stampPhoneCall('${contact.id}');window.open('tel:${contact.phone.replace(/[^0-9+]/g,'')}');" style="flex:1;font-size:14px;padding:11px 16px;background:#0f766e;">&#128222; Call &#8212; They Opened!</button>`
       : `<button class="btn btn-outline" disabled style="flex:1;opacity:0.45;" title="No phone on file">&#128222; No phone &mdash; add in Edit</button>`;
     return `<div style="margin-bottom:16px;">`
       + `<div style="display:flex;gap:8px;margin-bottom:8px;">`
@@ -2231,6 +2266,7 @@ function renderDialer() {
   const isLast = dialerIndex === dialerQueue.length - 1;
   const _lcd = contact.last_called_at ? Math.max(0,Math.floor((Date.now()-new Date(contact.last_called_at).getTime())/86400000)) : null;
   const _lcl = _lcd === null ? '' : _lcd === 0 ? 'Called today' : `Called ${_lcd}d ago`;
+  const _li  = _parseLastInteraction(contact);
 
   const statusClass = contact.sequence_status === 'Replied' ? 'badge-replied'
     : contact.sequence_status === 'Active' ? 'badge-active' : 'badge-completed';
@@ -2271,6 +2307,7 @@ function renderDialer() {
               <span class="badge ${statusClass}">${contact.sequence_status || 'Not started'}</span>
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
               ${_lcl ? `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;">&#9990; ${_lcl} &middot; ${contact.call_count||1}x</span>` : ''}
+              ${_li ? `<span class="badge" style="background:#f0fdf4;color:#16a34a;font-size:10px;">&#8635; Last: ${_li.channel} &middot; ${_li.relDate}</span>` : ''}
             </div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
@@ -2468,17 +2505,6 @@ function dialerSkip() {
 
 async function dialerNext(skipStamp = false) {
   const contact = dialerQueue[dialerIndex];
-  if (!skipStamp && contact) {
-    try {
-      const now = new Date().toISOString();
-      const newCount = (contact.call_count || 0) + 1;
-      await supabaseClient.from('contacts').update({ last_called_at: now, call_count: newCount }).eq('id', contact.id);
-      contact.last_called_at = now;
-      contact.call_count = newCount;
-      const ci = contacts.findIndex(c => c.id === contact.id);
-      if (ci > -1) { contacts[ci].last_called_at = now; contacts[ci].call_count = newCount; }
-    } catch(e) { /* non-critical */ }
-  }
   if (dialerIndex < dialerQueue.length - 1) {
     dialerIndex++;
     renderDialer();
