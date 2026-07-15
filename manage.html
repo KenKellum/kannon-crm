@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Appointment — Kannon Financial Group</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f1f5f9;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .header {
+    width: 100%;
+    background: #1a3a5c;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .header img { width: 52px; height: 52px; display: block; }
+  .header-text h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    font-family: Georgia, serif;
+    letter-spacing: 0.5px;
+  }
+  .header-text p {
+    font-size: 11px;
+    color: #c8a84b;
+    letter-spacing: 2px;
+    font-style: italic;
+    margin-top: 2px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 40px 32px;
+    max-width: 460px;
+    width: calc(100% - 32px);
+    margin: 40px auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  .icon { font-size: 52px; margin-bottom: 16px; }
+  h2 { color: #1a3a5c; margin: 0 0 12px; font-size: 22px; }
+  p  { color: #64748b; font-size: 14px; line-height: 1.7; margin: 0 0 10px; }
+  .btn-row { display: flex; gap: 12px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    border: none;
+    font-family: Arial, sans-serif;
+  }
+  .btn-cancel  { background: #fee2e2; color: #dc2626; }
+  .btn-keep    { background: #1a3a5c; color: #fff; }
+  .btn-resched { background: #1a3a5c; color: #fff; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #1a3a5c;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 20px auto 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .sub { font-size: 12px; color: #94a3b8; margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img src="/kfg_logo_email.png" alt="Kannon Financial Group" onerror="this.style.display='none'">
+  <div class="header-text">
+    <h1>Kannon Financial Group</h1>
+    <p>PROTECTING WHAT MATTERS MOST</p>
+  </div>
+</div>
+
+<div id="app"></div>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+const params = new URLSearchParams(window.location.search);
+const action = params.get('action');
+const id     = params.get('id');
+const app    = document.getElementById('app');
+
+function render(html) { app.innerHTML = html; }
+
+if (!action || !id) {
+  render(`<div class="card">
+    <div class="icon">&#128197;</div>
+    <h2>Invalid Link</h2>
+    <p>This link is invalid or has expired. Please contact your agent directly.</p>
+  </div>`);
+
+} else if (action === 'cancel') {
+  // Show confirmation before cancelling
+  render(`<div class="card">
+    <div class="icon">&#128197;</div>
+    <h2>Cancel Appointment</h2>
+    <p>Are you sure you want to cancel your appointment?</p>
+    <p>If you'd like to reschedule instead, use the button below.</p>
+    <div class="btn-row">
+      <a class="btn btn-cancel" href="${SCRIPT_URL}?action=prospect_cancel&id=${encodeURIComponent(id)}">Yes, Cancel It</a>
+      <a class="btn btn-keep" href="${SCRIPT_URL}?action=prospect_reschedule&id=${encodeURIComponent(id)}">Reschedule Instead</a>
+    </div>
+    <p class="sub">Changed your mind? You can close this page.</p>
+  </div>`);
+
+} else if (action === 'reschedule') {
+  // Show brief loading state, then redirect to Apps Script reschedule page
+  render(`<div class="card">
+    <div class="icon">&#8635;</div>
+    <h2>Request a New Time</h2>
+    <p>Loading your reschedule options&hellip;</p>
+    <div class="spinner"></div>
+    <p class="sub">You'll be redirected in a moment.</p>
+  </div>`);
+  setTimeout(function() {
+    window.location.href = SCRIPT_URL + '?action=prospect_reschedule&id=' + encodeURIComponent(id);
+  }, 800);
+
+} else {
+  render(`<div class="card">
+    <div class="icon">&#9888;</div>
+    <h2>Unknown Action</h2>
+    <p>This link does not match a known action. Please contact your agent directly.</p>
+  </div>`);
+}
+</script>
+</body>
+</html>
