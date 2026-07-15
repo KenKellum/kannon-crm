@@ -1509,10 +1509,14 @@ function _parseLastInteraction(contact) {
   const channel = parts[0].trim();
   const dateStr = parts.slice(1).join(' • ').trim();
   const d = new Date(dateStr);
-  if (isNaN(d)) return { channel, relDate: 'recently' };
+  if (isNaN(d)) return { label: channel, sub: 'recently' };
+  if (channel === 'Appointment Scheduled') {
+    const apptFmt = d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return { label: 'Appt for', sub: apptFmt };
+  }
   const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
   const relDate = diffDays === 0 ? 'today' : diffDays === 1 ? 'yesterday' : diffDays + 'd ago';
-  return { channel, relDate };
+  return { label: channel, sub: relDate };
 }
 
 function _dialerScore(contact) {
@@ -2327,7 +2331,7 @@ function renderDialer() {
               <span class="badge ${statusClass}">${contact.sequence_status || 'Not started'}</span>
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
               ${_lcl ? `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;">&#9990; ${_lcl} &middot; ${contact.call_count||1}x</span>` : ''}
-              ${_li ? `<span class="badge" style="background:#f0fdf4;color:#16a34a;font-size:10px;">&#8635; Last: ${_li.channel} &middot; ${_li.relDate}</span>` : ''}
+              ${_li ? `<span class="badge" style="background:#f0fdf4;color:#16a34a;font-size:10px;">&#8635; ${_li.label} &middot; ${_li.sub}</span>` : ''}
             </div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
@@ -2439,8 +2443,7 @@ async function showScheduleModal(contactId) {
     });
     if (error) { showToast('Error scheduling: ' + (error.message || error)); return false; }
     var dateLabel = new Date(dt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-    var nowLabel  = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-    var noteText  = '[Appointment Scheduled • ' + nowLabel + ']\n' + type + ' on ' + dateLabel + (notes ? ' — ' + notes : '');
+    var noteText  = '[Appointment Scheduled • ' + dateLabel + ']\n' + type + (notes ? ' — ' + notes : '');
     var curNotes  = c.notes || '';
     await supabaseClient.from('contacts').update({
       notes:           noteText + (curNotes ? '\n\n' + curNotes : ''),
