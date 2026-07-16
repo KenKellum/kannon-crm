@@ -330,7 +330,7 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const params     = new URLSearchParams(window.location.search);
 const agentId    = params.get('agent');
 const context    = params.get('context') || 'all'; // client | recruit | all
-const preCompany = params.get('co')      || '';     // pre-filled company from email
+let   preCompany = params.get('co')      || '';     // pre-filled company from contact record
 const preEmail   = params.get('email')   || '';     // pre-filled email (when sent via CRM)
 const preName    = params.get('name')    || '';     // pre-filled name (when sent via CRM)
 const contactId  = params.get('cid')     || '';     // contact ID for existing contacts
@@ -351,6 +351,23 @@ async function init() {
     if (!rows || rows.length === 0) { showError('Booking page not found.'); return; }
     agent = rows[0];
     renderPage();
+
+    // Pull the contact's company from the database so we can pre-fill it correctly
+    if (preEmail && !preCompany) {
+      try {
+        const cRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_contact_for_booking`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON,
+            'Authorization': 'Bearer ' + SUPABASE_ANON,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ p_email: preEmail, p_agent_id: agentId })
+        });
+        const contact = await cRes.json();
+        if (contact && contact.company) preCompany = contact.company;
+      } catch(e) { /* non-fatal — company field just stays blank */ }
+    }
   } catch(e) {
     showError('Unable to load booking page. Please try again.');
   }
