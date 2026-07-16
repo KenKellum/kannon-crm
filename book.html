@@ -308,7 +308,7 @@
       </div>
       <div class="form-group">
         <label>Company Name <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
-        <input type="text" id="field-company" placeholder="Big Sky Brewing Co." autocomplete="off">
+        <input type="text" id="field-company" placeholder="Big Sky Brewing Co." autocomplete="new-password">
         <p style="font-size:12px;color:#94a3b8;margin-top:5px;line-height:1.4;">If you're looking for coverage for your business or employees, enter your company name here.</p>
       </div>
       <div class="form-group">
@@ -403,7 +403,12 @@ function openModal(typeObj) {
   document.getElementById('field-company').value = preCompany;
   document.getElementById('field-note').value    = '';
   document.getElementById('overlay').classList.add('active');
-  setTimeout(() => document.getElementById('field-name').focus(), 100);
+  // Chrome ignores autocomplete="off" and autofills after modal opens —
+  // override it after a tick so our value wins
+  setTimeout(() => {
+    document.getElementById('field-company').value = preCompany;
+    document.getElementById('field-name').focus();
+  }, 150);
 }
 
 function closeModal() {
