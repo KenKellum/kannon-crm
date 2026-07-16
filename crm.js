@@ -1899,8 +1899,9 @@ async function renderScriptManagerPage() {
   if (!el) return;
   window._smPageMode = true;
   el.innerHTML = '<div style="padding:32px;color:var(--muted);font-size:13px;">Loading scripts…</div>';
+  var agencyId = (currentAgent && currentAgent.agency_id) || null;
   var { data, error } = await supabaseClient.rpc('get_call_scripts', {
-    p_contact_type: null, p_situation: null, p_company: null, p_agency_id: null
+    p_contact_type: null, p_situation: null, p_company: null, p_agency_id: agencyId
   });
   var allScripts = error ? [] : (data || []);
   window._smScripts = allScripts;
@@ -1935,8 +1936,9 @@ async function openScriptManager() {
   window._smPageMode = false;
   window._smScripts = null; // force refresh
   var allScripts = await (async function() {
+    var agencyId = (currentAgent && currentAgent.agency_id) || null;
     var { data, error } = await supabaseClient.rpc('get_call_scripts', {
-      p_contact_type: null, p_situation: null, p_company: null, p_agency_id: null
+      p_contact_type: null, p_situation: null, p_company: null, p_agency_id: agencyId
     });
     return (error ? [] : (data || []));
   })();
