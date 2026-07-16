@@ -2678,7 +2678,7 @@ async function saveIntakeToCRM() {
     const _its = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
     const _iEntry = '[Intake Completed • ' + _its + ']\n' + (INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType) + ' intake saved to CRM';
     const _iNewNotes = c.notes ? _iEntry + '\n\n' + c.notes.trim() : _iEntry;
-    await supabaseClient.from('contacts').update({ notes: _iNewNotes }).eq('id', _intakeContactId).catch(() => {});
+    await supabaseClient.from('contacts').update({ notes: _iNewNotes }).eq('id', _intakeContactId);
     c.notes = _iNewNotes;
 
     // 4. Auto-create pipeline Deal if one doesn't exist for this contact+pipeline
@@ -2764,7 +2764,7 @@ async function sendIntakeLink() {
     const _ilts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
     const _ilEntry = '[Intake Link Sent • ' + _ilts + ']\n' + (INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType) + ' form emailed to client';
     const _ilNewNotes = c.notes ? _ilEntry + '\n\n' + c.notes.trim() : _ilEntry;
-    await supabaseClient.from('contacts').update({ notes: _ilNewNotes }).eq('id', _intakeContactId).catch(() => {});
+    await supabaseClient.from('contacts').update({ notes: _ilNewNotes }).eq('id', _intakeContactId);
     c.notes = _ilNewNotes;
     closeIntakeForm();
   } catch(e) {
@@ -2796,7 +2796,7 @@ async function dialerSendBookingLink(contactId) {
       const ts2 = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       const entry2 = '[Schedule Link Sent • ' + ts2 + ']\nBooking link emailed to ' + (c.name || c.email);
       const newNotes2 = c.notes ? entry2 + '\n\n' + c.notes.trim() : entry2;
-      await supabaseClient.from('contacts').update({ notes: newNotes2 }).eq('id', contactId).catch(() => {});
+      await supabaseClient.from('contacts').update({ notes: newNotes2 }).eq('id', contactId);
       c.notes = newNotes2;
       const qi2 = dialerQueue ? dialerQueue.findIndex(x => x.id === contactId) : -1;
       if (qi2 > -1) dialerQueue[qi2].notes = newNotes2;
