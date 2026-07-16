@@ -363,7 +363,8 @@ async function loadData() {
   // system_owner: no filter — sees all
 
   let dq = supabaseClient.from('deals').select('*');
-  if (currentAgent.role === 'agent') dq = dq.eq('user_id', currentUser.id);
+  if (currentAgent.role === 'agent') dq = dq.eq('agent_id', currentAgent.id);
+  else if (currentAgent.role === 'agency_owner') dq = dq.in('agent_id', agencyAgentIds);
 
   const queries = [
     cq.order('created_at', { ascending: false }).limit(10000),
@@ -860,8 +861,9 @@ function renderDashboardAgent() {
 
 async function loadDashEmailOpens() {
   const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-  const { data: opens, error } = await supabaseClient.from('email_opens')
-    .select('*').gte('opened_at', cutoff).order('opened_at', { ascending: false }).limit(50);
+  let openQ = supabaseClient.from('email_opens').select('*').gte('opened_at', cutoff).order('opened_at', { ascending: false }).limit(50);
+  if (currentAgent && currentAgent.role !== 'system_owner') openQ = openQ.eq('agent_id', currentAgent.id);
+  const { data: opens, error } = await openQ;
   window._dashOpens = (error || !opens) ? [] : opens;
   const el = document.getElementById('dash-opens-count');
   if (el) el.textContent = window._dashOpens.length || '0';
@@ -2700,6 +2702,7 @@ async function saveIntakeToCRM() {
         stage:      _idest.stage,
         contact_id: _intakeContactId,
         user_id:    currentUser ? currentUser.id : null,
+        agent_id:   currentAgent ? currentAgent.id : null,
         notes:      'Auto-created from intake form (' + _intakeFormType + ')',
       }).select().single();
       if (!_idealErr && _inewDeal) deals.unshift(_inewDeal);
@@ -3070,7 +3073,8 @@ async function dialerMarkInterested(contactId) {
             pipeline: dest.pipeline,
             stage: dest.stage,
             contact_id: contactId,
-            user_id: currentUser.id
+            user_id: currentUser.id,
+            agent_id: currentAgent.id
           }).select().single();
           if (!dealErr && newDeal) {
             deals.unshift(newDeal);
@@ -3755,7 +3759,9 @@ function openAiReviewModal(table, segment, result) {
 // ============================================================
 async function renderOpens() {
   document.getElementById('page-opens').innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading email opens...</div>`;
-  const { data: opens, error } = await supabaseClient.from('email_opens').select('*').order('opened_at', { ascending: false }).limit(1000);
+  let opensQ = supabaseClient.from('email_opens').select('*').order('opened_at', { ascending: false }).limit(1000);
+  if (currentAgent && currentAgent.role !== 'system_owner') opensQ = opensQ.eq('agent_id', currentAgent.id);
+  const { data: opens, error } = await opensQ;
   if (error) { document.getElementById('page-opens').innerHTML = `<div class="empty-state"><div class="emoji">&#9888;&#65039;</div><p>Error loading: ${error.message}</p></div>`; return; }
   const all = opens || [];
   const total = all.length;
@@ -4685,7 +4691,8 @@ function openAddDeal(stage = '') {
       current_carrier:document.getElementById('deal-carrier').value.trim() || null,
       quoted_premium: parseFloat(document.getElementById('deal-quoted').value) || null,
       notes:          document.getElementById('deal-notes').value.trim() || null,
-      user_id: currentUser.id
+      user_id:  currentUser.id,
+      agent_id: currentAgent.id
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
     deals.unshift(data); showToast('Deal added!'); renderPipelines();
