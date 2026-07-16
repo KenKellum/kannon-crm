@@ -2783,12 +2783,30 @@ async function dialerSendBookingLink(contactId) {
   }
   try {
     showToast('Sending booking link...');
+
+    // Determine contact type — prefer deal pipeline over contact.type
+    var _contactDeal = (window.deals || []).find(function(d) { return d.contact_id === contactId; });
+    var _pipelineTypeMap = {
+      'agent-kannon':   'Recruit|agent-kannon',
+      'agent-insured':  'Recruit|agent-insured',
+      'individual-family': 'Individual/Family',
+      'group-employer':    'Group/Employer'
+    };
+    var _contactType = (_contactDeal && _pipelineTypeMap[_contactDeal.pipeline])
+      || c.type
+      || 'Individual/Family';
+
+    // Generate the type-appropriate note body
+    var _note = getDefaultBookingNote(_contactType, 'after-call');
+
     const url = new URL(APPS_SCRIPT_URL);
-    url.searchParams.set('action',     'send_booking_link');
-    url.searchParams.set('agent_id',   currentAgent.id);
-    url.searchParams.set('to',         c.email);
-    url.searchParams.set('to_name',    c.name || '');
-    url.searchParams.set('contact_id', contactId);
+    url.searchParams.set('action',        'send_booking_link');
+    url.searchParams.set('agent_id',      currentAgent.id);
+    url.searchParams.set('to',            c.email);
+    url.searchParams.set('to_name',       c.name || '');
+    url.searchParams.set('contact_id',    contactId);
+    url.searchParams.set('contact_type',  _contactType);
+    url.searchParams.set('note',          _note);
     const resp = await fetch(url.toString());
     const data = await resp.json();
     if (data.status === 'ok') {
