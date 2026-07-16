@@ -1620,7 +1620,7 @@ function _dialerActionRow(contact, isLast) {
   const _arOpens = window._dashOpens || [];
   const _arOpen = contact.email && _arOpens.some(function(o) { return (o.contact_email||'').toLowerCase() === contact.email.toLowerCase(); });
   const callBtn = contact.phone
-    ? '<button class="btn btn-primary" onclick="stampPhoneCall(\'' + contact.id + '\');window.open(\'tel:' + contact.phone.replace(/[^0-9+]/g,'') + '\');" style="flex:1;font-size:14px;padding:11px 16px;' + (_arOpen ? 'background:#0f766e;' : '') + '">&#128222; Call' + (_arOpen ? ' — They Opened!' : '') + '</button>'
+    ? '<button class="btn btn-primary" onclick="openCallScript(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;' + (_arOpen ? 'background:#0f766e;' : '') + '">&#128222; Call' + (_arOpen ? ' — They Opened!' : '') + '</button>'
     : '<button class="btn btn-outline" disabled style="flex:1;font-size:13px;opacity:0.45;cursor:not-allowed;" title="No phone on file — click Edit to add one">&#128222; No phone — add in Edit</button>';
   const schedBtn  = '<button class="btn btn-primary" onclick="showScheduleModal(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;background:#1a3a5c;color:#fff;">&#128197; Schedule Appointment</button>';
   const sendLinkBtn = '<button class="btn btn-primary" onclick="dialerSendBookingLink(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;background:#0e7490;color:#fff;" title="Email the prospect a self-scheduling link">&#128139; Send Booking Link</button>';
@@ -1657,6 +1657,351 @@ function _dialerActionRow(contact, isLast) {
     + '<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus(\'' + contact.id + '\')">&#8635; Reset</button>'
     + skipBtn + nextBtn
     + '</div></div>';
+}
+
+// ============================================================
+// CALL SCRIPTS ENGINE
+// ============================================================
+window._dialerScripts       = null;
+window._dialerScriptActive  = false;
+window._dialerScriptNode    = null;
+window._dialerScriptHistory = [];
+
+async function _loadDialerScripts() {
+  if (window._dialerScripts) return window._dialerScripts;
+  const agencyId = (currentAgent && currentAgent.agency_id) || null;
+  const { data, error } = await supabaseClient.rpc('get_call_scripts', {
+    p_contact_type: null, p_situation: null, p_company: null, p_agency_id: agencyId
+  });
+  if (error) { console.error('Script load:', error); return []; }
+  window._dialerScripts = data || [];
+  return window._dialerScripts;
+}
+
+function _selectDialerScript(contact, allScripts) {
+  var deal = deals.find(function(d) { return d.contact_id === contact.id; });
+  var situation = 'cold';
+  if (deal) situation = 'pipeline';
+  else if (contact.sequence_status === 'Replied' || contact.sequence_status === 'Interested') situation = 'warm';
+  var company = 'IA';
+  if (deal && deal.pipeline === 'agent-kannon') company = 'KFG';
+  var ctype = contact.type || 'Individual & Family';
+  if (ctype === 'Group/Employer') ctype = 'Business Owner';
+  var roots = allScripts.filter(function(s) { return !s.parent_id; });
+  var best = null; var bestScore = -1;
+  roots.forEach(function(s) {
+    var sc = 0;
+    if (s.contact_type === ctype) sc += 8; else if (!s.contact_type) sc += 1;
+    if (s.situation === situation) sc += 6; else if (s.situation === 'any') sc += 2; else if (!s.situation) sc += 1;
+    if (s.company === company) sc += 4; else if (s.company === 'both') sc += 2; else if (!s.company) sc += 1;
+    if (sc > bestScore) { bestScore = sc; best = s; }
+  });
+  return best;
+}
+
+function _substituteVars(text, contact) {
+  if (!text) return '';
+  var firstName  = (contact.name || '').split(' ')[0] || 'there';
+  var agentFirst = (currentAgent && currentAgent.name || '').split(' ')[0] || 'your advisor';
+  var state      = contact.state || '';
+  var company    = contact.company || (window.currentAgency && currentAgency.name) || '';
+  return text
+    .replace(/\[FIRST_NAME\]/g, firstName)
+    .replace(/\[AGENT_FIRST\]/g, agentFirst)
+    .replace(/\[STATE\]/g, state)
+    .replace(/\[COMPANY\]/g, company);
+}
+
+async function openCallScript(contactId) {
+  var c = contacts.find(function(x) { return x.id === contactId; });
+  if (!c) return;
+  stampPhoneCall(contactId);
+  if (c.phone) window.open('tel:' + c.phone.replace(/[^0-9+]/g, ''));
+  var allScripts = await _loadDialerScripts();
+  var root = _selectDialerScript(c, allScripts);
+  if (!root) { showToast('No script found for this type — calling directly.'); return; }
+  window._dialerScriptActive  = true;
+  window._dialerScriptNode    = root;
+  window._dialerScriptHistory = [];
+  renderDialer();
+}
+
+function closeCallScript() {
+  window._dialerScriptActive  = false;
+  window._dialerScriptNode    = null;
+  window._dialerScriptHistory = [];
+  renderDialer();
+}
+
+function navigateScript(nodeId) {
+  var node = (window._dialerScripts || []).find(function(s) { return s.id === nodeId; });
+  if (!node) return;
+  if (window._dialerScriptNode) window._dialerScriptHistory.push(window._dialerScriptNode);
+  window._dialerScriptNode = node;
+  var panel = document.getElementById('dialer-script-panel');
+  if (panel) panel.innerHTML = _buildScriptPanelBody();
+}
+
+function scriptBack() {
+  if (!window._dialerScriptHistory || !window._dialerScriptHistory.length) return;
+  window._dialerScriptNode = window._dialerScriptHistory.pop();
+  var panel = document.getElementById('dialer-script-panel');
+  if (panel) panel.innerHTML = _buildScriptPanelBody();
+}
+
+function selectAlternateScript(rootId) {
+  var node = (window._dialerScripts || []).find(function(s) { return s.id === rootId; });
+  if (!node) return;
+  window._dialerScriptNode    = node;
+  window._dialerScriptHistory = [];
+  var panel = document.getElementById('dialer-script-panel');
+  if (panel) panel.innerHTML = _buildScriptPanelBody();
+}
+
+function _buildScriptPanelBody() {
+  var node     = window._dialerScriptNode;
+  var scripts  = window._dialerScripts || [];
+  var history  = window._dialerScriptHistory || [];
+  var contact  = dialerQueue && dialerQueue[dialerIndex];
+  if (!node || !contact) return '';
+
+  var children = scripts.filter(function(s) { return s.parent_id === node.id; });
+  var bodyText = _substituteVars(node.script_body || '', contact);
+  var isRoot   = !node.parent_id;
+
+  // Escape HTML then restore newlines
+  var bodyHtml = bodyText
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+
+  // Root script switcher — show breadcrumb of available roots
+  var roots = scripts.filter(function(s) { return !s.parent_id; });
+  var histRoot = history.length ? history[0] : node;
+  var switcherHtml = '';
+  if (roots.length > 1) {
+    switcherHtml = '<div style="padding:10px 16px;background:var(--surface-3);border-bottom:1px solid var(--border);overflow-x:auto;white-space:nowrap;">';
+    roots.forEach(function(r) {
+      var isActive = r.id === (isRoot ? node.id : histRoot.id);
+      switcherHtml += '<button onclick="selectAlternateScript(\'' + r.id + '\')" style="display:inline-block;margin-right:6px;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid '
+        + (isActive ? 'var(--accent);background:var(--accent);color:white' : 'var(--border);background:transparent;color:var(--muted)')
+        + ';">' + (r.name || 'Script').replace('Cold Call — ','').replace(' (IA)','').replace(' (KFG)','') + '</button>';
+    });
+    switcherHtml += '</div>';
+  }
+
+  var html = switcherHtml;
+
+  // Header
+  html += '<div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface-2);">';
+  html += '<div style="flex:1;min-width:0;">';
+  if (!isRoot) {
+    html += '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Objection</div>';
+  }
+  html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (node.name || '') + '">' + (node.name || 'Script') + '</div>';
+  html += '</div>';
+  if (history.length > 0) {
+    html += '<button class="btn btn-outline btn-sm" onclick="scriptBack()" style="font-size:11px;padding:4px 10px;flex-shrink:0;">&#8592; Back</button>';
+  }
+  html += '<button class="btn btn-outline btn-sm" onclick="closeCallScript()" style="font-size:11px;padding:4px 8px;color:var(--muted);flex-shrink:0;" title="Close script">&#10005;</button>';
+  html += '</div>';
+
+  // Script body
+  html += '<div style="flex:1;overflow-y:auto;padding:16px;font-size:13px;line-height:1.8;color:var(--text-primary);">' + bodyHtml + '</div>';
+
+  // Objection buttons or closing prompt
+  if (children.length > 0) {
+    html += '<div style="border-top:1px solid var(--border);padding:14px;background:var(--surface-2);">';
+    html += '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">They say...</div>';
+    children.forEach(function(child) {
+      html += '<button onclick="navigateScript(\'' + child.id + '\')" style="display:block;width:100%;text-align:left;margin-bottom:6px;font-size:12px;padding:8px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surface-3);color:var(--text-primary);cursor:pointer;">'
+        + '&#8594;&nbsp; ' + (child.trigger_text || child.name || 'Objection') + '</button>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="border-top:1px solid var(--border);padding:14px;text-align:center;">'
+      + '<div style="font-size:11px;color:var(--muted);">&#127919; Close for appointment, quote, or next step.</div>'
+      + '</div>';
+  }
+
+  return html;
+}
+
+// ============================================================
+// SCRIPT MANAGER (Admin)
+// ============================================================
+window._smScripts = null;
+window._smSelectedId = null;
+
+async function openScriptManager() {
+  window._smScripts = null; // force refresh
+  var allScripts = await (async function() {
+    var { data, error } = await supabaseClient.rpc('get_call_scripts', {
+      p_contact_type: null, p_situation: null, p_company: null, p_agency_id: null
+    });
+    return (error ? [] : (data || []));
+  })();
+  window._smScripts = allScripts;
+  window._smSelectedId = null;
+  _renderScriptManagerModal(allScripts);
+}
+
+function _renderScriptManagerModal(allScripts) {
+  var roots = allScripts.filter(function(s) { return !s.parent_id; });
+  var treeHtml = roots.map(function(r) { return _smTreeNode(r, allScripts, 0); }).join('');
+  showModal('&#128221; Call Script Manager', `
+    <div style="display:flex;gap:0;height:580px;">
+      <div style="width:300px;min-width:300px;border-right:1px solid var(--border);overflow-y:auto;padding:12px;background:var(--surface-3);border-radius:0 0 0 12px;">
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Script Tree</div>
+        <div id="sm-tree">${treeHtml}</div>
+        <div style="margin-top:12px;">
+          <button class="btn btn-primary btn-sm" onclick="smAddRoot()" style="width:100%;font-size:12px;">+ Add Root Script</button>
+        </div>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:20px;" id="sm-editor">
+        <div style="color:var(--muted);font-size:13px;text-align:center;padding:60px 20px;">Select a script on the left to edit it.</div>
+      </div>
+    </div>
+  `, null, { wide: true, hideConfirm: true, cancelLabel: 'Close' });
+}
+
+function _smTreeNode(node, allScripts, depth) {
+  var children = allScripts.filter(function(s) { return s.parent_id === node.id; });
+  var indent = depth * 14;
+  var label = depth === 0 ? (node.name || 'Script') : (node.trigger_text || node.name || 'Objection');
+  var icon = depth === 0 ? '&#128221;' : (depth === 1 ? '&#8594;' : '&#8680;');
+  var html = '<div style="padding:5px 8px 5px ' + (8 + indent) + 'px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px;margin-bottom:2px;" '
+    + 'id="sm-node-' + node.id + '" onclick="smSelectNode(\'' + node.id + '\')">'
+    + '<span style="flex-shrink:0;">' + icon + '</span>'
+    + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);">' + label + '</span>'
+    + '</div>';
+  if (children.length > 0) {
+    html += children.map(function(c) { return _smTreeNode(c, allScripts, depth + 1); }).join('');
+  }
+  return html;
+}
+
+function smSelectNode(nodeId) {
+  var scripts = window._smScripts || [];
+  var node = scripts.find(function(s) { return s.id === nodeId; });
+  if (!node) return;
+  window._smSelectedId = nodeId;
+  // highlight
+  document.querySelectorAll('[id^="sm-node-"]').forEach(function(el) {
+    el.style.background = el.id === 'sm-node-' + nodeId ? 'var(--accent-light, rgba(99,102,241,0.1))' : '';
+    el.style.fontWeight = el.id === 'sm-node-' + nodeId ? '700' : '';
+  });
+  var isRoot = !node.parent_id;
+  var children = scripts.filter(function(s) { return s.parent_id === nodeId; });
+  var editor = document.getElementById('sm-editor');
+  if (!editor) return;
+  editor.innerHTML = `
+    <div style="margin-bottom:14px;">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">${isRoot ? 'Root Script' : 'Objection / Rebuttal'}</div>
+      <input id="sm-name" value="${(node.name||'').replace(/"/g,'&quot;')}" placeholder="Script name" style="width:100%;margin-bottom:8px;" />
+      ${!isRoot ? `<input id="sm-trigger" value="${(node.trigger_text||'').replace(/"/g,'&quot;')}" placeholder="Trigger text (what prospect says)" style="width:100%;margin-bottom:8px;" />` : ''}
+      <textarea id="sm-body" rows="12" style="width:100%;font-size:12px;font-family:inherit;line-height:1.7;">${(node.script_body||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Variables: [FIRST_NAME] [AGENT_FIRST] [STATE] [COMPANY]</div>
+    </div>
+    ${isRoot ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
+      <div><label style="font-size:11px;font-weight:700;color:var(--muted);">Contact Type</label>
+        <input id="sm-ctype" value="${(node.contact_type||'').replace(/"/g,'&quot;')}" placeholder="e.g. Individual &amp; Family" style="width:100%;" /></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--muted);">Situation</label>
+        <select id="sm-sit" style="width:100%;">
+          <option value="cold" ${node.situation==='cold'?'selected':''}>cold</option>
+          <option value="warm" ${node.situation==='warm'?'selected':''}>warm</option>
+          <option value="pipeline" ${node.situation==='pipeline'?'selected':''}>pipeline</option>
+          <option value="any" ${node.situation==='any'?'selected':''}>any</option>
+        </select></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--muted);">Company</label>
+        <select id="sm-co" style="width:100%;">
+          <option value="IA" ${node.company==='IA'?'selected':''}>IA</option>
+          <option value="KFG" ${node.company==='KFG'?'selected':''}>KFG</option>
+          <option value="both" ${node.company==='both'?'selected':''}>both</option>
+        </select></div>
+    </div>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" onclick="smSaveNode('${nodeId}')">&#10003; Save</button>
+      <button class="btn btn-outline btn-sm" onclick="smAddChild('${nodeId}')">+ Add Objection</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="smDeleteNode('${nodeId}')">&#128465; Delete</button>
+    </div>
+    ${children.length > 0 ? `<div style="margin-top:12px;font-size:11px;color:var(--muted);">${children.length} objection${children.length>1?'s':''} attached to this node.</div>` : ''}
+  `;
+}
+
+async function smSaveNode(nodeId) {
+  var updates = {
+    name:        (document.getElementById('sm-name') || {}).value || '',
+    script_body: (document.getElementById('sm-body') || {}).value || ''
+  };
+  var trigEl = document.getElementById('sm-trigger');
+  if (trigEl) updates.trigger_text = trigEl.value || '';
+  var ctypeEl = document.getElementById('sm-ctype');
+  if (ctypeEl) {
+    updates.contact_type = ctypeEl.value || null;
+    updates.situation = (document.getElementById('sm-sit') || {}).value || 'cold';
+    updates.company   = (document.getElementById('sm-co')  || {}).value || 'IA';
+  }
+  var { error } = await supabaseClient.from('call_scripts').update(updates).eq('id', nodeId);
+  if (error) { showToast('Error saving: ' + error.message); return; }
+  // Update cache
+  var node = (window._smScripts || []).find(function(s) { return s.id === nodeId; });
+  if (node) Object.assign(node, updates);
+  // Invalidate dialer cache
+  window._dialerScripts = null;
+  showToast('&#10003; Script saved!');
+  // Refresh tree label
+  var treeNode = document.getElementById('sm-node-' + nodeId);
+  if (treeNode) {
+    var span = treeNode.querySelector('span:last-child');
+    if (span) span.textContent = updates.name || 'Script';
+  }
+}
+
+async function smAddRoot() {
+  var agencyId = (currentAgent && currentAgent.agency_id) || null;
+  var { data, error } = await supabaseClient.from('call_scripts').insert({
+    name: 'New Script', script_body: 'Enter your script here...',
+    contact_type: null, situation: 'cold', company: 'IA', sort_order: 99,
+    agency_id: agencyId
+  }).select().single();
+  if (error) { showToast('Error: ' + error.message); return; }
+  window._smScripts = null;
+  window._dialerScripts = null;
+  await openScriptManager();
+  setTimeout(function() { smSelectNode(data.id); }, 100);
+}
+
+async function smAddChild(parentId) {
+  var agencyId = (currentAgent && currentAgent.agency_id) || null;
+  var parent = (window._smScripts || []).find(function(s) { return s.id === parentId; });
+  var { data, error } = await supabaseClient.from('call_scripts').insert({
+    parent_id: parentId,
+    name: 'New Objection', trigger_text: 'They say...',
+    script_body: 'Enter your rebuttal here...',
+    contact_type: parent ? parent.contact_type : null,
+    situation: parent ? parent.situation : null,
+    company: parent ? parent.company : null,
+    sort_order: 99, agency_id: agencyId
+  }).select().single();
+  if (error) { showToast('Error: ' + error.message); return; }
+  window._smScripts = null;
+  window._dialerScripts = null;
+  await openScriptManager();
+  setTimeout(function() { smSelectNode(data.id); }, 100);
+}
+
+async function smDeleteNode(nodeId) {
+  var scripts = window._smScripts || [];
+  var children = scripts.filter(function(s) { return s.parent_id === nodeId; });
+  var msg = children.length > 0
+    ? 'This will also delete ' + children.length + ' child objection(s). Are you sure?'
+    : 'Delete this script node?';
+  if (!confirm(msg)) return;
+  var { error } = await supabaseClient.from('call_scripts').delete().eq('id', nodeId);
+  if (error) { showToast('Error: ' + error.message); return; }
+  window._smScripts = null;
+  window._dialerScripts = null;
+  await openScriptManager();
 }
 
 function _smOpenProfile(contactId, key) {
@@ -2381,8 +2726,11 @@ function renderDialer() {
   const _rdDeal = deals.find(function(d) { return d.contact_id === contact.id; });
   const _rdBorder = _rdDeal ? '#10b981' : 'var(--accent)';
   const _hasSocial = !!(contact.linkedin_url || contact.facebook_url || contact.instagram_handle || contact.twitter_handle || contact.tiktok_handle || contact.telegram_handle || contact.whatsapp_number);
+  const _sA = !!(window._dialerScriptActive);
   el.innerHTML = `
-    <div style="max-width:700px;margin:0 auto;">
+    <div style="${_sA ? 'display:flex;align-items:flex-start;gap:0;min-height:calc(100vh - 120px);' : 'max-width:700px;margin:0 auto;'}">
+      ${_sA ? `<div id="dialer-script-panel" style="width:420px;min-width:420px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface-2);position:sticky;top:0;max-height:calc(100vh - 100px);overflow:hidden;border-radius:10px 0 0 10px;border:1px solid var(--border);">${_buildScriptPanelBody()}</div>` : ''}
+      <div style="${_sA ? 'flex:1;padding:0 20px;overflow-y:auto;max-height:calc(100vh - 100px);' : ''}">
 
       <!-- Session progress -->
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
@@ -2475,6 +2823,7 @@ function renderDialer() {
             <button class="btn btn-outline" onclick="dialerSaveNote('${contact.id}')">Save note</button>
           </div>
         </div>
+      </div>
       </div>
     </div>`;
 }
@@ -5022,6 +5371,16 @@ async function renderAdmin() {
       <div style="font-weight:700;font-size:16px;margin-bottom:16px;">&#127970; Agencies</div>
       ${agencyRows || '<div class="empty-state" style="padding:20px;"><p>No agencies.</p></div>'}
     </div>` : ''}
+
+    <div class="card" style="margin-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700;font-size:16px;margin-bottom:4px;">&#128221; Call Scripts</div>
+          <div style="font-size:13px;color:var(--muted);">Manage the dialer's script tree — root scripts, objections, and rebuttals.</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openScriptManager()">Manage Scripts</button>
+      </div>
+    </div>
   `;
 }
 
@@ -5209,13 +5568,15 @@ async function startSequence(contactId) {
 function showModal(title, bodyHtml, onSave, opts = {}) {
   const confirmLabel = opts.confirmLabel || 'Save';
   const footer = opts.hideConfirm
-    ? `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`
+    ? `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">${opts.cancelLabel || 'Close'}</button></div>`
     : `<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="handleModalSave()">${confirmLabel}</button></div>`;
+  const modalStyle = opts.wide ? 'max-width:900px;padding:0;' : '';
+  const bodyStyle  = opts.wide ? 'padding:0;' : '';
   document.getElementById('modal-container').innerHTML = `
     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
-      <div class="modal">
-        <div class="modal-header"><h2>${title}</h2><button class="modal-close" onclick="closeModal()">&times;</button></div>
-        <div class="modal-body">${bodyHtml}</div>
+      <div class="modal" style="${modalStyle}">
+        <div class="modal-header" style="${opts.wide ? 'margin:0;border-radius:12px 12px 0 0;padding:16px 20px;' : ''}"><h2>${title}</h2><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body" style="${bodyStyle}">${bodyHtml}</div>
         ${footer}
       </div>
     </div>`;
@@ -6282,7 +6643,7 @@ function _calDay() {
     <div style="border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
       <div style="padding:10px 16px;background:${isToday?'rgba(200,168,75,0.08)':'var(--surface-1)'};border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
         <div style="font-size:13px;font-weight:600;color:${isToday?'var(--text-accent)':'var(--text-primary)'};">${isToday?'Today — ':''}${calDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
-        <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointment${dayAppts.length!==1?'s':''}</div>
+        <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointme        <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointment${dayAppts.length!==1?'s':''}</div>
       </div>
       <div style="display:flex;">
         <div style="width:52px;flex-shrink:0;border-right:0.5px solid var(--border);">${timeCol}</div>
