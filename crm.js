@@ -2041,7 +2041,15 @@ async function smSaveNode(nodeId) {
     updates.situation = (document.getElementById('sm-sit') || {}).value || 'cold';
     updates.company   = (document.getElementById('sm-co')  || {}).value || 'IA';
   }
-  var { error } = await supabaseClient.from('call_scripts').update(updates).eq('id', nodeId);
+  var { error } = await supabaseClient.rpc('sm_update_script', {
+    p_id:           nodeId,
+    p_name:         updates.name         || null,
+    p_script_body:  updates.script_body  || null,
+    p_trigger_text: updates.trigger_text || null,
+    p_contact_type: updates.contact_type || null,
+    p_situation:    updates.situation    || null,
+    p_company:      updates.company      || null
+  });
   if (error) { showToast('Error saving: ' + error.message); return; }
   // Update cache
   var node = (window._smScripts || []).find(function(s) { return s.id === nodeId; });
@@ -2059,11 +2067,11 @@ async function smSaveNode(nodeId) {
 
 async function smAddRoot() {
   var agencyId = (currentAgent && currentAgent.agency_id) || null;
-  var { data, error } = await supabaseClient.from('call_scripts').insert({
-    name: 'New Script', script_body: 'Enter your script here...',
-    contact_type: null, situation: 'cold', company: 'IA', sort_order: 99,
-    agency_id: agencyId
-  }).select().single();
+  var { data, error } = await supabaseClient.rpc('sm_insert_script', {
+    p_name: 'New Script', p_script_body: 'Enter your script here...',
+    p_situation: 'cold', p_company: 'IA', p_sort_order: 99,
+    p_agency_id: agencyId
+  });
   if (error) { showToast('Error: ' + error.message); return; }
   window._smScripts = null;
   window._dialerScripts = null;
@@ -2074,15 +2082,17 @@ async function smAddRoot() {
 async function smAddChild(parentId) {
   var agencyId = (currentAgent && currentAgent.agency_id) || null;
   var parent = (window._smScripts || []).find(function(s) { return s.id === parentId; });
-  var { data, error } = await supabaseClient.from('call_scripts').insert({
-    parent_id: parentId,
-    name: 'New Objection', trigger_text: 'They say...',
-    script_body: 'Enter your rebuttal here...',
-    contact_type: parent ? parent.contact_type : null,
-    situation: parent ? parent.situation : null,
-    company: parent ? parent.company : null,
-    sort_order: 99, agency_id: agencyId
-  }).select().single();
+  var { data, error } = await supabaseClient.rpc('sm_insert_script', {
+    p_parent_id:    parentId,
+    p_name:         'New Objection',
+    p_trigger_text: 'They say...',
+    p_script_body:  'Enter your rebuttal here...',
+    p_contact_type: parent ? parent.contact_type : null,
+    p_situation:    parent ? parent.situation    : null,
+    p_company:      parent ? parent.company      : null,
+    p_sort_order:   99,
+    p_agency_id:    agencyId
+  });
   if (error) { showToast('Error: ' + error.message); return; }
   window._smScripts = null;
   window._dialerScripts = null;
@@ -2097,7 +2107,7 @@ async function smDeleteNode(nodeId) {
     ? 'This will also delete ' + children.length + ' child objection(s). Are you sure?'
     : 'Delete this script node?';
   if (!confirm(msg)) return;
-  var { error } = await supabaseClient.from('call_scripts').delete().eq('id', nodeId);
+  var { error } = await supabaseClient.rpc('sm_delete_script', { p_id: nodeId });
   if (error) { showToast('Error: ' + error.message); return; }
   window._smScripts = null;
   window._dialerScripts = null;
