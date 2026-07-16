@@ -968,7 +968,7 @@ function renderDashboard_UNUSED() {
       <button class="qa-btn" onclick="showPage('pipelines')">&#128202; Pipelines</button>
       <button class="qa-btn" onclick="showPage('contacts')">&#128101; All Contacts</button>
       <button class="qa-btn" onclick="syncGoogleContacts()">&#128257; Sync Google</button>
-      ${currentAgent.role === 'system_owner' ? `<button class="qa-btn" onclick="showPage('admin')">&#9881;&#65039; Admin</button>` : ''}
+      ${(currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner') ? `<button class="qa-btn" onclick="showPage('admin')">&#9881;&#65039; Admin</button>` : ''}
     </div>
 
     <div class="dash-grid">
