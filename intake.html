@@ -234,6 +234,11 @@ async function init() {
     if (cd && cd.length) contact = cd[0];
   }
 
+  // Fill any missing fields from URL params (embedded at send time)
+  if (!contact.name)  contact.name  = params.get('name')  || '';
+  if (!contact.email) contact.email = params.get('email') || '';
+  if (!contact.phone) contact.phone = params.get('phone') || '';
+
   renderForm(session, contact);
 }
 

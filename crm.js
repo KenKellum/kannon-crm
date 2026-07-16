@@ -2740,8 +2740,11 @@ async function sendIntakeLink() {
       .single();
     if (sessErr) throw sessErr;
 
-    // Derive intake URL (same origin, intake.html)
-    const intakeUrl = window.location.origin + '/intake.html?s=' + sess.id;
+    // Derive intake URL (same origin, intake.html) — embed contact data so fields pre-fill
+    const intakeUrl = window.location.origin + '/intake.html?s=' + sess.id
+      + '&name='  + encodeURIComponent(c.name  || '')
+      + '&email=' + encodeURIComponent(c.email || '')
+      + '&phone=' + encodeURIComponent(c.phone || '');
 
     // Call Apps Script to send email
     const appsUrl = new URL(APPS_SCRIPT_URL);
