@@ -1715,15 +1715,30 @@ function _substituteVars(text, contact) {
 async function openCallScript(contactId) {
   var c = contacts.find(function(x) { return x.id === contactId; });
   if (!c) return;
-  stampPhoneCall(contactId);
-  if (c.phone) window.open('tel:' + c.phone.replace(/[^0-9+]/g, ''));
   var allScripts = await _loadDialerScripts();
   var root = _selectDialerScript(c, allScripts);
-  if (!root) { showToast('No script found for this type — calling directly.'); return; }
-  window._dialerScriptActive  = true;
-  window._dialerScriptNode    = root;
-  window._dialerScriptHistory = [];
+  if (!root) {
+    // No script available — just dial directly
+    stampPhoneCall(contactId);
+    if (c.phone) window.open('tel:' + c.phone.replace(/[^0-9+]/g, ''));
+    showToast('No script for this contact type — calling directly.');
+    return;
+  }
+  window._dialerScriptActive     = true;
+  window._dialerScriptNode       = root;
+  window._dialerScriptHistory    = [];
+  window._dialerScriptContactId  = contactId;
   renderDialer();
+}
+
+function placeDialerCall() {
+  var contactId = window._dialerScriptContactId || (dialerQueue && dialerQueue[dialerIndex] && dialerQueue[dialerIndex].id);
+  if (!contactId) return;
+  var c = contacts.find(function(x) { return x.id === contactId; });
+  if (!c) return;
+  stampPhoneCall(contactId);
+  if (c.phone) window.open('tel:' + c.phone.replace(/[^0-9+]/g, ''));
+  showToast('&#128222; Dialing ' + (c.name || c.phone) + '...');
 }
 
 function closeCallScript() {
@@ -1759,70 +1774,113 @@ function selectAlternateScript(rootId) {
 }
 
 function _buildScriptPanelBody() {
-  var node     = window._dialerScriptNode;
-  var scripts  = window._dialerScripts || [];
-  var history  = window._dialerScriptHistory || [];
-  var contact  = dialerQueue && dialerQueue[dialerIndex];
+  var node    = window._dialerScriptNode;
+  var scripts = window._dialerScripts || [];
+  var history = window._dialerScriptHistory || [];
+  var contact = dialerQueue && dialerQueue[dialerIndex];
   if (!node || !contact) return '';
 
   var children = scripts.filter(function(s) { return s.parent_id === node.id; });
-  var bodyText = _substituteVars(node.script_body || '', contact);
-  var isRoot   = !node.parent_id;
+  var bodyHtml = _substituteVars(node.script_body || '', contact)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
+  var isRoot  = !node.parent_id;
+  var activeRootId = isRoot ? node.id : (history.length ? history[0].id : node.id);
+  var roots   = scripts.filter(function(s) { return !s.parent_id; });
 
-  // Escape HTML then restore newlines
-  var bodyHtml = bodyText
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>');
+  // Short display name for sidebar
+  function shortName(r) {
+    return (r.name || '')
+      .replace(/^Cold Call — /,'').replace(/^Warm — /,'')
+      .replace(/ \(Under 65\)/,'').replace(/ \(IA\)/,'').replace(/ \(KFG\)/,'')
+      .replace(/^Recruit — /,'').replace(' Health','')
+      .replace('Experienced Agent','Experienced')
+      .replace('Individual & Family','Ind & Family')
+      .replace('Medicare Supplement','Medicare Supp')
+      .replace('Medicare Advantage','Medicare Adv')
+      .replace('Group & Employer','Group/Employer')
+      || 'Script';
+  }
 
-  // Root script switcher — show breadcrumb of available roots
-  var roots = scripts.filter(function(s) { return !s.parent_id; });
-  var histRoot = history.length ? history[0] : node;
-  var switcherHtml = '';
-  if (roots.length > 1) {
-    switcherHtml = '<div style="padding:10px 16px;background:var(--surface-3);border-bottom:1px solid var(--border);overflow-x:auto;white-space:nowrap;">';
-    roots.forEach(function(r) {
-      var isActive = r.id === (isRoot ? node.id : histRoot.id);
-      switcherHtml += '<button onclick="selectAlternateScript(\'' + r.id + '\')" style="display:inline-block;margin-right:6px;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid '
-        + (isActive ? 'var(--accent);background:var(--accent);color:white' : 'var(--border);background:transparent;color:var(--muted)')
-        + ';">' + (r.name || 'Script').replace('Cold Call — ','').replace(' (IA)','').replace(' (KFG)','') + '</button>';
+  // Grouped script sidebar
+  var groups = [
+    { label: 'Health / IA', prefix: ['11111111-0000-0000-0000-00000000000','1','2','3','4'].join(''),
+      ids: ['11111111-0000-0000-0000-000000000001','11111111-0000-0000-0000-000000000002','11111111-0000-0000-0000-000000000003','11111111-0000-0000-0000-000000000004'] },
+    { label: 'Financial / KFG',
+      ids: ['11111111-0000-0000-0000-000000000005','11111111-0000-0000-0000-000000000006','11111111-0000-0000-0000-000000000007'] },
+    { label: 'Recruit',
+      ids: ['11111111-0000-0000-0000-000000000008','11111111-0000-0000-0000-000000000009','11111111-0000-0000-0000-000000000010','11111111-0000-0000-0000-000000000011'] },
+    { label: 'Follow-Up',
+      ids: ['11111111-0000-0000-0000-000000000012','11111111-0000-0000-0000-000000000013'] }
+  ];
+  var groupedIds = groups.reduce(function(a,g){ return a.concat(g.ids); },[]);
+
+  var sidebarHtml = '';
+  groups.forEach(function(g) {
+    var grp = roots.filter(function(r){ return g.ids.indexOf(r.id) >= 0; });
+    if (!grp.length) return;
+    sidebarHtml += '<div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px 3px;">' + g.label + '</div>';
+    grp.forEach(function(r) {
+      var active = r.id === activeRootId;
+      sidebarHtml += '<button onclick="selectAlternateScript(\'' + r.id + '\')" style="display:block;width:100%;text-align:left;padding:5px 10px;font-size:11px;font-weight:' + (active?'700':'400') + ';border:none;border-left:2px solid ' + (active?'var(--accent)':'transparent') + ';background:' + (active?'rgba(99,102,241,0.12)':'transparent') + ';color:' + (active?'var(--accent)':'var(--text-primary)') + ';cursor:pointer;border-radius:0 4px 4px 0;margin-bottom:1px;">' + shortName(r) + '</button>';
     });
-    switcherHtml += '</div>';
-  }
+  });
+  // Custom scripts not in any group
+  roots.filter(function(r){ return groupedIds.indexOf(r.id)<0; }).forEach(function(r) {
+    var active = r.id === activeRootId;
+    sidebarHtml += '<button onclick="selectAlternateScript(\'' + r.id + '\')" style="display:block;width:100%;text-align:left;padding:5px 10px;font-size:11px;font-weight:' + (active?'700':'400') + ';border:none;border-left:2px solid ' + (active?'var(--accent)':'transparent') + ';background:' + (active?'rgba(99,102,241,0.12)':'transparent') + ';color:' + (active?'var(--accent)':'var(--text-primary)') + ';cursor:pointer;">' + shortName(r) + '</button>';
+  });
 
-  var html = switcherHtml;
+  // Phone for call button
+  var phoneDisplay = contact.phone || '';
+  var phoneDial    = phoneDisplay.replace(/[^0-9+]/g,'');
 
-  // Header
-  html += '<div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface-2);">';
-  html += '<div style="flex:1;min-width:0;">';
-  if (!isRoot) {
-    html += '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Objection</div>';
+  // ── TOP HEADER BAR ──
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);background:var(--surface-1);flex-shrink:0;">';
+  html += '<span style="font-size:12px;font-weight:700;color:var(--text-primary);flex:1;">&#128222; Call Script</span>';
+  if (phoneDial) {
+    html += '<button onclick="placeDialerCall()" style="display:flex;align-items:center;gap:5px;padding:5px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">&#128222; Dial ' + (phoneDisplay || '') + '</button>';
   }
-  html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (node.name || '') + '">' + (node.name || 'Script') + '</div>';
+  html += '<button onclick="closeCallScript()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:2px 4px;" title="Close script panel">&#10005;</button>';
   html += '</div>';
+
+  // ── BODY: sidebar + content ──
+  html += '<div style="display:flex;flex:1;overflow:hidden;">';
+
+  // Sidebar
+  html += '<div style="width:145px;min-width:145px;border-right:1px solid var(--border);overflow-y:auto;background:var(--surface-3);padding:4px 0;">' + sidebarHtml + '</div>';
+
+  // Content column
+  html += '<div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">';
+
+  // Content header (back btn + script name)
+  html += '<div style="display:flex;align-items:center;gap:6px;padding:7px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);flex-shrink:0;">';
   if (history.length > 0) {
-    html += '<button class="btn btn-outline btn-sm" onclick="scriptBack()" style="font-size:11px;padding:4px 10px;flex-shrink:0;">&#8592; Back</button>';
+    html += '<button onclick="scriptBack()" style="background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--muted);font-size:11px;padding:3px 8px;flex-shrink:0;">&#8592; Back</button>';
   }
-  html += '<button class="btn btn-outline btn-sm" onclick="closeCallScript()" style="font-size:11px;padding:4px 8px;color:var(--muted);flex-shrink:0;" title="Close script">&#10005;</button>';
+  if (!isRoot) {
+    html += '<span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;flex-shrink:0;">Objection &rsaquo;</span>';
+  }
+  html += '<span style="font-size:12px;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (node.name || 'Script') + '</span>';
   html += '</div>';
 
-  // Script body
-  html += '<div style="flex:1;overflow-y:auto;padding:16px;font-size:13px;line-height:1.8;color:var(--text-primary);">' + bodyHtml + '</div>';
+  // Script body text
+  html += '<div style="flex:1;overflow-y:auto;padding:14px 16px;font-size:12.5px;line-height:1.85;color:var(--text-primary);">' + bodyHtml + '</div>';
 
-  // Objection buttons or closing prompt
+  // Objection buttons
   if (children.length > 0) {
-    html += '<div style="border-top:1px solid var(--border);padding:14px;background:var(--surface-2);">';
-    html += '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">They say...</div>';
+    html += '<div style="border-top:1px solid var(--border);padding:12px;background:var(--surface-2);flex-shrink:0;">';
+    html += '<div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px;">They say...</div>';
     children.forEach(function(child) {
-      html += '<button onclick="navigateScript(\'' + child.id + '\')" style="display:block;width:100%;text-align:left;margin-bottom:6px;font-size:12px;padding:8px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surface-3);color:var(--text-primary);cursor:pointer;">'
-        + '&#8594;&nbsp; ' + (child.trigger_text || child.name || 'Objection') + '</button>';
+      html += '<button onclick="navigateScript(\'' + child.id + '\')" style="display:block;width:100%;text-align:left;margin-bottom:5px;font-size:11.5px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface-3);color:var(--text-primary);cursor:pointer;">&#8594;&nbsp; ' + (child.trigger_text || child.name || 'Objection') + '</button>';
     });
     html += '</div>';
-  } else {
-    html += '<div style="border-top:1px solid var(--border);padding:14px;text-align:center;">'
-      + '<div style="font-size:11px;color:var(--muted);">&#127919; Close for appointment, quote, or next step.</div>'
-      + '</div>';
+  } else if (!isRoot) {
+    html += '<div style="border-top:1px solid var(--border);padding:10px 12px;text-align:center;flex-shrink:0;"><span style="font-size:11px;color:var(--muted);">&#127919; Aim to close — appointment, quote, or next step.</span></div>';
   }
 
+  html += '</div>'; // content column
+  html += '</div>'; // body
   return html;
 }
 
@@ -2729,7 +2787,7 @@ function renderDialer() {
   const _sA = !!(window._dialerScriptActive);
   el.innerHTML = `
     <div style="${_sA ? 'display:flex;align-items:flex-start;gap:0;min-height:calc(100vh - 120px);' : 'max-width:700px;margin:0 auto;'}">
-      ${_sA ? `<div id="dialer-script-panel" style="width:420px;min-width:420px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface-2);position:sticky;top:0;max-height:calc(100vh - 100px);overflow:hidden;border-radius:10px 0 0 10px;border:1px solid var(--border);">${_buildScriptPanelBody()}</div>` : ''}
+      ${_sA ? `<div id="dialer-script-panel" style="width:580px;min-width:580px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface-2);position:sticky;top:0;max-height:calc(100vh - 100px);overflow:hidden;border-radius:10px 0 0 10px;border:1px solid var(--border);">${_buildScriptPanelBody()}</div>` : ''}
       <div style="${_sA ? 'flex:1;padding:0 20px;overflow-y:auto;max-height:calc(100vh - 100px);' : ''}">
 
       <!-- Session progress -->
