@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 // GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
 const GOOGLE_OAUTH_CLIENT_ID = '500395306800-26vlgl3b34p83t8ik3b4u0hcrk7qq0u8.apps.googleusercontent.com';
 const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
-const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar';
+const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/contacts';
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
@@ -5740,27 +5740,20 @@ function showToast(msg) {
 // ============================================================
 // GOOGLE CONTACTS SYNC
 // ============================================================
-function setSyncUrl() {
-  const saved = localStorage.getItem('crm_sync_url') || '';
-  showModal('&#128257; Google Contacts Sync URL', `
-    <p style="font-size:14px;color:var(--muted);margin-bottom:16px;">Paste the Apps Script Web App URL here. Deploy &rarr; Manage deployments &rarr; copy the URL.</p>
-    <label>Web App URL</label>
-    <input type="url" id="sync-url-input" value="${saved}" placeholder="https://script.google.com/macros/s/..." />
-  `, () => {
-    const url = document.getElementById('sync-url-input').value.trim();
-    if (url) { localStorage.setItem('crm_sync_url', url); showToast('Sync URL saved!'); }
-  });
-}
-
 async function syncGoogleContacts() {
-  const url = localStorage.getItem('crm_sync_url');
-  if (!url) { setSyncUrl(); return; }
+  if (!currentAgent || !currentAgent.id) { showToast('No agent selected.'); return; }
   showToast('&#128257; Syncing Google Contacts...');
   try {
-    await fetch(url, { mode: 'no-cors' });
-    showToast('&#128257; Sync triggered! Google Contacts will update in ~30 seconds.');
+    const res = await fetch(APPS_SCRIPT_URL + '?action=sync_contacts&agent_id=' + encodeURIComponent(currentAgent.id));
+    const data = await res.json().catch(() => ({}));
+    if (data.status === 'ok') {
+      const msg = 'Google Contacts synced! Pushed: ' + (data.pushed || 0) + ', imported: ' + (data.imported || 0) + ', linked: ' + (data.linked || 0);
+      showToast('&#10003; ' + msg);
+    } else {
+      showToast('Sync error: ' + (data.message || 'Check Apps Script logs.'));
+    }
   } catch(e) {
-    showToast('Sync sent — check Apps Script logs if issues arise.');
+    showToast('Sync failed: ' + e.message);
   }
 }
 
