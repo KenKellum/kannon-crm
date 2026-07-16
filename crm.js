@@ -217,11 +217,12 @@ async function showApp() {
 const PAGE_TITLES = {
   dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
   opens: 'Email Opens', campaigns: 'Email Campaigns', compliance: 'Compliance',
-  admin: 'Admin', dialer: 'Work My Leads', settings: 'Settings', appointments: 'Appointments'
+  admin: 'Admin', dialer: 'Work My Leads', settings: 'Settings', appointments: 'Appointments',
+  scripts: 'Script Manager'
 };
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments','oversight'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments','oversight','scripts'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -240,6 +241,7 @@ function showPage(page) {
   if (page === 'settings')     renderSettings();
   if (page === 'appointments') renderAppointments();
   if (page === 'oversight')    renderOversight();
+  if (page === 'scripts')      renderScriptManagerPage();
 }
 
 // ============================================================
@@ -271,6 +273,7 @@ function renderSidebarNav() {
       { label: 'Agency & team', items: [
         { icon: 'ti-building-community', text: 'Agencies & agents', page: 'admin',   badge: b.inactiveAgents || null, badgeType: 'red' },
         { icon: 'ti-alert-triangle',     text: 'Oversight',         page: 'oversight' },
+        { icon: 'ti-script',             text: 'Script Manager',    page: 'scripts'   },
       ]},
       { label: 'Funnels', items: [
         { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
@@ -297,6 +300,7 @@ function renderSidebarNav() {
         { icon: 'ti-building-community', text: 'Agents & hiring',  page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
         { icon: 'ti-alert-triangle',     text: 'Oversight',        page: 'oversight' },
         { icon: 'ti-shield-check',       text: 'Compliance',       page: 'compliance'},
+        { icon: 'ti-script',             text: 'Script Manager',   page: 'scripts'   },
       ]},
       { label: 'Account', items: [
         { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
@@ -1890,7 +1894,45 @@ function _buildScriptPanelBody() {
 window._smScripts = null;
 window._smSelectedId = null;
 
+async function renderScriptManagerPage() {
+  var el = document.getElementById('page-scripts');
+  if (!el) return;
+  window._smPageMode = true;
+  el.innerHTML = '<div style="padding:32px;color:var(--muted);font-size:13px;">Loading scripts…</div>';
+  var { data, error } = await supabaseClient.rpc('get_call_scripts', {
+    p_contact_type: null, p_situation: null, p_company: null, p_agency_id: null
+  });
+  var allScripts = error ? [] : (data || []);
+  window._smScripts = allScripts;
+  window._smSelectedId = null;
+  var roots = allScripts.filter(function(s) { return !s.parent_id; });
+  var treeHtml = roots.map(function(r) { return _smTreeNode(r, allScripts, 0); }).join('');
+  el.innerHTML = '<div style="display:flex;height:calc(100vh - 80px);overflow:hidden;">'
+    + '<div style="width:300px;min-width:300px;border-right:1px solid var(--border);overflow-y:auto;padding:16px;background:var(--surface-2);">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Call Scripts</div>'
+    + '<button class="btn btn-primary btn-sm" onclick="smAddRoot()" style="font-size:11px;padding:4px 10px;">+ New Script</button>'
+    + '</div>'
+    + '<div id="sm-tree">' + treeHtml + '</div>'
+    + '</div>'
+    + '<div style="flex:1;overflow-y:auto;padding:28px;" id="sm-editor">'
+    + '<div style="color:var(--muted);font-size:13px;text-align:center;padding:80px 20px;">Select a script on the left to edit it.</div>'
+    + '</div>'
+    + '</div>';
+}
+
+async function _smRefreshManager() {
+  if (window._smPageMode) {
+    var selId = window._smSelectedId;
+    await renderScriptManagerPage();
+    if (selId) setTimeout(function() { smSelectNode(selId); }, 80);
+  } else {
+    await openScriptManager();
+  }
+}
+
 async function openScriptManager() {
+  window._smPageMode = false;
   window._smScripts = null; // force refresh
   var allScripts = await (async function() {
     var { data, error } = await supabaseClient.rpc('get_call_scripts', {
@@ -2025,8 +2067,8 @@ async function smAddRoot() {
   if (error) { showToast('Error: ' + error.message); return; }
   window._smScripts = null;
   window._dialerScripts = null;
-  await openScriptManager();
-  setTimeout(function() { smSelectNode(data.id); }, 100);
+  window._smSelectedId = data.id;
+  await _smRefreshManager();
 }
 
 async function smAddChild(parentId) {
@@ -2044,8 +2086,8 @@ async function smAddChild(parentId) {
   if (error) { showToast('Error: ' + error.message); return; }
   window._smScripts = null;
   window._dialerScripts = null;
-  await openScriptManager();
-  setTimeout(function() { smSelectNode(data.id); }, 100);
+  window._smSelectedId = data.id;
+  await _smRefreshManager();
 }
 
 async function smDeleteNode(nodeId) {
@@ -2059,7 +2101,8 @@ async function smDeleteNode(nodeId) {
   if (error) { showToast('Error: ' + error.message); return; }
   window._smScripts = null;
   window._dialerScripts = null;
-  await openScriptManager();
+  window._smSelectedId = null;
+  await _smRefreshManager();
 }
 
 function _smOpenProfile(contactId, key) {
