@@ -36,6 +36,7 @@ let draggedDeal = null;
 let currentPipeline = 'group-employer';
 let contactSearch = '';
 let contactTypeFilter = '';
+let contactStatusFilter = 'active'; // 'active' | 'needs_attention' | 'all'
 let opensFilter = [];
 let _quickFilterLabel = '';
 let contactPage = 0;
@@ -723,7 +724,10 @@ function renderDashboardAgent() {
   el.innerHTML = `
     <div class="dash-header" style="margin-bottom:10px;">
       <div><div class="dash-greeting">${g}, ${firstName}</div><div class="dash-date">${dateStr}</div></div>
-      <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-outline btn-sm" onclick="shareBookingLink()"><i class="ti ti-calendar"></i> Booking link</button>
+        <button class="btn btn-primary btn-sm" onclick="startDialerSession()" style="background:var(--accent);border-color:var(--accent);font-weight:700;"><i class="ti ti-bolt"></i> Work Leads</button>
+      </div>
     </div>
 
     <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:8px;">
@@ -796,11 +800,13 @@ function renderDashboardAgent() {
         <div class="dash-card" style="flex:1;display:flex;flex-direction:column;overflow:auto;">
           ${_ctitle('ti-flame', 'Hot leads' + (hotLeads.length > 0 ? ' <span style="background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + hotLeads.length + '</span>' : ''))}
           ${hotLeads.length === 0
-            ? '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet &#8212; keep the sequence running!</div>'
+            ? `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:16px 0;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No hot leads yet — keep working your contacts!<br><button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="startDialerSession()"><i class="ti ti-bolt"></i> Start a lead session</button></div>`
             : hotLeads.slice(0, 8).map(c => {
                 const noteLines   = (c.notes || '').trim().split('\n');
-                const noteSnippet = noteLines.find(l => l.trim() && !l.startsWith('[')) || '';
-                const stepCtx     = c.sequence_step ? 'After Email ' + c.sequence_step : '';
+                // Prefer reply subject line (starts with "Subject:") then any non-bracket line
+                const rawSnippetLine = noteLines.find(l => l.trim().startsWith('Subject:')) || noteLines.find(l => l.trim() && !l.startsWith('[')) || '';
+                const noteSnippet = rawSnippetLine.replace(/^Subject:\s*/i, '');
+                const stepCtx     = c.sequence_step ? 'Email ' + c.sequence_step + ' sent' : '';
                 return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border);">
                   <div style="display:flex;align-items:center;gap:8px;">
                     <div style="width:28px;height:28px;border-radius:50%;background:var(--surface-3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-secondary);flex-shrink:0;">${initials(c.name)}</div>
@@ -813,18 +819,18 @@ function renderDashboardAgent() {
                   ${stepCtx || noteSnippet
                     ? '<div style="margin:4px 0 0 36px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">'
                       + (stepCtx ? '<span style="font-size:10px;background:rgba(99,102,241,0.12);color:#818cf8;border-radius:6px;padding:1px 6px;white-space:nowrap;">' + stepCtx + '</span>' : '')
-                      + (noteSnippet ? '<span style="font-size:11px;color:var(--text-muted);">' + (noteSnippet.length > 60 ? noteSnippet.slice(0, 60) + '...' : noteSnippet) + '</span>' : '')
+                      + (noteSnippet ? '<span style="font-size:11px;color:' + (c.sequence_status==='Replied'?'#34d399':'var(--text-muted)') + ';font-style:italic;">&ldquo;' + (noteSnippet.length > 70 ? noteSnippet.slice(0, 70) + '...' : noteSnippet) + '&rdquo;</span>' : '')
                       + '</div>'
                     : ''}
                   <div style="margin:6px 0 0 36px;display:flex;gap:6px;">
-                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="logOutreach('${c.id}','Phone Call','')">&#128222; Log call</button>
-                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewContact('${c.id}','')">View contact &rarr;</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openCallScript('${c.id}')">&#128222; Call</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewContact('${c.id}','')">View &rarr;</button>
                   </div>
                 </div>`;
               }).join('')}
           ${hotLeads.length > 0 ? `<div style="margin-top:auto;padding-top:8px;">
-            ${hotLeads.length > 8 ? `<button class="btn btn-outline btn-sm btn-full" style="margin-bottom:6px;" onclick="showPage('contacts')">View all ${hotLeads.length} &rarr;</button>` : ''}
-            <button class="btn btn-primary btn-sm btn-full" onclick="showPage('dialer')"><i class="ti ti-bolt"></i> Start follow-up session</button>
+            ${hotLeads.length > 8 ? `<button class="btn btn-outline btn-sm btn-full" style="margin-bottom:6px;" onclick="showPage('contacts')">See all ${hotLeads.length} hot leads &rarr;</button>` : ''}
+            <button class="btn btn-primary btn-sm btn-full" onclick="startDialerSession('replied')"><i class="ti ti-bolt"></i> Call all hot leads now</button>
           </div>` : ''}
         </div>
         ${!currentAgent.gmail_connected ? `<div class="dash-card" style="border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.04);">
@@ -2957,11 +2963,25 @@ function renderDialer() {
             ${(contact.whatsapp_number||contact.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${contact.id}')" style="font-size:12px;color:#25d366;border-color:#25d366;">&#128172; WhatsApp</button>` : ''}
             ${contact.linkedin_url ? `<button class="btn btn-outline btn-sm" onclick="window.open((contact.linkedin_url.indexOf('http')===0?contact.linkedin_url:'https://'+contact.linkedin_url),'_blank')" style="font-size:12px;">&#128279; LinkedIn</button>` : ''}
           </div>
-          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Quick note</div>
-          ${contact.notes ? `<div style="font-size:13px;color:var(--text);background:var(--surface-3);padding:10px 12px;border-radius:8px;margin-bottom:10px;border-left:3px solid var(--accent);">${contact.notes}</div>` : ''}
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Contact history</div>
+          ${contact.notes ? (() => {
+              // Split notes into entries, each entry starts with [Tag • date]
+              const rawNotes = contact.notes || '';
+              const escNotes = rawNotes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+              // Show most-recent entry prominently; older entries in a collapsible
+              const entries = escNotes.split(/\n\n(?=\[)/).filter(Boolean);
+              const topEntry = entries[0] || '';
+              const restEntries = entries.slice(1);
+              // Detect if the top entry has a reply in it (Subject:/Message:) — highlight it
+              const isReply = topEntry.includes('Email Reply Received') || topEntry.includes('Subject:');
+              const topBg = isReply ? 'rgba(52,211,153,0.08)' : 'var(--surface-3)';
+              const topBorder = isReply ? '#34d399' : 'var(--accent)';
+              return `<div style="font-size:12px;background:${topBg};padding:10px 12px;border-radius:8px;margin-bottom:6px;border-left:3px solid ${topBorder};white-space:pre-wrap;line-height:1.5;">${topEntry}</div>`
+                + (restEntries.length > 0 ? `<details style="margin-bottom:10px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;padding:4px 0;user-select:none;">+ ${restEntries.length} older note${restEntries.length>1?'s':''}</summary><div style="margin-top:6px;font-size:12px;background:var(--surface-3);padding:10px 12px;border-radius:8px;white-space:pre-wrap;line-height:1.5;max-height:200px;overflow-y:auto;">${restEntries.join('\n\n')}</div></details>` : '<div style="margin-bottom:10px;"></div>');
+            })() : '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;padding:8px 0;">No notes yet.</div>'}
           <div style="display:flex;gap:8px;">
-            <input id="dialer-note-input" placeholder="Log a call, leave a note..." style="flex:1;font-size:13px;" value="" />
-            <button class="btn btn-outline" onclick="dialerSaveNote('${contact.id}')">Save note</button>
+            <input id="dialer-note-input" placeholder="Add a note (auto-timestamped)..." style="flex:1;font-size:13px;" value="" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();dialerSaveNote('${contact.id}');}" />
+            <button class="btn btn-outline" onclick="dialerSaveNote('${contact.id}')">Save</button>
           </div>
         </div>
       </div>
@@ -3101,11 +3121,15 @@ async function dialerSaveNote(contactId) {
   const note = input?.value?.trim();
   if (!note) return;
   try {
-    await supabaseClient.from('contacts').update({ notes: note }).eq('id', contactId);
-    const idx = contacts.findIndex(c => c.id === contactId);
-    if (idx > -1) contacts[idx].notes = note;
-    const qi = dialerQueue.findIndex(c => c.id === contactId);
-    if (qi > -1) dialerQueue[qi].notes = note;
+    const c = contacts.find(x => x.id === contactId);
+    const ts = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const entry = '[Note • ' + ts + ']\n' + note;
+    const newNotes = c && c.notes ? entry + '\n\n' + c.notes.trim() : entry;
+    await supabaseClient.from('contacts').update({ notes: newNotes }).eq('id', contactId);
+    const idx = contacts.findIndex(x => x.id === contactId);
+    if (idx > -1) contacts[idx].notes = newNotes;
+    const qi = dialerQueue.findIndex(x => x.id === contactId);
+    if (qi > -1) dialerQueue[qi].notes = newNotes;
     showToast('&#10003; Note saved');
     if (input) input.value = '';
     renderDialer();
@@ -3881,7 +3905,19 @@ async function viewContact(contactId, email) {
       </div>
       <div class="panel-section">
         <div class="panel-label">Notes</div>
-        <div class="panel-notes-box">${c.notes||'<em style="color:var(--muted)">No notes yet.</em>'}</div>
+        ${(() => {
+          if (!c.notes) return '<div class="panel-notes-box"><em style="color:var(--muted)">No notes yet.</em></div>';
+          const esc = c.notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          const entries = esc.split(/\n\n(?=\[)/).filter(Boolean);
+          if (entries.length <= 1) return `<div class="panel-notes-box" style="white-space:pre-wrap;">${esc}</div>`;
+          const topEntry = entries[0];
+          const rest = entries.slice(1);
+          const isReply = topEntry.includes('Email Reply Received') || topEntry.includes('Subject:');
+          const topStyle = isReply ? 'white-space:pre-wrap;background:rgba(52,211,153,0.07);border-left:3px solid #34d399;padding:8px 10px;border-radius:6px;margin-bottom:6px;font-size:13px;' : 'white-space:pre-wrap;font-size:13px;';
+          return `<div class="panel-notes-box"><div style="${topStyle}">${topEntry}</div>`
+            + (rest.length ? `<details style="margin-top:6px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;">+ ${rest.length} older note${rest.length>1?'s':''}</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:8px;background:var(--surface-3);border-radius:6px;max-height:200px;overflow-y:auto;">${rest.join('\n\n')}</div></details>` : '')
+            + '</div>';
+        })()}
       </div>
       <div class="panel-section">
         <div class="panel-label">Email Opens (${opensCount})</div>
@@ -4911,6 +4947,15 @@ async function renderContacts() {
     `<button class="pipeline-tab ${contactTypeFilter === t ? 'active' : ''}" onclick="contactTypeFilter='${t}';contactPage=0;renderContacts();">${t || 'All Types'}</button>`
   ).join('');
 
+  const statusFilterBtns = [
+    { val: 'active',           label: '✓ Active',           title: 'Reachable contacts only — hides opted-out and stopped' },
+    { val: 'needs_attention',  label: '⚠ Needs Attention',  title: 'Opted-out, bounced, stopped — contacts you cannot currently reach' },
+    { val: 'all',              label: 'All',                 title: 'Show every contact regardless of status' },
+  ].map(s =>
+    `<button class="pipeline-tab ${contactStatusFilter === s.val ? 'active' : ''}" title="${s.title}"
+      onclick="contactStatusFilter='${s.val}';contactPage=0;renderContacts();">${s.label}</button>`
+  ).join('');
+
   // Render shell immediately so tabs show while DB query runs
   const _searchFocused = document.activeElement && document.activeElement.id === 'contact-search-input';
   pg.innerHTML = `
@@ -4935,6 +4980,10 @@ async function renderContacts() {
       <button class="btn btn-outline" onclick="verifyAllEmails()" style="font-size:13px;" title="SMTP-verify unverified emails">&#128269; Verify All Emails</button>
       <button class="btn btn-outline" onclick="cleanupContacts()" style="font-size:13px;color:#dc2626;border-color:#dc2626;" title="Find and delete unreachable contacts">&#129529; Clean Up</button>
       <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;">Status:</span>
+      <div class="pipeline-tabs" style="margin-bottom:0;">${statusFilterBtns}</div>
     </div>
     <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
     <div class="contacts-table" id="contacts-table-body">
@@ -4967,6 +5016,19 @@ async function renderContacts() {
     q = q.in('agent_id', agencyIds);
   }
   if (contactTypeFilter) q = q.eq('type', contactTypeFilter);
+  // Status filter — skip when a quick filter (opensFilter) is active
+  if (!opensFilter.length) {
+    if (contactStatusFilter === 'active') {
+      // Hide opted-out, stopped (bounced), and blocked contacts from default view
+      q = q.not('opt_out_email', 'eq', true)
+           .not('sequence_status', 'eq', 'stopped')
+           .not('sequence_status', 'eq', 'Opted Out');
+    } else if (contactStatusFilter === 'needs_attention') {
+      // Show only contacts that need attention (opted-out, stopped/bounced)
+      q = q.or('opt_out_email.eq.true,sequence_status.eq.stopped');
+    }
+    // 'all' — no filter applied
+  }
   if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%`);
   if (opensFilter.length) q = q.in('email', opensFilter);
   const offset = (contactPage || 0) * PAGE_SIZE;
