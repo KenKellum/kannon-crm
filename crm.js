@@ -2777,6 +2777,10 @@ async function sendIntakeLink() {
 async function dialerSendBookingLink(contactId) {
   const c = dialerQueue.find(x => x.id === contactId) || contacts.find(x => x.id === contactId);
   if (!c?.email) { showToast('No email address on file for this contact'); return; }
+  if (!currentAgent.gmail_connected) {
+    showToast('⚠ Connect your Gmail first (Settings → Gmail Connect)', 5000);
+    return;
+  }
   try {
     showToast('Sending booking link...');
     const url = new URL(APPS_SCRIPT_URL);
@@ -2786,8 +2790,8 @@ async function dialerSendBookingLink(contactId) {
     url.searchParams.set('to_name',    c.name || '');
     url.searchParams.set('contact_id', contactId);
     const resp = await fetch(url.toString());
-    const data = await resp.json().catch(() => ({}));
-    if (data.ok !== false) {
+    const data = await resp.json();
+    if (data.status === 'ok') {
       showToast('&#128197; Booking link sent to ' + (c.name || c.email) + '!');
       const ts2 = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       const entry2 = '[Schedule Link Sent • ' + ts2 + ']\nBooking link emailed to ' + (c.name || c.email);
@@ -2798,9 +2802,9 @@ async function dialerSendBookingLink(contactId) {
       if (qi2 > -1) dialerQueue[qi2].notes = newNotes2;
       if (typeof renderDialer === 'function' && dialerQueue && dialerQueue.length) renderDialer();
     } else {
-      showToast('Error sending booking link — try again');
+      showToast('⚠ ' + (data.message || 'Failed to send booking link'));
     }
-  } catch(e) { showToast('Error sending booking link'); }
+  } catch(e) { showToast('⚠ Error: ' + (e.message || 'Could not reach Apps Script')); }
 }
 
 function renderDialer() {
