@@ -1499,6 +1499,24 @@ async function logOutreach(contactId, platform, prefillNote) {
       const plat = document.getElementById('log-platform').value;
       const note = document.getElementById('log-note').value.trim();
       if (!note) { showToast('Please describe what happened'); return false; }
+      // Determine activity type from platform
+      const platActivityMap = {
+        'Phone Call': 'call_made', 'Text / SMS': 'note_added', 'LinkedIn': 'note_added',
+        'Facebook': 'note_added', 'Instagram': 'note_added', 'X / Twitter': 'note_added',
+        'WhatsApp': 'note_added', 'TikTok': 'note_added', 'Telegram': 'note_added',
+        'In Person': 'note_added', 'Other': 'note_added'
+      };
+      const actType = platActivityMap[plat] || 'note_added';
+      // Log to activities table
+      await supabaseClient.rpc('log_activity', {
+        p_contact_id:    contactId,
+        p_agent_id:      currentAgent.id,
+        p_activity_type: actType,
+        p_subject:       plat,
+        p_body_snippet:  note,
+        p_metadata:      { channel: plat }
+      });
+      // Also update notes field for backward compat (dialer snippets, dashboard)
       const ts = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       const entry = '[' + plat + ' \u2022 ' + ts + ']\n' + note;
       const newNotes = c.notes ? entry + '\n\n' + c.notes.trim() : entry;
@@ -3858,6 +3876,7 @@ async function viewContact(contactId, email) {
 
   const { data: opens } = await supabaseClient.from('email_opens').select('*').eq('contact_email', c.email).order('opened_at', { ascending: false });
   const { data: cc } = await supabaseClient.from('contact_companies').select('companies(name,slug)').eq('contact_id', c.id);
+  const { data: activities } = await supabaseClient.rpc('get_contact_timeline', { p_contact_id: c.id, p_limit: 30 });
   const contactCompanies = (cc || []).map(r => r.companies);
 
   const typeClass = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
@@ -3904,20 +3923,14 @@ async function viewContact(contactId, email) {
         ${c.last_email_sent_at ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;">Last sent: ${new Date(c.last_email_sent_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>` : ''}
       </div>
       <div class="panel-section">
-        <div class="panel-label">Notes</div>
-        ${(() => {
-          if (!c.notes) return '<div class="panel-notes-box"><em style="color:var(--muted)">No notes yet.</em></div>';
-          const esc = c.notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          const entries = esc.split(/\n\n(?=\[)/).filter(Boolean);
-          if (entries.length <= 1) return `<div class="panel-notes-box" style="white-space:pre-wrap;">${esc}</div>`;
-          const topEntry = entries[0];
-          const rest = entries.slice(1);
-          const isReply = topEntry.includes('Email Reply Received') || topEntry.includes('Subject:');
-          const topStyle = isReply ? 'white-space:pre-wrap;background:rgba(52,211,153,0.07);border-left:3px solid #34d399;padding:8px 10px;border-radius:6px;margin-bottom:6px;font-size:13px;' : 'white-space:pre-wrap;font-size:13px;';
-          return `<div class="panel-notes-box"><div style="${topStyle}">${topEntry}</div>`
-            + (rest.length ? `<details style="margin-top:6px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;">+ ${rest.length} older note${rest.length>1?'s':''}</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:8px;background:var(--surface-3);border-radius:6px;max-height:200px;overflow-y:auto;">${rest.join('\n\n')}</div></details>` : '')
-            + '</div>';
-        })()}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div class="panel-label" style="margin-bottom:0;">Activity Timeline</div>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;" onclick="addContactNote('${c.id}')">📝 Add Note</button>
+        </div>
+        <div style="max-height:320px;overflow-y:auto;padding-right:2px;">
+          ${_renderActivityTimeline(activities, c.id)}
+        </div>
+        ${c.notes ? `<details style="margin-top:10px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;user-select:none;">📁 Historical Notes (pre-upgrade)</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:8px 10px;background:var(--surface-3);border-radius:6px;max-height:180px;overflow-y:auto;line-height:1.5;">${c.notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></details>` : ''}
       </div>
       <div class="panel-section">
         <div class="panel-label">Email Opens (${opensCount})</div>
@@ -3951,6 +3964,88 @@ function closeContactPanel() {
 }
 
 function closeAllPanels() { closeContactPanel(); closeDealPanel(); }
+
+// ─────────────────────────────────────────────────────────────
+// ACTIVITY TIMELINE
+// ─────────────────────────────────────────────────────────────
+const ACTIVITY_META = {
+  email_sent:          { icon: '📧', color: '#94a3b8', label: 'Email Sent' },
+  email_opened:        { icon: '👁',  color: '#60a5fa', label: 'Email Opened' },
+  email_replied:       { icon: '💬', color: '#34d399', label: 'Reply Received' },
+  email_bounced_hard:  { icon: '❌', color: '#f87171', label: 'Hard Bounce' },
+  email_bounced_soft:  { icon: '⚠️', color: '#fbbf24', label: 'Soft Bounce' },
+  email_blocked:       { icon: '🚫', color: '#f87171', label: 'Email Blocked' },
+  email_opted_out:     { icon: '🔕', color: '#94a3b8', label: 'Opted Out' },
+  email_complained:    { icon: '🔥', color: '#ef4444', label: 'Spam Complaint' },
+  email_auto_reply:    { icon: '🤖', color: '#94a3b8', label: 'Auto-Reply / OOO' },
+  meeting_booked:      { icon: '📅', color: '#34d399', label: 'Meeting Booked' },
+  meeting_attended:    { icon: '✅', color: '#34d399', label: 'Meeting Attended' },
+  meeting_no_show:     { icon: '👻', color: '#fbbf24', label: 'No-Show' },
+  meeting_canceled:    { icon: '❌', color: '#fbbf24', label: 'Meeting Canceled' },
+  meeting_rescheduled: { icon: '🔄', color: '#60a5fa', label: 'Meeting Rescheduled' },
+  calendar_accepted:   { icon: '✅', color: '#34d399', label: 'Calendar Accepted' },
+  calendar_declined:   { icon: '❌', color: '#fbbf24', label: 'Calendar Declined' },
+  call_made:           { icon: '📞', color: '#94a3b8', label: 'Call Made' },
+  call_connected:      { icon: '📞', color: '#34d399', label: 'Call Connected' },
+  call_voicemail:      { icon: '📞', color: '#94a3b8', label: 'Voicemail Left' },
+  note_added:          { icon: '📝', color: '#fbbf24', label: 'Note' },
+  status_changed:      { icon: '🔄', color: '#94a3b8', label: 'Status Changed' },
+};
+
+function _renderActivityTimeline(acts, contactId) {
+  if (!acts || acts.length === 0) {
+    return `<div style="text-align:center;padding:16px 0;color:var(--text-muted);font-size:13px;">
+      <div style="font-size:24px;margin-bottom:6px;">📋</div>
+      No activity yet — events will appear here automatically.
+      <br><button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="addContactNote('${contactId}')">📝 Add first note</button>
+    </div>`;
+  }
+  return acts.map(a => {
+    const meta = ACTIVITY_META[a.activity_type] || { icon: '•', color: '#94a3b8', label: a.activity_type };
+    const isUrgent = a.activity_type === 'email_complained';
+    const timeAgo = formatTimeAgo(a.created_at);
+    const md = a.metadata || {};
+    const snippet = a.body_snippet || md.bounce_reason || (md.ooo_return_date ? 'Returns: ' + md.ooo_return_date : '') || '';
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:flex-start;">
+      <div style="flex-shrink:0;width:28px;height:28px;border-radius:50%;background:${meta.color}22;display:flex;align-items:center;justify-content:center;font-size:13px;margin-top:1px;">${meta.icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:600;color:${isUrgent?'#ef4444':'var(--text)'};">${meta.label}${isUrgent?' <span style="background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;vertical-align:middle;margin-left:4px;">URGENT</span>':''}</span>
+          <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;flex-shrink:0;">${timeAgo}</span>
+        </div>
+        ${a.subject ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${esc(a.subject)}</div>` : ''}
+        ${snippet ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;">${esc(snippet).substring(0,120)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addContactNote(contactId) {
+  const c = contacts.find(x => x.id === contactId);
+  if (!c) return;
+  showModal(
+    '📝 Add Note — ' + (c.name || 'Contact'),
+    `<div><label style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Note</label>
+     <textarea id="manual-note-text" rows="5" placeholder="e.g. Spoke briefly — interested in life coverage, wants to revisit after school year. Call in September." style="width:100%;box-sizing:border-box;resize:vertical;"></textarea></div>`,
+    async function() {
+      const noteText = (document.getElementById('manual-note-text').value || '').trim();
+      if (!noteText) { showToast('Please enter a note'); return false; }
+      const { error } = await supabaseClient.rpc('log_activity', {
+        p_contact_id:    contactId,
+        p_agent_id:      currentAgent.id,
+        p_activity_type: 'note_added',
+        p_subject:       'Manual Note',
+        p_body_snippet:  noteText,
+        p_metadata:      {}
+      });
+      if (error) { showToast('Error: ' + error.message); return false; }
+      showToast('✓ Note saved');
+      viewContact(contactId);
+    }
+  );
+  setTimeout(() => { const ta = document.getElementById('manual-note-text'); if (ta) ta.focus(); }, 100);
+}
 
 function closeDealPanel() {
   document.getElementById('deal-panel').classList.remove('open');
