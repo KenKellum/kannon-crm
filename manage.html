@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Appointment — Kannon Financial Group</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f1f5f9;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .header {
+    width: 100%;
+    background: #1a3a5c;
+    padding: 14px 24px;
+    box-sizing: border-box;
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .header-kfg {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .header-kfg img { width: 52px; height: 52px; display: block; flex-shrink: 0; }
+  .header-kfg-text h1 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    font-family: Georgia, serif;
+    letter-spacing: 0.5px;
+    margin: 0 0 3px;
+  }
+  .header-kfg-text p {
+    font-size: 9px;
+    color: #c8a84b;
+    letter-spacing: 2px;
+    font-style: italic;
+    margin: 0;
+  }
+  .header-divider {
+    width: 1px;
+    background: rgba(255,255,255,0.2);
+    align-self: stretch;
+    margin: 0 18px;
+    flex-shrink: 0;
+  }
+  .header-ia {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .header-ia-label {
+    font-size: 9px;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .header-ia-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .header-ia-logo {
+    background: #fff;
+    padding: 3px;
+    line-height: 0;
+    flex-shrink: 0;
+  }
+  .header-ia-logo img { width: 36px; height: 36px; display: block; }
+  .header-ia-text div:first-child {
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    line-height: 1.3;
+  }
+  .header-ia-text div:last-child {
+    font-size: 9px;
+    color: #c8a84b;
+    font-style: italic;
+    margin-top: 2px;
+    white-space: nowrap;
+  }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 40px 32px;
+    max-width: 460px;
+    width: calc(100% - 32px);
+    margin: 40px auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  .icon { font-size: 52px; margin-bottom: 16px; }
+  h2 { color: #1a3a5c; margin: 0 0 12px; font-size: 22px; }
+  p  { color: #64748b; font-size: 14px; line-height: 1.7; margin: 0 0 10px; }
+  label {
+    display: block;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #374151;
+    margin: 18px 0 5px;
+  }
+  input[type="datetime-local"], textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    outline: none;
+  }
+  input[type="datetime-local"]:focus, textarea:focus { border-color: #1a3a5c; }
+  textarea { resize: vertical; }
+  .btn-row { display: flex; gap: 12px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    border: none;
+    font-family: Arial, sans-serif;
+    transition: opacity 0.15s;
+  }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-danger  { background: #fee2e2; color: #dc2626; }
+  .btn-primary { background: #1a3a5c; color: #fff; }
+  .btn-outline { background: #f1f5f9; color: #374151; }
+  .btn-full { width: 100%; margin-top: 20px; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 12px; display: none; }
+  .sub { font-size: 12px; color: #94a3b8; margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="header-kfg">
+      <img src="https://kannon-crm.vercel.app/kfg_logo_email.png" alt="Kannon Financial Group">
+      <div class="header-kfg-text">
+        <h1>KANNON FINANCIAL GROUP</h1>
+        <p>&ldquo;Protect &middot; Build &middot; Retire&rdquo;</p>
+      </div>
+    </div>
+    <div class="header-divider"></div>
+    <div class="header-ia">
+      <div class="header-ia-label">In Partnership With</div>
+      <div class="header-ia-row">
+        <div class="header-ia-logo">
+          <img src="https://kannon-crm.vercel.app/ia_logo_email.png" alt="Insured America">
+        </div>
+        <div class="header-ia-text">
+          <div>THE INSURED<br>AMERICA AGENCY</div>
+          <div>&ldquo;Protect &amp; Build Your Potential&rdquo;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="app"></div>
+
+<script>
+const SUPABASE_URL    = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPABASE_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+
+const params = new URLSearchParams(window.location.search);
+const action = params.get('action');
+const id     = params.get('id');
+const app    = document.getElementById('app');
+
+async function callRPC(endpoint, body) {
+  const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + endpoint, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_ANON,
+      'Authorization': 'Bearer ' + SUPABASE_ANON,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  return res.ok;
+}
+
+// ── UNSUBSCRIBE ──────────────────────────────────────────────────────────────
+if (action === 'unsubscribe') {
+  const email = params.get('email');
+  if (!email) {
+    app.innerHTML = `<div class="card"><div class="icon">&#9888;</div><h2>Invalid Link</h2><p>This unsubscribe link is invalid. Please contact your agent directly.</p></div>`;
+  } else {
+    app.innerHTML = `<div class="card">
+      <div class="icon">&#128234;</div>
+      <h2>Unsubscribe</h2>
+      <p>Are you sure you want to stop receiving emails from Kannon Financial Group at <strong>${email}</strong>?</p>
+      <div class="btn-row">
+        <button class="btn btn-danger" id="unsub-btn">Yes, Unsubscribe Me</button>
+        <button class="btn btn-outline" onclick="window.close()">No, Keep Me Subscribed</button>
+      </div>
+      <div class="err" id="unsub-err">Something went wrong — please try again or contact your agent.</div>
+    </div>`;
+    document.getElementById('unsub-btn').addEventListener('click', async function() {
+      const btn = this;
+      btn.disabled = true; btn.textContent = 'Processing…';
+      const ok = await callRPC('prospect_unsubscribe', { p_email: email });
+      if (ok) {
+        // Send acknowledgment email from the agent's Gmail (fire and forget)
+        const agentId = params.get('agent_id');
+        const name    = params.get('name') || '';
+        if (agentId) {
+          fetch(APPS_SCRIPT_URL + '?action=send_opt_out_ack&email=' + encodeURIComponent(email) + '&agent_id=' + encodeURIComponent(agentId) + '&name=' + encodeURIComponent(name)).catch(() => {});
+        }
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#10003;</div>
+          <h2>You've Been Unsubscribed</h2>
+          <p>You will not receive any further emails from Kannon Financial Group at <strong>${email}</strong>.</p>
+          <p class="sub">A confirmation email has been sent to you. You can close this window.</p>
+        </div>`;
+      } else {
+        btn.disabled = false; btn.textContent = 'Yes, Unsubscribe Me';
+        document.getElementById('unsub-err').style.display = 'block';
+      }
+    });
+  }
+
+// ── PROSPECT CONFIRMS APPOINTMENT ("Yes, This Time Works") ──────────────────
+} else if (action === 'confirm') {
+  if (!id) {
+    app.innerHTML = `<div class="card"><div class="icon">&#9888;</div><h2>Invalid Link</h2><p>Please contact your agent directly.</p></div>`;
+  } else {
+    // Auto-confirm on page load
+    app.innerHTML = `<div class="card"><div class="icon" style="font-size:32px;">&#8987;</div><h2>Confirming…</h2><p>Please wait a moment.</p></div>`;
+    callRPC('prospect_update_booking', { p_booking_id: id, p_action: 'confirm' }).then(ok => {
+      if (ok) {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#128197;</div>
+          <h2>Appointment Confirmed!</h2>
+          <p>Thank you for confirming. We look forward to speaking with you soon.</p>
+          <p class="sub">You can close this window.</p>
+        </div>`;
+      } else {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#9888;</div>
+          <h2>Something Went Wrong</h2>
+          <p>We couldn't record your confirmation. Please reply to the email to confirm directly.</p>
+        </div>`;
+      }
+    });
+  }
+
+// ── CO-HOST CONFIRMS ATTENDANCE ──────────────────────────────────────────────
+} else if (action === 'confirm_cohost') {
+  const bookingId = params.get('booking_id');
+  if (!bookingId) {
+    app.innerHTML = `<div class="card"><div class="icon">&#9888;</div><h2>Invalid Link</h2><p>Please contact your agent directly.</p></div>`;
+  } else {
+    app.innerHTML = `<div class="card"><div class="icon" style="font-size:32px;">&#8987;</div><h2>Confirming…</h2><p>Please wait a moment.</p></div>`;
+    callRPC('cohost_confirm_booking', { p_booking_id: bookingId }).then(ok => {
+      if (ok) {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#10003;</div>
+          <h2>Attendance Confirmed!</h2>
+          <p>Your attendance has been recorded. This appointment will appear on your Kannon CRM calendar.</p>
+          <p class="sub">You can close this window.</p>
+        </div>`;
+      } else {
+        app.innerHTML = `<div class="card">
+          <div class="icon">&#9888;</div>
+          <h2>Something Went Wrong</h2>
+          <p>We couldn't record your confirmation. Please reply to the invitation email.</p>
+        </div>`;
+      }
+    });
+  }
+
+// ── INVALID LINK ────────────────────────────────────────────────────────────
+} else if (!action || (!id && action !== 'unsubscribe')) {
+  app.innerHTML = `<div class="card">
+    <div class="icon">&#128197;</div>
+    <h2>Invalid Link</h2>
+    <p>This link is invalid or has already been used. Please contact your agent directly.</p>
+  </div>`;
+
+// ── CANCEL ──────────────────────────────────────────────────────────────────
+} else if (action === 'cancel') {
+  app.innerHTML = `<div class="card">
+    <div class="icon">&#128197;</div>
+    <h2>Cancel Appointment</h2>
+    <p>Are you sure you want to cancel your appointment with Kannon Financial Group?</p>
+    <p>If you'd prefer to find a different time, choose <strong>Reschedule Instead</strong>.</p>
+    <div class="btn-row">
+      <button class="btn btn-danger" id="confirm-cancel-btn">Yes, Cancel It</button>
+      <button class="btn btn-outline" id="resched-instead-btn">Reschedule Instead</button>
+    </div>
+    <div class="err" id="cancel-err">Something went wrong — please try again or contact your agent.</div>
+    <p class="sub">Changed your mind? You can close this page.</p>
+  </div>`;
+
+  document.getElementById('confirm-cancel-btn').addEventListener('click', async function() {
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Cancelling…';
+    const ok = await callRPC('prospect_update_booking', { p_booking_id: id, p_action: 'cancel' });
+    if (ok) {
+      app.innerHTML = `<div class="card">
+        <div class="icon">&#10003;</div>
+        <h2>Appointment Cancelled</h2>
+        <p>Your appointment has been cancelled. If you'd like to reconnect in the future, don't hesitate to reach out.</p>
+        <p class="sub">You can close this window.</p>
+      </div>`;
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Yes, Cancel It';
+      const err = document.getElementById('cancel-err');
+      if (err) err.style.display = 'block';
+    }
+  });
+
+  document.getElementById('resched-instead-btn').addEventListener('click', function() {
+    window.location.href = '?action=reschedule&id=' + encodeURIComponent(id);
+  });
+
+// ── RESCHEDULE ───────────────────────────────────────────────────────────────
+} else if (action === 'reschedule') {
+  // Default to tomorrow at 10am
+  const tmr = new Date(); tmr.setDate(tmr.getDate() + 1); tmr.setHours(10, 0, 0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  const defDt = `${tmr.getFullYear()}-${pad(tmr.getMonth()+1)}-${pad(tmr.getDate())}T10:00`;
+
+  app.innerHTML = `<div class="card" style="text-align:left;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div class="icon">&#8635;</div>
+      <h2>Request a New Time</h2>
+      <p style="text-align:center;">Let us know what works best for you and we'll confirm shortly.</p>
+    </div>
+    <label>Preferred Date &amp; Time</label>
+    <input type="datetime-local" id="resched-dt" value="${defDt}" />
+    <label>Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+    <textarea id="resched-notes" rows="3" placeholder="e.g. mornings work best, prefer video call, etc."></textarea>
+    <button class="btn btn-primary btn-full" id="resched-submit-btn">Submit Reschedule Request</button>
+    <div class="err" id="resched-err">Something went wrong — please try again or contact your agent.</div>
+  </div>`;
+
+  document.getElementById('resched-submit-btn').addEventListener('click', async function() {
+    const btn   = this;
+    const dtVal = document.getElementById('resched-dt').value;
+    const notes = document.getElementById('resched-notes').value.trim();
+    if (!dtVal) { alert('Please select a date and time.'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+    const ok = await callRPC('prospect_update_booking', { p_booking_id: id, p_action: 'reschedule', p_new_date: new Date(dtVal).toISOString(), p_notes: notes || null });
+    if (ok) {
+      const fmt = new Date(dtVal).toLocaleString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+      app.innerHTML = `<div class="card">
+        <div class="icon">&#128197;</div>
+        <h2>Request Received!</h2>
+        <p>Your preferred time has been sent to your agent:</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;margin:16px 0;font-size:15px;font-weight:700;color:#166534;">${fmt}</div>
+        <p>Your agent will confirm the new time shortly.</p>
+        <p class="sub">You can close this window.</p>
+      </div>`;
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Submit Reschedule Request';
+      const err = document.getElementById('resched-err');
+      if (err) err.style.display = 'block';
+    }
+  });
+
+} else {
+  app.innerHTML = `<div class="card">
+    <div class="icon">&#9888;</div>
+    <h2>Unknown Action</h2>
+    <p>This link doesn't match a known action. Please contact your agent directly.</p>
+  </div>`;
+}
+</script>
+</body>
+</html>

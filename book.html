@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book a Call — Kannon Financial Group</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f1f5f9;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── Header ── */
+  .header {
+    width: 100%;
+    background: #1a3a5c;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .header img { width: 52px; height: 52px; display: block; }
+  .header-text h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    font-family: Georgia, serif;
+    letter-spacing: 0.5px;
+  }
+  .header-text p {
+    font-size: 11px;
+    color: #c8a84b;
+    letter-spacing: 2px;
+    font-style: italic;
+    margin-top: 2px;
+  }
+  /* ── Dual-brand partner section ── */
+  .header-partner {
+    margin-left: auto;
+    border-left: 1px solid rgba(255,255,255,0.2);
+    padding-left: 18px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .partner-label {
+    font-size: 9px;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+    white-space: nowrap;
+  }
+  .partner-inner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .partner-text { text-align: left; }
+  .partner-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    line-height: 1.3;
+  }
+  .partner-motto {
+    font-size: 9px;
+    color: #c8a84b;
+    font-style: italic;
+    margin-top: 2px;
+    white-space: nowrap;
+  }
+
+  /* ── Main container ── */
+  .container {
+    width: 100%;
+    max-width: 680px;
+    padding: 40px 20px 60px;
+  }
+
+  /* ── Agent card ── */
+  .agent-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 28px;
+    margin-bottom: 28px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  .agent-card h2 { font-size: 22px; color: #1e293b; margin-bottom: 4px; }
+  .agent-card p  { font-size: 14px; color: #64748b; }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 14px;
+  }
+
+  /* ── Booking type cards ── */
+  .cards { display: flex; flex-direction: column; gap: 14px; }
+
+  .booking-card {
+    background: #fff;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 20px 24px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .booking-card:hover {
+    border-color: #1a3a5c;
+    box-shadow: 0 4px 16px rgba(26,58,92,0.12);
+    transform: translateY(-1px);
+  }
+  .booking-card-left { flex: 1; }
+  .booking-card h3 { font-size: 16px; color: #1e293b; margin-bottom: 4px; }
+  .booking-card p  { font-size: 13px; color: #64748b; line-height: 1.5; }
+  .booking-card .duration {
+    font-size: 12px;
+    color: #c8a84b;
+    font-weight: 700;
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .booking-card-arrow {
+    width: 36px;
+    height: 36px;
+    background: #1a3a5c;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .booking-card:hover .booking-card-arrow { background: #c8a84b; }
+  .booking-card-arrow svg { width: 16px; height: 16px; fill: #fff; }
+
+  /* ── Modal overlay ── */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,0.55);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .overlay.active { display: flex; }
+
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 460px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  .modal-header {
+    background: #1a3a5c;
+    padding: 18px 24px;
+    color: #fff;
+  }
+  .modal-header h3 { font-size: 16px; font-weight: 700; }
+  .modal-header p  { font-size: 12px; color: #c8a84b; margin-top: 3px; }
+
+  .modal-body { padding: 24px; }
+
+  .form-group { margin-bottom: 18px; }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 14px;
+    color: #1e293b;
+    font-family: inherit;
+    transition: border-color 0.15s;
+    outline: none;
+    resize: vertical;
+  }
+  .form-group input:focus,
+  .form-group textarea:focus { border-color: #1a3a5c; }
+
+  .modal-footer {
+    padding: 0 24px 24px;
+    display: flex;
+    gap: 10px;
+  }
+  .btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.88; }
+  .btn-primary { background: #1a3a5c; color: #fff; }
+  .btn-secondary { background: #f1f5f9; color: #64748b; }
+
+  /* ── Loading / error states ── */
+  .state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #64748b;
+  }
+  .state h2 { font-size: 18px; color: #1e293b; margin-bottom: 8px; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid #e2e8f0;
+    border-top-color: #1a3a5c;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Success state ── */
+  .success-icon {
+    width: 56px; height: 56px;
+    background: #dcfce7;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 28px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <img src="/kfg_logo_email.png" alt="Kannon Financial Group" onerror="this.style.display='none'">
+  <div class="header-text">
+    <h1>KANNON FINANCIAL GROUP</h1>
+    <p>&ldquo;Protect &middot; Build &middot; Retire&rdquo;</p>
+  </div>
+  <div class="header-partner">
+    <div class="partner-label">In Partnership With</div>
+    <div class="partner-inner">
+      <div style="background:#fff;padding:3px;line-height:0;flex-shrink:0;">
+        <img src="/ia_logo_email.png" alt="IA" width="36" height="36" onerror="this.style.display='none'" style="display:block;">
+      </div>
+      <div class="partner-text">
+        <div class="partner-name">THE INSURED<br>AMERICA AGENCY</div>
+        <div class="partner-motto">&ldquo;Protect &amp; Build Your Potential&rdquo;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="container" id="main">
+  <div class="state" id="loading-state">
+    <div class="spinner"></div>
+    <p>Loading...</p>
+  </div>
+</div>
+
+<!-- Pre-qual Modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Book Your Appointment</h3>
+      <p id="modal-subtitle"></p>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Your Name <span style="color:#ef4444;">*</span></label>
+        <input type="text" id="field-name" placeholder="Jane Smith" autocomplete="name" required>
+      </div>
+      <div class="form-group">
+        <label>Your Email <span style="color:#ef4444;">*</span></label>
+        <input type="email" id="field-email" placeholder="jane@company.com" autocomplete="email" required>
+      </div>
+      <div class="form-group">
+        <label>Company Name <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
+        <input type="text" id="field-company" placeholder="Big Sky Brewing Co." autocomplete="new-password">
+        <p style="font-size:12px;color:#94a3b8;margin-top:5px;line-height:1.4;">If you're looking for coverage for your business or employees, enter your company name here.</p>
+      </div>
+      <div class="form-group">
+        <label>What would you like to discuss? <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
+        <textarea id="field-note" rows="3" placeholder="E.g. We have 14 employees and want to compare our current plan..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAndBook()">📅 Continue to Booking</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL  = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+
+const params     = new URLSearchParams(window.location.search);
+const agentId    = params.get('agent');
+const context    = params.get('context') || 'all'; // client | recruit | all
+let   preCompany = params.get('co')      || '';     // pre-filled company from contact record
+const preEmail   = params.get('email')   || '';     // pre-filled email (when sent via CRM)
+const preName    = params.get('name')    || '';     // pre-filled name (when sent via CRM)
+const contactId  = params.get('cid')     || '';     // contact ID for existing contacts
+
+let selectedType = null;
+let agent = null;
+
+// ── Fetch agent data ──────────────────────────────────────
+async function init() {
+  if (!agentId) { showError('Invalid booking link — no agent specified.'); return; }
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/agents?id=eq.${agentId}&select=id,name,booking_types`,
+      { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
+    );
+    const rows = await res.json();
+    if (!rows || rows.length === 0) { showError('Booking page not found.'); return; }
+    agent = rows[0];
+    renderPage();
+
+    // Pull the contact's company from the database so we can pre-fill it correctly
+    if (preEmail && !preCompany) {
+      try {
+        const cRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_contact_for_booking`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON,
+            'Authorization': 'Bearer ' + SUPABASE_ANON,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ p_email: preEmail, p_agent_id: agentId })
+        });
+        const contact = await cRes.json();
+        if (contact && contact.company) preCompany = contact.company;
+      } catch(e) { /* non-fatal — company field just stays blank */ }
+    }
+  } catch(e) {
+    showError('Unable to load booking page. Please try again.');
+  }
+}
+
+// ── Render ────────────────────────────────────────────────
+function renderPage() {
+  const types = (agent.booking_types || []).filter(t => {
+    if (context === 'all') return true;
+    return t.context === context;
+  });
+
+  if (types.length === 0) {
+    showError('No booking options are currently available.');
+    return;
+  }
+
+  const firstName = (agent.name || '').split(' ')[0];
+
+  document.getElementById('main').innerHTML = `
+    <div class="agent-card">
+      <h2>Schedule time with ${agent.name}</h2>
+      <p>Licensed Insurance Broker &nbsp;·&nbsp; Kannon Financial Group</p>
+    </div>
+    <p class="section-label">Select an appointment type</p>
+    <div class="cards">
+      ${types.map(t => `
+        <div class="booking-card" onclick="openModal(${JSON.stringify(t).replace(/"/g, '&quot;')})">
+          <div class="booking-card-left">
+            <h3>${t.label}</h3>
+            <p>${t.description || ''}</p>
+            <p class="duration">⏱ ${t.duration}</p>
+          </div>
+          <div class="booking-card-arrow">
+            <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ── Modal ─────────────────────────────────────────────────
+function openModal(typeObj) {
+  selectedType = typeObj;
+  document.getElementById('modal-title').textContent = typeObj.label;
+  document.getElementById('modal-subtitle').textContent = '⏱ ' + typeObj.duration + '  ·  Just a couple details before you book';
+  document.getElementById('field-name').value    = preName;
+  document.getElementById('field-email').value   = preEmail;
+  document.getElementById('field-company').value = preCompany;
+  document.getElementById('field-note').value    = '';
+  document.getElementById('overlay').classList.add('active');
+  // Chrome ignores autocomplete="off" and autofills after modal opens —
+  // override it after a tick so our value wins
+  setTimeout(() => {
+    document.getElementById('field-company').value = preCompany;
+    document.getElementById('field-name').focus();
+  }, 150);
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.remove('active');
+  selectedType = null;
+}
+
+document.getElementById('overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── Submit + redirect ─────────────────────────────────────
+async function submitAndBook() {
+  const visitorName  = document.getElementById('field-name').value.trim();
+  const visitorEmail = document.getElementById('field-email').value.trim();
+  const company      = document.getElementById('field-company').value.trim();
+  const note         = document.getElementById('field-note').value.trim();
+
+  if (!visitorName) {
+    document.getElementById('field-name').focus();
+    document.getElementById('field-name').style.borderColor = '#ef4444';
+    return;
+  }
+  if (!visitorEmail || !visitorEmail.includes('@')) {
+    document.getElementById('field-email').focus();
+    document.getElementById('field-email').style.borderColor = '#ef4444';
+    return;
+  }
+
+  const btn = document.querySelector('.btn-primary');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  // ── Resolve or create contact ──────────────────────────
+  let resolvedContactId = contactId || null;
+  try {
+    // Check if contact already exists for this agent
+    const checkRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/contacts?email=eq.${encodeURIComponent(visitorEmail)}&agent_id=eq.${agent.id}&select=id,sequence_status`,
+      { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
+    );
+    const existing = await checkRes.json();
+
+    if (existing && existing.length > 0) {
+      // Contact exists — bump to Replied so they exit cold sequences
+      resolvedContactId = existing[0].id;
+      if (existing[0].sequence_status !== 'Replied' && existing[0].sequence_status !== 'Closed') {
+        await fetch(`${SUPABASE_URL}/rest/v1/contacts?id=eq.${resolvedContactId}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
+            'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ sequence_status: 'Replied' })
+        });
+      }
+    } else {
+      // New contact — create at Replied level so they skip cold sequences
+      const contactType = (selectedType && selectedType.context === 'recruit') ? 'Recruit' : 'Individual & Family';
+      const createRes = await fetch(`${SUPABASE_URL}/rest/v1/contacts`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
+          'Content-Type': 'application/json', 'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          name:             visitorName,
+          email:            visitorEmail,
+          company:          company || null,
+          agent_id:         agent.id,
+          contact_type:     contactType,
+          sequence_status:  'Replied',
+          notes:            note ? `Booked via booking page. Note: ${note}` : 'Booked via booking page.'
+        })
+      });
+      const created = await createRes.json();
+      if (created && created.length > 0) resolvedContactId = created[0].id;
+    }
+  } catch(e) {
+    // Don't block redirect on contact errors — log and continue
+    console.error('Contact upsert error:', e);
+  }
+
+  // ── Save booking intent (fire and forget) ──────────────
+  fetch(`${SUPABASE_URL}/rest/v1/booking_intents`, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
+      'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+    },
+    body: JSON.stringify({
+      agent_id:          agent.id,
+      contact_id:        resolvedContactId,
+      company:           company   || null,
+      note:              note      || null,
+      appointment_type:  selectedType.type,
+      appointment_label: selectedType.label,
+      booker_name:       visitorName,
+      booker_email:      visitorEmail
+    })
+  }).catch(() => {});
+
+  // Small delay so the save fires, then redirect to Google Calendar
+  await new Promise(r => setTimeout(r, 400));
+  window.location.href = selectedType.link;
+}
+
+// ── Error state ───────────────────────────────────────────
+function showError(msg) {
+  document.getElementById('main').innerHTML = `
+    <div class="state">
+      <h2>Oops</h2>
+      <p>${msg}</p>
+    </div>`;
+}
+
+init();
+</script>
+</body>
+</html>
