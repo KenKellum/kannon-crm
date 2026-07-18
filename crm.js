@@ -49,6 +49,7 @@ let previewRole = null; // system_owner can preview other role views
 let calView = 'month';  // 'month' | 'week' | 'day'
 let calDate = new Date();
 let calAppointments = [];
+let naItems = []; // unified Needs Attention items (replies, complaints, no-shows, cancels)
 
 // ============================================================
 // INIT
@@ -770,6 +771,8 @@ function renderDashboardAgent() {
       </div>
     </div>
 
+    <div id="dash-needs-attention"></div>
+
     <div class="dash-grid" style="align-items:stretch;margin-bottom:10px;">
 
       <div style="display:grid;grid-template-rows:1fr 1fr;gap:10px;">
@@ -862,6 +865,7 @@ function renderDashboardAgent() {
   `;
 
   loadDashEmailOpens();
+  loadNeedsAttention();
   _initEmailOpenRealtime();
 }
 
@@ -6624,6 +6628,7 @@ async function renderAppointments() {
   const { data, error } = await q.order('scheduled_at',{ascending:true}).limit(500);
   if (error) { pg.innerHTML = `<div style="color:var(--danger);padding:40px;">${error.message}</div>`; return; }
   calAppointments = data || [];
+  loadNeedsAttention();
   _calRenderShell(pg);
   _calRenderView();
 }
@@ -6950,49 +6955,192 @@ function _calDay() {
 function _calPending() {
   const el = document.getElementById('cal-pending');
   if (!el) return;
-  // Include both unscheduled (pending) and proposals awaiting prospect reply (rescheduled)
-  const unscheduled = calAppointments.filter(a =>
-    !a.status || a.status === 'pending' || a.status === 'rescheduled'
-  );
-  if (unscheduled.length === 0) { el.innerHTML = ''; el.style.marginBottom = '0'; return; }
+  const html = _buildNeedsAttentionHTML();
+  if (!html) { el.innerHTML = ''; el.style.marginBottom = '0'; return; }
   el.style.marginBottom = '14px';
-  el.innerHTML = `
-    <div style="background:rgba(251,191,36,0.05);border:0.5px solid rgba(217,119,6,0.3);border-radius:10px;padding:10px 14px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#d97706;">⚠ Needs Attention</span>
-        <span style="background:rgba(217,119,6,0.18);color:#b45309;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">${unscheduled.length}</span>
-      </div>
-      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;">
-        ${unscheduled.map(a => {
-          const name = a.booker_name||a.contact_name||'—';
-          const received = new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-          // Status badge
-          let badge = '', borderColor = '#d97706', btnLabel = '📋 Schedule';
-          if (a.status === 'rescheduled' && a.rescheduled_by === 'agent') {
-            badge = `<div style="font-size:10px;background:rgba(234,179,8,0.15);color:#b45309;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">⚠ Awaiting prospect confirm</div>`;
-            borderColor = '#d97706'; btnLabel = '📋 Update';
-          } else if (a.status === 'rescheduled' && a.rescheduled_by === 'prospect') {
-            badge = `<div style="font-size:10px;background:rgba(139,92,246,0.15);color:#7c3aed;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">🔄 Prospect requested reschedule</div>`;
-            borderColor = '#8b5cf6'; btnLabel = '📋 New Time';
-          }
-          // Show proposed time if rescheduled
-          const proposedTime = a.scheduled_at && a.status === 'rescheduled'
-            ? `<div style="font-size:11px;color:var(--text-primary);font-weight:500;margin-bottom:5px;">📅 ${new Date(a.scheduled_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>`
-            : '';
-          return `<div style="flex-shrink:0;width:230px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid ${borderColor};border-radius:8px;padding:9px 11px;">
-            ${badge}
-            <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:1px;">${name}</div>
-            ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label||a.appointment_type||'Appointment'}  |  ${received}</div>
-            ${proposedTime}
-            <div style="display:flex;gap:4px;">
-              <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">${btnLabel}</button>
-              <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">✕</button>
-            </div>
-          </div>`;
-        }).join('')}
+  el.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────
+// NEEDS ATTENTION — unified loader + renderer
+// ─────────────────────────────────────────────────────────────
+async function loadNeedsAttention() {
+  if (!currentAgent) return;
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Unread reply / complaint activities owned by this agent
+    const { data: acts } = await supabaseClient
+      .from('activities')
+      .select('id,contact_id,activity_type,subject,body_snippet,created_at')
+      .in('activity_type', ['email_replied', 'email_complained'])
+      .is('read_at', null)
+      .eq('agent_id', currentAgent.id)
+      .gte('created_at', thirtyDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    // 2. No-show and prospect-cancelled booking_intents
+    const { data: appts } = await supabaseClient
+      .from('booking_intents')
+      .select('id,contact_id,contact_name,company,appointment_label,appointment_type,scheduled_at,status,rescheduled_by,created_at')
+      .eq('agent_id', currentAgent.id)
+      .in('status', ['no_show', 'Cancelled', 'cancelled'])
+      .gte('created_at', thirtyDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    naItems = [
+      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, subject: a.subject, snippet: a.body_snippet, createdAt: a.created_at })),
+      ...(appts || []).filter(a => a.status === 'no_show' || ((a.status === 'Cancelled' || a.status === 'cancelled') && a.rescheduled_by === 'prospect'))
+        .map(a => ({ kind: a.status === 'no_show' ? 'meeting_no_show' : 'meeting_canceled', bookingId: a.id, contactId: a.contact_id, contactName: a.contact_name, company: a.company, apptLabel: a.appointment_label || a.appointment_type || 'Appointment', scheduledAt: a.scheduled_at, createdAt: a.created_at }))
+    ];
+
+    _refreshNeedsAttentionUI();
+  } catch(e) { console.error('loadNeedsAttention:', e); }
+}
+
+function _refreshNeedsAttentionUI() {
+  // Dashboard
+  const dashDiv = document.getElementById('dash-needs-attention');
+  if (dashDiv) dashDiv.innerHTML = _buildNeedsAttentionHTML();
+  // Calendar pending strip
+  const calDiv = document.getElementById('cal-pending');
+  if (calDiv) {
+    const html = _buildNeedsAttentionHTML();
+    calDiv.innerHTML = html || '';
+    calDiv.style.marginBottom = html ? '14px' : '0';
+  }
+}
+
+async function naDismissActivity(activityId) {
+  await supabaseClient.from('activities').update({ read_at: new Date().toISOString() }).eq('id', activityId);
+  naItems = naItems.filter(x => x.activityId !== activityId);
+  _refreshNeedsAttentionUI();
+}
+
+async function naReengage(bookingId) {
+  // Mark no_show / cancelled as "seen" by setting a dismissed note, then open contact
+  const item = naItems.find(x => x.bookingId === bookingId);
+  await supabaseClient.from('booking_intents').update({ agent_notes: (item && item.apptLabel ? '[Re-engaged after ' + (item.kind === 'meeting_no_show' ? 'no-show' : 'cancellation') + ']' : '[Re-engaged]') }).eq('id', bookingId);
+  naItems = naItems.filter(x => x.bookingId !== bookingId);
+  _refreshNeedsAttentionUI();
+  if (item && item.contactId) {
+    const c = contacts.find(x => x.id === item.contactId);
+    if (c) viewContact(c.id);
+  }
+}
+
+function _buildNeedsAttentionHTML() {
+  // Combine: pending booking_intents (from calAppointments) + naItems
+  const pending = (calAppointments || []).filter(a => !a.status || a.status === 'pending' || a.status === 'rescheduled');
+  const total = pending.length + naItems.length;
+  if (total === 0) return '';
+
+  const hasUrgent = naItems.some(x => x.kind === 'email_complained');
+  const headerColor = hasUrgent ? '#ef4444' : '#d97706';
+  const headerBg    = hasUrgent ? 'rgba(239,68,68,0.05)' : 'rgba(251,191,36,0.05)';
+  const headerBord  = hasUrgent ? 'rgba(239,68,68,0.3)'  : 'rgba(217,119,6,0.3)';
+
+  const pendingCards = pending.map(a => {
+    const name = a.booker_name || a.contact_name || '—';
+    const received = new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    let badge = '', borderColor = '#d97706', btnLabel = '📋 Schedule';
+    if (a.status === 'rescheduled' && a.rescheduled_by === 'agent') {
+      badge = `<div style="font-size:10px;background:rgba(234,179,8,0.15);color:#b45309;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">⚠ Awaiting prospect confirm</div>`;
+      borderColor = '#d97706'; btnLabel = '📋 Update';
+    } else if (a.status === 'rescheduled' && a.rescheduled_by === 'prospect') {
+      badge = `<div style="font-size:10px;background:rgba(139,92,246,0.15);color:#7c3aed;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">🔄 Prospect requested reschedule</div>`;
+      borderColor = '#8b5cf6'; btnLabel = '📋 New Time';
+    }
+    const proposedTime = a.scheduled_at && a.status === 'rescheduled'
+      ? `<div style="font-size:11px;color:var(--text-primary);font-weight:500;margin-bottom:5px;">📅 ${new Date(a.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>` : '';
+    return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid ${borderColor};border-radius:8px;padding:9px 11px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:${borderColor};margin-bottom:4px;">📅 Appointment</div>
+      ${badge}
+      <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
+      ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label || a.appointment_type || 'Appointment'} · ${received}</div>
+      ${proposedTime}
+      <div style="display:flex;gap:4px;margin-top:6px;">
+        <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">${btnLabel}</button>
+        <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">✕</button>
       </div>
     </div>`;
+  }).join('');
+
+  const naCards = naItems.map(item => {
+    const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const contact = contacts.find(x => x.id === item.contactId);
+    const name = (contact && contact.name) || item.contactName || 'Unknown Contact';
+    const company = (contact && contact.company) || item.company || '';
+    const timeAgo = formatTimeAgo(item.createdAt);
+
+    if (item.kind === 'email_replied') {
+      return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #34d399;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#34d399;margin-bottom:4px;">💬 Reply Received</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
+        ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
+        ${item.subject ? `<div style="font-size:11px;color:var(--text-secondary);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px;">${esc(item.subject)}</div>` : ''}
+        <div style="display:flex;gap:4px;margin-top:6px;">
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call Now</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}')">✓</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.kind === 'email_complained') {
+      return `<div style="flex-shrink:0;width:220px;background:rgba(239,68,68,0.04);border:0.5px solid rgba(239,68,68,0.3);border-left:3px solid #ef4444;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#ef4444;margin-bottom:4px;">🔥 Spam Complaint <span style="background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:2px;">URGENT</span></div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
+        ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${timeAgo}</div>
+        <div style="display:flex;gap:4px;margin-top:6px;">
+          <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}','')">👁 Review</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}')">✓</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.kind === 'meeting_no_show') {
+      const apptDate = item.scheduledAt ? new Date(item.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#f59e0b;margin-bottom:4px;">👻 No-Show</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
+        ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel)}${apptDate ? ' · ' + apptDate : ''}</div>
+        <div style="display:flex;gap:4px;margin-top:6px;">
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.bookingId}')">🔄 Re-engage</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.kind === 'meeting_canceled') {
+      const apptDate = item.scheduledAt ? new Date(item.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#f59e0b;margin-bottom:4px;">❌ Meeting Canceled</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
+        ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel)}${apptDate ? ' · ' + apptDate : ''}</div>
+        <div style="display:flex;gap:4px;margin-top:6px;">
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.bookingId}')">📅 Reschedule</button>
+        </div>
+      </div>`;
+    }
+
+    return '';
+  }).join('');
+
+  return `<div style="background:${headerBg};border:0.5px solid ${headerBord};border-radius:10px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${headerColor};">⚠ Needs Attention</span>
+      <span style="background:${hasUrgent ? 'rgba(239,68,68,0.18)' : 'rgba(217,119,6,0.18)'};color:${hasUrgent ? '#ef4444' : '#b45309'};border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">${total}</span>
+    </div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;">
+      ${naCards}${pendingCards}
+    </div>
+  </div>`;
 }
 
 // ── NAVIGATION ──
