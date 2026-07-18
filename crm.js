@@ -7119,28 +7119,28 @@ async function loadNeedsAttention() {
     // 1. Unread reply / complaint activities owned by this agent
     const { data: acts } = await supabaseClient
       .from('activities')
-      .select('id,contact_id,activity_type,subject,body_snippet,created_at')
-      .in('activity_type', ['email_replied', 'email_complained'])
+      .select('id,contact_id,activity_type,subject,body_snippet,created_at,contacts(name,company)')
+      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled'])
       .is('read_at', null)
       .eq('agent_id', currentAgent.id)
       .gte('created_at', thirtyDaysAgo)
       .order('created_at', { ascending: false })
       .limit(20);
 
-    // 2. No-show and prospect-cancelled booking_intents
+    // 2. Rescheduled booking_intents where prospect requested a new time (agent still needs to confirm)
     const { data: appts } = await supabaseClient
       .from('booking_intents')
       .select('id,contact_id,contact_name,company,appointment_label,appointment_type,scheduled_at,status,rescheduled_by,created_at')
       .eq('agent_id', currentAgent.id)
-      .in('status', ['no_show', 'Cancelled', 'cancelled'])
+      .eq('status', 'rescheduled')
+      .eq('rescheduled_by', 'prospect')
       .gte('created_at', thirtyDaysAgo)
       .order('created_at', { ascending: false })
       .limit(10);
 
     naItems = [
-      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, subject: a.subject, snippet: a.body_snippet, createdAt: a.created_at })),
-      ...(appts || []).filter(a => a.status === 'no_show' || ((a.status === 'Cancelled' || a.status === 'cancelled') && a.rescheduled_by === 'prospect'))
-        .map(a => ({ kind: a.status === 'no_show' ? 'meeting_no_show' : 'meeting_canceled', bookingId: a.id, contactId: a.contact_id, contactName: a.contact_name, company: a.company, apptLabel: a.appointment_label || a.appointment_type || 'Appointment', scheduledAt: a.scheduled_at, createdAt: a.created_at }))
+      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, createdAt: a.created_at })),
+      ...(appts || []).map(a => ({ kind: 'meeting_canceled', bookingId: a.id, contactId: a.contact_id, contactName: a.contact_name, company: a.company, apptLabel: a.appointment_label || a.appointment_type || 'Appointment', scheduledAt: a.scheduled_at, createdAt: a.created_at }))
     ];
 
     _refreshNeedsAttentionUI();
@@ -7166,16 +7166,12 @@ async function naDismissActivity(activityId) {
   _refreshNeedsAttentionUI();
 }
 
-async function naReengage(bookingId) {
-  // Mark no_show / cancelled as "seen" by setting a dismissed note, then open contact
-  const item = naItems.find(x => x.bookingId === bookingId);
-  await supabaseClient.from('booking_intents').update({ agent_notes: (item && item.apptLabel ? '[Re-engaged after ' + (item.kind === 'meeting_no_show' ? 'no-show' : 'cancellation') + ']' : '[Re-engaged]') }).eq('id', bookingId);
-  naItems = naItems.filter(x => x.bookingId !== bookingId);
+async function naReengage(activityId, contactId) {
+  // Mark the activity as read, then open the contact to re-engage
+  if (activityId) await supabaseClient.from('activities').update({ read_at: new Date().toISOString() }).eq('id', activityId);
+  naItems = naItems.filter(x => x.activityId !== activityId);
   _refreshNeedsAttentionUI();
-  if (item && item.contactId) {
-    const c = contacts.find(x => x.id === item.contactId);
-    if (c) viewContact(c.id);
-  }
+  if (contactId) viewContact(contactId);
 }
 
 function _buildNeedsAttentionHTML() {
@@ -7258,7 +7254,7 @@ function _buildNeedsAttentionHTML() {
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel)}${apptDate ? ' · ' + apptDate : ''}</div>
         <div style="display:flex;gap:4px;margin-top:6px;">
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.bookingId}')">🔄 Re-engage</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.activityId}','${item.contactId}')">🔄 Re-engage</button>
         </div>
       </div>`;
     }
@@ -7269,9 +7265,9 @@ function _buildNeedsAttentionHTML() {
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#f59e0b;margin-bottom:4px;">❌ Meeting Canceled</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel)}${apptDate ? ' · ' + apptDate : ''}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel || 'Meeting')}${apptDate ? ' · ' + apptDate : ''}</div>
         <div style="display:flex;gap:4px;margin-top:6px;">
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.bookingId}')">📅 Reschedule</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.activityId}','${item.contactId}')">📅 Reschedule</button>
         </div>
       </div>`;
     }
