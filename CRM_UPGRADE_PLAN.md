@@ -260,8 +260,8 @@ On each contact card in the list view, show small status indicators:
 4. ✅ Phase 2 — Update Code.gs (inbox processor writes to activities)
 5. ✅ Phase 3A — Activity timeline UI in contact detail
 6. ✅ Phase 3B — Expand Needs Attention section
-7. ⬜ Phase 3C — Dialer queue lead score sort
-8. ⬜ Phase 3D — Notification bell
+7. ✅ Phase 3C — Dialer queue lead score sort
+8. ✅ Phase 3D — Notification bell
 9. ⬜ Phase 3E — Contact card micro-indicators
 
 ---

@@ -201,6 +201,8 @@ async function showApp() {
   await loadData();
   showPage('dashboard');
   showAIBubble();
+  loadNotificationBell();
+  setInterval(loadNotificationBell, 2 * 60 * 1000); // refresh every 2 min
 
   const _urlParams = new URLSearchParams(window.location.search);
   if (_urlParams.get('gmail') === 'connected') {
@@ -4054,6 +4056,119 @@ async function addContactNote(contactId) {
     }
   );
   setTimeout(() => { const ta = document.getElementById('manual-note-text'); if (ta) ta.focus(); }, 100);
+}
+
+// ============================================================
+// NOTIFICATION BELL (Phase 3D)
+// ============================================================
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_booked','meeting_no_show','meeting_canceled'];
+
+async function loadNotificationBell() {
+  if (!currentAgent || !currentAgent.id) return;
+  try {
+    const { data } = await supabaseClient.rpc('get_unread_notifications', {
+      p_agent_id: currentAgent.id,
+      p_limit: 20
+    });
+    const items = (data || []).filter(n => _NOTIF_PRIORITY_TYPES.includes(n.activity_type));
+    const badge = document.getElementById('notif-bell-badge');
+    if (badge) {
+      if (items.length > 0) {
+        badge.textContent = items.length > 9 ? '9+' : items.length;
+        badge.style.display = 'flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+    window._notifItems = items;
+  } catch(e) { /* silent */ }
+}
+
+function toggleNotificationDropdown() {
+  const dd = document.getElementById('notif-dropdown');
+  if (!dd) return;
+  if (dd.style.display === 'none' || !dd.style.display) {
+    dd.style.display = 'block';
+    _renderNotificationDropdown();
+    // close on outside click
+    setTimeout(() => {
+      document.addEventListener('click', _closeNotifOnOutside, { once: true });
+    }, 10);
+  } else {
+    dd.style.display = 'none';
+  }
+}
+
+function _closeNotifOnOutside(e) {
+  const wrap = document.getElementById('notif-bell-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const dd = document.getElementById('notif-dropdown');
+    if (dd) dd.style.display = 'none';
+  } else if (wrap && wrap.contains(e.target)) {
+    // re-attach if click was inside
+    setTimeout(() => document.addEventListener('click', _closeNotifOnOutside, { once: true }), 10);
+  }
+}
+
+function _renderNotificationDropdown() {
+  const dd = document.getElementById('notif-dropdown');
+  if (!dd) return;
+  const items = window._notifItems || [];
+  const typeLabel = {
+    email_replied:    { icon: '💬', label: 'Reply received',      color: '#34d399' },
+    email_complained: { icon: '🔥', label: 'Spam complaint',      color: '#ef4444' },
+    meeting_booked:   { icon: '📅', label: 'Meeting booked',      color: '#34d399' },
+    meeting_no_show:  { icon: '👻', label: 'No-show',             color: '#fbbf24' },
+    meeting_canceled: { icon: '❌', label: 'Meeting canceled',    color: '#fbbf24' },
+  };
+  const _relTime = ts => {
+    const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+  };
+  let html = `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);">
+    <div style="font-size:12px;font-weight:700;color:var(--text-primary);text-transform:uppercase;letter-spacing:0.5px;">Notifications</div>
+    ${items.length > 0 ? `<button onclick="markAllNotifsRead()" style="background:none;border:none;font-size:11px;color:var(--accent);cursor:pointer;padding:0;">Mark all read</button>` : ''}
+  </div>`;
+  if (items.length === 0) {
+    html += '<div style="padding:24px 16px;text-align:center;font-size:13px;color:var(--text-muted);">All caught up! 🎉</div>';
+  } else {
+    html += items.slice(0, 10).map(n => {
+      const meta = typeLabel[n.activity_type] || { icon: '🔔', label: n.activity_type, color: '#94a3b8' };
+      const cName = n.contact_name || n.contact_id || 'Unknown';
+      const subj = n.subject ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${n.subject}</div>` : '';
+      return `<div onclick="notifGoToContact('${n.contact_id}','${n.id}')" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.1s;" onmouseover="this.style.background='var(--surface-3)'" onmouseout="this.style.background=''">
+        <div style="font-size:18px;flex-shrink:0;margin-top:1px;">${meta.icon}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:700;color:${meta.color};">${meta.label}</div>
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cName}</div>
+          ${subj}
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);flex-shrink:0;white-space:nowrap;margin-top:2px;">${_relTime(n.created_at)}</div>
+      </div>`;
+    }).join('');
+  }
+  dd.innerHTML = html;
+}
+
+async function notifGoToContact(contactId, notifId) {
+  document.getElementById('notif-dropdown').style.display = 'none';
+  // Mark this one read by marking all (simpler — RPC marks all)
+  await markAllNotifsRead();
+  viewContact(contactId);
+}
+
+async function markAllNotifsRead() {
+  if (!currentAgent) return;
+  try {
+    await supabaseClient.rpc('mark_notifications_read', { p_agent_id: currentAgent.id });
+    window._notifItems = [];
+    const badge = document.getElementById('notif-bell-badge');
+    if (badge) badge.style.display = 'none';
+    _renderNotificationDropdown();
+  } catch(e) { /* silent */ }
 }
 
 function closeDealPanel() {
