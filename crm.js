@@ -497,6 +497,7 @@ function renderDashboardOwner() {
         <button class="btn btn-outline btn-sm" onclick="syncGoogleContacts()"><i class="ti ti-refresh"></i> Sync</button>
       </div>
     </div>
+    <div id="dash-needs-attention"></div>
     <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div><div class="stat-delta">+${contacts.filter(c=>{ const d=new Date(c.created_at); return (Date.now()-d)<30*86400000; }).length} this month</div></div>
       <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${activeAgents}</div><div class="stat-label">Active agents</div><div class="stat-delta">${pendingApps > 0 ? pendingApps+' pending' : 'All active'}</div></div>
@@ -551,6 +552,7 @@ function renderDashboardOwner() {
     </div>
   `;
   renderDashAICard();
+  loadNeedsAttention();
 }
 
 function renderDashboardAgency() {
