@@ -5296,7 +5296,34 @@ async function renderContacts() {
       <td style="font-size:13px;">${c.email || '—'}${emailBadge}</td>
       <td style="font-size:13px;">${c.company || '—'}${dncBadge}</td>
       ${!contactTypeFilter ? `<td>${c.type ? `<span class="badge ${badgeClass}">${c.type}</span>` : '—'}</td>` : ''}
-      <td><span class="badge ${seqClass[seqStatus] || 'badge-agent'}">${seqStatus}</span></td>
+      <td>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <span class="badge ${seqClass[seqStatus] || 'badge-agent'}">${seqStatus}</span>
+          ${(() => {
+            // Lead score micro-badge
+            const ls = c.lead_score || 0;
+            const scoreBadge = ls !== 0
+              ? `<span style="font-size:10px;font-weight:700;color:${ls >= 20 ? '#34d399' : ls >= 5 ? '#fbbf24' : '#94a3b8'};">⚡ ${ls > 0 ? '+' : ''}${ls}</span>`
+              : '';
+            // Last interaction (use most recent of replied/opened/called)
+            const stamps = [c.last_replied_at, c.last_opened_at, c.last_called_at].filter(Boolean);
+            const lastTs = stamps.length ? new Date(Math.max(...stamps.map(s => new Date(s).getTime()))) : null;
+            let lastLabel = '';
+            if (lastTs) {
+              const diff = (Date.now() - lastTs.getTime()) / 1000;
+              const ago = diff < 3600 ? Math.floor(diff/60) + 'm ago'
+                : diff < 86400 ? Math.floor(diff/3600) + 'h ago'
+                : diff < 604800 ? Math.floor(diff/86400) + 'd ago'
+                : lastTs.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+              const icon = c.last_replied_at && new Date(c.last_replied_at).getTime() === lastTs.getTime() ? '💬'
+                : c.last_opened_at && new Date(c.last_opened_at).getTime() === lastTs.getTime() ? '👁'
+                : '📞';
+              lastLabel = `<span style="font-size:10px;color:var(--text-muted);">${icon} ${ago}</span>`;
+            }
+            return scoreBadge + (scoreBadge && lastLabel ? ' ' : '') + lastLabel;
+          })()}
+        </div>
+      </td>
       ${showOwnerCol ? `<td style="font-size:12px;color:var(--muted);">${ownerAgent ? ownerAgent.name : '—'}</td>` : ''}
       <td>
         <button class="btn btn-outline btn-sm" onclick="viewContact('${c.id}','')">View</button>
