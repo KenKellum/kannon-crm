@@ -1609,6 +1609,8 @@ function _parseLastInteraction(contact) {
 function _dialerScore(contact) {
   // Higher score = work first in queue
   let score = 0;
+  // DB lead_score (accumulated via log_activity RPC: opens, replies, meetings, etc.)
+  score += (contact.lead_score || 0) * 2;
   const statusMap = { Replied: 1000, Interested: 900, Active: 500 };
   score += (statusMap[contact.sequence_status] || 0);
   const opens = window._dashOpens || [];
@@ -2932,6 +2934,7 @@ function renderDialer() {
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
               ${_lcl ? `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;">&#9990; ${_lcl} &middot; ${contact.call_count||1}x</span>` : ''}
               ${_li ? `<span class="badge" style="background:#f0fdf4;color:#16a34a;font-size:10px;">&#8635; ${_li.label} &middot; ${_li.sub}</span>` : ''}
+              ${(contact.lead_score || 0) !== 0 ? `<span class="badge" style="background:${contact.lead_score >= 20 ? 'rgba(52,211,153,0.15)' : contact.lead_score >= 5 ? 'rgba(251,191,36,0.15)' : 'rgba(148,163,184,0.15)'};color:${contact.lead_score >= 20 ? '#34d399' : contact.lead_score >= 5 ? '#fbbf24' : '#94a3b8'};font-size:10px;font-weight:700;">&#9889; Score: ${contact.lead_score}</span>` : ''}
             </div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
