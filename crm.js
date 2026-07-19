@@ -639,6 +639,8 @@ function renderDashboardAgency() {
         + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Stalled pipeline deals</div></div>'
         + '</div>';
     })()}
+    <div id="dash-lead-sources" style="margin-bottom:10px;"></div>
+
     <div class="dash-grid">
       <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
@@ -697,6 +699,8 @@ function renderDashboardAgency() {
       </div>
     </div>
   `;
+
+  loadLeadSourceWidget();
 }
 
 
@@ -750,8 +754,6 @@ function renderDashboardAgent() {
     </div>
 
     <div id="dash-needs-attention"></div>
-
-    <div id="dash-lead-sources" style="margin-bottom:10px;"></div>
 
     <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:8px;">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div></div>
@@ -886,19 +888,39 @@ function renderDashboardAgent() {
 
   loadDashEmailOpens();
   loadNeedsAttention();
-  loadLeadSourceWidget();
   _initEmailOpenRealtime();
 }
 
-async function loadLeadSourceWidget() {
+async function loadLeadSourceWidget(filterAgentId) {
   const el = document.getElementById('dash-lead-sources');
   if (!el) return;
   try {
+    // Build agent dropdown options for agency owner
+    const agencyAgents = (allAgents || []).filter(a => a.agency_id === currentAgent.agency_id && a.status === 'active');
+    const agentDropdown = `
+      <select onchange="loadLeadSourceWidget(this.value||undefined)"
+              style="font-size:11px;padding:3px 7px;border:0.5px solid var(--border);border-radius:5px;background:var(--surface-2);color:var(--text-primary);cursor:pointer;">
+        <option value="">All Agents</option>
+        ${agencyAgents.map(a => `<option value="${a.id}" ${filterAgentId===a.id?'selected':''}>${a.name||a.email}</option>`).join('')}
+      </select>`;
+
     let q = supabaseClient.from('contacts').select('lead_source').not('lead_source', 'is', null);
-    if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
-    else if (currentAgent.role === 'agency_owner' && currentAgent.agency_id) q = q.eq('agency_id', currentAgent.agency_id);
+    if (filterAgentId) {
+      q = q.eq('agent_id', filterAgentId);
+    } else if (currentAgent.agency_id) {
+      q = q.eq('agency_id', currentAgent.agency_id);
+    }
     const { data } = await q;
-    if (!data || data.length === 0) { el.innerHTML = ''; return; }
+    if (!data || data.length === 0) {
+      el.innerHTML = `<div class="dash-card" style="margin-bottom:0;background:var(--surface-1);border-color:var(--border);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">📊 Leads by Source</span>
+          ${agentDropdown}
+        </div>
+        <p style="font-size:13px;color:var(--text-muted);text-align:center;padding:12px 0;">No tagged leads yet — source data will appear here as contacts are added.</p>
+      </div>`;
+      return;
+    }
 
     // Count by source
     const counts = {};
@@ -909,21 +931,28 @@ async function loadLeadSourceWidget() {
     const bars = sorted.map(([src, count]) => {
       const cfg = LEAD_SOURCES[src] || { label: src };
       const pct = Math.round(count / total * 100);
-      const barW = Math.max(pct, 3);
-      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
-        <div style="width:130px;font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;">${cfg.label}</div>
+      const barW = Math.max(pct, 2);
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <div style="width:140px;font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;">${cfg.label}</div>
         <div style="flex:1;background:var(--surface-3);border-radius:4px;height:10px;overflow:hidden;">
-          <div style="width:${barW}%;background:var(--fill-accent);height:100%;border-radius:4px;"></div>
+          <div style="width:${barW}%;background:var(--fill-accent);height:100%;border-radius:4px;transition:width 0.4s ease;"></div>
         </div>
         <div style="width:32px;text-align:right;font-size:11px;font-weight:700;color:var(--text-primary);flex-shrink:0;">${count}</div>
-        <div style="width:30px;text-align:right;font-size:10px;color:var(--text-muted);flex-shrink:0;">${pct}%</div>
+        <div style="width:34px;text-align:right;font-size:10px;color:var(--text-muted);flex-shrink:0;">${pct}%</div>
       </div>`;
     }).join('');
 
+    const agentLabel = filterAgentId
+      ? (agencyAgents.find(a => a.id === filterAgentId)?.name || 'Agent')
+      : 'All Agents';
+
     el.innerHTML = `<div class="dash-card" style="margin-bottom:0;background:var(--surface-1);border-color:var(--border);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">📊 Leads by Source</span>
-        <span style="font-size:11px;color:var(--text-muted);">${total} tagged</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">📊 Leads by Source</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${total} tagged &nbsp;·&nbsp; ${agentLabel}</span>
+        </div>
+        ${agentDropdown}
       </div>
       ${bars}
     </div>`;
