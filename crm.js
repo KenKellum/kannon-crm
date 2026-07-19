@@ -1754,12 +1754,16 @@ function _substituteVars(text, contact) {
 async function openCallScript(contactId) {
   var c = contacts.find(function(x) { return x.id === contactId; });
   if (!c) return;
-  // Navigate to dialer page first so the user sees it
-  showPage('dialer');
   var allScripts = await _loadDialerScripts();
   var root = _selectDialerScript(c, allScripts);
+  // Load this contact directly into the dialer queue so renderDialer sees it
+  dialerQueue = [c];
+  dialerIndex = 0;
+  showPage('dialer');
   if (!root) {
-    // No script available — just dial directly
+    // No script available — just dial directly, no script panel
+    window._dialerScriptActive = false;
+    renderDialer();
     stampPhoneCall(contactId);
     if (c.phone) window.open('tel:' + c.phone.replace(/[^0-9+]/g, ''));
     showToast('No script for this contact type — calling directly.');
@@ -7135,7 +7139,7 @@ function _calDay() {
 function _calPending() {
   const el = document.getElementById('cal-pending');
   if (!el) return;
-  const html = _buildNeedsAttentionHTML();
+  const html = _buildNeedsAttentionHTML(true); // appointments page — bookings only
   if (!html) { el.innerHTML = ''; el.style.marginBottom = '0'; return; }
   el.style.marginBottom = '14px';
   el.innerHTML = html;
@@ -7183,11 +7187,11 @@ async function loadNeedsAttention() {
 function _refreshNeedsAttentionUI() {
   // Dashboard
   const dashDiv = document.getElementById('dash-needs-attention');
-  if (dashDiv) dashDiv.innerHTML = _buildNeedsAttentionHTML();
-  // Calendar pending strip
+  if (dashDiv) dashDiv.innerHTML = _buildNeedsAttentionHTML(false);
+  // Calendar pending strip — appointments only (no email replies, spam, no-shows)
   const calDiv = document.getElementById('cal-pending');
   if (calDiv) {
-    const html = _buildNeedsAttentionHTML();
+    const html = _buildNeedsAttentionHTML(true);
     calDiv.innerHTML = html || '';
     calDiv.style.marginBottom = html ? '14px' : '0';
   }
@@ -7217,13 +7221,15 @@ async function naReengage(activityId, contactId) {
   if (contactId) viewContact(contactId);
 }
 
-function _buildNeedsAttentionHTML() {
+function _buildNeedsAttentionHTML(appointmentsOnly) {
   // Combine: pending booking_intents (from calAppointments) + naItems
+  // When appointmentsOnly=true (Appointments page), skip naItems — only show pending/rescheduled bookings
   const pending = (calAppointments || []).filter(a => !a.status || a.status === 'pending' || a.status === 'rescheduled');
-  const total = pending.length + naItems.length;
+  const activeNaItems = appointmentsOnly ? [] : naItems;
+  const total = pending.length + activeNaItems.length;
   if (total === 0) return '';
 
-  const hasUrgent = naItems.some(x => x.kind === 'email_complained');
+  const hasUrgent = activeNaItems.some(x => x.kind === 'email_complained');
   const headerColor = hasUrgent ? '#ef4444' : '#d97706';
   const headerBg    = hasUrgent ? 'rgba(239,68,68,0.05)' : 'rgba(251,191,36,0.05)';
   const headerBord  = hasUrgent ? 'rgba(239,68,68,0.3)'  : 'rgba(217,119,6,0.3)';
@@ -7255,7 +7261,7 @@ function _buildNeedsAttentionHTML() {
     </div>`;
   }).join('');
 
-  const naCards = naItems.map(item => {
+  const naCards = activeNaItems.map(item => {
     const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const contact = contacts.find(x => x.id === item.contactId);
     const name = (contact && contact.name) || item.contactName || 'Unknown Contact';
