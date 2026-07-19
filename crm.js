@@ -1754,6 +1754,8 @@ function _substituteVars(text, contact) {
 async function openCallScript(contactId) {
   var c = contacts.find(function(x) { return x.id === contactId; });
   if (!c) return;
+  // Navigate to dialer page first so the user sees it
+  showPage('dialer');
   var allScripts = await _loadDialerScripts();
   var root = _selectDialerScript(c, allScripts);
   if (!root) {
@@ -7197,6 +7199,16 @@ async function naDismissActivity(activityId) {
   _refreshNeedsAttentionUI();
 }
 
+// Dismiss a NA item by either activityId or bookingId
+function naDismissItem(id, type) {
+  if (type === 'booking') {
+    naItems = naItems.filter(x => x.bookingId !== id);
+  } else {
+    naItems = naItems.filter(x => x.activityId !== id);
+  }
+  _refreshNeedsAttentionUI();
+}
+
 async function naReengage(activityId, contactId) {
   // Mark the activity as read, then open the contact to re-engage
   if (activityId) await supabaseClient.from('activities').update({ read_at: new Date().toISOString() }).eq('id', activityId);
@@ -7292,13 +7304,18 @@ function _buildNeedsAttentionHTML() {
 
     if (item.kind === 'meeting_canceled') {
       const apptDate = item.scheduledAt ? new Date(item.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      // booking_intent-based cancellations have bookingId — open reschedule modal
+      // activity-based cancellations only have activityId — fall back to contact panel
+      const rescheduleOnclick = item.bookingId
+        ? `naDismissItem('${item.bookingId}','booking');showPage('appointments');setTimeout(()=>apptSchedule('${item.bookingId}'),400)`
+        : `naReengage('${item.activityId}','${item.contactId}')`;
       return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#f59e0b;margin-bottom:4px;">❌ Meeting Canceled</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel || 'Meeting')}${apptDate ? ' · ' + apptDate : ''}</div>
         <div style="display:flex;gap:4px;margin-top:6px;">
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.activityId}','${item.contactId}')">📅 Reschedule</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="${rescheduleOnclick}">📅 Reschedule</button>
         </div>
       </div>`;
     }
