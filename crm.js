@@ -7320,6 +7320,38 @@ async function naDismissActivity(activityId) {
   _refreshNeedsAttentionUI();
 }
 
+async function naHandleSpamComplaint(activityId, contactId, contactName, subject) {
+  // Auto opt-out the contact immediately
+  await supabaseClient.from('contacts').update({ opt_out_email: true, sequence_status: 'Opted Out' }).eq('id', contactId);
+  // Mark activity read
+  await supabaseClient.from('activities').update({ read_at: new Date().toISOString() }).eq('id', activityId);
+  // Remove from naItems
+  naItems = naItems.filter(x => x.activityId !== activityId);
+  _refreshNeedsAttentionUI();
+  // Update local contacts cache
+  const c = contacts.find(x => x.id === contactId);
+  if (c) { c.opt_out_email = true; c.sequence_status = 'Opted Out'; }
+  // Show clear explanation modal
+  const subjectLine = subject ? `<div style="margin:10px 0;padding:8px 12px;background:rgba(239,68,68,0.08);border-left:3px solid #ef4444;border-radius:4px;font-size:13px;color:var(--text-primary);"><strong>Email:</strong> ${esc(subject)}</div>` : '';
+  const modalHtml = `<div id="spam-complaint-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-card);border-radius:12px;padding:24px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="font-size:28px;text-align:center;margin-bottom:8px;">🚫</div>
+      <h3 style="margin:0 0 8px;font-size:16px;font-weight:700;color:var(--text-primary);text-align:center;">Spam Complaint — Contact Opted Out</h3>
+      <p style="margin:0 0 6px;font-size:13px;color:var(--text-muted);text-align:center;"><strong style="color:var(--text-primary);">${esc(contactName)}</strong> marked one of your emails as spam.</p>
+      ${subjectLine}
+      <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:10px 14px;margin:12px 0;font-size:12px;color:var(--text-muted);">
+        ✅ <strong style="color:var(--text-primary);">Automatically handled:</strong> This contact has been opted out of all future emails and their sequence has been stopped. No action needed from you.
+      </div>
+      <p style="margin:0 0 16px;font-size:12px;color:var(--text-muted);">You can still call them or view their contact record — just no more emails.</p>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline btn-sm" style="flex:1;" onclick="document.getElementById('spam-complaint-modal').remove()">Close</button>
+        <button class="btn btn-primary btn-sm" style="flex:1;" onclick="document.getElementById('spam-complaint-modal').remove();viewContact('${contactId}','')">View Contact</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
 // Dismiss a NA item by either activityId or bookingId
 function naDismissItem(id, type) {
   if (type === 'booking') {
@@ -7405,10 +7437,11 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#ef4444;margin-bottom:4px;">🔥 Spam Complaint <span style="background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:2px;">URGENT</span></div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${timeAgo}</div>
-        <div style="display:flex;gap:4px;margin-top:6px;">
-          <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}','')">👁 Review</button>
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}')">✓</button>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
+        ${item.subject ? `<div style="font-size:10px;color:#ef4444;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px;">Re: ${esc(item.subject)}</div>` : ''}
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">They marked your email as spam.</div>
+        <div style="display:flex;gap:4px;margin-top:4px;">
+          <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naHandleSpamComplaint('${item.activityId}','${item.contactId}','${esc(name)}','${esc(item.subject||'')}')">🚫 Opt Out &amp; Dismiss</button>
         </div>
       </div>`;
     }
