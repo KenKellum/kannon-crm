@@ -4155,8 +4155,21 @@ function _renderNotificationDropdown() {
 
 async function notifGoToContact(contactId, notifId) {
   document.getElementById('notif-dropdown').style.display = 'none';
-  // Mark this one read by marking all (simpler — RPC marks all)
-  await markAllNotifsRead();
+  // Mark only this notification read, leave others unread
+  try {
+    await supabaseClient.rpc('mark_single_notification_read', { p_activity_id: notifId });
+    window._notifItems = (window._notifItems || []).filter(n => n.id !== notifId);
+    const badge = document.getElementById('notif-bell-badge');
+    if (badge) {
+      const remaining = (window._notifItems || []).length;
+      if (remaining > 0) {
+        badge.textContent = remaining > 9 ? '9+' : remaining;
+        badge.style.display = 'flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch(e) { /* silent */ }
   viewContact(contactId);
 }
 
