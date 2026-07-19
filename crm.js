@@ -7396,14 +7396,14 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
     }
     const proposedTime = a.scheduled_at && a.status === 'rescheduled'
       ? `<div style="font-size:11px;color:var(--text-primary);font-weight:500;margin-bottom:5px;">📅 ${new Date(a.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>` : '';
-    return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid ${borderColor};border-radius:8px;padding:9px 11px;">
+    return `<div style="flex-shrink:0;width:220px;display:flex;flex-direction:column;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid ${borderColor};border-radius:8px;padding:9px 11px;">
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:${borderColor};margin-bottom:4px;">📅 Appointment</div>
       ${badge}
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
       ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label || a.appointment_type || 'Appointment'} · ${received}</div>
       ${proposedTime}
-      <div style="display:flex;gap:4px;margin-top:6px;">
+      <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
         <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">${btnLabel}</button>
         <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">✕</button>
       </div>
@@ -7418,13 +7418,13 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
     const timeAgo = formatTimeAgo(item.createdAt);
 
     if (item.kind === 'email_replied') {
-      return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #34d399;border-radius:8px;padding:9px 11px;">
+      return `<div style="flex-shrink:0;width:220px;display:flex;flex-direction:column;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #34d399;border-radius:8px;padding:9px 11px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#34d399;margin-bottom:4px;">💬 Reply Received</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
-        ${item.subject ? `<div style="font-size:11px;color:var(--text-secondary);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px;">${esc(item.subject)}</div>` : ''}
-        <div style="display:flex;gap:4px;margin-top:6px;">
+        ${item.subject ? `<div style="font-size:11px;color:var(--text-secondary);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.subject)}</div>` : ''}
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}')">✉️ View</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">✓</button>
@@ -7433,14 +7433,14 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
     }
 
     if (item.kind === 'email_complained') {
-      return `<div style="flex-shrink:0;width:220px;background:rgba(239,68,68,0.04);border:0.5px solid rgba(239,68,68,0.3);border-left:3px solid #ef4444;border-radius:8px;padding:9px 11px;">
+      return `<div style="flex-shrink:0;width:220px;display:flex;flex-direction:column;background:rgba(239,68,68,0.04);border:0.5px solid rgba(239,68,68,0.3);border-left:3px solid #ef4444;border-radius:8px;padding:9px 11px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#ef4444;margin-bottom:4px;">🔥 Spam Complaint <span style="background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:2px;">URGENT</span></div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
-        ${item.subject ? `<div style="font-size:10px;color:#ef4444;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px;">Re: ${esc(item.subject)}</div>` : ''}
-        <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">They marked your email as spam.</div>
-        <div style="display:flex;gap:4px;margin-top:4px;">
+        ${item.subject ? `<div style="font-size:10px;color:#ef4444;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Re: ${esc(item.subject)}</div>` : ''}
+        <div style="font-size:10px;color:var(--text-muted);">They marked your email as spam.</div>
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naHandleSpamComplaint('${item.activityId}','${item.contactId}','${esc(name)}','${esc(item.subject||'')}')">🚫 Opt Out &amp; Dismiss</button>
         </div>
       </div>`;
@@ -7448,12 +7448,12 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
 
     if (item.kind === 'meeting_no_show') {
       const apptDate = item.scheduledAt ? new Date(item.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-      return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
+      return `<div style="flex-shrink:0;width:220px;display:flex;flex-direction:column;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#f59e0b;margin-bottom:4px;">👻 No-Show</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel)}${apptDate ? ' · ' + apptDate : ''}</div>
-        <div style="display:flex;gap:4px;margin-top:6px;">
+        <div style="font-size:11px;color:var(--text-muted);">${esc(item.apptLabel)}${apptDate ? ' · ' + apptDate : ''}</div>
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');showScheduleModal('${item.contactId}')">📅 Rebook</button>
         </div>
@@ -7467,12 +7467,12 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
       const rescheduleOnclick = item.bookingId
         ? `naDismissItem('${item.bookingId}','booking');showPage('appointments');setTimeout(()=>apptSchedule('${item.bookingId}'),400)`
         : `naDismissActivity('${item.activityId}');showScheduleModal('${item.contactId}')`;
-      return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
+      return `<div style="flex-shrink:0;width:220px;display:flex;flex-direction:column;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#f59e0b;margin-bottom:4px;">❌ Meeting Canceled</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel || 'Meeting')}${apptDate ? ' · ' + apptDate : ''}</div>
-        <div style="display:flex;gap:4px;margin-top:6px;">
+        <div style="font-size:11px;color:var(--text-muted);">${esc(item.apptLabel || 'Meeting')}${apptDate ? ' · ' + apptDate : ''}</div>
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="${rescheduleOnclick}">📅 Reschedule</button>
         </div>
