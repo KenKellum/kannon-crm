@@ -5285,7 +5285,7 @@ async function renderContacts() {
     }
     // 'all' — no filter applied
   }
-  if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%`);
+  if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%,phone.ilike.%${contactSearch}%`);
   if (opensFilter.length) q = q.in('email', opensFilter);
   const offset = (contactPage || 0) * PAGE_SIZE;
   q = q.order(sortOpt.col, { ascending: sortOpt.asc }).range(offset, offset + PAGE_SIZE - 1);
