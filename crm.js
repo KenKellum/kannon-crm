@@ -499,7 +499,6 @@ function renderDashboardOwner() {
         <button class="btn btn-outline btn-sm" onclick="syncGoogleContacts()"><i class="ti ti-refresh"></i> Sync</button>
       </div>
     </div>
-    <div id="dash-needs-attention"></div>
     <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div><div class="stat-delta">+${contacts.filter(c=>{ const d=new Date(c.created_at); return (Date.now()-d)<30*86400000; }).length} this month</div></div>
       <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${activeAgents}</div><div class="stat-label">Active agents</div><div class="stat-delta">${pendingApps > 0 ? pendingApps+' pending' : 'All active'}</div></div>
@@ -554,7 +553,6 @@ function renderDashboardOwner() {
     </div>
   `;
   renderDashAICard();
-  loadNeedsAttention();
 }
 
 function renderDashboardAgency() {
@@ -735,6 +733,8 @@ function renderDashboardAgent() {
       </div>
     </div>
 
+    <div id="dash-needs-attention"></div>
+
     <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:8px;">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div></div>
       <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
@@ -774,8 +774,6 @@ function renderDashboardAgent() {
         <button onclick="showPage('contacts');openAddContact()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 0 8px rgba(22,163,74,0.4);"><i class="ti ti-plus"></i> Add new lead</button>
       </div>
     </div>
-
-    <div id="dash-needs-attention"></div>
 
     <div class="dash-grid" style="align-items:stretch;margin-bottom:10px;">
 
