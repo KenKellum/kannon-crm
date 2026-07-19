@@ -5205,7 +5205,7 @@ async function renderContacts() {
 
   const statusFilterBtns = [
     { val: 'active',           label: '✓ Active',           title: 'Reachable contacts only — hides opted-out and stopped' },
-    { val: 'needs_attention',  label: '⚠ Needs Attention',  title: 'Opted-out, bounced, stopped — contacts you cannot currently reach' },
+    { val: 'needs_attention',  label: '🚫 Opted-Out / DNC',  title: 'Opted-out, stopped, bounced, and held contacts — cannot currently reach' },
     { val: 'all',              label: 'All',                 title: 'Show every contact regardless of status' },
   ].map(s =>
     `<button class="pipeline-tab ${contactStatusFilter === s.val ? 'active' : ''}" title="${s.title}"
@@ -5280,8 +5280,8 @@ async function renderContacts() {
            .not('sequence_status', 'eq', 'stopped')
            .not('sequence_status', 'eq', 'Opted Out');
     } else if (contactStatusFilter === 'needs_attention') {
-      // Show only contacts that need attention (opted-out, stopped/bounced)
-      q = q.or('opt_out_email.eq.true,sequence_status.eq.stopped');
+      // Show opted-out, stopped/bounced, held, and DNC contacts
+      q = q.or('opt_out_email.eq.true,sequence_status.eq.stopped,sequence_status.eq.Opted Out,sequence_status.eq.Hold');
     }
     // 'all' — no filter applied
   }
