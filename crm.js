@@ -22,14 +22,14 @@ const CONTACT_TYPES = ['Group/Employer','Individual/Family','Agent — Insured A
 const LEAD_SOURCES = {
   referral:          { label: '🤝 Referral',          stage: 'Contacted',      temp: 'warm', hint: 'Call first — skip cold sequence' },
   inbound_call:      { label: '📞 Inbound Call',       stage: 'Responded',      temp: 'hot',  hint: 'Already engaged — jump straight to pipeline' },
-  agent_prospecting: { label: '🔍 Agent Prospecting',  stage: 'New Lead',       temp: 'cold', hint: 'Standard cold outreach sequence' },
+  agent_prospecting: { label: '🔍 Agent Prospecting',  stage: 'New Lead',       temp: 'cold', hint: 'Standard cold outreach sequence',  noPipeline: true },
   partner:           { label: '🏢 Partner Referral',   stage: 'Contacted',      temp: 'warm', hint: 'Mention the referring partner on first touch' },
   web_form:          { label: '🌐 Web Form',           stage: 'New Lead',       temp: 'warm', hint: 'Auto-sequence starts immediately' },
   booking_link:      { label: '📅 Booking Link',       stage: 'Discovery Call', temp: 'hot',  hint: 'Appointment already scheduled' },
-  paid_ads:          { label: '📢 Paid Ads',           stage: 'New Lead',       temp: 'cold', hint: 'Standard cold sequence' },
+  paid_ads:          { label: '📢 Paid Ads',           stage: 'New Lead',       temp: 'cold', hint: 'Standard cold sequence',            noPipeline: true },
   event:             { label: '🎪 Event / Networking', stage: 'Contacted',      temp: 'warm', hint: 'Personal follow-up first — met in person' },
-  purchased_list:    { label: '📋 Purchased List',     stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence' },
-  csv_import:        { label: '📥 CSV Import',         stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence' },
+  purchased_list:    { label: '📋 Purchased List',     stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence',            noPipeline: true },
+  csv_import:        { label: '📥 CSV Import',         stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence',            noPipeline: true },
   cross_sell:        { label: '♻️ Cross-sell',         stage: 'Contacted',      temp: 'hot',  hint: 'Existing client relationship — already trusts you' },
   agent_book:        { label: '📓 Agent Book',         stage: 'Contacted',      temp: 'warm', hint: 'Personal book of business' },
 };
@@ -2809,18 +2809,21 @@ async function saveIntakeToCRM() {
     await supabaseClient.from('contacts').update({ notes: _iNewNotes }).eq('id', _intakeContactId);
     c.notes = _iNewNotes;
 
-    // 4. Auto-create pipeline Deal if one doesn't exist for this contact+pipeline
+    // 4. Create or advance pipeline Deal on intake completion
+    // New Lead = inbound digital (web form / marketing) — no agent contact yet
+    // Intake completion = agent had a real conversation → advance to next meaningful stage
     const _intakePipelineMap = {
-      health_individual: { pipeline: 'individual-family', stage: 'Needs Assessment' },
+      health_individual: { pipeline: 'individual-family', stage: 'Needs Assessment' }, // intake IS the needs assessment
       health_family:     { pipeline: 'individual-family', stage: 'Needs Assessment' },
       life_individual:   { pipeline: 'individual-family', stage: 'Needs Assessment' },
-      health_group:      { pipeline: 'group-employer',    stage: 'Discovery Call' },
-      career_new:        { pipeline: 'agent-kannon',      stage: 'Interested' },
-      career_existing:   { pipeline: 'agent-kannon',      stage: 'Interested' },
+      health_group:      { pipeline: 'group-employer',    stage: 'Responded' },        // prospect engaged, info gathered
+      career_new:        { pipeline: 'agent-kannon',      stage: 'Identified' },
+      career_existing:   { pipeline: 'agent-kannon',      stage: 'Identified' },
     };
     const _idest = _intakePipelineMap[_intakeFormType] || { pipeline: 'individual-family', stage: 'Needs Assessment' };
-    const _ialready = deals.some(function(d) { return d.contact_id === _intakeContactId && d.pipeline === _idest.pipeline; });
-    if (!_ialready) {
+    const _iexisting = deals.find(function(d) { return d.contact_id === _intakeContactId && d.pipeline === _idest.pipeline; });
+    if (!_iexisting) {
+      // No deal yet — create one at the intake stage
       const _ititle = c.company || c.name || 'New Deal';
       const { data: _inewDeal, error: _idealErr } = await supabaseClient.from('deals').insert({
         title:      _ititle,
@@ -2832,9 +2835,18 @@ async function saveIntakeToCRM() {
         notes:      'Auto-created from intake form (' + _intakeFormType + ')',
       }).select().single();
       if (!_idealErr && _inewDeal) deals.unshift(_inewDeal);
+    } else {
+      // Deal exists (e.g. came in as web form at New Lead) — advance stage if intake stage is further along
+      const _pipelineStages = (PIPELINES[_idest.pipeline] || {}).stages || [];
+      const _currentIdx = _pipelineStages.indexOf(_iexisting.stage);
+      const _targetIdx  = _pipelineStages.indexOf(_idest.stage);
+      if (_targetIdx > _currentIdx) {
+        await supabaseClient.from('deals').update({ stage: _idest.stage }).eq('id', _iexisting.id);
+        _iexisting.stage = _idest.stage;
+      }
     }
 
-    showToast('✓ Intake saved — ' + (c.name || 'Contact') + ' added to pipeline');
+    showToast('✓ Intake saved — ' + (c.name || 'Contact') + ' advanced to ' + _idest.stage);
     closeIntakeForm();
     dialerNext();
   } catch(e) {
@@ -5561,8 +5573,8 @@ function openAddContact() {
       await supabaseClient.from('contact_companies').insert(ac.map(r => ({ contact_id: data.id, company_id: r.company_id })));
     }
 
-    // Auto-create deal at source-appropriate pipeline stage
-    if (sourceCfg) {
+    // Auto-create deal only for sources with demonstrated intent (not cold outreach)
+    if (sourceCfg && !sourceCfg.noPipeline) {
       const contactType = document.getElementById('con-type').value || 'Individual/Family';
       const pipelineKey = contactType === 'Group/Employer' ? 'group-employer'
         : contactType.includes('Kannon') ? 'agent-kannon'
@@ -5575,7 +5587,7 @@ function openAddContact() {
     }
 
     contacts.unshift(data);
-    showToast(`Contact added! ${sourceCfg ? '→ Pipeline stage: ' + sourceCfg.stage : ''}`);
+    showToast(`Contact added!${(sourceCfg && !sourceCfg.noPipeline) ? ' → Pipeline: ' + sourceCfg.stage : ' (no pipeline deal — run intake when ready)'}`);
     renderContacts();
     if (window._addContactStartIntake) {
       window._addContactStartIntake = false;
