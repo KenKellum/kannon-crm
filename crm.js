@@ -18,6 +18,22 @@ const PIPELINES = {
 
 const CONTACT_TYPES = ['Group/Employer','Individual/Family','Agent — Insured America','Agent — Kannon Financial'];
 
+// Lead source config — each source sets initial pipeline stage and temperature hint
+const LEAD_SOURCES = {
+  referral:          { label: '🤝 Referral',          stage: 'Contacted',      temp: 'warm', hint: 'Call first — skip cold sequence' },
+  inbound_call:      { label: '📞 Inbound Call',       stage: 'Responded',      temp: 'hot',  hint: 'Already engaged — jump straight to pipeline' },
+  agent_prospecting: { label: '🔍 Agent Prospecting',  stage: 'New Lead',       temp: 'cold', hint: 'Standard cold outreach sequence' },
+  partner:           { label: '🏢 Partner Referral',   stage: 'Contacted',      temp: 'warm', hint: 'Mention the referring partner on first touch' },
+  web_form:          { label: '🌐 Web Form',           stage: 'New Lead',       temp: 'warm', hint: 'Auto-sequence starts immediately' },
+  booking_link:      { label: '📅 Booking Link',       stage: 'Discovery Call', temp: 'hot',  hint: 'Appointment already scheduled' },
+  paid_ads:          { label: '📢 Paid Ads',           stage: 'New Lead',       temp: 'cold', hint: 'Standard cold sequence' },
+  event:             { label: '🎪 Event / Networking', stage: 'Contacted',      temp: 'warm', hint: 'Personal follow-up first — met in person' },
+  purchased_list:    { label: '📋 Purchased List',     stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence' },
+  csv_import:        { label: '📥 CSV Import',         stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence' },
+  cross_sell:        { label: '♻️ Cross-sell',         stage: 'Contacted',      temp: 'hot',  hint: 'Existing client relationship — already trusts you' },
+  agent_book:        { label: '📓 Agent Book',         stage: 'Contacted',      temp: 'warm', hint: 'Personal book of business' },
+};
+
 let supabaseClient = null;
 let campaignTab = 'drip';
 let campaignItemsMap = {};
@@ -37,6 +53,7 @@ let currentPipeline = 'group-employer';
 let contactSearch = '';
 let contactTypeFilter = '';
 let contactStatusFilter = 'active'; // 'active' | 'needs_attention' | 'all'
+let contactSourceFilter = ''; // '' = all sources
 let opensFilter = [];
 let _quickFilterLabel = '';
 let contactPage = 0;
@@ -734,6 +751,8 @@ function renderDashboardAgent() {
 
     <div id="dash-needs-attention"></div>
 
+    <div id="dash-lead-sources" style="margin-bottom:10px;"></div>
+
     <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:8px;">
       <div class="stat-card"><div class="stat-num">${totalContacts.toLocaleString()}</div><div class="stat-label">Total contacts</div></div>
       <div class="stat-card" style="border-left-color:#34d399;background:rgba(52,211,153,0.05);"><div class="stat-num">${inSequence}</div><div class="stat-label">In sequence</div></div>
@@ -867,7 +886,48 @@ function renderDashboardAgent() {
 
   loadDashEmailOpens();
   loadNeedsAttention();
+  loadLeadSourceWidget();
   _initEmailOpenRealtime();
+}
+
+async function loadLeadSourceWidget() {
+  const el = document.getElementById('dash-lead-sources');
+  if (!el) return;
+  try {
+    let q = supabaseClient.from('contacts').select('lead_source').not('lead_source', 'is', null);
+    if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
+    else if (currentAgent.role === 'agency_owner' && currentAgent.agency_id) q = q.eq('agency_id', currentAgent.agency_id);
+    const { data } = await q;
+    if (!data || data.length === 0) { el.innerHTML = ''; return; }
+
+    // Count by source
+    const counts = {};
+    data.forEach(r => { counts[r.lead_source] = (counts[r.lead_source] || 0) + 1; });
+    const total = data.length;
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+    const bars = sorted.map(([src, count]) => {
+      const cfg = LEAD_SOURCES[src] || { label: src };
+      const pct = Math.round(count / total * 100);
+      const barW = Math.max(pct, 3);
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+        <div style="width:130px;font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;">${cfg.label}</div>
+        <div style="flex:1;background:var(--surface-3);border-radius:4px;height:10px;overflow:hidden;">
+          <div style="width:${barW}%;background:var(--fill-accent);height:100%;border-radius:4px;"></div>
+        </div>
+        <div style="width:32px;text-align:right;font-size:11px;font-weight:700;color:var(--text-primary);flex-shrink:0;">${count}</div>
+        <div style="width:30px;text-align:right;font-size:10px;color:var(--text-muted);flex-shrink:0;">${pct}%</div>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = `<div class="dash-card" style="margin-bottom:0;background:var(--surface-1);border-color:var(--border);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">📊 Leads by Source</span>
+        <span style="font-size:11px;color:var(--text-muted);">${total} tagged</span>
+      </div>
+      ${bars}
+    </div>`;
+  } catch(e) { /* silent */ }
 }
 
 async function loadDashEmailOpens() {
@@ -1122,6 +1182,7 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
           agency_id:        currentAgent.agency_id || null,
           type:             contactType,
           sequence_status:  'Drip',
+          lead_source:      'booking_link',
         })
         .select()
         .single();
@@ -1697,6 +1758,7 @@ function _dialerActionRow(contact, isLast) {
 // ============================================================
 // CALL SCRIPTS ENGINE
 // ============================================================
+window.LEAD_SOURCES = LEAD_SOURCES; // expose for inline onchange handlers
 window._dialerScripts       = null;
 window._dialerScriptActive  = false;
 window._dialerScriptNode    = null;
@@ -2934,6 +2996,7 @@ function renderDialer() {
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <span class="badge ${typeClass}">${contact.type || 'Contact'}</span>
               <span class="badge ${statusClass}">${contact.sequence_status || 'Not started'}</span>
+              ${contact.lead_source && LEAD_SOURCES[contact.lead_source] ? `<span class="badge" style="background:#f0f9ff;color:#0369a1;border:0.5px solid #bae6fd;font-size:10px;">${LEAD_SOURCES[contact.lead_source].label}</span>` : ''}
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
               ${_lcl ? `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;">&#9990; ${_lcl} &middot; ${contact.call_count||1}x</span>` : ''}
               ${_li ? `<span class="badge" style="background:#f0fdf4;color:#16a34a;font-size:10px;">&#8635; ${_li.label} &middot; ${_li.sub}</span>` : ''}
@@ -5227,7 +5290,16 @@ async function renderContacts() {
       <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;">Status:</span>
       <div class="pipeline-tabs" style="margin-bottom:0;">${statusFilterBtns}</div>
     </div>
-    <div class="pipeline-tabs" style="margin-bottom:16px;">${typeFilterBtns}</div>
+    <div class="pipeline-tabs" style="margin-bottom:8px;">${typeFilterBtns}</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;">
+      <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;">Source:</span>
+      <select onchange="contactSourceFilter=this.value;contactPage=0;renderContacts();"
+              style="padding:5px 8px;border:0.5px solid var(--border);border-radius:6px;font-size:12px;color:var(--text-primary);background:var(--surface-2);cursor:pointer;">
+        <option value="" ${contactSourceFilter===''?'selected':''}>All Sources</option>
+        ${Object.entries(LEAD_SOURCES).map(([v,s]) => `<option value="${v}" ${contactSourceFilter===v?'selected':''}>${s.label}</option>`).join('')}
+      </select>
+      ${contactSourceFilter ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="contactSourceFilter='';contactPage=0;renderContacts();">✕ Clear</button>` : ''}
+    </div>
     <div class="contacts-table" id="contacts-table-body">
       <div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading...</div>
     </div>`;
@@ -5271,6 +5343,7 @@ async function renderContacts() {
     }
     // 'all' — no filter applied
   }
+  if (contactSourceFilter) q = q.eq('lead_source', contactSourceFilter);
   if (contactSearch) q = q.or(`name.ilike.%${contactSearch}%,email.ilike.%${contactSearch}%,company.ilike.%${contactSearch}%,phone.ilike.%${contactSearch}%`);
   if (opensFilter.length) q = q.in('email', opensFilter);
   const offset = (contactPage || 0) * PAGE_SIZE;
@@ -5388,12 +5461,24 @@ function openAddContact() {
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
 
+  const sourceOptions = Object.entries(LEAD_SOURCES).map(([v,s]) =>
+    `<option value="${v}">${s.label}</option>`).join('');
+
   showModal('Add Contact', `
     <label>Full Name *</label><input type="text" id="con-name" placeholder="Jane Smith" />
     <label>Email</label><input type="email" id="con-email" placeholder="jane@company.com" />
     <label>Phone</label><input type="tel" id="con-phone" placeholder="(555) 555-5555" />
     <label>Company / Employer</label><input type="text" id="con-company" placeholder="Acme Corp" />
     <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
+    <label>Lead Source *</label>
+    <select id="con-source" onchange="
+      const cfg = window.LEAD_SOURCES && window.LEAD_SOURCES[this.value];
+      const hint = document.getElementById('con-source-hint');
+      if (hint) hint.textContent = cfg ? cfg.hint : '';
+    ">
+      <option value="">— How did this lead come in? —</option>${sourceOptions}
+    </select>
+    <div id="con-source-hint" style="font-size:11px;color:var(--text-muted);margin-top:-6px;margin-bottom:4px;font-style:italic;min-height:16px;"></div>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes" placeholder="Any relevant notes..."></textarea>
     <div style="border-top:1px solid #e2e8f0;margin-top:12px;padding-top:12px;">
@@ -5417,6 +5502,9 @@ function openAddContact() {
     const assignedAgentId = canAssign ? (document.getElementById('con-agent').value || currentAgent.id) : currentAgent.id;
     const assignedAgent = allAgents.find(a => a.id === assignedAgentId) || currentAgent;
 
+    const sourceVal = document.getElementById('con-source').value || null;
+    const sourceCfg = sourceVal ? LEAD_SOURCES[sourceVal] : null;
+
     const { data, error } = await supabaseClient.from('contacts').insert({
       name,
       email: document.getElementById('con-email').value.trim() || null,
@@ -5424,6 +5512,7 @@ function openAddContact() {
       company: document.getElementById('con-company').value.trim() || null,
       type: document.getElementById('con-type').value || null,
       notes: document.getElementById('con-notes').value.trim() || null,
+      lead_source: sourceVal,
       linkedin_url: document.getElementById('new-linkedin').value.trim() || null,
       facebook_url: document.getElementById('new-facebook').value.trim() || null,
       instagram_handle: (document.getElementById('new-instagram').value.trim().replace(/^@/, '') || null),
@@ -5443,7 +5532,22 @@ function openAddContact() {
       await supabaseClient.from('contact_companies').insert(ac.map(r => ({ contact_id: data.id, company_id: r.company_id })));
     }
 
-    contacts.unshift(data); showToast('Contact added!'); renderContacts();
+    // Auto-create deal at source-appropriate pipeline stage
+    if (sourceCfg) {
+      const contactType = document.getElementById('con-type').value || 'Individual/Family';
+      const pipelineKey = contactType === 'Group/Employer' ? 'group-employer'
+        : contactType.includes('Kannon') ? 'agent-kannon'
+        : contactType.includes('Insured') ? 'agent-insured'
+        : 'individual-family';
+      await supabaseClient.from('deals').insert({
+        contact_id: data.id, pipeline: pipelineKey, stage: sourceCfg.stage,
+        user_id: currentUser.id, agent_id: assignedAgentId
+      });
+    }
+
+    contacts.unshift(data);
+    showToast(`Contact added! ${sourceCfg ? '→ Pipeline stage: ' + sourceCfg.stage : ''}`);
+    renderContacts();
     if (window._addContactStartIntake) {
       window._addContactStartIntake = false;
       setTimeout(() => showIntakeForm(data.id), 300);
