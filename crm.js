@@ -4062,7 +4062,7 @@ async function addContactNote(contactId) {
 // ============================================================
 // NOTIFICATION BELL (Phase 3D)
 // ============================================================
-const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_booked','meeting_no_show','meeting_canceled'];
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled'];
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
