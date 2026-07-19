@@ -7393,8 +7393,9 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
         ${item.subject ? `<div style="font-size:11px;color:var(--text-secondary);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px;">${esc(item.subject)}</div>` : ''}
         <div style="display:flex;gap:4px;margin-top:6px;">
-          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call Now</button>
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}')">✓</button>
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}')">✉️ View</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">✓</button>
         </div>
       </div>`;
     }
@@ -7420,24 +7421,26 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel)}${apptDate ? ' · ' + apptDate : ''}</div>
         <div style="display:flex;gap:4px;margin-top:6px;">
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naReengage('${item.activityId}','${item.contactId}')">🔄 Re-engage</button>
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');showScheduleModal('${item.contactId}')">📅 Rebook</button>
         </div>
       </div>`;
     }
 
     if (item.kind === 'meeting_canceled') {
       const apptDate = item.scheduledAt ? new Date(item.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-      // booking_intent-based cancellations have bookingId — open reschedule modal
-      // activity-based cancellations only have activityId — fall back to contact panel
+      // If linked to a booking_intent, go to Appointments page and open that booking's reschedule flow
+      // Otherwise open the Schedule Appointment modal directly for this contact
       const rescheduleOnclick = item.bookingId
         ? `naDismissItem('${item.bookingId}','booking');showPage('appointments');setTimeout(()=>apptSchedule('${item.bookingId}'),400)`
-        : `naReengage('${item.activityId}','${item.contactId}')`;
+        : `naDismissActivity('${item.activityId}');showScheduleModal('${item.contactId}')`;
       return `<div style="flex-shrink:0;width:220px;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #fbbf24;border-radius:8px;padding:9px 11px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#f59e0b;margin-bottom:4px;">❌ Meeting Canceled</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
         ${company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(company)}</div>` : ''}
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${esc(item.apptLabel || 'Meeting')}${apptDate ? ' · ' + apptDate : ''}</div>
         <div style="display:flex;gap:4px;margin-top:6px;">
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="${rescheduleOnclick}">📅 Reschedule</button>
         </div>
       </div>`;
