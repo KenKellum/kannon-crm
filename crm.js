@@ -5188,7 +5188,8 @@ async function cleanupContacts() {
       if (res.error) { showToast('Error: ' + res.error.message); return false; }
       showToast('Deleted ' + toDelete.length + ' contact' + (toDelete.length !== 1 ? 's' : '') + '.');
       renderContacts();
-    }
+    },
+    { confirmLabel: 'Confirm Deletion' }
   );
 }
 
