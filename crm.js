@@ -16,7 +16,7 @@ const PIPELINES = {
   'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
 
-const CONTACT_TYPES = ['Group/Employer','Individual/Family','Recruit','Agent — Insured America','Agent — Kannon Financial'];
+const CONTACT_TYPES = ['Group/Employer','Individual/Family','Agent — Insured America','Agent — Kannon Financial'];
 
 let supabaseClient = null;
 let campaignTab = 'drip';
@@ -580,7 +580,6 @@ function renderDashboardAgency() {
 
   // Campaign-level stats from deals by type/stage
   const activeCampaigns = [
-    { name: 'State Farm sequence', contacts: contacts.filter(c=>c.type==='Recruit').length, open: openRatePct },
     { name: 'B2B group track', contacts: contacts.filter(c=>c.type==='Group/Employer').length, open: 0 },
     { name: 'B2C individual track', contacts: contacts.filter(c=>c.type==='Individual/Family').length, open: 0 },
   ].filter(c => c.contacts > 0);
@@ -1089,17 +1088,14 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
 
   const toName = [firstName, lastName].filter(Boolean).join(' ');
 
-  // Parse type — recruits encode pipeline as "Recruit|agent-kannon"
-  const typeRaw      = contactTypeRaw || 'Individual/Family';
-  const typeParts    = typeRaw.split('|');
-  const contactType  = typeParts[0];   // e.g. 'Recruit' or 'Individual/Family'
+  const contactType  = contactTypeRaw || 'Individual/Family';
   const pipelineMap  = {
-    'Individual/Family': { pipeline: 'individual-family', stage: 'Contacted' },
-    'Group/Employer':    { pipeline: 'group-employer',    stage: 'Outreach Sent' },
-    'Recruit|agent-kannon':   { pipeline: 'agent-kannon',   stage: 'Contacted' },
-    'Recruit|agent-insured':  { pipeline: 'agent-insured',  stage: 'Contacted' },
+    'Individual/Family':        { pipeline: 'individual-family', stage: 'Contacted' },
+    'Group/Employer':           { pipeline: 'group-employer',    stage: 'Outreach Sent' },
+    'Agent — Kannon Financial': { pipeline: 'agent-kannon',      stage: 'Contacted' },
+    'Agent — Insured America':  { pipeline: 'agent-insured',     stage: 'Contacted' },
   };
-  const pipeInfo = pipelineMap[typeRaw] || pipelineMap['Individual/Family'];
+  const pipeInfo = pipelineMap[contactType] || pipelineMap['Individual/Family'];
   const btn = document.querySelector('#booking-modal-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
@@ -1203,7 +1199,7 @@ function getDefaultBookingNote(typeRaw, intent) {
       'reconnect':  "I wanted to reach back out — we have some new group plan options that weren't available before, and I think they could be a real win for your organization.",
       'social':     "I came across your company and I think there's a real opportunity for us to work together. We help businesses design competitive group benefits packages that attract top talent and keep employees happy.",
     },
-    'Recruit|agent-kannon': {
+    'Agent — Kannon Financial': {
       'just-met':   "As I mentioned, we are growing the Kannon Financial Group team and I genuinely think you'd be a great fit. I'd love to share more about the opportunity, the income potential, and what makes our team different.",
       'after-call': "I really enjoyed our conversation today! I think there's a tremendous opportunity here for you and I'd love to dive deeper into the details and answer any questions you have.",
       'follow-up':  "I wanted to follow up on my previous message about the opportunity at Kannon Financial Group. We're looking for driven individuals who want to build something meaningful — and I think you're exactly the kind of person we want on our team.",
@@ -1211,7 +1207,7 @@ function getDefaultBookingNote(typeRaw, intent) {
       'reconnect':  "I wanted to reach back out — we've had some exciting developments at Kannon Financial Group and I think the timing might be right for us to have a conversation about your career goals.",
       'social':     "I came across your background and I think you'd be a fantastic addition to the Kannon Financial Group team. We're growing fast and I'd love to tell you more about what we're building.",
     },
-    'Recruit|agent-insured': {
+    'Agent — Insured America': {
       'just-met':   "As I mentioned, The Insured America Agency is growing and I think you'd be a tremendous fit. I'd love to share more about the career path, the support system, and the income potential that comes with it.",
       'after-call': "Loved our conversation today! I'm excited about the possibility of you joining The Insured America Agency team and I'd love to get a proper sit-down on the calendar to walk you through everything.",
       'follow-up':  "I wanted to follow up about the career opportunity at The Insured America Agency. We offer industry-leading training, a proven system, and a real path to financial independence — and I'd love to tell you more.",
@@ -1260,8 +1256,8 @@ async function generateAIBookingMessage() {
   const typeLabels = {
     'Individual/Family':     'Individual or family prospect looking for health, life, or financial coverage',
     'Group/Employer':        'Business owner or HR decision-maker for group employee benefits',
-    'Recruit|agent-kannon':  'Potential recruit for the Kannon Financial Group agent team',
-    'Recruit|agent-insured': 'Potential recruit for the Insured America agent team',
+    'Agent — Kannon Financial': 'Potential agent recruit for the Kannon Financial Group team',
+    'Agent — Insured America':  'Potential agent recruit for the Insured America team',
   };
 
   // Fetch contact notes if the contact already exists
@@ -1351,7 +1347,7 @@ async function bookingLinkLookupContact(email) {
       const typeEl = document.getElementById('booking-contact-type');
       if (typeEl) {
         let dropVal = c.type || 'Individual/Family';
-        if (c.type === 'Recruit') dropVal = 'Recruit|agent-insured'; // pipeline col removed; default to Insured America
+        if (c.type === 'Recruit') dropVal = 'Agent — Insured America'; // legacy Recruit type → Agent
         typeEl.value = dropVal;
       }
       statusEl.style.color = '#16a34a';
@@ -1838,7 +1834,7 @@ function _buildScriptPanelBody() {
     return (r.name || '')
       .replace(/^Cold Call — /,'').replace(/^Warm — /,'')
       .replace(/ \(Under 65\)/,'').replace(/ \(IA\)/,'').replace(/ \(KFG\)/,'')
-      .replace(/^Recruit — /,'').replace(' Health','')
+      .replace(' Health','')
       .replace('Experienced Agent','Experienced')
       .replace('Individual & Family','Ind & Family')
       .replace('Medicare Supplement','Medicare Supp')
@@ -1853,7 +1849,7 @@ function _buildScriptPanelBody() {
       ids: ['11111111-0000-0000-0000-000000000001','11111111-0000-0000-0000-000000000002','11111111-0000-0000-0000-000000000003','11111111-0000-0000-0000-000000000004'] },
     { label: 'Financial / KFG',
       ids: ['11111111-0000-0000-0000-000000000005','11111111-0000-0000-0000-000000000006','11111111-0000-0000-0000-000000000007'] },
-    { label: 'Recruit',
+    { label: 'Agent Recruiting',
       ids: ['11111111-0000-0000-0000-000000000008','11111111-0000-0000-0000-000000000009','11111111-0000-0000-0000-000000000010','11111111-0000-0000-0000-000000000011'] },
     { label: 'Follow-Up',
       ids: ['11111111-0000-0000-0000-000000000012','11111111-0000-0000-0000-000000000013'] }
@@ -2380,7 +2376,7 @@ function _intakeTypeFromContact(c) {
   if (t.includes('individual') || t.includes('family')) return 'health-individual';
   if (t.includes('group') || t.includes('employer')) return 'health-group';
   if (t.includes('insured america') || t.includes('insuredamerica')) return 'career-ia';
-  if (t.includes('kannon') || t.includes('kfg') || t.includes('recruit') || t.includes('primerica')) return 'career-kfg';
+  if (t.includes('kannon') || t.includes('kfg') || t.includes('primerica')) return 'career-kfg';
   return 'financial';
 }
 
@@ -2832,8 +2828,8 @@ async function dialerSendBookingLink(contactId) {
     // Determine contact type — prefer deal pipeline over contact.type
     var _contactDeal = (window.deals || []).find(function(d) { return d.contact_id === contactId; });
     var _pipelineTypeMap = {
-      'agent-kannon':   'Recruit|agent-kannon',
-      'agent-insured':  'Recruit|agent-insured',
+      'agent-kannon':   'Agent — Kannon Financial',
+      'agent-insured':  'Agent — Insured America',
       'individual-family': 'Individual/Family',
       'group-employer':    'Group/Employer'
     };
@@ -2899,7 +2895,7 @@ function renderDialer() {
 
   const statusClass = contact.sequence_status === 'Replied' ? 'badge-replied'
     : contact.sequence_status === 'Active' ? 'badge-active' : 'badge-completed';
-  const typeClass = contact.type === 'Recruit' ? 'badge-agent'
+  const typeClass = (contact.type === 'Agent — Kannon Financial' || contact.type === 'Agent — Insured America') ? 'badge-agent'
     : contact.type === 'Group/Employer' ? 'badge-group' : 'badge-individual';
 
   const _signal = _dialerSignal(contact);
@@ -3114,7 +3110,7 @@ async function dialerMarkInterested(contactId) {
       let dest = null;
       if      (t === 'Group/Employer')         dest = { pipeline: 'group-employer',    stage: 'Responded' };
       else if (t === 'Individual/Family')      dest = { pipeline: 'individual-family', stage: 'Contacted' };
-      else if (t === 'Recruit')                dest = { pipeline: 'agent-kannon',      stage: 'Interested' };
+      else if (t === 'Agent — Kannon Financial') dest = { pipeline: 'agent-kannon',  stage: 'Interested' };
       else if (t.includes('Insured America'))  dest = { pipeline: 'agent-insured',     stage: 'Interested' };
       else if (t.includes('Kannon Financial')) dest = { pipeline: 'agent-kannon',      stage: 'Interested' };
 
@@ -3249,8 +3245,6 @@ function manageBookingTypes() {
         <select id="booking-contact-type" onchange="updateBookingNote()" style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);">
           <option value="Individual/Family">Individual / Family</option>
           <option value="Group/Employer">Group / Employer</option>
-          <option value="Recruit|agent-kannon">Recruit — Kannon Financial</option>
-          <option value="Recruit|agent-insured">Recruit — Insured America</option>
         </select>
         <select id="booking-intent" onchange="updateBookingNote()" style="flex:1;font-size:12px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text-primary);">
           <option value="just-met">We Just Met</option>
@@ -3291,7 +3285,6 @@ function manageBookingTypes() {
           <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Context</label>
           <select id="bt-context" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;">
             <option value="client">Client (insurance/benefits)</option>
-            <option value="recruit">Recruit (career opportunity)</option>
           </select>
         </div>
         <div>
@@ -3360,7 +3353,6 @@ function editBookingType(index) {
       <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Context</label>
       <select id="ebt-context" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:13px;">
         <option value="client" ${t.context==='client'?'selected':''}>Client (insurance/benefits)</option>
-        <option value="recruit" ${t.context==='recruit'?'selected':''}>Recruit (career opportunity)</option>
       </select>
     </div>
     <div style="margin-bottom:10px;">
@@ -3501,12 +3493,11 @@ async function renderCampaigns() {
 
   const dripB2b     = drip.filter(c => c.type === 'Group/Employer').length;
   const dripB2c     = drip.filter(c => c.type === 'Individual/Family').length;
-  const dripRecruit = drip.filter(c => c.type === 'Recruit').length;
   const monthMap    = {4:'April',5:'May',9:'September',10:'October',11:'November',12:'December'};
 
   // ── DRIP sections ───────────────────────────────────────────
-  const dripSegLabel = { b2b:'🏢 B2B Client', b2c:'👤 B2C Client', recruit:'🎯 Recruit' };
-  const dripSections = ['b2b','b2c','recruit'].map(seg => {
+  const dripSegLabel = { b2b:'🏢 B2B Client', b2c:'👤 B2C Client' };
+  const dripSections = ['b2b','b2c'].map(seg => {
     const items = allDrip.filter(c => c.segment === seg);
     if (!items.length) return '';
     const rows = items.map(item => {
@@ -3542,10 +3533,8 @@ async function renderCampaigns() {
   const seqSegLabel = {
     'b2b':'🏢 B2B Outreach',
     'b2c':'👤 B2C Outreach',
-    'recruit-standard':'🎯 Recruit (Standard)',
-    'recruit-statefarm':'🏆 Recruit (State Farm)'
   };
-  const seqSections = ['b2b','b2c','recruit-standard','recruit-statefarm'].map(seg => {
+  const seqSections = ['b2b','b2c'].map(seg => {
     const items = allSeq.filter(s => s.segment === seg).sort((a,b) => a.email_num - b.email_num);
     if (!items.length) return '';
     const rows = items.map(item => {
@@ -3591,7 +3580,6 @@ async function renderCampaigns() {
         <div class="opens-stat"><div class="num">${drip.length}</div><div class="lbl">In Drip</div></div>
         <div class="opens-stat" style="border-left-color:#1a3a5c;"><div class="num">${dripB2b}</div><div class="lbl">B2B</div></div>
         <div class="opens-stat" style="border-left-color:#16a34a;"><div class="num">${dripB2c}</div><div class="lbl">B2C</div></div>
-        <div class="opens-stat" style="border-left-color:#c8a84b;"><div class="num">${dripRecruit}</div><div class="lbl">Recruits</div></div>
         <div class="opens-stat" style="border-left-color:#8b5cf6;"><div class="num">${allSends.length}</div><div class="lbl">Sent</div></div>
       </div>
       <div style="background:#fff8e7;border:1px solid #c8a84b;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#92400e;line-height:1.6;">
@@ -3602,7 +3590,7 @@ async function renderCampaigns() {
 
     <div id="camp-seq" style="display:${!tabDrip?'block':'none'};">
       <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#1e40af;line-height:1.6;">
-        <strong>3-email outreach sequence</strong> — runs via Apps Script. B2B/B2C routes by contact type. Recruits route by <em>Outreach Track</em> (Standard or State Farm). Add state-specific rows (e.g. MT, AZ) to override generic templates.
+        <strong>3-email outreach sequence</strong> — runs via Apps Script. Routes by contact type: B2B (Group/Employer) or B2C (Individual/Family). Add state-specific rows (e.g. MT, AZ) to override generic templates.
       </div>
       ${seqSections}
     </div>
@@ -3704,11 +3692,8 @@ function aiSuggestEmail() {
     <select id="ai-seg" class="form-input" style="width:100%;margin-bottom:12px;">
       <option value="b2b|drip_content">B2B — Drip</option>
       <option value="b2c|drip_content">B2C — Drip</option>
-      <option value="recruit|drip_content">Recruit — Drip</option>
       <option value="b2b|sequence_content">B2B — Outreach Sequence</option>
       <option value="b2c|sequence_content">B2C — Outreach Sequence</option>
-      <option value="recruit-standard|sequence_content">Recruit — Outreach (Standard)</option>
-      <option value="recruit-statefarm|sequence_content">Recruit — Outreach (State Farm)</option>
     </select>
     <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Tone</label>
     <select id="ai-tone" class="form-input" style="width:100%;margin-bottom:12px;">
@@ -4863,7 +4848,7 @@ var CSD_TYPE_MAP = {
   'group-employer':    ['Group/Employer'],
   'individual-family': ['Individual/Family'],
   'agent-insured':     ['Agent - Insured America','Insured America Agent'],
-  'agent-kannon':      ['Agent - Kannon Financial','Kannon Financial Agent','Recruit']
+  'agent-kannon':      ['Agent - Kannon Financial','Kannon Financial Agent','Agent — Kannon Financial']
 };
 
 function buildContactSearch(selectedId, prefix, pipeline) {
@@ -5473,7 +5458,6 @@ function editContact(id, onSave) {
   const agentOptions = canAssign
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
-  const trackOptions = [['standard','Standard'],['state-farm','State Farm Agent']].map(([v,l]) => `<option value="${v}" ${(c.sequence_track||'standard')===v?'selected':''}>${l}</option>`).join('');
   const SEQ_STATUSES = ['Not Started','Active','Drip','Replied','Interested','Not Interested','Closed'];
   const seqOptions = SEQ_STATUSES.map(s => `<option value="${s}" ${(c.sequence_status||'Not Started')===s?'selected':''}>${s}</option>`).join('');
   const _verifiedAt = c.email_verified_at ? ` (verified ${new Date(c.email_verified_at).toLocaleDateString()})` : '';
@@ -5502,7 +5486,6 @@ function editContact(id, onSave) {
     <label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
     <label>State</label><input type="text" id="con-state" value="${c.state||''}" placeholder="e.g. MT" maxlength="2" style="width:80px;" />
     <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
-    <label>Outreach Track <span style="font-size:11px;color:var(--muted);">(Recruit contacts only)</span></label><select id="con-track">${trackOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
     <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
     <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
