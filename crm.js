@@ -1068,6 +1068,7 @@ function switchPreviewRole(role) {
   });
   renderSidebarNav();
   renderDashboard();
+  loadNotificationBell();
 }
 
 function shareBookingLink() { manageBookingTypes(); }
@@ -4063,15 +4064,17 @@ const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_booke
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
+  const role = previewRole || currentAgent.role;
+  const wrap = document.getElementById('notif-bell-wrap');
   // System owners don't use the bell — they manage via dashboard/oversight
-  if (currentAgent.role === 'system_owner') {
-    const wrap = document.getElementById('notif-bell-wrap');
+  if (role === 'system_owner') {
     if (wrap) wrap.style.display = 'none';
     return;
   }
+  if (wrap) wrap.style.display = '';
   try {
     let data;
-    if (currentAgent.role === 'agency_owner' && currentAgent.agency_id) {
+    if (role === 'agency_owner' && currentAgent.agency_id) {
       // Agency owners see notifications for all agents in their agency
       ({ data } = await supabaseClient.rpc('get_agency_unread_notifications', {
         p_agency_id: currentAgent.agency_id,
@@ -4148,7 +4151,7 @@ function _renderNotificationDropdown() {
   if (items.length === 0) {
     html += '<div style="padding:24px 16px;text-align:center;font-size:13px;color:var(--text-muted);">All caught up! 🎉</div>';
   } else {
-    const isAgencyOwner = currentAgent && currentAgent.role === 'agency_owner';
+    const isAgencyOwner = currentAgent && (previewRole || currentAgent.role) === 'agency_owner';
     html += items.slice(0, 10).map(n => {
       const meta = typeLabel[n.activity_type] || { icon: '🔔', label: n.activity_type, color: '#94a3b8' };
       const cName = n.contact_name || n.contact_id || 'Unknown';
