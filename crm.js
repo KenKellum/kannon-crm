@@ -4063,11 +4063,26 @@ const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_booke
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
+  // System owners don't use the bell — they manage via dashboard/oversight
+  if (currentAgent.role === 'system_owner') {
+    const wrap = document.getElementById('notif-bell-wrap');
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
   try {
-    const { data } = await supabaseClient.rpc('get_unread_notifications', {
-      p_agent_id: currentAgent.id,
-      p_limit: 20
-    });
+    let data;
+    if (currentAgent.role === 'agency_owner' && currentAgent.agency_id) {
+      // Agency owners see notifications for all agents in their agency
+      ({ data } = await supabaseClient.rpc('get_agency_unread_notifications', {
+        p_agency_id: currentAgent.agency_id,
+        p_limit: 20
+      }));
+    } else {
+      ({ data } = await supabaseClient.rpc('get_unread_notifications', {
+        p_agent_id: currentAgent.id,
+        p_limit: 20
+      }));
+    }
     const items = (data || []).filter(n => _NOTIF_PRIORITY_TYPES.includes(n.activity_type));
     const badge = document.getElementById('notif-bell-badge');
     if (badge) {
@@ -4133,16 +4148,18 @@ function _renderNotificationDropdown() {
   if (items.length === 0) {
     html += '<div style="padding:24px 16px;text-align:center;font-size:13px;color:var(--text-muted);">All caught up! 🎉</div>';
   } else {
+    const isAgencyOwner = currentAgent && currentAgent.role === 'agency_owner';
     html += items.slice(0, 10).map(n => {
       const meta = typeLabel[n.activity_type] || { icon: '🔔', label: n.activity_type, color: '#94a3b8' };
       const cName = n.contact_name || n.contact_id || 'Unknown';
       const subj = n.subject ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${n.subject}</div>` : '';
+      const agentTag = isAgencyOwner && n.agent_name ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;">👤 ${n.agent_name}</div>` : '';
       return `<div onclick="notifGoToContact('${n.contact_id}','${n.id}')" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.1s;" onmouseover="this.style.background='var(--surface-3)'" onmouseout="this.style.background=''">
         <div style="font-size:18px;flex-shrink:0;margin-top:1px;">${meta.icon}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:12px;font-weight:700;color:${meta.color};">${meta.label}</div>
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cName}</div>
-          ${subj}
+          ${subj}${agentTag}
         </div>
         <div style="font-size:10px;color:var(--text-muted);flex-shrink:0;white-space:nowrap;margin-top:2px;">${_relTime(n.created_at)}</div>
       </div>`;
