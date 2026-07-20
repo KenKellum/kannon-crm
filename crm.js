@@ -1777,20 +1777,16 @@ function _dialerSignal(contact) {
   return { icon: 'ti-plant-2', label: 'Fresh lead, first contact', sub: 'Introduce yourself and start the conversation', color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.25)' };
 }
 
-// View the most recent completed intake for a contact, or launch new intake if none exists
 async function dialerViewIntake(contactId) {
   const { data: sessions } = await supabaseClient
     .from('intake_sessions')
-    .select('id,form_type,completed_at')
+    .select('id,completed_at')
     .eq('contact_id', contactId)
     .eq('status', 'completed')
     .order('completed_at', { ascending: false })
     .limit(1);
-  if (sessions && sessions.length) {
-    viewIntakeSession(sessions[0].id);
-  } else {
-    showIntakeForm(contactId);
-  }
+  if (sessions && sessions.length) { viewIntakeSession(sessions[0].id); }
+  else { showIntakeForm(contactId); }
 }
 
 function _dialerActionRow(contact, isLast) {
@@ -7445,18 +7441,14 @@ async function viewIntakeSession(sessionId) {
   const statusBadge = s.status === 'completed'
     ? '<span style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">COMPLETED</span>'
     : '<span style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">PENDING</span>';
-
   const responses = s.responses || {};
   const selectedFields = s.selected_fields || [];
-
   let fieldHtml = '';
   if (Object.keys(responses).length === 0) {
     fieldHtml = '<p style="color:var(--text-muted);font-style:italic;font-size:13px;padding:8px 0;">Form not yet submitted by prospect.</p>';
   } else {
-    // Group fields by section using INTAKE_FIELD_DEFS
     const sections = {};
-    const fieldOrder = selectedFields.length ? selectedFields : Object.keys(responses);
-    // Prepend contact fields (always first)
+    const fieldOrder = selectedFields.length ? selectedFields.slice() : Object.keys(responses);
     ['name','email','phone'].forEach(function(fid) {
       if (responses[fid] && !fieldOrder.includes(fid)) fieldOrder.unshift(fid);
     });
@@ -7486,8 +7478,7 @@ async function viewIntakeSession(sessionId) {
       fieldHtml += '</div>';
     });
   }
-
-  const escFn = function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+  const escFn = function(v) { return String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
   const body = '<div style="margin-bottom:16px;padding:12px;background:var(--surface-2);border-radius:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'
     + '<div style="flex:1;min-width:0;">'
     + '<div style="font-size:15px;font-weight:700;color:var(--text-primary);">' + escFn(cName) + '</div>'
@@ -7790,4 +7781,827 @@ function _readInviteSection() {
     var opt = sel.options[sel.selectedIndex];
     cohostEmail = opt ? (opt.getAttribute('data-email') || '') : '';
     cohostName  = opt ? (opt.getAttribute('data-name')  || '') : '';
-  } else if (selVal === 
+  } else if (selVal === '__ext__') {
+    cohostName  = (document.getElementById('_cohost-ext-name')  ? document.getElementById('_cohost-ext-name').value.trim()  : '') || null;
+    cohostEmail = (document.getElementById('_cohost-ext-email') ? document.getElementById('_cohost-ext-email').value.trim() : '') || null;
+  }
+  var rows = document.querySelectorAll('._earow');
+  var extraAttendees = [];
+  rows.forEach(function(row) {
+    var idx = (row.id||'').replace('_ear-','');
+    var nm  = document.getElementById('_ean-' + idx);
+    var em  = document.getElementById('_eae-' + idx);
+    var nmv = nm ? nm.value.trim() : '';
+    var emv = em ? em.value.trim() : '';
+    if (emv && emv.indexOf('@') > -1) extraAttendees.push({ name: nmv || emv.split('@')[0], email: emv });
+  });
+  var sendChk = document.getElementById('_inv-send');
+  var sendEmail = sendChk ? sendChk.checked !== false : true;
+  return { cohostAgentId: cohostAgentId, cohostEmail: cohostEmail, cohostName: cohostName, extraAttendees: extraAttendees, sendEmail: sendEmail };
+}
+
+async function _sendCohostInvites(bookingId, inv, apptDetails) {
+  if (!inv || !inv.sendEmail) return;
+  if (inv.cohostEmail) {
+    try {
+      var u = new URL(APPS_SCRIPT_URL);
+      u.searchParams.set('action','invite_cohost');
+      u.searchParams.set('booking_intent_id', bookingId);
+      u.searchParams.set('cohost_email', inv.cohostEmail);
+      u.searchParams.set('cohost_name',  inv.cohostName  || '');
+      if (inv.cohostAgentId) u.searchParams.set('cohost_agent_id', inv.cohostAgentId);
+      u.searchParams.set('agent_id',          currentAgent.id);
+      u.searchParams.set('agent_name',         currentAgent.name||'');
+      u.searchParams.set('contact_name',       apptDetails.contactName      || '');
+      u.searchParams.set('appointment_type',   apptDetails.appointmentType  || '');
+      u.searchParams.set('datetime_iso',       apptDetails.dateIso          || '');
+      if (apptDetails.notes) u.searchParams.set('notes', apptDetails.notes);
+      fetch(u.toString());
+    } catch(e) {}
+  }
+  var extras = inv.extraAttendees || [];
+  for (var ai = 0; ai < extras.length; ai++) {
+    var at = extras[ai];
+    try {
+      var u2 = new URL(APPS_SCRIPT_URL);
+      u2.searchParams.set('action','invite_attendee');
+      u2.searchParams.set('booking_intent_id', bookingId);
+      u2.searchParams.set('to',      at.email);
+      u2.searchParams.set('to_name', at.name  || '');
+      u2.searchParams.set('agent_id',          currentAgent.id);
+      u2.searchParams.set('agent_name',         currentAgent.name||'');
+      u2.searchParams.set('contact_name',       apptDetails.contactName     || '');
+      u2.searchParams.set('appointment_type',   apptDetails.appointmentType || '');
+      u2.searchParams.set('datetime_iso',       apptDetails.dateIso         || '');
+      if (apptDetails.notes) u2.searchParams.set('notes', apptDetails.notes);
+      fetch(u2.toString());
+    } catch(e) {}
+  }
+}
+
+// ── CO-HOST AVAILABILITY HELPERS ────────────────────────────────────────────
+// ── CO-HOST AVAILABILITY HELPERS ─────────────────────────────────────────────
+
+window._toggleCohostSched = function(id) {
+  var s  = document.getElementById(id);
+  var ic = document.getElementById(id + '-ic');
+  if (!s) return;
+  var nowHidden = s.style.display === 'none';
+  s.style.display = nowHidden ? '' : 'none';
+  if (ic) ic.textContent = nowHidden ? '▴' : '▾';
+};
+
+function _getProposedApptTime() {
+  var ids = ['sched-dt', 'appt-dt', 'appt-scheduled-at', 'appt-edit-dt'];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el && el.value) {
+      try { return new Date(el.value).toISOString(); } catch(e) {}
+    }
+  }
+  return window._inviteProposedAt || null;
+}
+
+function _getProposedApptDuration() {
+  var ids = ['sched-duration', 'appt-duration', 'appt-edit-duration'];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el && el.value) {
+      var v = parseInt(el.value);
+      if (!isNaN(v) && v > 0) return v;
+    }
+  }
+  return 60;
+}
+
+async function _checkCohostAvail(agentId, agentName) {
+  var box = document.getElementById('_cohost-avail');
+  if (!box) return;
+  if (!agentId || agentId === '__ext__') { box.innerHTML = ''; return; }
+  var proposedAt  = _getProposedApptTime();
+  var durationMin = _getProposedApptDuration();
+  if (!proposedAt) {
+    box.innerHTML = '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);padding:5px 8px;border:0.5px solid var(--border);border-radius:5px;">Set the appointment date &amp; time above to check availability</div>';
+    return;
+  }
+  box.innerHTML = '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);padding:5px 8px;">Checking availability…</div>';
+  var d  = new Date(proposedAt);
+  var d0 = new Date(d.getTime() - 86400000).toISOString();
+  var d1 = new Date(d.getTime() + 86400000).toISOString();
+  try {
+    var res = await supabaseClient
+      .from('booking_intents')
+      .select('id,scheduled_at,duration_minutes,appointment_label,appointment_type,booker_name,contact_name,status,agent_id,cohost_agent_id')
+      .or('agent_id.eq.' + agentId + ',cohost_agent_id.eq.' + agentId)
+      .gte('scheduled_at', d0)
+      .lte('scheduled_at', d1)
+      .in('status', ['scheduled', 'pending', 'rescheduled'])
+      .order('scheduled_at');
+    if (res.error) { box.innerHTML = ''; return; }
+    var propStart = d.getTime();
+    var propEnd   = propStart + (durationMin || 60) * 60000;
+    var dayAppts  = res.data || [];
+    var conflicts = dayAppts.filter(function(a) {
+      if (!a.scheduled_at) return false;
+      var dur = a.duration_minutes || 60;
+      if (dur === 1440) return false;
+      var aStart = new Date(a.scheduled_at).getTime();
+      var aEnd   = aStart + dur * 60000;
+      return aStart < propEnd && aEnd > propStart;
+    });
+    box.innerHTML = _cohostAvailHtml(conflicts, dayAppts, agentName || 'Co-host', proposedAt, durationMin);
+  } catch(e) { box.innerHTML = ''; }
+}
+
+function _cohostFreeWindows(dayAppts, proposedDurationMin, refTime) {
+  var dur = proposedDurationMin || 60;
+  var ref = refTime ? new Date(refTime) : (dayAppts.length ? new Date(dayAppts[0].scheduled_at) : new Date());
+  var dayStart = new Date(ref); dayStart.setHours(7,0,0,0);
+  var dayEnd   = new Date(ref); dayEnd.setHours(19,0,0,0);
+  var busy = dayAppts
+    .filter(function(a) { return a.scheduled_at && a.duration_minutes !== 1440; })
+    .map(function(a) {
+      var s = new Date(a.scheduled_at).getTime();
+      return { s: s, e: s + (a.duration_minutes || 60) * 60000 };
+    })
+    .sort(function(a, b) { return a.s - b.s; });
+  var free = [], cursor = dayStart.getTime();
+  busy.forEach(function(b) {
+    if (b.s >= cursor + dur * 60000) free.push({ start: cursor, end: b.s });
+    if (b.e > cursor) cursor = b.e;
+  });
+  if (dayEnd.getTime() >= cursor + dur * 60000) free.push({ start: cursor, end: dayEnd.getTime() });
+  return free;
+}
+
+function _cohostAvailHtml(conflicts, dayAppts, agentName, proposedAt, durationMin) {
+  var bdr  = conflicts.length ? 'rgba(239,68,68,0.35)' : 'rgba(34,197,94,0.35)';
+  var html = '<div style="margin-top:8px;border-radius:6px;border:0.5px solid ' + bdr + ';overflow:hidden;">';
+  if (conflicts.length === 0) {
+    html += '<div style="padding:7px 10px;background:rgba(34,197,94,0.07);display:flex;align-items:center;gap:6px;">'
+      + '<span>✅</span>'
+      + '<span style="font-size:12px;color:var(--text-primary);">' + agentName + ' is available</span>'
+      + '</div>';
+  } else {
+    var cLines = conflicts.map(function(c) {
+      var label = c.appointment_label || c.appointment_type || 'Appointment';
+      var ts = new Date(c.scheduled_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      return label + ' at ' + ts + ' (' + (c.duration_minutes || 60) + ' min)';
+    }).join('; ');
+    html += '<div style="padding:7px 10px;background:rgba(239,68,68,0.07);display:flex;align-items:flex-start;gap:6px;">'
+      + '<span>⚠️</span>'
+      + '<span style="font-size:12px;color:var(--text-primary);"><strong>Conflict:</strong> ' + agentName + ' has ' + cLines + '</span>'
+      + '</div>';
+    var fw = _cohostFreeWindows(dayAppts, durationMin, proposedAt);
+    html += '<div style="padding:6px 10px;border-top:0.5px solid var(--border);">';
+    if (fw.length > 0) {
+      html += '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:3px;">Open windows this day:</div>';
+      fw.slice(0, 5).forEach(function(w) {
+        var s = new Date(w.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        var e = new Date(w.end).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        html += '<div style="font-size:11px;color:var(--text-primary);padding:1px 0;">\u2705 ' + s + ' \u2013 ' + e + '</div>';
+      });
+    } else {
+      html += '<div style="font-size:11px;color:var(--text-muted);">No open windows 7 AM \u2013 7 PM</div>';
+    }
+    html += '</div>';
+  }
+  if (dayAppts.length > 0) {
+    var sid = '_cs' + Date.now();
+    html += '<div onclick="window._toggleCohostSched(\'' + sid + '\')" style="border-top:0.5px solid var(--border);padding:5px 10px;cursor:pointer;font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;user-select:none;">'
+      + '<span>' + agentName + '\'s schedule this day</span>'
+      + '<span id="' + sid + '-ic">▾</span></div>'
+      + '<div id="' + sid + '" style="display:none;padding:4px 10px 6px;border-top:0.5px solid var(--border);">';
+    dayAppts.forEach(function(a) {
+      var isC   = conflicts.some(function(c) { return c.id === a.id; });
+      var label = a.appointment_label || a.appointment_type || 'Appointment';
+      var who   = a.booker_name || a.contact_name || '';
+      var ts    = new Date(a.scheduled_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      var dur   = a.duration_minutes || 60;
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px;border-bottom:0.5px solid var(--border);color:' + (isC ? '#ef4444' : 'var(--text-primary)') + ';">'
+        + '<span style="font-weight:600;min-width:52px;">' + ts + '</span>'
+        + '<span style="flex:1;">' + label + (who ? ' · ' + who : '') + ' <span style="color:var(--text-muted);">(' + dur + 'm)</span></span>'
+        + (isC ? '<span style="font-weight:700;font-size:10px;color:#ef4444;">CONFLICT</span>' : '')
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+
+
+
+// Google Calendar sync helper
+async function _syncCalendarEvent(bookingId, apptData, calAction, existingEventId) {
+  if (!currentAgent || !currentAgent.calendar_connected) return;
+  try {
+    var url = new URL(APPS_SCRIPT_URL);
+    url.searchParams.set('action',     'calendar_sync');
+    url.searchParams.set('agent_id',   currentAgent.id);
+    url.searchParams.set('booking_id', bookingId);
+    url.searchParams.set('cal_action', calAction);
+    if (apptData)        url.searchParams.set('event_data', JSON.stringify(apptData));
+    if (existingEventId) url.searchParams.set('event_id',   existingEventId);
+    var resp = await fetch(url.toString());
+    var json = await resp.json();
+    if (json.event_id && calAction !== 'delete') {
+      await supabaseClient.from('booking_intents')
+        .update({ google_calendar_event_id: json.event_id })
+        .eq('id', bookingId);
+      // keep local copy in sync
+      var idx = calAppointments.findIndex(function(a) { return a.id === bookingId; });
+      if (idx >= 0) calAppointments[idx].google_calendar_event_id = json.event_id;
+    }
+  } catch(e) { console.warn('Calendar sync failed:', e); }
+}
+
+function apptDetail(id) {
+  const a = calAppointments.find(x=>x.id===id);
+  if (!a) return;
+  const st = _calStatus(a.status);
+  const agentRow = allAgents.find(x=>x.id===a.agent_id);
+  const isPersonal = !a.contact_id;
+  const isAllDayAppt = a.duration_minutes === 1440;
+  const pad = n => String(n).padStart(2,'0');
+  let defaultDt = '', defaultDateOnly = '';
+  if (a.scheduled_at) {
+    const d = new Date(a.scheduled_at);
+    defaultDt = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    defaultDateOnly = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+  const editLabel = (a.appointment_label||'').replace(/"/g,'&quot;');
+  const editType  = (a.appointment_type||'').replace(/"/g,'&quot;');
+  const APPT_TYPES = [
+    'Discovery Call','Benefits Review','Benefits Presentation','Enrollment Meeting',
+    'Needs Analysis','Policy Review','Follow-Up Call','Annual Review',
+    'Group Benefits Overview','Recruiting Call','Onboarding Meeting','Claims Review'
+  ];
+  const typeIsKnown = APPT_TYPES.includes(a.appointment_type||'');
+  const typeOptsHtml = APPT_TYPES.map(t =>
+    `<option value="${t}"${a.appointment_type===t?' selected':''}>${t}</option>`
+  ).join('') + `<option value="__other__"${!typeIsKnown&&(a.appointment_type||'')?` selected`:''}>Other (type your own)...</option>`;
+  // Duration options — match apptLog exactly (no 20 min; full label text)
+  const _dm = a.duration_minutes;
+  const durOpts = [
+    {v:15,l:'15 minutes'},{v:30,l:'30 minutes'},{v:45,l:'45 minutes'},
+    {v:60,l:'1 hour'},{v:90,l:'1 hour 30 minutes'},{v:120,l:'2 hours'}
+  ].map(o=>`<option value="${o.v}"${_dm===o.v?' selected':''}>${o.l}</option>`).join('')
+   + `<option value="allday"${isAllDayAppt?' selected':''}>All Day</option>`;
+  const title = isPersonal
+    ? (a.appointment_label||'Personal Block')
+    : (a.booker_name||a.contact_name||'Appointment');
+  // apptDurationChange defined here so it works even if apptLog() hasn't run yet.
+  // Restores original appointment time when switching allday → timed.
+  const _origTime = defaultDt ? defaultDt.split('T')[1] : '09:00';
+  window.apptDurationChange = function(val) {
+    var dt = document.getElementById('appt-dt');
+    var da = document.getElementById('appt-dt-allday');
+    if (!dt || !da) return;
+    if (val === 'allday') {
+      da.value = dt.value ? dt.value.split('T')[0] : da.value;
+      dt.style.display = 'none'; da.style.display = '';
+    } else {
+      var dateOnly = da.value || (dt.value ? dt.value.split('T')[0] : '');
+      dt.value = dateOnly ? (dateOnly + 'T' + _origTime) : defaultDt;
+      da.style.display = 'none'; dt.style.display = '';
+    }
+  };
+  setTimeout(function() {
+    ['appt-dt', 'appt-dt-allday'].forEach(function(eid) {
+      var el = document.getElementById(eid);
+      if (!el) return;
+      el.addEventListener('change', function() {
+        var orig = eid === 'appt-dt-allday' ? defaultDateOnly : defaultDt;
+        if (this.value && this.value !== orig) {
+          var cb = document.getElementById('appt-edit-resend');
+          if (cb && !cb.checked) cb.checked = true;
+        }
+      });
+    });
+  }, 200);
+  showModal(title, `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      ${isPersonal
+        ? `<span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(139,92,246,0.15);border:1px solid #8b5cf6;color:#7c3aed;">Personal Block</span>`
+        : `<span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:${st.bg};border:1px solid ${st.border};color:var(--text-primary);">${st.label}</span>`}
+    </div>
+    ${isPersonal ? `
+    <label>Block Title</label>
+    <input type="text" id="appt-edit-label" value="${editLabel}"
+      placeholder="e.g. Personal Time, Vacation, Training..."
+      style="width:100%;box-sizing:border-box;" />` : `
+    <label>Appointment Type</label>
+    <select id="appt-edit-type-sel" style="width:100%;box-sizing:border-box;"
+      onchange="var _o=document.getElementById('appt-edit-type-other');if(_o)_o.style.display=this.value==='__other__'?'':'none';">
+      <option value="">— Select type —</option>
+      ${typeOptsHtml}
+    </select>
+    <input type="text" id="appt-edit-type-other" value="${!typeIsKnown&&editType?editType:''}"
+      placeholder="Custom appointment type..."
+      style="width:100%;box-sizing:border-box;margin-top:6px;${!typeIsKnown&&editType?'':'display:none;'}" />
+    <label style="margin-top:10px;">Calendar Display Name <span style="color:var(--text-muted);font-size:11px;">(optional)</span></label>
+    <input type="text" id="appt-edit-label" value="${editLabel}"
+      placeholder="Custom name shown on calendar (defaults to type)..."
+      style="width:100%;box-sizing:border-box;" />`}
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px;">
+      <div style="flex:1.5;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Date &amp; Time</label>
+        <input type="datetime-local" id="appt-dt" value="${defaultDt}"
+          onclick="try{this.showPicker()}catch(e){}"
+          style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'display:none;':''}" />
+        <input type="date" id="appt-dt-allday" value="${defaultDateOnly}"
+          onclick="try{this.showPicker()}catch(e){}"
+          style="cursor:pointer;width:100%;box-sizing:border-box;${isAllDayAppt?'':'display:none;'}" />
+      </div>
+      <div style="flex:1;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Duration</label>
+        <select id="appt-duration" onchange="apptDurationChange(this.value)"
+          style="width:100%;box-sizing:border-box;">${durOpts}</select>
+      </div>
+    </div>
+    ${!isPersonal ? `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;font-size:13px;">
+      <div style="font-weight:600;">${a.booker_name||a.contact_name||'—'}</div>
+      ${a.company?`<div style="color:var(--text-muted);">${a.company}</div>`:''}
+      ${a.booker_email?`<div style="color:var(--text-muted);">${a.booker_email}</div>`:''}
+      ${agentRow?`<div style="color:var(--text-muted);font-size:12px;">Agent: ${agentRow.name}</div>`:''}
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);">
+        <input type="checkbox" id="appt-edit-resend" style="width:14px;height:14px;cursor:pointer;" />
+        <label for="appt-edit-resend" style="font-size:13px;cursor:pointer;margin:0;">Resend confirmation email to contact</label>
+      </div>
+    </div>` : ''}
+    ${_inviteSectionHtml(a.cohost_agent_id||null, a.cohost_email||null, a.cohost_name||null, a.extra_attendees||[], a.scheduled_at||null, a.duration_minutes||60)}
+    <label style="margin-top:10px;">Notes</label>
+    <textarea id="appt-edit-notes" rows="2"
+      style="width:100%;box-sizing:border-box;">${a.agent_notes||''}</textarea>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+      ${isPersonal
+        ? `<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">🗑 Delete Block</button>`
+        : `${a.status!=='scheduled'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptSchedule('${id}')">📋 Schedule</button>`:''}
+           ${a.status!=='completed'?`<button class="btn btn-outline btn-sm" onclick="closeModal();apptComplete('${id}')">✓ Complete</button>`:''}
+           <button class="btn btn-outline btn-sm" onclick="closeModal();apptReschedule('${id}')">↺ Reschedule</button>
+           ${a.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="closeModal();apptCancel('${id}')">✕ Cancel</button>`:''}`}
+    </div>
+  `, async () => {
+    const isDurAllDay = document.getElementById('appt-duration')?.value === 'allday';
+    const dtEl = isDurAllDay
+      ? document.getElementById('appt-dt-allday')
+      : document.getElementById('appt-dt');
+    const dtVal = dtEl?.value;
+    if (!dtVal) { showToast('Please select a date'); return false; }
+    const scheduled_at = isDurAllDay
+      ? (dtVal + 'T00:00:00.000Z')
+      : new Date(dtVal).toISOString();
+    const duration_minutes  = isDurAllDay ? 1440 : (parseInt(document.getElementById('appt-duration')?.value)||30);
+    const agent_notes        = document.getElementById('appt-edit-notes')?.value?.trim()||null;
+    const appointment_label  = document.getElementById('appt-edit-label')?.value?.trim()||null;
+    const inv = _readInviteSection();
+    const updates = {scheduled_at, duration_minutes, agent_notes, appointment_label,
+      cohost_agent_id: inv.cohostAgentId||null, cohost_email: inv.cohostEmail||null,
+      cohost_name: inv.cohostName||null, cohost_status: inv.cohostAgentId?'pending':null,
+      extra_attendees: inv.extraAttendees};
+    if (!isPersonal) {
+      const _tSel = document.getElementById('appt-edit-type-sel')?.value||'';
+      updates.appointment_type = _tSel === '__other__'
+        ? (document.getElementById('appt-edit-type-other')?.value?.trim()||null)
+        : (_tSel||null);
+    }
+    const {error} = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
+    if (error) { showToast('Error: '+error.message); return false; }
+    _syncCalendarEvent(id, Object.assign({}, a, updates), updates.scheduled_at ? 'update' : 'update', a.google_calendar_event_id||null);
+    if (!isPersonal) await _sendCohostInvites(id, inv, {contactName: a.booker_name||a.contact_name||'', appointmentType: appointment_label||a.appointment_label||a.appointment_type||'', dateIso: a.scheduled_at||'', notes: agent_notes||''});
+    if (!isPersonal && document.getElementById('appt-edit-resend')?.checked) {
+      const toEmail = a.booker_email||contacts.find(c=>c.id===a.contact_id)?.email||'';
+      if (toEmail) {
+        try {
+          const eurl = new URL(APPS_SCRIPT_URL);
+          eurl.searchParams.set('action','appointment_confirm');
+          eurl.searchParams.set('agent_id',currentAgent.id);
+          eurl.searchParams.set('booking_intent_id',id);
+          eurl.searchParams.set('to',toEmail);
+          eurl.searchParams.set('to_name',a.booker_name||a.contact_name||'');
+          eurl.searchParams.set('datetime_iso',scheduled_at);
+          if (agent_notes) eurl.searchParams.set('notes',agent_notes);
+          fetch(eurl.toString());
+        } catch(_) {}
+        showToast('✓ Saved & confirmation resent!');
+      } else {
+        showToast('✓ Saved (no email on file)');
+      }
+    } else {
+      showToast(isPersonal ? '✓ Block updated!' : '✓ Appointment updated!');
+    }
+    const idx = calAppointments.findIndex(x=>x.id===id);
+    if (idx >= 0) Object.assign(calAppointments[idx], updates);
+    calDate = new Date(scheduled_at);
+    _calRenderView();
+  }, 'Save Changes');
+}
+
+// ── CRUD ACTIONS (update + refresh calendar) ──
+async function apptSchedule(id) {
+  const appt = calAppointments.find(a=>a.id===id);
+  const name  = appt ? (appt.booker_name||appt.contact_name||'this appointment') : 'this appointment';
+  // Best-effort email: linked contact record → booker_email → empty
+  let bestEmail = appt?.booker_email || '';
+  if (appt?.contact_id) {
+    const linked = contacts.find(c => c.id === appt.contact_id);
+    if (linked?.email) bestEmail = linked.email;
+  }
+  if (!bestEmail) {
+    // Last resort: search contacts by name
+    const byName = contacts.find(c => c.name && c.name.toLowerCase() === name.toLowerCase());
+    if (byName?.email) bestEmail = byName.email;
+  }
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(9,0,0,0);
+  const pad = n => String(n).padStart(2,'0');
+  // Pre-fill with existing scheduled_at if available (for rescheduled items), else tomorrow 9am
+  const existingDt = appt?.scheduled_at ? new Date(appt.scheduled_at) : null;
+  const fillDt = existingDt || tomorrow;
+  const defaultDt = `${fillDt.getFullYear()}-${pad(fillDt.getMonth()+1)}-${pad(fillDt.getDate())}T${pad(fillDt.getHours())}:${pad(fillDt.getMinutes())}`;
+  showModal(`Schedule: ${name}`, `
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <label style="flex:1;border:0.5px solid var(--accent);border-radius:8px;padding:10px 12px;cursor:pointer;" id="sched-lbl-confirm">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <input type="radio" name="sched-type" value="confirm" checked
+            onchange="document.getElementById('sched-lbl-confirm').style.borderColor='var(--accent)';document.getElementById('sched-lbl-propose').style.borderColor='var(--border)';document.getElementById('sched-dt').disabled=true;document.getElementById('sched-dt-row').style.opacity='0.45';" />
+          <span style="font-size:12px;font-weight:600;">✓ Confirm this time</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Lock the time &amp; send confirmation email</div>
+      </label>
+      <label style="flex:1;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;" id="sched-lbl-propose">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <input type="radio" name="sched-type" value="propose"
+            onchange="document.getElementById('sched-lbl-propose').style.borderColor='var(--accent)';document.getElementById('sched-lbl-confirm').style.borderColor='var(--border)';document.getElementById('sched-dt').disabled=false;document.getElementById('sched-dt-row').style.opacity='1';" />
+          <span style="font-size:12px;font-weight:600;">📧 Propose new time</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-left:18px;">Pick a new time &amp; ask prospect to confirm</div>
+      </label>
+    </div>
+    <label>Prospect Email <span style="color:var(--danger);">*</span></label>
+    <input type="email" id="sched-email" value="${bestEmail}" placeholder="prospect@email.com" style="width:100%;box-sizing:border-box;" />
+    <div id="sched-dt-row" style="opacity:0.45;transition:opacity .2s;">
+      <label style="margin-top:12px;display:block;">Date &amp; Time <span style="font-size:11px;color:var(--text-muted);">(locked — switch to Propose to change)</span></label>
+      <input type="datetime-local" id="sched-dt" value="${defaultDt}" disabled style="width:100%;box-sizing:border-box;" />
+    </div>
+  ${_inviteSectionHtml(appt&&appt.cohost_agent_id||null, appt&&appt.cohost_email||null, appt&&appt.cohost_name||null, appt&&appt.extra_attendees||[])}
+    <label style="margin-top:12px;">Notes to prospect (optional)</label>
+    <input type="text" id="sched-notes" placeholder="Zoom link, phone number, location, etc." style="width:100%;box-sizing:border-box;" />
+  `, async () => {
+    const dtVal  = document.getElementById('sched-dt').value;
+    const toEmail = document.getElementById('sched-email').value.trim();
+    if (!dtVal)    { showToast('Please select a date and time'); return false; }
+    if (!toEmail)  { showToast('Please enter the prospect email'); return false; }
+    const schedType = document.querySelector('input[name="sched-type"]:checked')?.value || 'confirm';
+    const notes  = document.getElementById('sched-notes').value.trim();
+    const parsed = new Date(dtVal);
+    const isPropose = schedType === 'propose';
+    const inv = _readInviteSection();
+    const updates = {
+      status:         isPropose ? 'rescheduled' : 'scheduled',
+      scheduled_at:   parsed.toISOString(),
+      rescheduled_by: isPropose ? 'agent' : null,
+      booker_email:   toEmail,
+      cohost_agent_id: inv.cohostAgentId||null, cohost_email: inv.cohostEmail||null,
+      cohost_name: inv.cohostName||null, cohost_status: inv.cohostAgentId?'pending':null,
+      extra_attendees: inv.extraAttendees,
+      ...(notes ? { agent_notes: notes } : {})
+    };
+    const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id', id);
+    if (error) { showToast('Error: ' + error.message); return false; }
+    _syncCalendarEvent(id, Object.assign({}, appt, updates), appt&&appt.google_calendar_event_id ? 'update' : 'create', appt&&appt.google_calendar_event_id||null);
+    // Fire-and-forget email via Apps Script
+    try {
+      const url = new URL(APPS_SCRIPT_URL);
+      url.searchParams.set('action',            isPropose ? 'appointment_reschedule' : 'appointment_confirm');
+      url.searchParams.set('agent_id',          currentAgent.id);
+      url.searchParams.set('booking_intent_id', id);
+      url.searchParams.set('to',                toEmail);
+      url.searchParams.set('to_name',           name);
+      url.searchParams.set('datetime_iso',      parsed.toISOString());
+      if (notes) url.searchParams.set('notes', notes);
+      fetch(url.toString()); // non-blocking
+    } catch(_) {}
+    showToast(isPropose ? '📧 Reschedule proposal sent!' : '📋 Appointment confirmed!');
+    const idx = calAppointments.findIndex(a => a.id === id);
+    if (idx >= 0) Object.assign(calAppointments[idx], updates);
+    await _sendCohostInvites(id, inv, {contactName: name, appointmentType: appt&&appt.appointment_label||appt&&appt.appointment_type||'', dateIso: parsed.toISOString(), notes: notes||''});
+    calDate = parsed;
+    _calRenderView();
+  });
+}
+
+async function apptComplete(id) {
+  const notes = prompt('Completion notes (optional):') || null;
+  const { error } = await supabaseClient.from('booking_intents').update({ status:'completed', completed_at:new Date().toISOString(), agent_notes:notes }).eq('id',id);
+  if (error) { showToast('Error: '+error.message); return; }
+  showToast('✓ Complete!');
+  const idx = calAppointments.findIndex(a=>a.id===id);
+  if (idx>=0) { calAppointments[idx].status='completed'; calAppointments[idx].agent_notes=notes; }
+  _calRenderView();
+}
+
+async function apptReschedule(id) {
+  const appt = calAppointments.find(a => a.id === id);
+  if (!appt) return;
+
+  // Pre-fill with existing scheduled_at or tomorrow 9am
+  let prefill = '';
+  if (appt.scheduled_at) {
+    const d = new Date(appt.scheduled_at);
+    const pad = n => String(n).padStart(2,'0');
+    prefill = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } else {
+    const tmr = new Date(); tmr.setDate(tmr.getDate()+1); tmr.setHours(9,0,0,0);
+    const pad = n => String(n).padStart(2,'0');
+    prefill = `${tmr.getFullYear()}-${pad(tmr.getMonth()+1)}-${pad(tmr.getDate())}T09:00`;
+  }
+
+  const name = appt.contact_name || appt.booker_name || 'this prospect';
+
+  // Best-effort email lookup
+  let bestEmail = appt.booker_email || '';
+  if (appt.contact_id) { const linked = contacts.find(c => c.id === appt.contact_id); if (linked?.email) bestEmail = linked.email; }
+  if (!bestEmail) { const byName = contacts.find(c => c.name?.toLowerCase() === name.toLowerCase()); if (byName?.email) bestEmail = byName.email; }
+
+  showModal(
+    `Reschedule: ${name}`,
+    `<p style="margin:0 0 14px;color:#64748b;font-size:14px;">Pick a new date/time to propose. An email will be sent automatically.</p>
+     <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;display:block;margin-bottom:4px;">Prospect Email</label>
+     <input type="email" id="modal-reschedule-email" value="${bestEmail}"
+       style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:14px;" placeholder="prospect@email.com">
+     <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;display:block;margin-bottom:4px;">New Date &amp; Time</label>
+     <input type="datetime-local" id="modal-reschedule-dt" value="${prefill}"
+       style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:14px;">
+     <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#374151;display:block;margin-bottom:4px;">Notes (optional)</label>
+     <textarea id="modal-reschedule-notes" rows="3" placeholder="Reason for reschedule, new instructions, etc."
+       style="width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;">${appt.agent_notes||''}</textarea>`,
+    async () => {
+      const dtVal    = document.getElementById('modal-reschedule-dt')?.value || '';
+      const notesVal = document.getElementById('modal-reschedule-notes')?.value?.trim() || null;
+      const toEmail  = document.getElementById('modal-reschedule-email')?.value?.trim() || bestEmail;
+      const updates  = { status:'rescheduled', rescheduled_by:'agent', agent_notes:notesVal, booker_email:toEmail };
+      if (dtVal) updates.scheduled_at = new Date(dtVal).toISOString();
+      const { error } = await supabaseClient.from('booking_intents').update(updates).eq('id',id);
+      if (error) { showToast('Error: '+error.message); return false; }
+      try {
+        const url = new URL(APPS_SCRIPT_URL);
+        url.searchParams.set('action',            'appointment_reschedule');
+        url.searchParams.set('agent_id',          currentAgent.id);
+        url.searchParams.set('booking_intent_id', id);
+        url.searchParams.set('to',                toEmail);
+        url.searchParams.set('to_name',           name);
+        if (dtVal) url.searchParams.set('datetime_iso', new Date(dtVal).toISOString());
+        if (notesVal) url.searchParams.set('notes', notesVal);
+        fetch(url.toString());
+      } catch(_) {}
+      showToast('↺ Reschedule proposed to prospect');
+      const idx = calAppointments.findIndex(a=>a.id===id);
+      if (idx>=0) {
+        calAppointments[idx].status='rescheduled';
+        calAppointments[idx].rescheduled_by='agent';
+        calAppointments[idx].agent_notes=notesVal;
+        if (dtVal) calAppointments[idx].scheduled_at=new Date(dtVal).toISOString();
+      }
+      _calRenderView();
+    },
+    'Propose New Time'
+  );
+}
+
+async function apptCancel(id) {
+  const appt = calAppointments.find(a=>a.id===id);
+  if (appt && appt.google_calendar_event_id) _syncCalendarEvent(id, appt, 'delete', appt.google_calendar_event_id);
+  const who = appt ? (appt.booker_name||appt.contact_name||'this request') : 'this request';
+  showModal('Dismiss Request', `
+    <p style="font-size:14px;color:var(--text-primary);margin:0 0 8px 0;">Cancel the appointment request from <strong>${who}</strong>?</p>
+    <p style="font-size:13px;color:var(--text-muted);margin:0;">This will remove it from your list. The prospect will not be notified automatically.</p>
+  `, async () => {
+    const { error } = await supabaseClient.from('booking_intents').update({ status:'cancelled' }).eq('id',id);
+    if (error) { showToast('Error: '+error.message); return false; }
+    showToast('Request dismissed');
+    const idx = calAppointments.findIndex(a=>a.id===id);
+    if (idx>=0) calAppointments.splice(idx, 1);
+    _calRenderView();
+  });
+}
+
+async function apptLog() {
+  var _d = new Date(); _d.setDate(_d.getDate() + 1); _d.setHours(9, 0, 0, 0);
+  var _pad = function(n) { return String(n).padStart(2,'0'); };
+  var _defaultDt = _d.getFullYear() + '-' + _pad(_d.getMonth()+1) + '-' + _pad(_d.getDate()) + 'T09:00';
+  window.apptModeSwitch = function(mode) {
+    var isC = mode === 'contact';
+    var cs  = document.getElementById('appt-contact-section');
+    var cr  = document.getElementById('appt-contact-row');
+    var ps  = document.getElementById('appt-personal-section');
+    var er  = document.getElementById('appt-email-row');
+    var bc  = document.getElementById('appt-mode-contact');
+    var bp  = document.getElementById('appt-mode-personal');
+    if (cs) cs.style.display = isC ? '' : 'none';
+    if (cr) cr.style.display = isC ? '' : 'none';
+    if (ps) ps.style.display = isC ? 'none' : '';
+    if (er) er.style.display = isC ? 'flex' : 'none';
+    if (bc) { bc.style.background = isC ? 'var(--fill-accent)' : 'var(--surface-2)'; bc.style.color = isC ? '#fff' : 'var(--text-secondary)'; }
+    if (bp) { bp.style.background = isC ? 'var(--surface-2)' : 'var(--fill-accent)'; bp.style.color = isC ? 'var(--text-secondary)' : '#fff'; }
+  };
+  window.apptDurationChange = function(val) {
+    var d = document.getElementById('appt-dt');
+    var a = document.getElementById('appt-dt-allday');
+    if (!d || !a) return;
+    if (val === 'allday') {
+      a.value = d.value ? d.value.split('T')[0] : a.value;
+      d.style.display = 'none'; a.style.display = '';
+    } else {
+      d.value = a.value ? a.value + 'T09:00' : d.value;
+      a.style.display = 'none'; d.style.display = '';
+    }
+  };
+  showModal('Add Appointment', `
+    <div style="display:flex;margin-bottom:16px;border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
+      <button id="appt-mode-contact" onclick="apptModeSwitch('contact')"
+        style="flex:1;padding:10px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--fill-accent);color:#fff;transition:all .15s;">
+        &#128100; Contact Appointment</button>
+      <button id="appt-mode-personal" onclick="apptModeSwitch('personal')"
+        style="flex:1;padding:10px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--surface-2);color:var(--text-secondary);transition:all .15s;">
+        &#128197; Personal Block</button>
+    </div>
+    <div id="appt-contact-section">
+      <label>Appointment Type</label>
+      <input type="text" id="appt-type" placeholder="e.g. Discovery Call..." list="appt-type-list" autocomplete="off" style="width:100%;box-sizing:border-box;" />
+      <datalist id="appt-type-list">
+        <option value="Discovery Call">
+        <option value="Benefits Review">
+        <option value="Benefits Presentation">
+        <option value="Enrollment Meeting">
+        <option value="Needs Analysis">
+        <option value="Policy Review">
+        <option value="Follow-Up Call">
+        <option value="Annual Review">
+        <option value="Group Benefits Overview">
+        <option value="Recruiting Call">
+        <option value="Onboarding Meeting">
+        <option value="Claims Review">
+      </datalist>
+    </div>
+    <div id="appt-personal-section" style="display:none;">
+      <label>Block Title</label>
+      <input type="text" id="appt-personal-title" placeholder="e.g. Team Meeting, Lunch, Out of Office..." style="width:100%;box-sizing:border-box;" />
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px;">
+      <div style="flex:1.5;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Date &amp; Time</label>
+        <input type="datetime-local" id="appt-dt" value="${_defaultDt}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;width:100%;box-sizing:border-box;" />
+        <input type="date" id="appt-dt-allday" value="${_defaultDt.split('T')[0]}" onclick="try{this.showPicker()}catch(e){}" style="cursor:pointer;width:100%;box-sizing:border-box;display:none;" />
+      </div>
+      <div style="flex:1;min-width:0;">
+        <label style="display:block;margin-bottom:4px;">Duration</label>
+        <select id="appt-duration" onchange="apptDurationChange(this.value)" style="width:100%;box-sizing:border-box;">
+          <option value="15">15 minutes</option>
+          <option value="30" selected>30 minutes</option>
+          <option value="45">45 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="90">1 hr 30 min</option>
+          <option value="120">2 hours</option>
+          <option value="allday">All Day</option>
+        </select>
+      </div>
+    </div>
+    <div id="appt-contact-row">
+      <label style="margin-top:10px;">Contact</label>
+      ${buildContactSearch('', 'appt-contact', null)}
+      <div id="appt-email-row" style="margin-top:8px;display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface-0);border-radius:var(--radius);border:0.5px solid var(--border-accent);">
+        <input type="checkbox" id="appt-send-email" checked style="width:15px;height:15px;accent-color:var(--fill-accent);flex-shrink:0;cursor:pointer;" />
+        <label for="appt-send-email" style="font-size:13px;margin:0;cursor:pointer;font-weight:400;color:var(--text-primary);">Send confirmation email to contact</label>
+      </div>
+    </div>
+  ${_inviteSectionHtml(null,null,null,[])}
+    <label style="margin-top:10px;">Notes</label>
+    <textarea id="appt-notes" placeholder="Any context or details..." style="width:100%;box-sizing:border-box;"></textarea>
+  `, async () => {
+    var isPersonal = (document.getElementById('appt-personal-section') || {}).style.display !== 'none';
+    var contactId, apptType, contact;
+    if (isPersonal) {
+      apptType = ((document.getElementById('appt-personal-title') || {}).value || '').trim();
+      if (!apptType) { showToast('Please enter a block title'); return false; }
+      contactId = null; contact = null;
+    } else {
+      contactId = ((document.getElementById('appt-contact') || {}).value || '').trim() || null;
+      apptType  = ((document.getElementById('appt-type') || {}).value || '').trim();
+      if (!apptType) { showToast('Appointment type required'); return false; }
+      contact = contactId ? contacts.find(function(c) { return c.id === contactId; }) : null;
+    }
+    var _durVal   = ((document.getElementById('appt-duration') || {}).value) || '30';
+    var _isAllDay = _durVal === 'allday';
+    var dt        = _isAllDay
+      ? (((document.getElementById('appt-dt-allday') || {}).value || '') + 'T00:00')
+      : ((document.getElementById('appt-dt') || {}).value || '');
+    var duration  = _isAllDay ? 1440 : (parseInt(_durVal) || 30);
+    var notes     = ((document.getElementById('appt-notes') || {}).value || '').trim();
+    var sendEmail = !isPersonal && ((document.getElementById('appt-send-email') || {}).checked);
+    var inv = _readInviteSection();
+    var newAppt = {
+      agent_id:          currentAgent.id,
+      contact_id:        contactId || null,
+      contact_name:      contact ? contact.name    : null,
+      booker_name:       contact ? contact.name    : null,
+      booker_email:      contact ? contact.email   : null,
+      company:           contact ? contact.company : null,
+      appointment_type:  apptType,
+      appointment_label: apptType,
+      scheduled_at:      dt ? new Date(dt).toISOString() : null,
+      duration_minutes:  duration,
+      agent_notes:       notes || null,
+      status:            dt ? 'scheduled' : 'pending',
+      cohost_agent_id:   inv.cohostAgentId   || null,
+      cohost_email:      inv.cohostEmail      || null,
+      cohost_name:       inv.cohostName       || null,
+      cohost_status:     inv.cohostAgentId    ? 'pending' : null,
+      extra_attendees:   inv.extraAttendees,
+    };
+    var ins = await supabaseClient.from('booking_intents').insert(newAppt).select().single();
+    if (ins.error) { showToast('Error: ' + ins.error.message); return false; }
+    calAppointments.push(ins.data);
+    if (ins.data.scheduled_at) _syncCalendarEvent(ins.data.id, ins.data, 'create', null);
+    if (dt) { calDate = new Date(dt); calView = calDate.toDateString() === new Date().toDateString() ? calView : 'month'; }
+    if (sendEmail && contact && contact.email && dt) {
+      try {
+        var eUrl = new URL(APPS_SCRIPT_URL);
+        eUrl.searchParams.set('action',            'appointment_confirm');
+        eUrl.searchParams.set('agent_id',          currentAgent.id);
+        eUrl.searchParams.set('booking_intent_id', ins.data.id);
+        eUrl.searchParams.set('to',                contact.email);
+        eUrl.searchParams.set('to_name',           contact.name || '');
+        eUrl.searchParams.set('datetime_iso',      new Date(dt).toISOString());
+        if (notes) eUrl.searchParams.set('notes', notes);
+        fetch(eUrl.toString());
+        showToast('Appointment added — confirmation sent to ' + (contact.name || contact.email) + '!');
+      } catch(e) {
+        showToast('Appointment added (email error: ' + e.message + ')');
+      }
+    } else {
+      showToast(isPersonal ? 'Personal block added to calendar!' : '✓ Appointment added!');
+    }
+    _calRenderView();
+  });
+}
+
+// ============================================================
+// CONTACT TRANSFER
+// ============================================================
+async function transferContact(contactId) {
+  const contact = contacts.find(c => c.id === contactId);
+  if (!contact) { showToast('Contact not found'); return; }
+
+  const role = previewRole || currentAgent.role;
+  let eligible;
+  if (role === 'system_owner') {
+    eligible = allAgents.filter(a => a.id !== currentAgent.id && (a.status === 'active' || !a.status));
+  } else {
+    eligible = allAgents.filter(a => a.agency_id === currentAgent.agency_id && a.id !== currentAgent.id && (a.status === 'active' || !a.status));
+  }
+
+  if (eligible.length === 0) {
+    showToast('No other agents available to transfer to in your agency.');
+    return;
+  }
+
+  const agentOptions = eligible.map(a => `<option value="${a.id}">${a.name} (${a.email})</option>`).join('');
+
+  showModal(`Transfer: ${contact.name}`, `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6;">The selected agent will become the new owner of this contact and all its history. Your copy will be removed.</p>
+    <label>Transfer to Agent</label>
+    <select id="xfer-agent">${agentOptions}</select>
+    <label style="margin-top:12px;">Note for the receiving agent (optional)</label>
+    <textarea id="xfer-note" placeholder="Context about this contact, why you're transferring, next steps..."></textarea>
+  `, async () => {
+    const newAgentId = document.getElementById('xfer-agent').value;
+    if (!newAgentId) { showToast('Select an agent'); return false; }
+    const newAgent = eligible.find(a => a.id === newAgentId);
+    const note = document.getElementById('xfer-note').value.trim();
+
+    const updates = { agent_id: newAgentId };
+    // Include note in contact notes field so it's visible to the new owner
+    if (note) {
+      const existingNotes = contact.notes ? contact.notes + '\n\n' : '';
+      updates.notes = existingNotes + `[Transferred from ${currentAgent.name} on ${new Date().toLocaleDateString()}] ${note}`;
+    }
+
+    const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
+    if (error) { showToast('Error: ' + error.message); return false; }
+
+    // Update local state
+    const idx = contacts.findIndex(c => c.id === contactId);
+    if (idx >= 0) Object.assign(contacts[idx], updates);
+
+    showToast(`✓ Contact transferred to ${newAgent?.name || 'agent'}`);
+    renderContacts();
+  });
+}
+
+// ============================================================
+// STARTUP
+// ============================================================
+init();
