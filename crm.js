@@ -1780,13 +1780,28 @@ function _dialerSignal(contact) {
 async function dialerViewIntake(contactId) {
   const { data: sessions } = await supabaseClient
     .from('intake_sessions')
-    .select('id,completed_at')
+    .select('id,form_type,completed_at')
     .eq('contact_id', contactId)
     .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
-    .limit(1);
-  if (sessions && sessions.length) { viewIntakeSession(sessions[0].id); }
-  else { showIntakeForm(contactId); }
+    .order('completed_at', { ascending: false });
+  if (!sessions || !sessions.length) { showIntakeForm(contactId); return; }
+  if (sessions.length === 1) { viewIntakeSession(sessions[0].id); return; }
+  // Multiple intakes — show a picker
+  const rows = sessions.map(function(s) {
+    const label = (typeof INTAKE_TYPE_LABELS !== 'undefined' && INTAKE_TYPE_LABELS[s.form_type]) || s.form_type;
+    const dt = s.completed_at ? new Date(s.completed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Unknown date';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
+      + '<div><div style="font-size:13px;font-weight:600;color:var(--text);">' + esc(label) + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + dt + '</div></div>'
+      + '<div style="display:flex;gap:6px;">'
+      + '<button class="btn btn-outline btn-sm" onclick="closeModal();setTimeout(function(){viewIntakeSession(\'' + s.id + '\');},100)">&#128196; View</button>'
+      + '<button class="btn btn-outline btn-sm" onclick="closeModal();setTimeout(function(){editIntakeSession(\'' + s.id + '\');},100)">&#9998; Edit</button>'
+      + '</div></div>';
+  }).join('');
+  const newBtn = '<div style="margin-top:12px;text-align:right;">'
+    + '<button class="btn btn-outline btn-sm" onclick="closeModal();setTimeout(function(){showIntakeForm(\'' + contactId + '\');},100)">&#43; New Intake</button>'
+    + '</div>';
+  showModal('&#128196; Intake Forms', '<div>' + rows + '</div>' + newBtn, null, { hideConfirm: true });
 }
 
 function _dialerActionRow(contact, isLast) {
