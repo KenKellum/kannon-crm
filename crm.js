@@ -715,7 +715,23 @@ function renderDashboardAgent() {
   const { g, firstName, dateStr } = _dashGreeting(currentAgent.name);
 
   const totalContacts = totalContactCountFull || contacts.length;
-  const hotLeads      = contacts.filter(c => c.sequence_status === 'Replied' || c.sequence_status === 'Interested');
+  // Hot Lead = showed real intent but no intake done yet
+  // 1. Replied to a sequence email (Code.gs already filters OOO/auto-replies)
+  // 2. Filled out web form and deal is still at New Lead (no intake done)
+  // 3. Booked via booking link and deal is still at Discovery Call (no intake done)
+  const hotLeads = contacts.filter(function(c) {
+    if (c.opt_out_email || c.sequence_status === 'Opted Out' || c.email_status === 'bounced') return false;
+    if (c.sequence_status === 'Replied') return true;
+    if (c.lead_source === 'web_form') {
+      var d = deals.find(function(x) { return x.contact_id === c.id; });
+      return !d || d.stage === 'New Lead';
+    }
+    if (c.lead_source === 'booking_link') {
+      var d = deals.find(function(x) { return x.contact_id === c.id; });
+      return !d || d.stage === 'Discovery Call';
+    }
+    return false;
+  });
   const freshLeads    = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started' || c.sequence_status === 'Fresh');
   const inSequence    = contacts.filter(c => c.sequence_status === 'Active').length;
   const activeDeals   = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
@@ -1700,6 +1716,16 @@ function _dialerScore(contact) {
   score += (contact.lead_score || 0) * 2;
   const statusMap = { Replied: 1000, Interested: 900, Active: 500 };
   score += (statusMap[contact.sequence_status] || 0);
+  // Web form + no intake done = high intent inbound lead — boost to hot tier
+  if (contact.lead_source === 'web_form') {
+    var _wfd = deals.find(function(x) { return x.contact_id === contact.id; });
+    if (!_wfd || _wfd.stage === 'New Lead') score += 950;
+  }
+  // Booking link + no intake done = they scheduled themselves — top priority
+  if (contact.lead_source === 'booking_link') {
+    var _bld = deals.find(function(x) { return x.contact_id === contact.id; });
+    if (!_bld || _bld.stage === 'Discovery Call') score += 980;
+  }
   const opens = window._dashOpens || [];
   const op = opens.find(o => (o.contact_email || '').toLowerCase() === (contact.email || '').toLowerCase());
   if (op) {
@@ -1717,11 +1743,25 @@ function _dialerScore(contact) {
 function _dialerSignal(contact) {
   const opens = window._dashOpens || [];
   const op = opens.find(o => (o.contact_email || '').toLowerCase() === (contact.email || '').toLowerCase());
+  // Booking link — they scheduled themselves, no intake yet (highest intent)
+  if (contact.lead_source === 'booking_link') {
+    var _bld = deals.find(function(x) { return x.contact_id === contact.id; });
+    if (!_bld || _bld.stage === 'Discovery Call') {
+      return { icon: 'ti-calendar-check', label: '📅 Booked appointment — intake needed', sub: 'They scheduled themselves — call to confirm and run intake before the meeting', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.25)' };
+    }
+  }
+  // Web form — filled out landing page, no intake yet
+  if (contact.lead_source === 'web_form') {
+    var _wfd = deals.find(function(x) { return x.contact_id === contact.id; });
+    if (!_wfd || _wfd.stage === 'New Lead') {
+      return { icon: 'ti-world', label: '🌐 Web form lead — first contact', sub: 'They raised their hand — call now while interest is hot, then run intake', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)' };
+    }
+  }
   if (contact.sequence_status === 'Replied') {
     var _rLines = (contact.notes || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
     var _rCtx = _rLines.find(function(l) { return !l.startsWith('['); }) || '';
     var _rSub = _rCtx ? _rCtx.slice(0, 150) : 'Check notes below — schedule an appointment or run intake';
-    return { icon: 'ti-flame', label: 'Replied — Ready for next step', sub: _rSub, color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.25)' };
+    return { icon: 'ti-flame', label: '🔥 Replied — Ready for next step', sub: _rSub, color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.25)' };
   }
   if (contact.sequence_status === 'Interested') {
     return { icon: 'ti-heart-handshake', label: 'Expressed interest', sub: 'Send intake form or book an appointment', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' };
