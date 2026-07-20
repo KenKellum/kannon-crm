@@ -4149,6 +4149,7 @@ const ACTIVITY_META = {
   call_voicemail:      { icon: '📞', color: '#94a3b8', label: 'Voicemail Left' },
   note_added:          { icon: '📝', color: '#fbbf24', label: 'Note' },
   status_changed:      { icon: '🔄', color: '#94a3b8', label: 'Status Changed' },
+  intake_completed:    { icon: '📋', color: '#8b5cf6', label: 'Intake Completed' },
 };
 
 function _renderActivityTimeline(acts, contactId) {
@@ -4175,6 +4176,7 @@ function _renderActivityTimeline(acts, contactId) {
         </div>
         ${a.subject ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${esc(a.subject)}</div>` : ''}
         ${snippet ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;">${esc(snippet).substring(0,120)}</div>` : ''}
+        ${a.activity_type === 'intake_completed' && md.session_id ? `<div style="margin-top:6px;display:flex;gap:6px;"><button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 10px;border-color:#8b5cf6;color:#8b5cf6;" onclick="viewIntakeSession('${md.session_id}')">&#128196; View</button><button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 10px;" onclick="editIntakeSession('${md.session_id}')">&#9998; Edit</button></div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -7488,7 +7490,117 @@ async function viewIntakeSession(sessionId) {
     + statusBadge
     + '</div>'
     + fieldHtml;
-  showModal('&#128196; ' + typeLabel, body, null, { hideConfirm: true });
+  const editBtn = '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);text-align:right;">'
+    + `<button class="btn btn-outline btn-sm" onclick="closeModal();setTimeout(()=>editIntakeSession('${sessionId}'),150)">&#9998; Edit Intake</button>`
+    + '</div>';
+  showModal('&#128196; ' + typeLabel, body + editBtn, null, { hideConfirm: true });
+}
+
+// ── Intake Edit ─────────────────────────────────────────────
+async function editIntakeSession(sessionId) {
+  const { data: s, error } = await supabaseClient
+    .from('intake_sessions')
+    .select('id,form_type,selected_fields,responses')
+    .eq('id', sessionId)
+    .single();
+  if (error || !s) { showToast('Could not load intake'); return; }
+  const responses = s.responses || {};
+  const sf = s.selected_fields || [];
+  const typeLabel = INTAKE_TYPE_LABELS[s.form_type] || s.form_type;
+
+  // Build field list: contact fields first, then selected_fields
+  const allFids = [];
+  ['name','email','phone'].forEach(function(f) { if (!allFids.includes(f)) allFids.push(f); });
+  sf.forEach(function(f) { if (!allFids.includes(f)) allFids.push(f); });
+  // Also include any response keys not in selected_fields
+  Object.keys(responses).forEach(function(f) { if (!allFids.includes(f)) allFids.push(f); });
+
+  // Group by section
+  const sections = {};
+  allFids.forEach(function(fid) {
+    const def = INTAKE_FIELD_DEFS[fid];
+    if (!def) return;
+    const sec = def.section || 'Other';
+    if (!sections[sec]) sections[sec] = [];
+    sections[sec].push(fid);
+  });
+
+  let formHtml = '';
+  Object.entries(sections).forEach(function(entry) {
+    const sec = entry[0]; const fids = entry[1];
+    formHtml += '<div style="margin-bottom:18px;">';
+    formHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:10px;">' + sec + '</div>';
+    fids.forEach(function(fid) {
+      const def = INTAKE_FIELD_DEFS[fid];
+      const val = responses[fid];
+      formHtml += _renderIntakeEditField(fid, def, val);
+    });
+    formHtml += '</div>';
+  });
+
+  showModal('&#9998; Edit — ' + typeLabel, formHtml, async function() {
+    const newResp = _collectIntakeEditResponses(allFids);
+    const { error: saveErr } = await supabaseClient
+      .from('intake_sessions')
+      .update({ responses: newResp, status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', sessionId);
+    if (saveErr) { showToast('Save failed: ' + saveErr.message); return false; }
+    showToast('&#10003; Intake saved');
+    setTimeout(function() { viewIntakeSession(sessionId); }, 200);
+  }, { confirmLabel: '&#128190; Save Changes' });
+}
+
+function _renderIntakeEditField(fid, def, val) {
+  const label = def.label || fid.replace(/_/g, ' ');
+  const v = val || '';
+  const inputStyle = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-input,#fff);color:var(--text);';
+  let input = '';
+  if (def.type === 'checkbox') {
+    const checked = (v === 'yes' || v === true) ? ' checked' : '';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+      + '<input type="checkbox" id="ie_' + fid + '" name="ie_' + fid + '"' + checked + ' style="width:16px;height:16px;accent-color:#8b5cf6;">'
+      + '<label for="ie_' + fid + '" style="font-size:13px;color:var(--text);cursor:pointer;">' + label + '</label>'
+      + '</div>';
+  }
+  if (def.type === 'select') {
+    const opts = (def.options || []).map(function(o) { return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + o + '</option>'; }).join('');
+    input = '<select id="ie_' + fid + '" style="' + inputStyle + '"><option value="">Select…</option>' + opts + '</select>';
+  } else if (def.type === 'radio') {
+    const radios = (def.options || []).map(function(o) {
+      return '<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">'
+        + '<input type="radio" name="ien_' + fid + '" value="' + o + '"' + (o === v ? ' checked' : '') + ' style="accent-color:#8b5cf6;"> ' + o + '</label>';
+    }).join('');
+    input = '<div style="margin-top:4px;">' + radios + '</div>';
+  } else if (def.type === 'textarea') {
+    input = '<textarea id="ie_' + fid + '" rows="3" style="' + inputStyle + 'resize:vertical;">' + String(v).replace(/</g,'&lt;') + '</textarea>';
+  } else {
+    const t = def.type === 'email' ? 'email' : def.type === 'tel' ? 'tel' : def.type === 'number' ? 'number' : def.type === 'date' ? 'date' : 'text';
+    const sv = String(v).replace(/"/g, '&quot;');
+    input = '<input type="' + t + '" id="ie_' + fid + '" value="' + sv + '" placeholder="' + (def.placeholder || '') + '" style="' + inputStyle + '">';
+  }
+  return '<div style="margin-bottom:10px;">'
+    + '<label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px;">' + label + '</label>'
+    + input
+    + '</div>';
+}
+
+function _collectIntakeEditResponses(allFids) {
+  const resp = {};
+  allFids.forEach(function(fid) {
+    const def = INTAKE_FIELD_DEFS[fid];
+    if (!def) return;
+    if (def.type === 'checkbox') {
+      const el = document.getElementById('ie_' + fid);
+      if (el && el.checked) resp[fid] = 'yes';
+    } else if (def.type === 'radio') {
+      const checked = document.querySelector('input[name="ien_' + fid + '"]:checked');
+      if (checked) resp[fid] = checked.value;
+    } else {
+      const el = document.getElementById('ie_' + fid);
+      if (el && el.value.trim()) resp[fid] = el.value.trim();
+    }
+  });
+  return resp;
 }
 
 // Dismiss a NA item by either activityId or bookingId
