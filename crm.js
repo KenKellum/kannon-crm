@@ -7631,7 +7631,7 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="font-size:11px;color:#a78bfa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(formLabel)}</div>
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           ${viewBtn}
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}')">&#128100; Contact</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="viewContact('${item.contactId}')">&#128100; Contact</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
