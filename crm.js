@@ -34,6 +34,9 @@ const LEAD_SOURCES = {
   agent_book:        { label: '📓 Agent Book',         stage: 'Contacted',      temp: 'warm', hint: 'Personal book of business' },
 };
 
+// Global HTML-escape helper (also redefined locally in some render functions)
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 let supabaseClient = null;
 let campaignTab = 'drip';
 let campaignItemsMap = {};
