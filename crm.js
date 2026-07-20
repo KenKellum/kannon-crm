@@ -7621,8 +7621,8 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
     if (item.kind === 'intake_completed') {
       const formLabel = item.subject || 'Intake Form';
       const viewBtn = item.sessionId
-        ? `<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#8b5cf6;border-color:#8b5cf6;" onclick="naDismissActivity('${item.activityId}');viewIntakeSession('${item.sessionId}')">&#128196; View Intake</button>`
-        : `<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#8b5cf6;border-color:#8b5cf6;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}')">&#128196; View</button>`;
+        ? `<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#8b5cf6;border-color:#8b5cf6;" onclick="viewIntakeSession('${item.sessionId}')">&#128196; View Intake</button>`
+        : `<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#8b5cf6;border-color:#8b5cf6;" onclick="viewContact('${item.contactId}')">&#128196; View</button>`;
       return `<div style="flex-shrink:0;width:220px;display:flex;flex-direction:column;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #8b5cf6;border-radius:8px;padding:9px 11px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#8b5cf6;margin-bottom:4px;">&#128196; Intake Completed</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
