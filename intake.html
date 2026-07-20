@@ -276,7 +276,7 @@ function renderForm(session, contact) {
     <h2 style="font-size:22px;margin-bottom:8px;color:#1a1a2e;">${typeLabel}</h2>
     <p style="font-size:14px;color:#666;line-height:1.6;">Please take a moment to fill out the information below. This helps us prepare for your consultation.</p>
   </div>
-  <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}')">
+  <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}','${session.agent_id||''}')">
   <div class="card">
     <div class="card-title">Your contact information</div>
     <div class="two-col">
@@ -316,7 +316,7 @@ function renderForm(session, contact) {
   document.getElementById('form-container').innerHTML = html;
 }
 
-async function submitForm(e, sessionId, contactId, formType) {
+async function submitForm(e, sessionId, contactId, formType, agentId) {
   e.preventDefault();
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting…';
@@ -363,16 +363,21 @@ async function submitForm(e, sessionId, contactId, formType) {
     await supa('/rest/v1/contacts?id=eq.' + contactId, { method: 'PATCH', body: JSON.stringify(contactUpdate) });
   }
 
-  document.getElementById('form-container').style.display = 'none';
-  document.getElementById('success-screen').style.display = '';
-}
+  // Notify the agent — log intake_completed activity so it appears in Needs Attention
+  if (agentId) {
+    const actTypeLabel = {'financial':'Life & Financial','health-individual':'Health — Individual/Family','health-group':'Health — Group/Employer','career-kfg':'Career — KFG','career-ia':'Career — Insured America'}[formType] || formType;
+    await supa('/rest/v1/activities', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        contact_id:    contactId || null,
+        agent_id:      agentId,
+        activity_type: 'intake_completed',
+        subject:       actTypeLabel,
+        body_snippet:  'Web intake form completed by prospect',
+        metadata:      { session_id: sessionId, form_type: formType }
+      })
+    });
+  }
 
-function showError() {
-  document.getElementById('loader').style.display = 'none';
-  document.getElementById('error-screen').style.display = '';
-}
-
-init();
-</script>
-</body>
-</html>
+  document.getElementById('form-container').style.di
