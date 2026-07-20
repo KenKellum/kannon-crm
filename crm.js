@@ -2950,6 +2950,89 @@ async function saveIntakeToCRM() {
   }
 }
 
+// ── Async helper: re-fetch contact system events and re-render merged deal timeline ──
+async function _refreshDealTimeline(dealId) {
+  const tl = document.getElementById('timeline-' + dealId);
+  if (!tl) return;
+  const deal = deals.find(function(d) { return d.id === dealId; });
+  var _sa = [];
+  if (deal && deal.contact_id) {
+    var _sar = await supabaseClient.rpc('get_contact_timeline', { p_contact_id: deal.contact_id, p_limit: 25 });
+    _sa = _sar.data || [];
+  }
+  tl.innerHTML = _renderDealMergedTimeline(dealId, _sa);
+}
+
+// ── Render merged timeline: manual deal_activities + contact system activities ──
+function _renderDealMergedTimeline(dealId, sysActs) {
+  const manualActs = dealActivities.filter(function(a) { return a.deal_id === dealId; });
+  const MAN_ICONS = { note: '📝', call: '📞', email: '✉️', stage_change: '⚡' };
+  const items = [];
+
+  manualActs.forEach(function(a) {
+    items.push({
+      ts:         new Date(a.created_at).getTime(),
+      source:     'manual',
+      icon:       MAN_ICONS[a.type] || '📌',
+      color:      null,
+      label:      a.type.charAt(0).toUpperCase() + a.type.slice(1),
+      text:       a.content || '',
+      extra:      '',
+      created_at: a.created_at,
+    });
+  });
+
+  (sysActs || []).forEach(function(a) {
+    var meta = (typeof ACTIVITY_META !== 'undefined' && ACTIVITY_META[a.activity_type])
+               || { icon: '📋', color: '#64748b', label: a.activity_type };
+    var text = '';
+    if (a.subject)      text = a.subject;
+    if (a.body_snippet) text += (text ? ' — ' : '') + a.body_snippet;
+    var extra = '';
+    var md = a.metadata || {};
+    if (a.activity_type === 'intake_completed' && md.session_id) {
+      extra = '<button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:11px;padding:3px 10px;" onclick="viewIntakeSession(\'' + md.session_id + '\')">📋 View Intake</button>';
+    }
+    items.push({
+      ts:         new Date(a.created_at).getTime(),
+      source:     'system',
+      icon:       meta.icon,
+      color:      meta.color || null,
+      label:      meta.label,
+      text:       text,
+      extra:      extra,
+      created_at: a.created_at,
+    });
+  });
+
+  if (!items.length) {
+    return '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No activity yet.</div>';
+  }
+
+  items.sort(function(a, b) { return b.ts - a.ts; });
+
+  return items.map(function(item) {
+    var dt = new Date(item.created_at);
+    var ds = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+           + ' ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    var badge = item.source === 'system'
+      ? '<span style="font-size:10px;background:#f1f5f9;color:#64748b;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">auto</span>'
+      : '<span style="font-size:10px;background:#eff6ff;color:#3b82f6;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">manual</span>';
+    var dotStyle = item.color
+      ? 'background:' + item.color + '22;color:' + item.color + ';border:1px solid ' + item.color + '44;font-size:14px;'
+      : 'font-size:14px;';
+    return '<div class="activity-item">'
+      + '<div class="activity-dot" style="' + dotStyle + '">' + item.icon + '</div>'
+      + '<div class="activity-body">'
+      + '<div class="activity-content"><strong>' + esc(item.label) + '</strong>' + badge
+      + (item.text ? '<div style="margin-top:3px;font-size:12px;color:var(--text-muted);">' + esc(item.text) + '</div>' : '')
+      + (item.extra ? '<div>' + item.extra + '</div>' : '')
+      + '</div>'
+      + '<div class="activity-meta">' + ds + '</div>'
+      + '</div></div>';
+  }).join('');
+}
+
 async function sendIntakeLink() {
   const c = contacts.find(x => x.id === _intakeContactId);
   if (!c) return;
@@ -4428,8 +4511,7 @@ async function saveDealActivity(dealId) {
   if (error) { showToast('Error: ' + error.message); return; }
   dealActivities.unshift(data);
   contentEl.value = '';
-  const tl = document.getElementById('timeline-' + dealId);
-  if (tl) tl.innerHTML = renderActivityTimeline(dealId);
+  _refreshDealTimeline(dealId);
   showToast('&#10003; Activity logged!');
 }
 
@@ -4656,8 +4738,7 @@ async function sendDealEmail(dealId, to, subj, body) {
       deal_id: dealId, agent_id: currentUser.id, type: 'email',
       content: 'Email sent to ' + to + ': ' + subj, created_at: new Date().toISOString()
     });
-    var tl = document.getElementById('timeline-' + dealId);
-    if (tl) tl.innerHTML = renderActivityTimeline(dealId);
+    _refreshDealTimeline(dealId);
     showToast('&#9993; Email sent!');
   } catch(e) {
     showToast('Send failed: ' + e.message);
@@ -4883,8 +4964,7 @@ async function sendDealEmail(dealId, to, subj, body) {
       deal_id: dealId, agent_id: currentUser.id, type: 'email',
       content: 'Email sent to ' + to + ': ' + subj, created_at: new Date().toISOString()
     });
-    var tl = document.getElementById('timeline-' + dealId);
-    if (tl) tl.innerHTML = renderActivityTimeline(dealId);
+    _refreshDealTimeline(dealId);
     showToast('&#9993; Email sent!');
   } catch(e) {
     showToast('Send failed: ' + e.message);
@@ -4892,7 +4972,7 @@ async function sendDealEmail(dealId, to, subj, body) {
 }
 
 
-function openDealPanel(dealId) {
+async function openDealPanel(dealId) {
   const deal    = deals.find(d => d.id === dealId); if (!deal) return;
   const contact = contacts.find(c => c.id === deal.contact_id);
   const pipeline = PIPELINES[deal.pipeline] || { name: deal.pipeline };
@@ -4933,6 +5013,16 @@ function openDealPanel(dealId) {
   var footerContact = contact
     ? '<button class="btn btn-outline btn-sm" onclick="closeDealPanel();viewContact(&#39;' + contact.id + '&#39;,&#39;&#39;)">&#128100; Contact</button>'
     : '';
+  var footerIntake = contact
+    ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="closeDealPanel();setTimeout(function(){dialerViewIntake(&#39;' + contact.id + '&#39;);},150)">&#128196; Intake</button>'
+    : '';
+
+  // Pre-fetch contact system timeline for merged activity view
+  var _dealSysActs = [];
+  if (deal.contact_id) {
+    var _dsaResult = await supabaseClient.rpc('get_contact_timeline', { p_contact_id: deal.contact_id, p_limit: 25 });
+    _dealSysActs = _dsaResult.data || [];
+  }
 
   document.getElementById('deal-panel').innerHTML =
     '<div class="panel-header">'
@@ -4966,19 +5056,20 @@ function openDealPanel(dealId) {
     + '<input type="date" id="task-date-' + dealId + '" />'
     + '<button class="btn btn-primary btn-sm" onclick="addDealTaskFromInput(&#39;' + dealId + '&#39;)">Add</button>'
     + '</div></div>'
-    + '<div class="panel-section"><div class="panel-label">Activity Log</div>'
+    + '<div class="panel-section"><div class="panel-label">Activity</div>'
     + '<div class="activity-log-form">'
     + '<select id="act-type-' + dealId + '"><option value="note">&#128221; Note</option><option value="call">&#128222; Call</option><option value="email">&#9993; Email</option></select>'
     + '<textarea id="act-content-' + dealId + '" placeholder="Log a call outcome, note, or email summary..."></textarea>'
     + '<button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="saveDealActivity(&#39;' + dealId + '&#39;)">Log It</button>'
     + '</div>'
-    + '<div class="activity-timeline" id="timeline-' + dealId + '">' + renderActivityTimeline(dealId) + '</div>'
+    + '<div class="activity-timeline" id="timeline-' + dealId + '">' + _renderDealMergedTimeline(dealId, _dealSysActs) + '</div>'
     + '</div>'
     + notesHTML
     + '</div>'
     + '<div class="panel-footer">'
     + '<button class="btn btn-outline" onclick="closeDealPanel()">Close</button>'
     + footerContact
+    + footerIntake
     + '<button class="btn btn-outline btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border-color:rgba(59,130,246,0.3);" onclick="openDealEmailModal(&#39;' + dealId + '&#39;)">&#9993; Email</button>'
     + '<button class="btn btn-danger btn-sm" onclick="closeDealPanel();deleteDeal(&#39;' + dealId + '&#39;)">Delete</button>'
     + '<button class="btn btn-primary" onclick="closeDealPanel();editDeal(&#39;' + dealId + '&#39;)">&#9999;&#65039; Edit Deal</button>'
