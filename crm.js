@@ -2514,6 +2514,8 @@ const INTAKE_ALL_FIELDS = [
 let _intakeContactId = null;
 let _intakeFormType = 'financial';
 let _intakeChecked = new Set();
+let _intakeEditSessionId = null;   // set when editing an existing session
+let _intakeEditResponses = {};     // pre-fill values for edit mode
 
 function _intakeTypeFromContact(c) {
   if (!c) return 'financial';
@@ -2525,12 +2527,15 @@ function _intakeTypeFromContact(c) {
   return 'financial';
 }
 
-async function showIntakeForm(contactId) {
+async function showIntakeForm(contactId, opts) {
+  opts = opts || {};
   const c = contacts.find(x => x.id === contactId);
   if (!c) { showToast('Contact not found'); return; }
   _intakeContactId = contactId;
-  _intakeFormType  = _intakeTypeFromContact(c);
-  _intakeChecked   = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
+  if (!opts.editMode) {
+    _intakeFormType = _intakeTypeFromContact(c);
+    _intakeChecked  = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
+  }
 
   const initials = (c.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
 
@@ -2566,7 +2571,7 @@ async function showIntakeForm(contactId) {
         <div>
           <div style="font-weight:700;font-size:16px;color:#fff;letter-spacing:.1px;">${c.name || 'Contact'}</div>
           <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:2px;">
-            Intake Form${(c.type || c.contact_type) ? ' &middot; ' + (c.type || c.contact_type) : ''}
+            ${opts.editMode ? 'Edit Intake' : 'Intake Form'}${(c.type || c.contact_type) ? ' &middot; ' + (c.type || c.contact_type) : ''}
           </div>
         </div>
       </div>
@@ -2606,7 +2611,7 @@ async function showIntakeForm(contactId) {
       <button id="intakeSendBtn" onclick="sendIntakeLink()"
         style="padding:8px 18px;border-radius:8px;border:1px solid #2563eb;
                background:#fff;color:#2563eb;font-size:13px;font-weight:500;
-               cursor:pointer;display:flex;align-items:center;gap:7px;"
+               cursor:pointer;display:flex;align-items:center;gap:7px;${opts.editMode ? 'display:none;' : ''}"
         onmouseover="this.style.background='#eff6ff'"
         onmouseout="this.style.background='#fff'">&#9993; Send Link via Gmail</button>
 
@@ -2617,7 +2622,7 @@ async function showIntakeForm(contactId) {
                display:flex;align-items:center;gap:7px;
                box-shadow:0 2px 8px rgba(26,58,92,0.3);"
         onmouseover="this.style.boxShadow='0 4px 16px rgba(26,58,92,0.45)'"
-        onmouseout="this.style.boxShadow='0 2px 8px rgba(26,58,92,0.3)'">&#10003; Save to CRM</button>
+        onmouseout="this.style.boxShadow='0 2px 8px rgba(26,58,92,0.3)'">${opts.editMode ? '&#10003; Update Intake' : '&#10003; Save to CRM'}</button>
     </div>
   `;
 
@@ -2714,6 +2719,10 @@ function _intakeRenderForm() {
     dob:           c.dob   || c.date_of_birth || '',
     business_name: c.company || '',
   };
+  // In edit mode, overlay saved responses onto prefill
+  if (_intakeEditResponses && Object.keys(_intakeEditResponses).length) {
+    Object.keys(_intakeEditResponses).forEach(function(k) { prefill[k] = _intakeEditResponses[k]; });
+  }
 
   const sections = {};
   for (const grp of INTAKE_ALL_FIELDS) {
@@ -2780,10 +2789,11 @@ function _intakeRenderField(id, def, prefillVal) {
   } else if (def.type === 'textarea') {
     control = `<textarea ${base} rows="3"${ph} style="${S}resize:vertical;" ${F}>${prefillVal || ''}</textarea>`;
   } else if (def.type === 'checkbox') {
+    const _chkChecked = (prefillVal === 'yes' || prefillVal === true) ? ' checked' : '';
     return `<div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;
                     padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fafbfc;">
-        <input type="checkbox" ${base} style="width:16px;height:16px;accent-color:#1a3a5c;cursor:pointer;" />
+        <input type="checkbox" ${base}${_chkChecked} style="width:16px;height:16px;accent-color:#1a3a5c;cursor:pointer;" />
         <span style="color:#1e293b;">${def.label}</span>
       </label>
     </div>`;
@@ -2819,6 +2829,37 @@ async function saveIntakeToCRM() {
 
   const btn = document.querySelector('#intakeBox .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  // ── EDIT MODE: update existing session only — no new insert, no deal advance ──
+  if (_intakeEditSessionId) {
+    const _editId = _intakeEditSessionId;
+    try {
+      const { error: _updErr } = await supabaseClient.from('intake_sessions')
+        .update({ form_type: _intakeFormType, selected_fields: selectedFields, responses: responses,
+                  status: 'completed', completed_at: new Date().toISOString() })
+        .eq('id', _editId);
+      if (_updErr) throw _updErr;
+      // Sync key contact fields from updated responses
+      const _efm = { dob:'dob', email:'email', phone:'phone', business_name:'company', marital_status:'marital_status' };
+      const _ecu = {};
+      for (const [fid, col] of Object.entries(_efm)) {
+        if (responses[fid] !== undefined && responses[fid] !== '') _ecu[col] = responses[fid];
+      }
+      if (Object.keys(_ecu).length) {
+        await supabaseClient.from('contacts').update(_ecu).eq('id', _intakeContactId);
+        Object.assign(c, _ecu);
+      }
+      _intakeEditSessionId = null;
+      _intakeEditResponses = {};
+      showToast('✓ Intake updated');
+      closeIntakeForm();
+      setTimeout(function() { viewIntakeSession(_editId); }, 200);
+    } catch(ex) {
+      showToast('Error updating: ' + (ex.message || ex));
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Update Intake'; }
+    }
+    return;
+  }
 
   try {
     // 1. Create intake_session row
@@ -7500,13 +7541,23 @@ async function viewIntakeSession(sessionId) {
 async function editIntakeSession(sessionId) {
   const { data: s, error } = await supabaseClient
     .from('intake_sessions')
-    .select('id,form_type,selected_fields,responses')
+    .select('id,contact_id,form_type,selected_fields,responses')
     .eq('id', sessionId)
     .single();
   if (error || !s) { showToast('Could not load intake'); return; }
-  const responses = s.responses || {};
-  const sf = s.selected_fields || [];
-  const typeLabel = INTAKE_TYPE_LABELS[s.form_type] || s.form_type;
+
+  // Set edit-mode globals BEFORE opening the full intake UI
+  _intakeEditSessionId = sessionId;
+  _intakeEditResponses = s.responses || {};
+  _intakeFormType      = s.form_type;
+  _intakeChecked       = new Set(s.selected_fields || []);
+
+  closeModal();
+  await showIntakeForm(s.contact_id, { editMode: true });
+  // (legacy modal-edit helpers below are kept but unused)
+  const _UNUSED_responses = s.responses || {};
+  const _UNUSED_sf = s.selected_fields || [];
+  const _UNUSED_typeLabel = INTAKE_TYPE_LABELS[s.form_type] || s.form_type;
 
   // Build field list: contact fields first, then selected_fields
   const allFids = [];
