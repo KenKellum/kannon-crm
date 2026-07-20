@@ -4988,6 +4988,7 @@ async function sendDealEmail(dealId, to, subj, body) {
 
 
 function openDealPanel(dealId) {
+  try {
   const deal    = deals.find(d => d.id === dealId); if (!deal) return;
   const contact = contacts.find(c => c.id === deal.contact_id);
   const pipeline = PIPELINES[deal.pipeline] || { name: deal.pipeline };
@@ -5088,6 +5089,10 @@ function openDealPanel(dealId) {
   document.body.style.overflow = 'hidden';
   // Load contact system timeline async after panel is visible
   _refreshDealTimeline(dealId);
+  } catch(err) {
+    console.error('openDealPanel error:', err);
+    showToast('⚠️ Deal panel error: ' + (err.message || String(err)));
+  }
 }
 
 // ============================================================
