@@ -4987,7 +4987,7 @@ async function sendDealEmail(dealId, to, subj, body) {
 }
 
 
-async function openDealPanel(dealId) {
+function openDealPanel(dealId) {
   const deal    = deals.find(d => d.id === dealId); if (!deal) return;
   const contact = contacts.find(c => c.id === deal.contact_id);
   const pipeline = PIPELINES[deal.pipeline] || { name: deal.pipeline };
@@ -5032,13 +5032,6 @@ async function openDealPanel(dealId) {
     ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="closeDealPanel();setTimeout(function(){dialerViewIntake(&#39;' + contact.id + '&#39;);},150)">&#128196; Intake</button>'
     : '';
 
-  // Pre-fetch contact system timeline for merged activity view
-  var _dealSysActs = [];
-  if (deal.contact_id) {
-    var _dsaResult = await supabaseClient.rpc('get_contact_timeline', { p_contact_id: deal.contact_id, p_limit: 25 });
-    _dealSysActs = _dsaResult.data || [];
-  }
-
   document.getElementById('deal-panel').innerHTML =
     '<div class="panel-header">'
     + '<div class="panel-header-info">'
@@ -5077,7 +5070,7 @@ async function openDealPanel(dealId) {
     + '<textarea id="act-content-' + dealId + '" placeholder="Log a call outcome, note, or email summary..."></textarea>'
     + '<button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="saveDealActivity(&#39;' + dealId + '&#39;)">Log It</button>'
     + '</div>'
-    + '<div class="activity-timeline" id="timeline-' + dealId + '">' + _renderDealMergedTimeline(dealId, _dealSysActs) + '</div>'
+    + '<div class="activity-timeline" id="timeline-' + dealId + '">' + _renderDealMergedTimeline(dealId, []) + '</div>'
     + '</div>'
     + notesHTML
     + '</div>'
@@ -5093,6 +5086,8 @@ async function openDealPanel(dealId) {
   document.getElementById('panel-overlay').style.display = 'block';
   document.getElementById('deal-panel').classList.add('open');
   document.body.style.overflow = 'hidden';
+  // Load contact system timeline async after panel is visible
+  _refreshDealTimeline(dealId);
 }
 
 // ============================================================
