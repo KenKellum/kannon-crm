@@ -323,7 +323,6 @@ function renderSidebarNav() {
         { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'Team', items: [
-        { icon: 'ti-world',              text: 'Website',          page: 'website'   },
         { icon: 'ti-building-community', text: 'Agents & hiring',  page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
         { icon: 'ti-alert-triangle',     text: 'Oversight',        page: 'oversight' },
         { icon: 'ti-shield-check',       text: 'Compliance',       page: 'compliance'},
@@ -6124,6 +6123,7 @@ async function renderAdmin() {
       </div>
       <div class="agent-actions">
         <button class="btn btn-outline btn-sm" onclick="editAgent('${a.id}')">Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="openAgentWebsiteProfile('${a.id}')">Website</button>
         ${a.id !== currentAgent.id ? `<button class="btn btn-danger btn-sm" onclick="deleteAgent('${a.id}')">&#10005;</button>` : ''}
       </div>
     </div>`;
@@ -6705,6 +6705,27 @@ async function renderSettings() {
           <strong style="color:var(--text-secondary);">Role:</strong> ${({ system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' }[currentAgent.role] || currentAgent.role)}
           &nbsp;&middot;&nbsp;
           <strong style="color:var(--text-secondary);">Agency:</strong> ${agencyName}
+        </div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-world"></i>My Website Profile</div>
+        ${webSelfProfileNote()}
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Bio (shown on your public page)</label>
+        <textarea id="swp-bio" rows="4" style="width:100%;box-sizing:border-box;">${escWeb(currentAgent.bio||'')}</textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Specialties (comma-separated)</label>
+            <input type="text" id="swp-specs" value="${escWeb((currentAgent.specialties||[]).join(', '))}" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Headshot image URL</label>
+            <input type="text" id="swp-headshot" value="${escWeb(currentAgent.headshot_url||'')}" placeholder="https://..." style="width:100%;box-sizing:border-box;" />
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <button class="btn btn-primary" onclick="saveMyWebsiteProfile()">Save website profile</button>
+          <span id="swp-msg" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
         </div>
       </div>
 
@@ -8882,8 +8903,9 @@ async function transferContact(contactId) {
 init();
 
 // ============================================================
-// WEBSITE — review moderation + agent public profiles
-// (added 2026-07-21; powers thekannongroup.com team & review pages)
+// WEBSITE — review moderation (system owner only)
+// Agent website profiles are edited from Admin ("Website" button)
+// and self-served in Settings ("My Website Profile" card).
 // ============================================================
 function escWeb(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -8897,22 +8919,15 @@ async function renderWebsite() {
   const pg = document.getElementById('page-website');
   if (!pg) return;
   const role = previewRole || currentAgent.role;
-  if (role !== 'system_owner' && role !== 'agency_owner') {
-    pg.innerHTML = `<div style="color:var(--muted);padding:40px;text-align:center;">You don't have access to this page.</div>`;
+  if (role !== 'system_owner') {
+    pg.innerHTML = `<div style="color:var(--muted);padding:40px;text-align:center;">Review moderation is limited to the system owner.</div>`;
     return;
   }
-  pg.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading website data...</div>`;
+  pg.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading reviews...</div>`;
 
-  const [{ data: reviews }, { data: agents }] = await Promise.all([
-    role === 'system_owner'
-      ? supabaseClient.from('reviews')
-          .select('id,created_at,name,email,city,state,rating,review_text,status,brand')
-          .order('created_at', { ascending: false }).limit(100)
-      : Promise.resolve({ data: [] }),
-    supabaseClient.from('agents')
-      .select('id,name,display_name,title,slug,bio,brand,specialties,licensed_states,headshot_url,public_profile,status')
-      .order('name'),
-  ]);
+  const { data: reviews } = await supabaseClient.from('reviews')
+    .select('id,created_at,name,email,city,state,rating,review_text,status,brand')
+    .order('created_at', { ascending: false }).limit(100);
 
   const revs = reviews || [];
   const pending = revs.filter(r => r.status === 'pending');
@@ -8944,99 +8959,95 @@ async function renderWebsite() {
     </div>`;
   }
 
-  function agentCard(a) {
-    const name = a.display_name || a.name;
-    const specs = (a.specialties || []).join(', ');
-    const states = (a.licensed_states || []).join(', ');
-    const liveLink = a.slug ? `<a href="https://thekannongroup.com/team/${escWeb(a.slug)}" target="_blank" style="font-size:12px;">View live page ↗</a>` : '<span style="font-size:12px;color:var(--muted);">no slug yet</span>';
-    return `<div style="border:1px solid var(--border,#2a2f3a);border-radius:10px;padding:14px 16px;margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <strong style="font-size:14px;">${escWeb(name)}</strong>
-          <span style="font-size:12px;color:var(--muted);">${escWeb(a.title || '')}</span>
-          ${brandChip(a.brand)}
-          <span style="font-size:11px;font-weight:700;color:${a.public_profile ? '#1a7f4e' : 'var(--muted)'};">${a.public_profile ? 'SHOWN ON WEBSITE' : 'HIDDEN'}</span>
-          ${liveLink}
-        </div>
-        <button class="btn" onclick="webToggleAgentEditor('${a.id}')">Edit profile</button>
-      </div>
-      <div id="web-agent-editor-${a.id}" style="display:none;margin-top:12px;border-top:1px solid var(--border,#2a2f3a);padding-top:12px;">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px;">
-          <label style="font-size:12px;margin-top:0;">Display name<input id="web-af-display-${a.id}" value="${escWeb(a.display_name || a.name)}" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;margin-top:0;">Title<input id="web-af-title-${a.id}" value="${escWeb(a.title || '')}" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;margin-top:0;">URL slug<input id="web-af-slug-${a.id}" value="${escWeb(a.slug || '')}" placeholder="auto from name" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;margin-top:0;">Company
-            <select id="web-af-brand-${a.id}" style="width:100%;margin-top:4px;">
-              <option value="both" ${a.brand==='both'?'selected':''}>Both brands</option>
-              <option value="kfg" ${a.brand==='kfg'?'selected':''}>Kannon Financial</option>
-              <option value="ia" ${a.brand==='ia'?'selected':''}>Insured America</option>
-            </select></label>
-          <label style="font-size:12px;margin-top:0;">Specialties (comma-separated)<input id="web-af-specs-${a.id}" value="${escWeb(specs)}" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;margin-top:0;">Licensed states (comma-separated)<input id="web-af-states-${a.id}" value="${escWeb(states)}" placeholder="MT, AZ, TX" style="width:100%;margin-top:4px;"></label>
-        </div>
-        <label style="font-size:12px;display:block;margin-bottom:10px;">Bio<textarea id="web-af-bio-${a.id}" rows="4" style="width:100%;margin-top:4px;">${escWeb(a.bio || '')}</textarea></label>
-        <label style="font-size:12px;display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-          <input type="checkbox" id="web-af-public-${a.id}" style="width:auto;margin:0;" ${a.public_profile ? 'checked' : ''}> Show this agent on the website
-        </label>
-        <button class="btn" style="background:#1a7f4e;color:#fff;" onclick="webSaveAgentProfile('${a.id}')">Save profile</button>
-        <span id="web-af-msg-${a.id}" style="font-size:12px;color:var(--muted);margin-left:10px;"></span>
-      </div>
-    </div>`;
-  }
-
-  const reviewsSection = role !== 'system_owner' ? '' : `
-      <div style="margin-bottom:26px;">
-        <h3 style="margin:0 0 4px;">Review moderation</h3>
-        <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Reviews submitted on thekannongroup.com. Verify the email belongs to a real client before approving — approved reviews appear on the website within ~5 minutes.</p>
-        ${pending.length
-          ? `<div style="font-size:12px;font-weight:700;color:#e2a33d;margin-bottom:8px;">${pending.length} awaiting your decision</div>` + pending.map(reviewCard).join('')
-          : `<div style="font-size:13px;color:var(--muted);border:1px dashed var(--border,#2a2f3a);border-radius:10px;padding:16px;text-align:center;">No pending reviews. Share thekannongroup.com/reviews with happy clients!</div>`}
-        ${decided.length ? `<div style="font-size:12px;font-weight:700;color:var(--muted);margin:14px 0 8px;">Recently decided</div>` + decided.map(reviewCard).join('') : ''}
-      </div>`;
-
   pg.innerHTML = `
     <div style="max-width:980px;">
-      ${reviewsSection}
-      <div>
-        <h3 style="margin:0 0 4px;">Agent website profiles</h3>
-        <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">These profiles power the Meet the Team page, the agent finder, and each agent's own page at thekannongroup.com/team. Changes go live within ~5 minutes.</p>
-        ${(agents || []).map(agentCard).join('')}
-      </div>
+      <h3 style="margin:0 0 4px;">Review moderation</h3>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Reviews submitted on thekannongroup.com. Verify the email belongs to a real client before approving — approved reviews appear on the website within ~5 minutes.</p>
+      ${pending.length
+        ? `<div style="font-size:12px;font-weight:700;color:#e2a33d;margin-bottom:8px;">${pending.length} awaiting your decision</div>` + pending.map(reviewCard).join('')
+        : `<div style="font-size:13px;color:var(--muted);border:1px dashed var(--border,#2a2f3a);border-radius:10px;padding:16px;text-align:center;">No pending reviews. Share thekannongroup.com/reviews with happy clients!</div>`}
+      ${decided.length ? `<div style="font-size:12px;font-weight:700;color:var(--muted);margin:14px 0 8px;">Recently decided</div>` + decided.map(reviewCard).join('') : ''}
     </div>`;
 }
 
 async function webSetReviewStatus(id, status) {
   const patch = { status, approved_at: status === 'approved' ? new Date().toISOString() : null };
   const { error } = await supabaseClient.from('reviews').update(patch).eq('id', id);
-  if (error) { alert('Could not update review: ' + error.message); return; }
+  if (error) { showToast('Could not update review: ' + error.message); return; }
   renderWebsite();
 }
 
-function webToggleAgentEditor(id) {
-  const el = document.getElementById('web-agent-editor-' + id);
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+// ---- Admin: full website-profile editor (modal, owners only) ----
+function openAgentWebsiteProfile(id) {
+  const a = allAgents.find(x => x.id === id); if (!a) return;
+  const specs = (a.specialties || []).join(', ');
+  const states = (a.licensed_states || []).join(', ');
+  showModal('Website Profile — ' + (a.display_name || a.name), `
+    <label>Display name</label><input type="text" id="wp-display" value="${escWeb(a.display_name || a.name)}" />
+    <label>Public title</label><input type="text" id="wp-title" value="${escWeb(a.title || '')}" placeholder="e.g. Licensed Insurance Advisor" />
+    <label>Company</label>
+    <select id="wp-brand">
+      <option value="both" ${a.brand==='both'?'selected':''}>Both brands</option>
+      <option value="kfg" ${a.brand==='kfg'?'selected':''}>Kannon Financial</option>
+      <option value="ia" ${a.brand==='ia'?'selected':''}>Insured America</option>
+    </select>
+    <label>Specialties (comma-separated)</label><input type="text" id="wp-specs" value="${escWeb(specs)}" />
+    <label>Licensed states (comma-separated)</label><input type="text" id="wp-states" value="${escWeb(states)}" placeholder="MT, AZ, TX" />
+    <label>Headshot image URL</label><input type="text" id="wp-headshot" value="${escWeb(a.headshot_url || '')}" placeholder="https://..." />
+    <label>URL slug ${a.slug ? `— <a href="https://thekannongroup.com/team/${escWeb(a.slug)}" target="_blank" style="font-weight:400;">view live page ↗</a>` : ''}</label>
+    <input type="text" id="wp-slug" value="${escWeb(a.slug || '')}" placeholder="auto-generated from name" />
+    <label>Bio</label><textarea id="wp-bio" rows="4">${escWeb(a.bio || '')}</textarea>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+      <input type="checkbox" id="wp-public" style="width:auto;margin:0;" ${a.public_profile ? 'checked' : ''} /> Show this agent on the website
+    </label>
+  `, async () => {
+    const v = x => document.getElementById('wp-' + x).value.trim();
+    const list = s => s ? s.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const displayName = v('display');
+    let slug = v('slug');
+    if (!slug) slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const patch = {
+      display_name: displayName || null,
+      title: v('title') || null,
+      slug: slug || null,
+      brand: document.getElementById('wp-brand').value,
+      specialties: list(v('specs')),
+      licensed_states: list(v('states')).map(s => s.toUpperCase()),
+      headshot_url: v('headshot') || null,
+      bio: v('bio') || null,
+      public_profile: document.getElementById('wp-public').checked,
+    };
+    const { error } = await supabaseClient.from('agents').update(patch).eq('id', id);
+    if (error) { showToast('Error: ' + error.message); return false; }
+    Object.assign(a, patch);
+    showToast('Website profile saved — live within ~5 minutes.');
+    renderAdmin();
+  });
 }
 
-async function webSaveAgentProfile(id) {
-  const v = suffix => document.getElementById('web-af-' + suffix + '-' + id).value.trim();
-  const list = s => s ? s.split(',').map(x => x.trim()).filter(Boolean) : [];
-  const displayName = v('display');
-  let slug = v('slug');
-  if (!slug) slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+// ---- Settings: self-service subset (bio, specialties, headshot) ----
+function webSelfProfileNote() {
+  const shown = currentAgent.public_profile;
+  const link = currentAgent.slug
+    ? ` — <a href="https://thekannongroup.com/team/${escWeb(currentAgent.slug)}" target="_blank">view your page ↗</a>`
+    : '';
+  const status = shown
+    ? `You are currently <strong style="color:#1a7f4e;">shown</strong> on the website${link}.`
+    : `You are currently <strong>hidden</strong> from the website — an owner can turn your profile on.`;
+  return `<p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">This is how you appear on thekannongroup.com. ${status} Company, visibility, and page URL are managed by owners.</p>`;
+}
+
+async function saveMyWebsiteProfile() {
+  const list = s => s ? s.split(',').map(t => t.trim()).filter(Boolean) : [];
   const patch = {
-    display_name: displayName || null,
-    title: v('title') || null,
-    slug: slug || null,
-    brand: document.getElementById('web-af-brand-' + id).value,
-    specialties: list(v('specs')),
-    licensed_states: list(v('states')).map(s => s.toUpperCase()),
-    bio: v('bio') || null,
-    public_profile: document.getElementById('web-af-public-' + id).checked,
+    bio: document.getElementById('swp-bio').value.trim() || null,
+    specialties: list(document.getElementById('swp-specs').value),
+    headshot_url: document.getElementById('swp-headshot').value.trim() || null,
   };
-  const msg = document.getElementById('web-af-msg-' + id);
+  const msg = document.getElementById('swp-msg');
   msg.textContent = 'Saving...';
-  const { error } = await supabaseClient.from('agents').update(patch).eq('id', id);
+  const { error } = await supabaseClient.from('agents').update(patch).eq('id', currentAgent.id);
   if (error) { msg.textContent = 'Error: ' + error.message; return; }
+  Object.assign(currentAgent, patch);
   msg.textContent = 'Saved — live within ~5 minutes.';
-  setTimeout(renderWebsite, 900);
 }
