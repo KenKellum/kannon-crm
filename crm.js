@@ -242,11 +242,11 @@ const PAGE_TITLES = {
   dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
   opens: 'Email Opens', campaigns: 'Email Campaigns', compliance: 'Compliance',
   admin: 'Admin', dialer: 'Work My Leads', settings: 'Settings', appointments: 'Appointments',
-  scripts: 'Script Manager'
+  scripts: 'Script Manager', website: 'Website'
 };
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments','oversight','scripts'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -266,6 +266,7 @@ function showPage(page) {
   if (page === 'appointments') renderAppointments();
   if (page === 'oversight')    renderOversight();
   if (page === 'scripts')      renderScriptManagerPage();
+  if (page === 'website')      renderWebsite();
 }
 
 // ============================================================
@@ -304,6 +305,7 @@ function renderSidebarNav() {
         { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'System', items: [
+        { icon: 'ti-world',            text: 'Website',            page: 'website'   },
         { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
         { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
       ]},
@@ -321,6 +323,7 @@ function renderSidebarNav() {
         { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'Team', items: [
+        { icon: 'ti-world',              text: 'Website',          page: 'website'   },
         { icon: 'ti-building-community', text: 'Agents & hiring',  page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
         { icon: 'ti-alert-triangle',     text: 'Oversight',        page: 'oversight' },
         { icon: 'ti-shield-check',       text: 'Compliance',       page: 'compliance'},
@@ -8877,3 +8880,158 @@ async function transferContact(contactId) {
 // STARTUP
 // ============================================================
 init();
+
+// ============================================================
+// WEBSITE — review moderation + agent public profiles
+// (added 2026-07-21; powers thekannongroup.com team & review pages)
+// ============================================================
+function escWeb(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+const WEB_BRAND_LABELS = { kfg: 'Kannon Financial', ia: 'Insured America', both: 'Both brands' };
+
+async function renderWebsite() {
+  const pg = document.getElementById('page-website');
+  if (!pg) return;
+  const role = previewRole || currentAgent.role;
+  if (role !== 'system_owner' && role !== 'agency_owner') {
+    pg.innerHTML = `<div style="color:var(--muted);padding:40px;text-align:center;">You don't have access to this page.</div>`;
+    return;
+  }
+  pg.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading website data...</div>`;
+
+  const [{ data: reviews }, { data: agents }] = await Promise.all([
+    supabaseClient.from('reviews')
+      .select('id,created_at,name,email,city,state,rating,review_text,status,brand')
+      .order('created_at', { ascending: false }).limit(100),
+    supabaseClient.from('agents')
+      .select('id,name,display_name,title,slug,bio,brand,specialties,licensed_states,headshot_url,public_profile,status')
+      .order('name'),
+  ]);
+
+  const revs = reviews || [];
+  const pending = revs.filter(r => r.status === 'pending');
+  const decided = revs.filter(r => r.status !== 'pending').slice(0, 20);
+
+  const stars = n => '★'.repeat(n) + '<span style="opacity:.25;">' + '★'.repeat(5 - n) + '</span>';
+  const brandChip = b => `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${b==='ia'?'#1d3557':'#6d1f2c'};color:#fff;">${WEB_BRAND_LABELS[b]||b||'—'}</span>`;
+
+  function reviewCard(r) {
+    const where = [r.city, r.state].filter(Boolean).join(', ');
+    const actions = r.status === 'pending'
+      ? `<button class="btn" style="background:#1a7f4e;color:#fff;" onclick="webSetReviewStatus('${r.id}','approved')">Approve &amp; publish</button>
+         <button class="btn" style="background:#8f2d2d;color:#fff;" onclick="webSetReviewStatus('${r.id}','rejected')">Reject</button>`
+      : `<span style="font-size:12px;font-weight:700;color:${r.status==='approved'?'#1a7f4e':'#8f2d2d'};text-transform:uppercase;">${r.status}</span>
+         <button class="btn" onclick="webSetReviewStatus('${r.id}','${r.status==='approved'?'rejected':'approved'}')">${r.status==='approved'?'Unpublish':'Approve instead'}</button>`;
+    return `<div style="border:1px solid var(--border,#2a2f3a);border-radius:10px;padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <span style="color:#e2a33d;font-size:15px;">${stars(r.rating)}</span>
+          ${brandChip(r.brand)}
+          <strong style="font-size:13px;">${escWeb(r.name)}</strong>
+          <span style="font-size:12px;color:var(--muted);">${escWeb(where)}</span>
+          <span style="font-size:12px;color:var(--muted);">${escWeb(r.email)}</span>
+        </div>
+        <span style="font-size:11px;color:var(--muted);">${new Date(r.created_at).toLocaleDateString()}</span>
+      </div>
+      <p style="font-size:13px;line-height:1.5;margin:6px 0 10px;">&ldquo;${escWeb(r.review_text)}&rdquo;</p>
+      <div style="display:flex;gap:8px;align-items:center;">${actions}</div>
+    </div>`;
+  }
+
+  function agentCard(a) {
+    const name = a.display_name || a.name;
+    const specs = (a.specialties || []).join(', ');
+    const states = (a.licensed_states || []).join(', ');
+    const liveLink = a.slug ? `<a href="https://thekannongroup.com/team/${escWeb(a.slug)}" target="_blank" style="font-size:12px;">View live page ↗</a>` : '<span style="font-size:12px;color:var(--muted);">no slug yet</span>';
+    return `<div style="border:1px solid var(--border,#2a2f3a);border-radius:10px;padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <strong style="font-size:14px;">${escWeb(name)}</strong>
+          <span style="font-size:12px;color:var(--muted);">${escWeb(a.title || '')}</span>
+          ${brandChip(a.brand)}
+          <span style="font-size:11px;font-weight:700;color:${a.public_profile ? '#1a7f4e' : 'var(--muted)'};">${a.public_profile ? 'SHOWN ON WEBSITE' : 'HIDDEN'}</span>
+          ${liveLink}
+        </div>
+        <button class="btn" onclick="webToggleAgentEditor('${a.id}')">Edit profile</button>
+      </div>
+      <div id="web-agent-editor-${a.id}" style="display:none;margin-top:12px;border-top:1px solid var(--border,#2a2f3a);padding-top:12px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px;">
+          <label style="font-size:12px;">Display name<input id="web-af-display-${a.id}" value="${escWeb(a.display_name || a.name)}" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;">Title<input id="web-af-title-${a.id}" value="${escWeb(a.title || '')}" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;">URL slug<input id="web-af-slug-${a.id}" value="${escWeb(a.slug || '')}" placeholder="auto from name" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;">Company
+            <select id="web-af-brand-${a.id}" style="width:100%;margin-top:4px;">
+              <option value="both" ${a.brand==='both'?'selected':''}>Both brands</option>
+              <option value="kfg" ${a.brand==='kfg'?'selected':''}>Kannon Financial</option>
+              <option value="ia" ${a.brand==='ia'?'selected':''}>Insured America</option>
+            </select></label>
+          <label style="font-size:12px;">Specialties (comma-separated)<input id="web-af-specs-${a.id}" value="${escWeb(specs)}" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;">Licensed states (comma-separated)<input id="web-af-states-${a.id}" value="${escWeb(states)}" placeholder="MT, AZ, TX" style="width:100%;margin-top:4px;"></label>
+        </div>
+        <label style="font-size:12px;display:block;margin-bottom:10px;">Bio<textarea id="web-af-bio-${a.id}" rows="4" style="width:100%;margin-top:4px;">${escWeb(a.bio || '')}</textarea></label>
+        <label style="font-size:12px;display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+          <input type="checkbox" id="web-af-public-${a.id}" ${a.public_profile ? 'checked' : ''}> Show this agent on the website
+        </label>
+        <button class="btn" style="background:#1a7f4e;color:#fff;" onclick="webSaveAgentProfile('${a.id}')">Save profile</button>
+        <span id="web-af-msg-${a.id}" style="font-size:12px;color:var(--muted);margin-left:10px;"></span>
+      </div>
+    </div>`;
+  }
+
+  pg.innerHTML = `
+    <div style="max-width:980px;">
+      <div style="margin-bottom:26px;">
+        <h3 style="margin:0 0 4px;">Review moderation</h3>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Reviews submitted on thekannongroup.com. Verify the email belongs to a real client before approving — approved reviews appear on the website within ~5 minutes.</p>
+        ${pending.length
+          ? `<div style="font-size:12px;font-weight:700;color:#e2a33d;margin-bottom:8px;">${pending.length} awaiting your decision</div>` + pending.map(reviewCard).join('')
+          : `<div style="font-size:13px;color:var(--muted);border:1px dashed var(--border,#2a2f3a);border-radius:10px;padding:16px;text-align:center;">No pending reviews. Share thekannongroup.com/reviews with happy clients!</div>`}
+        ${decided.length ? `<div style="font-size:12px;font-weight:700;color:var(--muted);margin:14px 0 8px;">Recently decided</div>` + decided.map(reviewCard).join('') : ''}
+      </div>
+      <div>
+        <h3 style="margin:0 0 4px;">Agent website profiles</h3>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">These profiles power the Meet the Team page, the agent finder, and each agent's own page at thekannongroup.com/team. Changes go live within ~5 minutes.</p>
+        ${(agents || []).map(agentCard).join('')}
+      </div>
+    </div>`;
+}
+
+async function webSetReviewStatus(id, status) {
+  const patch = { status, approved_at: status === 'approved' ? new Date().toISOString() : null };
+  const { error } = await supabaseClient.from('reviews').update(patch).eq('id', id);
+  if (error) { alert('Could not update review: ' + error.message); return; }
+  renderWebsite();
+}
+
+function webToggleAgentEditor(id) {
+  const el = document.getElementById('web-agent-editor-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function webSaveAgentProfile(id) {
+  const v = suffix => document.getElementById('web-af-' + suffix + '-' + id).value.trim();
+  const list = s => s ? s.split(',').map(x => x.trim()).filter(Boolean) : [];
+  const displayName = v('display');
+  let slug = v('slug');
+  if (!slug) slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const patch = {
+    display_name: displayName || null,
+    title: v('title') || null,
+    slug: slug || null,
+    brand: document.getElementById('web-af-brand-' + id).value,
+    specialties: list(v('specs')),
+    licensed_states: list(v('states')).map(s => s.toUpperCase()),
+    bio: v('bio') || null,
+    public_profile: document.getElementById('web-af-public-' + id).checked,
+  };
+  const msg = document.getElementById('web-af-msg-' + id);
+  msg.textContent = 'Saving...';
+  const { error } = await supabaseClient.from('agents').update(patch).eq('id', id);
+  if (error) { msg.textContent = 'Error: ' + error.message; return; }
+  msg.textContent = 'Saved — live within ~5 minutes.';
+  setTimeout(renderWebsite, 900);
+}
