@@ -5734,13 +5734,13 @@ function openAddContact() {
     <div style="border-top:1px solid #e2e8f0;margin-top:12px;padding-top:12px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Social Media <span style="font-weight:400;font-size:11px;opacity:0.7;">(optional)</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div><label style="font-size:12px;">&#128279; LinkedIn</label><input type="text" id="new-linkedin" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128101; Facebook</label><input type="text" id="new-facebook" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128247; Instagram</label><input type="text" id="new-instagram" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">X / Twitter</label><input type="text" id="new-twitter" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128172; WhatsApp</label><input type="tel" id="new-whatsapp" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#127925; TikTok</label><input type="text" id="new-tiktok" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#9992; Telegram</label><input type="text" id="new-telegram" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128279; LinkedIn</label><input type="text" id="new-linkedin" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128101; Facebook</label><input type="text" id="new-facebook" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128247; Instagram</label><input type="text" id="new-instagram" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">X / Twitter</label><input type="text" id="new-twitter" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128172; WhatsApp</label><input type="tel" id="new-whatsapp" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#127925; TikTok</label><input type="text" id="new-tiktok" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#9992; Telegram</label><input type="text" id="new-telegram" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
       </div>
     </div>
     <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:12px;display:flex;justify-content:flex-end;">
@@ -5845,13 +5845,13 @@ function editContact(id, onSave) {
     <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Social Media</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div><label style="font-size:12px;">&#128279; LinkedIn</label><input type="text" id="con-linkedin" value="${c.linkedin_url||''}" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128101; Facebook</label><input type="text" id="con-facebook" value="${c.facebook_url||''}" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128247; Instagram</label><input type="text" id="con-instagram" value="${c.instagram_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">X / Twitter</label><input type="text" id="con-twitter" value="${c.twitter_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#128172; WhatsApp</label><input type="tel" id="con-whatsapp" value="${c.whatsapp_number||''}" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#127925; TikTok</label><input type="text" id="con-tiktok" value="${c.tiktok_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;">&#9992; Telegram</label><input type="text" id="con-telegram" value="${c.telegram_handle||''}" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128279; LinkedIn</label><input type="text" id="con-linkedin" value="${c.linkedin_url||''}" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128101; Facebook</label><input type="text" id="con-facebook" value="${c.facebook_url||''}" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128247; Instagram</label><input type="text" id="con-instagram" value="${c.instagram_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">X / Twitter</label><input type="text" id="con-twitter" value="${c.twitter_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#128172; WhatsApp</label><input type="tel" id="con-whatsapp" value="${c.whatsapp_number||''}" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#127925; TikTok</label><input type="text" id="con-tiktok" value="${c.tiktok_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
+        <div><label style="font-size:12px;margin-top:0;">&#9992; Telegram</label><input type="text" id="con-telegram" value="${c.telegram_handle||''}" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
       </div>
     </div>
     <label>Status <span style="font-size:11px;color:var(--muted);">(sequence stage)</span></label>
@@ -8904,9 +8904,11 @@ async function renderWebsite() {
   pg.innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading website data...</div>`;
 
   const [{ data: reviews }, { data: agents }] = await Promise.all([
-    supabaseClient.from('reviews')
-      .select('id,created_at,name,email,city,state,rating,review_text,status,brand')
-      .order('created_at', { ascending: false }).limit(100),
+    role === 'system_owner'
+      ? supabaseClient.from('reviews')
+          .select('id,created_at,name,email,city,state,rating,review_text,status,brand')
+          .order('created_at', { ascending: false }).limit(100)
+      : Promise.resolve({ data: [] }),
     supabaseClient.from('agents')
       .select('id,name,display_name,title,slug,bio,brand,specialties,licensed_states,headshot_url,public_profile,status')
       .order('name'),
@@ -8960,21 +8962,21 @@ async function renderWebsite() {
       </div>
       <div id="web-agent-editor-${a.id}" style="display:none;margin-top:12px;border-top:1px solid var(--border,#2a2f3a);padding-top:12px;">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px;">
-          <label style="font-size:12px;">Display name<input id="web-af-display-${a.id}" value="${escWeb(a.display_name || a.name)}" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;">Title<input id="web-af-title-${a.id}" value="${escWeb(a.title || '')}" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;">URL slug<input id="web-af-slug-${a.id}" value="${escWeb(a.slug || '')}" placeholder="auto from name" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;">Company
+          <label style="font-size:12px;margin-top:0;">Display name<input id="web-af-display-${a.id}" value="${escWeb(a.display_name || a.name)}" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;margin-top:0;">Title<input id="web-af-title-${a.id}" value="${escWeb(a.title || '')}" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;margin-top:0;">URL slug<input id="web-af-slug-${a.id}" value="${escWeb(a.slug || '')}" placeholder="auto from name" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;margin-top:0;">Company
             <select id="web-af-brand-${a.id}" style="width:100%;margin-top:4px;">
               <option value="both" ${a.brand==='both'?'selected':''}>Both brands</option>
               <option value="kfg" ${a.brand==='kfg'?'selected':''}>Kannon Financial</option>
               <option value="ia" ${a.brand==='ia'?'selected':''}>Insured America</option>
             </select></label>
-          <label style="font-size:12px;">Specialties (comma-separated)<input id="web-af-specs-${a.id}" value="${escWeb(specs)}" style="width:100%;margin-top:4px;"></label>
-          <label style="font-size:12px;">Licensed states (comma-separated)<input id="web-af-states-${a.id}" value="${escWeb(states)}" placeholder="MT, AZ, TX" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;margin-top:0;">Specialties (comma-separated)<input id="web-af-specs-${a.id}" value="${escWeb(specs)}" style="width:100%;margin-top:4px;"></label>
+          <label style="font-size:12px;margin-top:0;">Licensed states (comma-separated)<input id="web-af-states-${a.id}" value="${escWeb(states)}" placeholder="MT, AZ, TX" style="width:100%;margin-top:4px;"></label>
         </div>
         <label style="font-size:12px;display:block;margin-bottom:10px;">Bio<textarea id="web-af-bio-${a.id}" rows="4" style="width:100%;margin-top:4px;">${escWeb(a.bio || '')}</textarea></label>
         <label style="font-size:12px;display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-          <input type="checkbox" id="web-af-public-${a.id}" ${a.public_profile ? 'checked' : ''}> Show this agent on the website
+          <input type="checkbox" id="web-af-public-${a.id}" style="width:auto;margin:0;" ${a.public_profile ? 'checked' : ''}> Show this agent on the website
         </label>
         <button class="btn" style="background:#1a7f4e;color:#fff;" onclick="webSaveAgentProfile('${a.id}')">Save profile</button>
         <span id="web-af-msg-${a.id}" style="font-size:12px;color:var(--muted);margin-left:10px;"></span>
@@ -8982,8 +8984,7 @@ async function renderWebsite() {
     </div>`;
   }
 
-  pg.innerHTML = `
-    <div style="max-width:980px;">
+  const reviewsSection = role !== 'system_owner' ? '' : `
       <div style="margin-bottom:26px;">
         <h3 style="margin:0 0 4px;">Review moderation</h3>
         <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Reviews submitted on thekannongroup.com. Verify the email belongs to a real client before approving — approved reviews appear on the website within ~5 minutes.</p>
@@ -8991,7 +8992,11 @@ async function renderWebsite() {
           ? `<div style="font-size:12px;font-weight:700;color:#e2a33d;margin-bottom:8px;">${pending.length} awaiting your decision</div>` + pending.map(reviewCard).join('')
           : `<div style="font-size:13px;color:var(--muted);border:1px dashed var(--border,#2a2f3a);border-radius:10px;padding:16px;text-align:center;">No pending reviews. Share thekannongroup.com/reviews with happy clients!</div>`}
         ${decided.length ? `<div style="font-size:12px;font-weight:700;color:var(--muted);margin:14px 0 8px;">Recently decided</div>` + decided.map(reviewCard).join('') : ''}
-      </div>
+      </div>`;
+
+  pg.innerHTML = `
+    <div style="max-width:980px;">
+      ${reviewsSection}
       <div>
         <h3 style="margin:0 0 4px;">Agent website profiles</h3>
         <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">These profiles power the Meet the Team page, the agent finder, and each agent's own page at thekannongroup.com/team. Changes go live within ~5 minutes.</p>
