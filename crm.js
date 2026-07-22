@@ -76,6 +76,9 @@ let naItems = []; // unified Needs Attention items (replies, complaints, no-show
 // ============================================================
 async function init() {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  supabaseClient.auth.onAuthStateChange(function(event) {
+    if (event === 'PASSWORD_RECOVERY') showSetPasswordOverlay();
+  });
   document.getElementById('auth-screen').style.display = 'flex';
 
   // Handle OAuth redirect
@@ -9091,4 +9094,39 @@ async function setApplicationStatus(id, status) {
   if (error) { showToast('Error: ' + error.message); return; }
   showToast(status === 'reviewed' ? 'Application marked reviewed.' : 'Application archived.');
   renderAdmin();
+}
+
+// ============================================================
+// SET PASSWORD OVERLAY — welcome-email / recovery links land here
+// ============================================================
+function showSetPasswordOverlay() {
+  if (document.getElementById('set-pw-overlay')) return;
+  const ov = document.createElement('div');
+  ov.id = 'set-pw-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,20,0.92);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `
+    <div style="background:var(--surface-2,#151a23);border:1px solid var(--border,#2a2f3a);border-radius:12px;padding:28px;max-width:380px;width:100%;">
+      <h3 style="margin:0 0 6px;">Welcome! Set your password</h3>
+      <p style="font-size:13px;color:var(--muted,#8a93a3);margin:0 0 16px;">Choose the password you'll use to log in to the CRM.</p>
+      <label>New password</label>
+      <input type="password" id="set-pw-1" autocomplete="new-password" />
+      <label>Confirm password</label>
+      <input type="password" id="set-pw-2" autocomplete="new-password" />
+      <div id="set-pw-msg" style="font-size:12px;color:#e2a33d;min-height:18px;margin-top:8px;"></div>
+      <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="submitSetPassword()">Save password &amp; enter the CRM</button>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+async function submitSetPassword() {
+  const p1 = document.getElementById('set-pw-1').value;
+  const p2 = document.getElementById('set-pw-2').value;
+  const msg = document.getElementById('set-pw-msg');
+  if (p1.length < 8) { msg.textContent = 'Password must be at least 8 characters.'; return; }
+  if (p1 !== p2) { msg.textContent = 'Passwords do not match.'; return; }
+  msg.textContent = 'Saving...';
+  const { error } = await supabaseClient.auth.updateUser({ password: p1 });
+  if (error) { msg.textContent = 'Error: ' + error.message; return; }
+  msg.textContent = '';
+  window.location.replace(window.location.pathname);
 }
