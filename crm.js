@@ -6080,6 +6080,39 @@ async function renderAdmin() {
   if (currentAgent.role !== 'system_owner' && currentAgent.role !== 'agency_owner') { document.getElementById('page-admin').innerHTML = '<div class="empty-state"><div class="emoji">&#128274;</div><p>Access denied.</p></div>'; return; }
 
   const totalContacts = (await supabaseClient.from('contacts').select('id', { count: 'exact', head: true })).count || 0;
+  const { data: _newApps } = await supabaseClient.from('recruit_applications')
+    .select('*').eq('status', 'new').order('created_at', { ascending: true });
+  const newApps = _newApps || [];
+  const applicationsSection = newApps.length > 0 ? `
+    <div style="background:#eff6ff;border:1.5px solid #3b82f6;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="font-weight:700;font-size:14px;color:#1d4ed8;margin-bottom:10px;">&#128221; ${newApps.length} New Enrollment Application${newApps.length>1?'s':''} — from thekannongroup.com/join</div>
+      ${newApps.map(ap => {
+        const lic = [ap.has_life_license && 'Life', ap.has_health_license && 'Health', ap.has_investment_license && 'Investments'].filter(Boolean).join(', ') || 'Not yet licensed';
+        const trackLabel = { kfg: 'Kannon Financial', ia: 'Insured America', both: 'Both brands' }[ap.track] || ap.track;
+        const pendingMatch = allAgents.find(x => x.email && x.email.toLowerCase() === ap.email.toLowerCase());
+        const matchBadge = pendingMatch
+          ? `<span style="color:var(--success);font-size:11px;">&#10003; matches ${pendingMatch.status} agent record</span>`
+          : (contacts.find(c => c.email && c.email.toLowerCase() === ap.email.toLowerCase())
+              ? '<span style="color:#1d4ed8;font-size:11px;">&#9679; existing contact — use Recruit to create their agent record</span>'
+              : '<span style="color:#f59e0b;font-size:11px;">&#9888; no matching contact yet</span>');
+        return `<div style="padding:10px 0;border-bottom:1px solid #bfdbfe;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:14px;">${escWeb(ap.name)} <span style="font-weight:400;font-size:12px;color:var(--muted);">&middot; ${trackLabel}</span></div>
+              <div style="font-size:12px;color:var(--muted);">${escWeb(ap.email)}${ap.phone ? ' &middot; ' + escWeb(ap.phone) : ''} &middot; lives in ${escWeb(ap.resident_state || '—')}</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:3px;">Licenses: ${lic}${ap.npn ? ' &middot; NPN ' + escWeb(ap.npn) : ''}${ap.licensed_states ? ' &middot; states: ' + escWeb(ap.licensed_states) : ''}</div>
+              ${ap.recruited_by_name ? `<div style="font-size:12px;color:var(--muted);margin-top:3px;">Referred by: ${escWeb(ap.recruited_by_name)}</div>` : ''}
+              ${ap.message ? `<div style="font-size:12px;margin-top:5px;font-style:italic;">&ldquo;${escWeb(ap.message)}&rdquo;</div>` : ''}
+              <div style="margin-top:4px;">${matchBadge} &nbsp;&#183;&nbsp; <span style="font-size:11px;color:var(--muted);">${new Date(ap.created_at).toLocaleDateString()}</span></div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <button class="btn btn-accent btn-sm" onclick="setApplicationStatus('${ap.id}','reviewed')">&#10003; Mark reviewed</button>
+              <button class="btn btn-outline btn-sm" onclick="setApplicationStatus('${ap.id}','archived')">Archive</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : '';
   const pendingAgents = allAgents.filter(a => a.status === 'pending');
   const activeAgents  = allAgents.filter(a => a.status !== 'pending');
 
@@ -6194,6 +6227,7 @@ async function renderAdmin() {
         <div style="font-weight:700;font-size:16px;">&#128101; Agents ${pendingAgents.length > 0 ? `<span style="background:var(--danger);color:white;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">${pendingAgents.length}</span>` : ''}</div>
         <button class="btn btn-accent btn-sm" onclick="openAddAgent()">+ Add Agent</button>
       </div>
+      ${applicationsSection}
       ${pendingAgentSection}
       ${agentRows || '<div class="empty-state" style="padding:20px;"><p>No active agents yet.</p></div>'}
     </div>
@@ -9050,4 +9084,11 @@ async function saveMyWebsiteProfile() {
   if (error) { msg.textContent = 'Error: ' + error.message; return; }
   Object.assign(currentAgent, patch);
   msg.textContent = 'Saved — live within ~5 minutes.';
+}
+
+async function setApplicationStatus(id, status) {
+  const { error } = await supabaseClient.from('recruit_applications').update({ status }).eq('id', id);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast(status === 'reviewed' ? 'Application marked reviewed.' : 'Application archived.');
+  renderAdmin();
 }
