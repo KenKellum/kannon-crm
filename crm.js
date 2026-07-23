@@ -9238,7 +9238,7 @@ async function loadMfaCard_() {
         '<button class="btn btn-outline btn-sm" onclick="unenrollMfa_(\'' + totp.id + '\')">Turn off</button></div>';
     } else {
       body.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
-        '<span style="font-size:13px;">Add an authenticator app (Google Authenticator, 1Password, Authy...) so sign-ins need a code only you have. <strong>Strongly recommended for all agents.</strong></span>' +
+        '<span style="font-size:13px;">Add two-factor sign-in so your account needs a code only you have. Works with <strong>any</strong> authenticator &mdash; including the one already built into your phone (iPhone: the <strong>Passwords</strong> app &middot; Android: Google password manager) or apps like Microsoft Authenticator, Authy, or 1Password. No Google account needed. <strong>Strongly recommended for all agents.</strong></span>' +
         '<button class="btn btn-primary btn-sm" onclick="startMfaEnroll_()">Enable two-factor</button></div>';
     }
   } catch (e) {
@@ -9256,7 +9256,7 @@ async function startMfaEnroll_() {
     '<div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">' +
     '<div style="background:#ffffff;padding:10px;border-radius:8px;">' + f.totp.qr_code + '</div>' +
     '<div style="flex:1;min-width:220px;">' +
-    '<p style="font-size:13px;margin:0 0 8px;">1. Scan this QR code with your authenticator app.<br>2. Enter the 6-digit code it shows to finish.</p>' +
+    '<p style="font-size:13px;margin:0 0 8px;"><strong>iPhone:</strong> open the <strong>Passwords</strong> app &rarr; your login &rarr; Set Up Verification Code &rarr; scan this QR (or just point your camera at it).<br><strong>Android:</strong> open Google password manager or any authenticator app &rarr; add code &rarr; scan this QR.<br>Then enter the 6-digit code it shows to finish.</p>' +
     '<p style="font-size:11px;color:var(--text-muted);margin:0 0 10px;">Can\'t scan? Enter this key manually: <code style="font-size:11px;word-break:break-all;">' + f.totp.secret + '</code></p>' +
     '<input type="text" id="mfa-enroll-code" inputmode="numeric" maxlength="6" placeholder="123456" style="max-width:160px;text-align:center;font-size:18px;letter-spacing:4px;" /> ' +
     '<button class="btn btn-primary btn-sm" onclick="verifyMfaEnroll_(\'' + f.id + '\')">Verify &amp; turn on</button> ' +
