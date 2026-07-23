@@ -113,14 +113,15 @@ async function init() {
   supabaseClient.auth.onAuthStateChange(function(event) {
     if (event === 'PASSWORD_RECOVERY') showSetPasswordOverlay();
   });
-  document.getElementById('auth-screen').style.display = 'flex';
-
-  // Handle OAuth redirect
+  // Handle OAuth redirect — auth screen stays hidden until we KNOW
+  // the visitor is signed out (no more login-screen flash for SSO arrivals)
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (session) {
     currentUser = session.user;
     await loadAgentProfile();
-    if (currentAgent) { showApp(); } else { showAuthError('Your account is not set up in the CRM yet. Contact Ken to be added.'); }
+    if (currentAgent) { await mfaGateThenShowApp_(); } else { document.getElementById('auth-screen').style.display = 'flex'; showAuthError('Your account is not set up in the CRM yet. Contact Ken to be added.'); }
+  } else {
+    document.getElementById('auth-screen').style.display = 'flex';
   }
 
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
@@ -129,7 +130,7 @@ async function init() {
     if (event === 'SIGNED_IN' && session && !_appInitialized) {
       _appInitialized = true;
       await loadAgentProfile();
-      if (currentAgent) { showApp(); } else { showAuthError('Your account is not set up in the CRM yet. Contact Ken to be added.'); }
+      if (currentAgent) { await mfaGateThenShowApp_(); } else { showAuthError('Your account is not set up in the CRM yet. Contact Ken to be added.'); }
     }
     // TOKEN_REFRESHED / USER_UPDATED — currentUser already updated above, no re-init needed
   });
@@ -206,8 +207,7 @@ async function signIn() {
 async function signOut() {
   await supabaseClient.auth.signOut();
   currentUser = null; currentAgent = null;
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('auth-screen').style.display = 'flex';
+  window.location.href = 'https://thekannongroup.com/login?signedout=1';
 }
 
 function showAuthError(msg) {
@@ -6884,6 +6884,11 @@ async function renderSettings() {
       </div>
 
       <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-shield-lock"></i>Security &mdash; Two-Factor Authentication</div>
+        <div id="mfa-card-body" style="font-size:13px;color:var(--text-muted);">Checking two-factor status...</div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px;">
         <div class="dash-card-title"><i class="ti ti-mail"></i>Gmail Connection</div>
         <div class="action-item">
           <div class="action-item-info">
@@ -6956,6 +6961,7 @@ async function renderSettings() {
       </div>
     </div>
   `;
+  loadMfaCard_();
 }
 
 async function saveSettings() {
@@ -9164,3 +9170,122 @@ async function submitSetPassword() {
   msg.textContent = '';
   window.location.replace(window.location.pathname);
 }
+
+// ============================================================
+// TWO-FACTOR AUTHENTICATION (TOTP via Supabase Auth)
+// Gate on arrival + enrollment management in Settings.
+// ============================================================
+async function mfaGateThenShowApp_() {
+  try {
+    var res = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
+    var aal = res && res.data ? res.data : null;
+    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
+      showMfaChallengeOverlay_();
+      return;
+    }
+  } catch (e) { /* if the check fails, fall through to the app */ }
+  showApp();
+}
+
+function showMfaChallengeOverlay_() {
+  if (document.getElementById('mfa-overlay')) return;
+  var ov = document.createElement('div');
+  ov.id = 'mfa-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,20,0.94);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = '<div style="background:var(--surface-2,#151a23);border:1px solid var(--border,#2a2f3a);border-radius:12px;padding:28px;max-width:360px;width:100%;text-align:center;">' +
+    '<div style="font-size:34px;margin-bottom:8px;">&#128274;</div>' +
+    '<h3 style="margin:0 0 6px;">Two-factor check</h3>' +
+    '<p style="font-size:13px;color:var(--muted,#8a93a3);margin:0 0 16px;">Enter the 6-digit code from your authenticator app.</p>' +
+    '<input type="text" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="text-align:center;font-size:22px;letter-spacing:6px;" />' +
+    '<div id="mfa-msg" style="font-size:12px;color:#e2a33d;min-height:18px;margin-top:8px;"></div>' +
+    '<button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="submitMfaChallenge_()">Verify</button>' +
+    '<button class="btn" style="width:100%;margin-top:8px;" onclick="signOut()">Cancel &amp; sign out</button>' +
+    '</div>';
+  document.body.appendChild(ov);
+  var input = document.getElementById('mfa-code');
+  input.focus();
+  input.addEventListener('keydown', function(ev) { if (ev.key === 'Enter') submitMfaChallenge_(); });
+}
+
+async function submitMfaChallenge_() {
+  var code = (document.getElementById('mfa-code').value || '').trim();
+  var msg = document.getElementById('mfa-msg');
+  if (code.length !== 6) { msg.textContent = 'Enter the 6-digit code.'; return; }
+  msg.textContent = 'Checking...';
+  try {
+    var lf = await supabaseClient.auth.mfa.listFactors();
+    var totp = lf.data && lf.data.totp && lf.data.totp.length ? lf.data.totp[0] : null;
+    if (!totp) { msg.textContent = 'No authenticator found — contact Ken.'; return; }
+    var r = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: totp.id, code: code });
+    if (r.error) { msg.textContent = 'That code did not match. Try the current code.'; return; }
+    var ov = document.getElementById('mfa-overlay');
+    if (ov) ov.remove();
+    showApp();
+  } catch (e) {
+    msg.textContent = 'Error: ' + (e.message || e);
+  }
+}
+
+async function loadMfaCard_() {
+  var body = document.getElementById('mfa-card-body');
+  if (!body) return;
+  try {
+    var lf = await supabaseClient.auth.mfa.listFactors();
+    var totp = lf.data && lf.data.totp && lf.data.totp.length ? lf.data.totp[0] : null;
+    if (totp) {
+      body.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+        '<span style="font-size:13px;color:var(--success,#1a7f4e);font-weight:700;">&#10003; Two-factor is ON &mdash; your account requires an authenticator code at sign-in.</span>' +
+        '<button class="btn btn-outline btn-sm" onclick="unenrollMfa_(\'' + totp.id + '\')">Turn off</button></div>';
+    } else {
+      body.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+        '<span style="font-size:13px;">Add an authenticator app (Google Authenticator, 1Password, Authy...) so sign-ins need a code only you have. <strong>Strongly recommended for all agents.</strong></span>' +
+        '<button class="btn btn-primary btn-sm" onclick="startMfaEnroll_()">Enable two-factor</button></div>';
+    }
+  } catch (e) {
+    body.textContent = 'Could not load two-factor status: ' + (e.message || e);
+  }
+}
+
+async function startMfaEnroll_() {
+  var body = document.getElementById('mfa-card-body');
+  body.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">Generating your secure QR code...</span>';
+  var r = await supabaseClient.auth.mfa.enroll({ factorType: 'totp' });
+  if (r.error) { body.textContent = 'Error: ' + r.error.message; return; }
+  var f = r.data;
+  body.innerHTML =
+    '<div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">' +
+    '<div style="background:#ffffff;padding:10px;border-radius:8px;">' + f.totp.qr_code + '</div>' +
+    '<div style="flex:1;min-width:220px;">' +
+    '<p style="font-size:13px;margin:0 0 8px;">1. Scan this QR code with your authenticator app.<br>2. Enter the 6-digit code it shows to finish.</p>' +
+    '<p style="font-size:11px;color:var(--text-muted);margin:0 0 10px;">Can\'t scan? Enter this key manually: <code style="font-size:11px;word-break:break-all;">' + f.totp.secret + '</code></p>' +
+    '<input type="text" id="mfa-enroll-code" inputmode="numeric" maxlength="6" placeholder="123456" style="max-width:160px;text-align:center;font-size:18px;letter-spacing:4px;" /> ' +
+    '<button class="btn btn-primary btn-sm" onclick="verifyMfaEnroll_(\'' + f.id + '\')">Verify &amp; turn on</button> ' +
+    '<button class="btn btn-sm" onclick="cancelMfaEnroll_(\'' + f.id + '\')">Cancel</button>' +
+    '<div id="mfa-enroll-msg" style="font-size:12px;color:#e2a33d;min-height:16px;margin-top:6px;"></div>' +
+    '</div></div>';
+}
+
+async function verifyMfaEnroll_(factorId) {
+  var code = (document.getElementById('mfa-enroll-code').value || '').trim();
+  var msg = document.getElementById('mfa-enroll-msg');
+  if (code.length !== 6) { msg.textContent = 'Enter the 6-digit code from your app.'; return; }
+  msg.textContent = 'Verifying...';
+  var r = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: factorId, code: code });
+  if (r.error) { msg.textContent = 'That code did not match — try the current code.'; return; }
+  showToast('Two-factor authentication is ON.');
+  loadMfaCard_();
+}
+
+async function cancelMfaEnroll_(factorId) {
+  try { await supabaseClient.auth.mfa.unenroll({ factorId: factorId }); } catch (e) {}
+  loadMfaCard_();
+}
+
+async function unenrollMfa_(factorId) {
+  if (!confirm('Turn off two-factor authentication? Your account will be protected by password only.')) return;
+  var r = await supabaseClient.auth.mfa.unenroll({ factorId: factorId });
+  if (r.error) { showToast('Error: ' + r.error.message); return; }
+  showToast('Two-factor authentication is OFF.');
+  loadMfaCard_();
+}
+
