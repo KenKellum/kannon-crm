@@ -74,8 +74,42 @@ let naItems = []; // unified Needs Attention items (replies, complaints, no-show
 // ============================================================
 // INIT
 // ============================================================
+// Shared-session cookie storage: the website's unified login at
+// thekannongroup.com/login stores the session in a cookie on
+// .thekannongroup.com — reading it here means agents arrive already
+// signed in. localStorage remains the fallback (and covers the old
+// kannon-crm.vercel.app address, where the cookie can't be read).
+function kfgCookieStorage_() {
+  var domain = location.hostname.indexOf('thekannongroup.com') !== -1
+    ? ';Domain=.thekannongroup.com' : '';
+  return {
+    getItem: function(key) {
+      var m = document.cookie.match(new RegExp('(?:^|; )' + key.replace(/-/g, '\-') + '=([^;]*)'));
+      if (m) return decodeURIComponent(m[1]);
+      try { return window.localStorage.getItem(key); } catch(e) { return null; }
+    },
+    setItem: function(key, value) {
+      try { window.localStorage.setItem(key, value); } catch(e) {}
+      document.cookie = key + '=' + encodeURIComponent(value) + ';Path=/;Max-Age=604800;SameSite=Lax;Secure' + domain;
+    },
+    removeItem: function(key) {
+      try { window.localStorage.removeItem(key); } catch(e) {}
+      document.cookie = key + '=;Path=/;Max-Age=0;SameSite=Lax;Secure' + domain;
+      document.cookie = key + '=;Path=/;Max-Age=0;SameSite=Lax;Secure';
+    }
+  };
+}
+
 async function init() {
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+      storageKey: 'kfg-auth',
+      storage: kfgCookieStorage_(),
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  });
   supabaseClient.auth.onAuthStateChange(function(event) {
     if (event === 'PASSWORD_RECOVERY') showSetPasswordOverlay();
   });
