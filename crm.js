@@ -7566,7 +7566,7 @@ function _calDay() {
     <div style="border:0.5px solid var(--border);border-radius:8px;overflow:hidden;">
       <div style="padding:10px 16px;background:${isToday?'rgba(200,168,75,0.08)':'var(--surface-1)'};border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
         <div style="font-size:13px;font-weight:600;color:${isToday?'var(--text-accent)':'var(--text-primary)'};">${isToday?'Today — ':''}${calDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
-        <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointme        <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointment${dayAppts.length!==1?'s':''}</div>
+        <div style="font-size:12px;color:var(--text-muted);">${dayAppts.length} appointment${dayAppts.length!==1?'s':''}</div>
       </div>
       <div style="display:flex;">
         <div style="width:52px;flex-shrink:0;border-right:0.5px solid var(--border);">${timeCol}</div>
