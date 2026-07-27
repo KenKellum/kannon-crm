@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Employee Census — Kannon Financial Group</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; padding: 24px 16px; }
+  .card { max-width: 960px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+  .head { background: #1e293b; padding: 18px 26px; }
+  .head .brand { color: #fff; font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+  .head .tag { color: #c8a84b; font-size: 10px; font-style: italic; letter-spacing: 1.2px; margin-top: 3px; }
+  .body { padding: 28px; }
+  h1 { font-size: 20px; color: #1e293b; margin-bottom: 6px; }
+  h2 { font-size: 15px; color: #1e293b; margin: 22px 0 8px; }
+  p { font-size: 14px; line-height: 1.7; color: #334155; margin-bottom: 10px; }
+  label { display: block; font-size: 11px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: .5px; margin: 12px 0 4px; }
+  input[type=text], input[type=date], input[type=number], input[type=email], select { width: 100%; padding: 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .step-badge { display: inline-block; background: #1e293b; color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 12px; margin-bottom: 6px; }
+  .paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 14px 0; }
+  .path { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 16px; cursor: pointer; text-align: center; }
+  .path:hover { border-color: #c8a84b; }
+  .path .ico { font-size: 26px; margin-bottom: 6px; }
+  .path .t { font-weight: 700; font-size: 14px; }
+  .path .d { font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; padding: 6px 6px; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 4px 4px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  td input, td select { padding: 6px 8px; font-size: 12.5px; border: 1px solid #e2e8f0; }
+  tr.dep td:first-child { padding-left: 22px; }
+  tr.dep { background: #f8fafc; }
+  .del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 15px; }
+  .btn { background: #1e293b; color: #fff; border: none; border-radius: 8px; padding: 12px 22px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .btn.gold { background: #c8a84b; }
+  .btn.ghost { background: #fff; color: #1e293b; border: 1.5px solid #cbd5e1; }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-sm { padding: 8px 14px; font-size: 12.5px; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 10px; display: none; }
+  .note { font-size: 12px; color: #64748b; line-height: 1.6; }
+  .summary { background: #f8fafc; border-left: 4px solid #1e293b; border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 12px 0; font-size: 13px; }
+  #done, #already, #error-screen { display: none; text-align: center; padding: 30px 10px; }
+  #loader { text-align: center; padding: 50px 0; color: #64748b; font-size: 14px; }
+  .table-wrap { overflow-x: auto; }
+  .fine { font-size: 10.5px; color: #94a3b8; line-height: 1.6; margin-top: 18px; }
+  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } .body { padding: 20px 14px; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div class="brand">KANNON FINANCIAL GROUP</div>
+    <div class="tag">Protect &middot; Build &middot; Retire</div>
+  </div>
+  <div class="body">
+    <div id="loader">Loading&hellip;</div>
+
+    <div id="main" style="display:none;">
+      <h1>Employee Census</h1>
+      <p id="intro">To prepare accurate group quotes, your advisor needs some basic company information and a simple list of employees (and their dependents). This takes about 10 minutes &mdash; and you can upload a spreadsheet you already have.</p>
+
+      <div class="step-badge">STEP 1 — COMPANY INFORMATION</div>
+      <div class="grid2">
+        <div><label>Legal company name *</label><input type="text" id="c-legal" /></div>
+        <div><label>Doing business as (if different)</label><input type="text" id="c-dba" /></div>
+        <div><label>SIC code (if known)</label><input type="text" id="c-sic" placeholder="e.g. 5812 — your advisor can help" /></div>
+        <div><label>Street address</label><input type="text" id="c-street" /></div>
+        <div><label>City</label><input type="text" id="c-city" /></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">
+          <div><label>State *</label><input type="text" id="c-state" maxlength="2" placeholder="MT" /></div>
+          <div><label>Zip *</label><input type="text" id="c-zip" /></div>
+        </div>
+        <div><label>Main contact name *</label><input type="text" id="c-cname" /></div>
+        <div><label>Contact title</label><input type="text" id="c-ctitle" placeholder="e.g. Office Manager, HR Director" /></div>
+        <div><label>Contact phone *</label><input type="text" id="c-cphone" /></div>
+        <div><label>Contact email *</label><input type="email" id="c-cemail" /></div>
+      </div>
+
+      <h2><span class="step-badge">STEP 2 — EMPLOYEE CENSUS</span></h2>
+      <div class="paths" id="paths">
+        <div class="path" onclick="document.getElementById('file-input').click()">
+          <div class="ico">&#128228;</div>
+          <div class="t">Upload your spreadsheet</div>
+          <div class="d">Excel or CSV &mdash; any layout. We'll read your columns automatically and you can review before sending.</div>
+        </div>
+        <div class="path" onclick="downloadTemplate()">
+          <div class="ico">&#128229;</div>
+          <div class="t">Download our template</div>
+          <div class="d">A simple CSV to fill in and upload back &mdash; or hand to your payroll person.</div>
+        </div>
+        <div class="path" onclick="addRow('employee'); document.getElementById('grid-wrap').scrollIntoView();">
+          <div class="ico">&#9997;&#65039;</div>
+          <div class="t">Type it in manually</div>
+          <div class="d">Add employees and dependents one row at a time right here.</div>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleFile(this.files[0])" />
+      <div id="map-report" class="summary" style="display:none;"></div>
+
+      <div id="grid-wrap" style="display:none;">
+        <div class="table-wrap">
+        <table id="grid">
+          <thead><tr>
+            <th style="min-width:150px;">Name</th><th>Emp #</th><th style="min-width:130px;">Date of birth</th>
+            <th>Gender</th><th>Zip</th><th>Relationship</th><th>Class (optional)</th><th>Hrs/wk</th><th></th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn ghost btn-sm" onclick="addRow('employee')">+ Add employee</button>
+          <button class="btn ghost btn-sm" onclick="addRow('dependent')">+ Add dependent (under employee above)</button>
+          <button class="btn ghost btn-sm" onclick="clearRows()">Clear all</button>
+        </div>
+        <div id="tally" class="note" style="margin-top:8px;"></div>
+      </div>
+
+      <div style="margin-top:24px;">
+        <button class="btn gold" id="submit-btn" onclick="submitCensus()">Send census to my advisor</button>
+        <p class="err" id="err"></p>
+        <p class="note" style="margin-top:10px;">Your information goes directly and only to your advisor at Kannon Financial Group for quoting purposes.</p>
+      </div>
+      <p class="fine">Quotes prepared from this census are estimates; final group rates are set by each carrier after their own review. No coverage is bound by submitting this form.</p>
+    </div>
+
+    <div id="done">
+      <div style="font-size:46px;">&#9989;</div>
+      <h1>Census received — thank you!</h1>
+      <p id="done-sub">Your advisor has been notified and will start preparing your group quotes right away.</p>
+    </div>
+    <div id="already">
+      <div style="font-size:46px;">&#128203;</div>
+      <h1>Census already submitted</h1>
+      <p id="already-sub"></p>
+    </div>
+    <div id="error-screen">
+      <div style="font-size:46px;">&#9888;&#65039;</div>
+      <h1>We couldn't load this page</h1>
+      <p>The link may be incomplete or expired. Please use the exact link from your email, or contact your advisor at (406) 624-6018.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+let reqId = null, req = null;
+
+async function supa(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({
+    'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+  }, opts.headers || {});
+  const res = await fetch(SUPA_URL + path, opts);
+  if (opts.method && opts.method !== 'GET') return res.ok;
+  return res.ok ? res.json() : null;
+}
+function show(id) {
+  ['loader','main','done','already','error-screen'].forEach(x => {
+    const el = document.getElementById(x);
+    if (el) el.style.display = x === id ? 'block' : 'none';
+  });
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+// ---------------- Smart column mapping ----------------
+const SYN = {
+  first_name:  ['first name','firstname','first','fname','given name'],
+  last_name:   ['last name','lastname','last','lname','surname','family name'],
+  full_name:   ['name','full name','employee name','member name','fullname','employee'],
+  employee_number: ['emp #','emp#','employee #','employee number','employee id','emp id','id','payroll id','member id'],
+  date_of_birth: ['dob','date of birth','birth date','birthdate','birthday','born','d.o.b.','d.o.b'],
+  gender:      ['gender','sex','m/f','male/female'],
+  zip:         ['zip','zip code','zipcode','postal','postal code','home zip'],
+  relationship:['relationship','rel','relation','dependent type','member type','type','role','ee/dep','status'],
+  employee_class: ['class','employee class','division','job class','tier class'],
+  hours_per_week: ['hours','hours per week','hrs/wk','hrs per week','avg hours','weekly hours','hours/week'],
+};
+function normHeader(h) { return String(h || '').toLowerCase().replace(/[_\.\-]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function mapHeaders(headers) {
+  const map = {};
+  headers.forEach((h, idx) => {
+    const n = normHeader(h);
+    if (!n) return;
+    for (const field in SYN) {
+      if (map[field] === undefined && (SYN[field].includes(n) || SYN[field].some(s => n === s))) { map[field] = idx; return; }
+    }
+  });
+  // Looser pass for partial matches if strict pass missed
+  headers.forEach((h, idx) => {
+    const n = normHeader(h);
+    if (!n) return;
+    if (map.date_of_birth === undefined && /birth|dob/.test(n)) map.date_of_birth = idx;
+    else if (map.zip === undefined && /zip|postal/.test(n)) map.zip = idx;
+    else if (map.gender === undefined && /gender|\bsex\b/.test(n)) map.gender = idx;
+    else if (map.relationship === undefined && /relation|dep(endent)? ?type/.test(n)) map.relationship = idx;
+    else if (map.full_name === undefined && map.first_name === undefined && /name/.test(n) && !/last|first|company/.test(n)) map.full_name = idx;
+  });
+  return map;
+}
+function parseDOB(v) {
+  if (v == null || v === '') return '';
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  if (typeof v === 'number') { // Excel serial date
+    const d = new Date(Math.round((v - 25569) * 86400000));
+    return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (m) {
+    let y = m[3].length === 2 ? (parseInt(m[3]) > new Date().getFullYear() % 100 ? '19' + m[3] : '20' + m[3]) : m[3];
+    return y + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
+  }
+  const d = new Date(s);
+  return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+}
+function normGender(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return '';
+  if (s[0] === 'm') return 'M';
+  if (s[0] === 'f') return 'F';
+  return '';
+}
+function normRel(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return 'employee';
+  if (/^(ee|emp|self|employee|subscriber|primary|e)$/.test(s)) return 'employee';
+  if (/^(sp|spouse|wife|husband|partner|s)$/.test(s)) return 'spouse';
+  if (/^(ch|child|son|daughter|dep|dependent|c|d)$/.test(s)) return 'child';
+  return 'child';
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let rows;
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    } catch (err) {
+      alert('We could not read that file. Please upload an Excel (.xlsx) or CSV file, or use the manual entry option.');
+      return;
+    }
+    ingestRows(rows, file.name);
+  };
+  reader.readAsArrayBuffer(file);
+  document.getElementById('file-input').value = '';
+}
+
+function ingestRows(rows, filename) {
+  // Find the header row: first row where at least 2 known columns match
+  let headerIdx = -1, map = null;
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const m = mapHeaders(rows[i]);
+    if (Object.keys(m).length >= 2) { headerIdx = i; map = m; break; }
+  }
+  if (headerIdx === -1) {
+    alert('We could not recognize the columns in that file. Try our template, or enter the census manually.');
+    return;
+  }
+  clearRows();
+  let imported = 0, lastEmployeeName = '';
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every(c => String(c || '').trim() === '')) continue;
+    const get = f => map[f] !== undefined ? r[map[f]] : '';
+    let name = '';
+    if (map.full_name !== undefined) name = String(get('full_name') || '').trim();
+    else if (map.first_name !== undefined || map.last_name !== undefined)
+      name = (String(get('first_name') || '').trim() + ' ' + String(get('last_name') || '').trim()).trim();
+    const dob = parseDOB(get('date_of_birth'));
+    if (!name && !dob) continue;
+    const rel = normRel(get('relationship'));
+    const rowType = rel === 'employee' ? 'employee' : 'dependent';
+    if (rowType === 'employee') lastEmployeeName = name;
+    addRow(rowType, {
+      full_name: name,
+      employee_number: String(get('employee_number') || '').trim(),
+      date_of_birth: dob,
+      gender: normGender(get('gender')),
+      zip: String(get('zip') || '').trim(),
+      relationship: rel,
+      employee_class: String(get('employee_class') || '').trim(),
+      hours_per_week: String(get('hours_per_week') || '').trim(),
+    });
+    imported++;
+  }
+  const mapped = Object.keys(map).map(k => k.replace(/_/g, ' ')).join(', ');
+  const rpt = document.getElementById('map-report');
+  rpt.style.display = 'block';
+  rpt.innerHTML = '<strong>&#10003; Read ' + imported + ' row' + (imported === 1 ? '' : 's') + ' from ' + esc(filename) + '.</strong> '
+    + 'Columns recognized: ' + esc(mapped) + '.<br>Please review below — fix anything we got wrong, add what\'s missing, then send.';
+  document.getElementById('grid-wrap').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ---------------- Review / manual grid ----------------
+function addRow(rowType, data) {
+  data = data || {};
+  const tb = document.getElementById('rows');
+  const tr = document.createElement('tr');
+  tr.className = rowType === 'dependent' ? 'dep' : '';
+  tr.dataset.rowType = rowType;
+  const rel = data.relationship || (rowType === 'dependent' ? 'spouse' : 'employee');
+  tr.innerHTML =
+    '<td><input type="text" class="f-name" placeholder="' + (rowType === 'dependent' ? '↳ dependent name' : 'Full name') + '" value="' + esc(data.full_name || '') + '"/></td>'
+    + '<td style="max-width:80px;"><input type="text" class="f-num" value="' + esc(data.employee_number || '') + '"/></td>'
+    + '<td><input type="date" class="f-dob" value="' + esc(data.date_of_birth || '') + '"/></td>'
+    + '<td style="max-width:70px;"><select class="f-gen"><option value=""></option><option value="M"' + (data.gender === 'M' ? ' selected' : '') + '>M</option><option value="F"' + (data.gender === 'F' ? ' selected' : '') + '>F</option></select></td>'
+    + '<td style="max-width:85px;"><input type="text" class="f-zip" value="' + esc(data.zip || '') + '"/></td>'
+    + '<td><select class="f-rel">'
+      + '<option value="employee"' + (rel === 'employee' ? ' selected' : '') + '>Employee</option>'
+      + '<option value="spouse"' + (rel === 'spouse' ? ' selected' : '') + '>Spouse</option>'
+      + '<option value="child"' + (rel === 'child' ? ' selected' : '') + '>Child</option>'
+    + '</select></td>'
+    + '<td style="max-width:100px;"><input type="text" class="f-class" value="' + esc(data.employee_class || '') + '"/></td>'
+    + '<td style="max-width:70px;"><input type="text" class="f-hrs" value="' + esc(data.hours_per_week || '') + '"/></td>'
+    + '<td><button class="del" title="Remove row" onclick="this.closest(\'tr\').remove(); tally();">&#10005;</button></td>';
+  tr.querySelector('.f-rel').addEventListener('change', function() {
+    const isEmp = this.value === 'employee';
+    tr.className = isEmp ? '' : 'dep';
+    tr.dataset.rowType = isEmp ? 'employee' : 'dependent';
+    tally();
+  });
+  tb.appendChild(tr);
+  document.getElementById('grid-wrap').style.display = 'block';
+  tally();
+}
+function clearRows() { document.getElementById('rows').innerHTML = ''; tally(); }
+function tally() {
+  const trs = [...document.querySelectorAll('#rows tr')];
+  const emp = trs.filter(t => t.dataset.rowType === 'employee').length;
+  document.getElementById('tally').textContent = emp + ' employee' + (emp === 1 ? '' : 's') + ', '
+    + (trs.length - emp) + ' dependent' + (trs.length - emp === 1 ? '' : 's');
+}
+
+function downloadTemplate() {
+  const csv = 'Name,Employee #,Date of Birth,Gender,Zip,Relationship (Employee/Spouse/Child),Class,Hours per Week\n'
+    + 'John Sample,101,06/15/1985,M,59718,Employee,Full-Time,40\n'
+    + 'Jane Sample,101,09/02/1987,F,59718,Spouse,,\n'
+    + 'Sam Sample,101,03/20/2015,M,59718,Child,,\n';
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'employee-census-template.csv';
+  a.click();
+}
+
+// ---------------- Load + submit ----------------
+async function init() {
+  reqId = new URLSearchParams(location.search).get('c');
+  if (!reqId) { show('error-screen'); return; }
+  const rows = await supa('/rest/v1/census_requests?id=eq.' + encodeURIComponent(reqId) + '&select=*', { method: 'GET' });
+  req = rows && rows[0];
+  if (!req) { show('error-screen'); return; }
+  if (req.status === 'submitted') {
+    document.getElementById('already-sub').textContent =
+      'This census was already sent to ' + (req.agent_name || 'your advisor') + '. If anything changed, contact them directly and they can request an update.';
+    show('already'); return;
+  }
+  document.getElementById('intro').innerHTML =
+    'To prepare accurate group quotes, <strong>' + esc(req.agent_name || 'your advisor') + '</strong> needs some basic company information and a simple list of employees (and their dependents). This takes about 10 minutes &mdash; and you can upload a spreadsheet you already have.';
+  const pre = { 'c-legal': 'company_legal_name', 'c-dba': 'company_dba', 'c-sic': 'sic_code',
+    'c-street': 'company_street', 'c-city': 'company_city', 'c-state': 'company_state', 'c-zip': 'company_zip',
+    'c-cname': 'contact_name', 'c-ctitle': 'contact_title', 'c-cphone': 'contact_phone', 'c-cemail': 'contact_email' };
+  for (const id in pre) { if (req[pre[id]]) document.getElementById(id).value = req[pre[id]]; }
+  show('main');
+}
+
+async function submitCensus() {
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  const need = { 'c-legal': 'Legal company name', 'c-state': 'State', 'c-zip': 'Zip',
+    'c-cname': 'Main contact name', 'c-cphone': 'Contact phone', 'c-cemail': 'Contact email' };
+  for (const id in need) {
+    if (!document.getElementById(id).value.trim()) {
+      err.textContent = 'Please fill in: ' + need[id] + ' (Step 1).'; err.style.display = 'block';
+      document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  }
+  const trs = [...document.querySelectorAll('#rows tr')];
+  const emps = trs.filter(t => t.dataset.rowType === 'employee');
+  if (!emps.length) { err.textContent = 'Please add at least one employee to the census (Step 2).'; err.style.display = 'block'; return; }
+  for (const t of trs) {
+    if (!t.querySelector('.f-name').value.trim() || !t.querySelector('.f-dob').value) {
+      err.textContent = 'Every row needs at least a name and a date of birth — carriers require both.';
+      err.style.display = 'block';
+      t.querySelector('.f-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  }
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+
+  let lastEmp = '';
+  const payload = trs.map((t, i) => {
+    const name = t.querySelector('.f-name').value.trim();
+    if (t.dataset.rowType === 'employee') lastEmp = t.querySelector('.f-num').value.trim() || name;
+    return {
+      request_id: reqId,
+      row_type: t.dataset.rowType,
+      employee_ref: lastEmp,
+      full_name: name,
+      employee_number: t.querySelector('.f-num').value.trim() || null,
+      date_of_birth: t.querySelector('.f-dob').value || null,
+      gender: t.querySelector('.f-gen').value || null,
+      zip: t.querySelector('.f-zip').value.trim() || null,
+      relationship: t.querySelector('.f-rel').value,
+      employee_class: t.querySelector('.f-class').value.trim() || null,
+      hours_per_week: parseFloat(t.querySelector('.f-hrs').value) || null,
+      sort_order: i,
+    };
+  });
+
+  await supa('/rest/v1/census_employees?request_id=eq.' + encodeURIComponent(reqId), { method: 'DELETE' });
+  const ok1 = await supa('/rest/v1/census_employees', { method: 'POST', body: JSON.stringify(payload) });
+  if (!ok1) {
+    btn.disabled = false; btn.textContent = 'Send census to my advisor';
+    err.textContent = 'Something went wrong saving the census — please try again.'; err.style.display = 'block';
+    return;
+  }
+  const ok2 = await supa('/rest/v1/census_requests?id=eq.' + encodeURIComponent(reqId) + '&status=eq.pending', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      company_legal_name: document.getElementById('c-legal').value.trim(),
+      company_dba: document.getElementById('c-dba').value.trim() || null,
+      sic_code: document.getElementById('c-sic').value.trim() || null,
+      company_street: document.getElementById('c-street').value.trim() || null,
+      company_city: document.getElementById('c-city').value.trim() || null,
+      company_state: document.getElementById('c-state').value.trim().toUpperCase(),
+      company_zip: document.getElementById('c-zip').value.trim(),
+      contact_name: document.getElementById('c-cname').value.trim(),
+      contact_title: document.getElementById('c-ctitle').value.trim() || null,
+      contact_phone: document.getElementById('c-cphone').value.trim(),
+      contact_email: document.getElementById('c-cemail').value.trim(),
+      status: 'submitted',
+      submitted_at: new Date().toISOString(),
+    })
+  });
+  if (!ok2) {
+    btn.disabled = false; btn.textContent = 'Send census to my advisor';
+    err.textContent = 'Something went wrong finishing the submission — please try again.'; err.style.display = 'block';
+    return;
+  }
+  try { fetch(APPS_SCRIPT_URL + '?action=census_submitted&census_id=' + reqId, { mode: 'no-cors' }); } catch (e) {}
+  document.getElementById('done-sub').textContent =
+    (req.agent_name || 'Your advisor') + ' has been notified and will start preparing your group quotes right away.';
+  show('done');
+}
+
+init();
+</script>
+</body>
+</html>

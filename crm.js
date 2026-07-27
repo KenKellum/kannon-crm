@@ -5120,6 +5120,14 @@ function openDealPanel(dealId) {
     setTimeout(function() { loadSoaStatus_(deal); }, 50);
   }
 
+  if (deal.pipeline === 'group-employer') {
+    healthHTML += '<div class="panel-section"><div class="panel-label">Employee Census</div>'
+      + '<div id="census-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking census&hellip;</div>'
+      + '<button class="btn btn-outline btn-sm" onclick="openCensusRequest(\'' + deal.id + '\')">&#128203; Request Census</button>'
+      + '</div>';
+    setTimeout(function() { loadCensusStatus_(deal); }, 70);
+  }
+
   healthHTML += '<div class="panel-section"><div class="panel-label">Quotes</div>'
     + '<div id="quotes-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking quotes&hellip;</div>'
     + '<button class="btn btn-outline btn-sm" onclick="openQuoteBuilder(\'' + deal.id + '\')">&#128181; Create Quote</button>'
@@ -10035,4 +10043,100 @@ async function markQuoteSent_(quoteId, btn) {
   if (error) { showToast('Error: ' + error.message); return; }
   showToast('Marked as sent.');
   if (btn) btn.textContent = '\u2713 Marked sent';
+}
+
+// ============================================================
+// GROUP CENSUS — request -> employer completes company profile +
+// census at census.html?c=<uuid> (template / smart upload / manual)
+// ============================================================
+async function loadCensusStatus_(deal) {
+  const el = document.getElementById('census-status-' + deal.id);
+  if (!el) return;
+  const { data: reqs } = await supabaseClient.from('census_requests')
+    .select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).limit(1);
+  const r = reqs && reqs[0];
+  if (!r) { el.textContent = 'No census requested yet — group quotes need one first.'; return; }
+  const link = 'https://crm.thekannongroup.com/census.html?c=' + r.id;
+  if (r.status === 'submitted') {
+    const { data: emps } = await supabaseClient.from('census_employees')
+      .select('row_type,date_of_birth').eq('request_id', r.id);
+    const ee = (emps || []).filter(x => x.row_type === 'employee');
+    const deps = (emps || []).length - ee.length;
+    const ages = ee.map(x => x.date_of_birth ? Math.floor((Date.now() - new Date(x.date_of_birth)) / 31557600000) : null).filter(a => a !== null);
+    const avg = ages.length ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : null;
+    el.innerHTML = '<span style="color:var(--success);font-weight:700;">&#10003; Census received</span> '
+      + new Date(r.submitted_at).toLocaleDateString()
+      + '<br><strong>' + escWeb(r.company_legal_name || '') + '</strong>'
+      + (r.company_dba ? ' (dba ' + escWeb(r.company_dba) + ')' : '')
+      + (r.sic_code ? ' &middot; SIC ' + escWeb(r.sic_code) : '')
+      + ' &middot; ' + escWeb((r.company_state || '') + ' ' + (r.company_zip || ''))
+      + '<br>' + ee.length + ' employees + ' + deps + ' dependents'
+      + (avg !== null ? ' &middot; avg employee age ' + avg : '')
+      + '<br>Contact: ' + escWeb(r.contact_name || '') + (r.contact_phone ? ' &middot; ' + escWeb(r.contact_phone) : '')
+      + ' &middot; <a href="' + link + '" target="_blank">view page &#8599;</a>'
+      + ' &middot; <a href="#" onclick="downloadCensusCsv_(\'' + r.id + '\', \'' + escWeb((r.company_legal_name || 'census').replace(/[^a-z0-9 ]/gi, '')) + '\'); return false;">download CSV</a>';
+  } else {
+    el.innerHTML = 'Requested ' + new Date(r.created_at).toLocaleDateString()
+      + ' &mdash; waiting on the employer.'
+      + '<br><a href="' + link + '" target="_blank">open form &#8599;</a>'
+      + ' &middot; <a href="#" onclick="resendCensus_(\'' + r.id + '\', this); return false;">resend email</a>'
+      + ' &middot; <a href="#" onclick="navigator.clipboard.writeText(\'' + link + '\').then(()=>showToast(\'Link copied.\')); return false;">copy link</a>';
+  }
+}
+
+function openCensusRequest(dealId) {
+  const deal = deals.find(d => d.id === dealId); if (!deal) return;
+  const contact = contacts.find(c => c.id === deal.contact_id);
+  if (!contact) { showToast('No contact linked to this deal.'); return; }
+  showModal('Request Employee Census — ' + escWeb(contact.company || contact.name || ''), `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+      The employer gets a branded email with a secure link. They confirm company details
+      (legal name, DBA, SIC, address &mdash; the rate-determinant info carriers need), then build
+      the census: upload any spreadsheet (we auto-read their columns), use our template, or type it in.
+      Pre-fill whatever you already know &mdash; they'll see it filled in and only fix what's wrong.
+    </p>
+    <label>Legal company name</label><input type="text" id="cx-legal" value="${escWeb(contact.company || '')}" />
+    <label>Recipient name</label><input type="text" id="cx-name" value="${escWeb(contact.name || '')}" />
+    <label>Recipient email *</label><input type="text" id="cx-email" value="${escWeb(contact.email || '')}" />
+    <label>Recipient phone</label><input type="text" id="cx-phone" value="${escWeb(contact.phone || '')}" />
+    <label>State</label><input type="text" id="cx-state" maxlength="2" value="${escWeb(contact.state || '')}" />
+    <label>City</label><input type="text" id="cx-city" value="${escWeb(contact.city || '')}" />
+  `, async () => {
+    const email = document.getElementById('cx-email').value.trim();
+    if (!email) { showToast('Recipient email is required.'); return false; }
+    const { data: r, error } = await supabaseClient.from('census_requests').insert({
+      deal_id: deal.id, contact_id: contact.id, agent_id: currentAgent.id,
+      agent_name: currentAgent.display_name || currentAgent.name,
+      agent_email: currentAgent.email, agent_phone: currentAgent.phone || null,
+      company_legal_name: document.getElementById('cx-legal').value.trim() || null,
+      company_city: document.getElementById('cx-city').value.trim() || null,
+      company_state: document.getElementById('cx-state').value.trim().toUpperCase() || null,
+      contact_name: document.getElementById('cx-name').value.trim() || null,
+      contact_phone: document.getElementById('cx-phone').value.trim() || null,
+      contact_email: email,
+    }).select().single();
+    if (error) { showToast('Error: ' + error.message); return false; }
+    try { fetch(APPS_SCRIPT_URL + '?action=send_census&census_id=' + r.id, { mode: 'no-cors' }); } catch (e) {}
+    showToast('Census request sent to ' + email + '.');
+    loadCensusStatus_(deal);
+  }, { confirmLabel: 'Send Request' });
+}
+
+async function resendCensus_(reqId, a) {
+  try { fetch(APPS_SCRIPT_URL + '?action=send_census&census_id=' + reqId, { mode: 'no-cors' }); } catch (e) {}
+  showToast('Census email re-sent.');
+  if (a) a.textContent = 'sent again \u2713';
+}
+
+async function downloadCensusCsv_(reqId, company) {
+  const { data: emps } = await supabaseClient.from('census_employees')
+    .select('*').eq('request_id', reqId).order('sort_order');
+  if (!emps || !emps.length) { showToast('No census rows found.'); return; }
+  const head = 'Name,Employee #,Date of Birth,Gender,Zip,Relationship,Class,Hours per Week\n';
+  const csv = head + emps.map(e => [e.full_name, e.employee_number, e.date_of_birth, e.gender, e.zip, e.relationship, e.employee_class, e.hours_per_week]
+    .map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = (company || 'census') + '-census.csv';
+  a.click();
 }
