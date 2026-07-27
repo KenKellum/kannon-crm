@@ -4443,7 +4443,7 @@ async function addContactNote(contactId) {
 // ============================================================
 // NOTIFICATION BELL (Phase 3D)
 // ============================================================
-const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled'];
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received'];
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
@@ -4519,6 +4519,7 @@ function _renderNotificationDropdown() {
     meeting_booked:   { icon: '📅', label: 'Meeting booked',      color: '#34d399' },
     meeting_no_show:  { icon: '👻', label: 'No-show',             color: '#fbbf24' },
     meeting_canceled: { icon: '❌', label: 'Meeting canceled',    color: '#fbbf24' },
+    census_received:  { icon: '📋', label: 'Census received',     color: '#0d9488' },
   };
   const _relTime = ts => {
     const diff = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -7860,7 +7861,7 @@ async function loadNeedsAttention() {
     const { data: acts } = await supabaseClient
       .from('activities')
       .select('id,contact_id,activity_type,subject,body_snippet,metadata,created_at,contacts(name,company)')
-      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed'])
+      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received'])
       .is('read_at', null)
       .eq('agent_id', currentAgent.id)
       .gte('created_at', thirtyDaysAgo)
@@ -7879,7 +7880,7 @@ async function loadNeedsAttention() {
       .limit(10);
 
     naItems = [
-      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, createdAt: a.created_at })),
+      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, censusId: (a.metadata && a.metadata.census_id) || null, createdAt: a.created_at })),
       ...(appts || []).map(a => ({ kind: 'meeting_canceled', bookingId: a.id, contactId: a.contact_id, contactName: a.contact_name, company: a.company, apptLabel: a.appointment_label || a.appointment_type || 'Appointment', scheduledAt: a.scheduled_at, createdAt: a.created_at }))
     ];
 
@@ -8251,6 +8252,20 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="${rescheduleOnclick}">📅 Reschedule</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.kind === 'census_received') {
+      return `<div style="flex-shrink:0;width:220px;display:flex;flex-direction:column;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid #0d9488;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#0d9488;margin-bottom:4px;">&#128203; Census Received</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.subject || name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
+        ${item.snippet ? `<div style="font-size:11px;color:#0d9488;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.snippet)}</div>` : ''}
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
+          ${item.censusId ? `<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#0d9488;border-color:#0d9488;" onclick="openCensusEditor('${item.censusId}')">&#128203; View / Edit</button>` : ''}
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="viewContact('${item.contactId}')">&#128100; Contact</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
     }
@@ -10086,7 +10101,7 @@ async function loadCensusStatus_(deal) {
       + '<br>' + ee.length + ' employees + ' + deps + ' dependents'
       + (avg !== null ? ' &middot; avg employee age ' + avg : '')
       + '<br>Contact: ' + escWeb(r.contact_name || '') + (r.contact_phone ? ' &middot; ' + escWeb(r.contact_phone) : '')
-      + ' &middot; <a href="' + link + '" target="_blank">view page &#8599;</a>'
+      + ' &middot; <a href="#" onclick="openCensusEditor(\'' + r.id + '\'); return false;">view / edit census</a>'
       + ' &middot; <a href="#" onclick="downloadCensusCsv_(\'' + r.id + '\', \'' + escWeb((r.company_legal_name || 'census').replace(/[^a-z0-9 ]/gi, '')) + '\'); return false;">download CSV</a>';
   } else {
     el.innerHTML = 'Requested ' + new Date(r.created_at).toLocaleDateString()
@@ -10152,4 +10167,144 @@ async function downloadCensusCsv_(reqId, company) {
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
   a.download = (company || 'census') + '-census.csv';
   a.click();
+}
+
+// ============================================================
+// CENSUS EDITOR — agents view/edit a submitted census in the CRM
+// (employers often forget people or fields; agents fix before
+// sending to carriers). Public page stays locked after submit.
+// ============================================================
+function _ceRowHtml_(rowType, d) {
+  d = d || {};
+  const rel = d.relationship || (rowType === 'dependent' ? 'spouse' : 'employee');
+  return `
+    <td style="${rowType === 'dependent' ? 'padding-left:20px;' : ''}"><input type="text" class="f-name" value="${escWeb(d.full_name || '')}" placeholder="${rowType === 'dependent' ? '\u21b3 dependent name' : 'Full name'}" style="min-width:140px;" /></td>
+    <td><input type="text" class="f-num" value="${escWeb(d.employee_number || '')}" style="width:65px;" /></td>
+    <td><input type="date" class="f-dob" value="${escWeb(d.date_of_birth || '')}" style="width:135px;" /></td>
+    <td><select class="f-gen" style="width:55px;"><option value=""></option><option value="M"${d.gender === 'M' ? ' selected' : ''}>M</option><option value="F"${d.gender === 'F' ? ' selected' : ''}>F</option></select></td>
+    <td><input type="text" class="f-zip" value="${escWeb(d.zip || '')}" style="width:70px;" /></td>
+    <td><select class="f-rel">
+      <option value="employee"${rel === 'employee' ? ' selected' : ''}>Employee</option>
+      <option value="spouse"${rel === 'spouse' ? ' selected' : ''}>Spouse</option>
+      <option value="child"${rel === 'child' ? ' selected' : ''}>Child</option>
+    </select></td>
+    <td><input type="text" class="f-class" value="${escWeb(d.employee_class || '')}" style="width:80px;" /></td>
+    <td><input type="text" class="f-hrs" value="${d.hours_per_week != null ? d.hours_per_week : ''}" style="width:50px;" /></td>
+    <td><button type="button" onclick="this.closest('tr').remove(); ceTally_();" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;" title="Remove">&#10005;</button></td>`;
+}
+
+function ceAddRow_(rowType, d) {
+  const tb = document.getElementById('ce-rows');
+  if (!tb) return;
+  const tr = document.createElement('tr');
+  tr.dataset.rowType = rowType;
+  if (rowType === 'dependent') tr.style.background = 'var(--surface-1)';
+  tr.innerHTML = _ceRowHtml_(rowType, d);
+  tr.querySelector('.f-rel').addEventListener('change', function() {
+    const isEmp = this.value === 'employee';
+    tr.dataset.rowType = isEmp ? 'employee' : 'dependent';
+    tr.style.background = isEmp ? '' : 'var(--surface-1)';
+    ceTally_();
+  });
+  tb.appendChild(tr);
+  ceTally_();
+}
+
+function ceTally_() {
+  const el = document.getElementById('ce-tally');
+  if (!el) return;
+  const trs = [...document.querySelectorAll('#ce-rows tr')];
+  const ee = trs.filter(t => t.dataset.rowType === 'employee').length;
+  el.textContent = ee + ' employees, ' + (trs.length - ee) + ' dependents';
+}
+
+async function openCensusEditor(reqId) {
+  const { data: r } = await supabaseClient.from('census_requests').select('*').eq('id', reqId).single();
+  if (!r) { showToast('Census not found.'); return; }
+  const { data: emps } = await supabaseClient.from('census_employees')
+    .select('*').eq('request_id', reqId).order('sort_order');
+
+  const cf = (label, id, val, ph) =>
+    `<div><label style="display:block;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 3px;">${label}</label>
+     <input type="text" id="${id}" value="${escWeb(val || '')}" placeholder="${ph || ''}" style="width:100%;box-sizing:border-box;" /></div>`;
+
+  showModal('Census — ' + escWeb(r.company_legal_name || 'Group'), `
+    <div style="padding:18px 22px;">
+      <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Company Profile</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 14px;">
+        ${cf('Legal name', 'ce-legal', r.company_legal_name)}
+        ${cf('DBA', 'ce-dba', r.company_dba)}
+        ${cf('SIC code', 'ce-sic', r.sic_code)}
+        ${cf('Street', 'ce-street', r.company_street)}
+        ${cf('City', 'ce-city', r.company_city)}
+        ${cf('State', 'ce-state', r.company_state)}
+        ${cf('Zip', 'ce-zip', r.company_zip)}
+        ${cf('Contact name', 'ce-cname', r.contact_name)}
+        ${cf('Contact title', 'ce-ctitle', r.contact_title)}
+        ${cf('Contact phone', 'ce-cphone', r.contact_phone)}
+        ${cf('Contact email', 'ce-cemail', r.contact_email)}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Census <span id="ce-tally" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></div>
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="ceAddRow_('employee')">+ Employee</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="ceAddRow_('dependent')">+ Dependent</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-top:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">
+            <th>Name</th><th>Emp #</th><th>DOB</th><th>Gen</th><th>Zip</th><th>Relationship</th><th>Class</th><th>Hrs</th><th></th>
+          </tr></thead>
+          <tbody id="ce-rows"></tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Edits are saved to the CRM record only — the employer's page stays locked to what they submitted. Use "download CSV" on the deal for the carrier-ready file after saving.</div>
+    </div>
+  `, async () => {
+    const trs = [...document.querySelectorAll('#ce-rows tr')];
+    for (const t of trs) {
+      if (!t.querySelector('.f-name').value.trim() || !t.querySelector('.f-dob').value) {
+        showToast('Every row needs a name and date of birth.'); return false;
+      }
+    }
+    const g = id => document.getElementById(id).value.trim() || null;
+    const { error: e1 } = await supabaseClient.from('census_requests').update({
+      company_legal_name: g('ce-legal'), company_dba: g('ce-dba'), sic_code: g('ce-sic'),
+      company_street: g('ce-street'), company_city: g('ce-city'),
+      company_state: (g('ce-state') || '').toUpperCase() || null, company_zip: g('ce-zip'),
+      contact_name: g('ce-cname'), contact_title: g('ce-ctitle'),
+      contact_phone: g('ce-cphone'), contact_email: g('ce-cemail'),
+    }).eq('id', reqId);
+    if (e1) { showToast('Error: ' + e1.message); return false; }
+    let lastEmp = '';
+    const rows = trs.map((t, i) => {
+      const name = t.querySelector('.f-name').value.trim();
+      if (t.dataset.rowType === 'employee') lastEmp = t.querySelector('.f-num').value.trim() || name;
+      return {
+        request_id: reqId, row_type: t.dataset.rowType, employee_ref: lastEmp,
+        full_name: name,
+        employee_number: t.querySelector('.f-num').value.trim() || null,
+        date_of_birth: t.querySelector('.f-dob').value || null,
+        gender: t.querySelector('.f-gen').value || null,
+        zip: t.querySelector('.f-zip').value.trim() || null,
+        relationship: t.querySelector('.f-rel').value,
+        employee_class: t.querySelector('.f-class').value.trim() || null,
+        hours_per_week: parseFloat(t.querySelector('.f-hrs').value) || null,
+        sort_order: i,
+      };
+    });
+    const { error: e2 } = await supabaseClient.from('census_employees').delete().eq('request_id', reqId);
+    if (e2) { showToast('Error: ' + e2.message); return false; }
+    if (rows.length) {
+      const { error: e3 } = await supabaseClient.from('census_employees').insert(rows);
+      if (e3) { showToast('Error: ' + e3.message); return false; }
+    }
+    showToast('Census updated.');
+    const deal = r.deal_id ? deals.find(d => d.id === r.deal_id) : null;
+    if (deal) loadCensusStatus_(deal);
+  }, { confirmLabel: 'Save Census', wide: true });
+
+  (emps || []).forEach(e => ceAddRow_(e.row_type, e));
+  if (!emps || !emps.length) ceAddRow_('employee');
 }
