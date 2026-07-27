@@ -177,13 +177,26 @@ const FIELD_DEFS = {
   looking_better_leads: { label: 'Better leads', type: 'checkbox-field', group: 'looking' },
   looking_more_support: { label: 'More support / training', type: 'checkbox-field', group: 'looking' },
   looking_flexibility:  { label: 'More flexibility', type: 'checkbox-field', group: 'looking' },
+  zip:                  { label: 'ZIP code', type: 'text', placeholder: 'e.g. 59718' },
+  med_ab_status:        { label: 'Where are you with Medicare today?', type: 'select', options: ['Not enrolled yet','Enrolled in Part A only','Enrolled in Parts A & B','On a Medicare Advantage plan','Have a Medicare Supplement (Medigap) plan'] },
+  med_part_a_date:      { label: 'Part A effective date (if enrolled)', type: 'date' },
+  med_part_b_date:      { label: 'Part B effective date (if enrolled)', type: 'date' },
+  med_employer_coverage:{ label: 'Still covered by an employer health plan?', type: 'radio', options: ['Yes','No'] },
+  med_medications:      { label: 'Current medications (names & dosages)', type: 'textarea', placeholder: 'One per line — this helps us check drug plan coverage' },
+  med_doctors:          { label: 'Doctors you want to keep', type: 'text', placeholder: 'e.g. Dr. Smith (Bozeman Health)' },
+  med_pharmacy:         { label: 'Preferred pharmacy', type: 'text', placeholder: 'e.g. Walgreens on Main St' },
+  mi_supplement:        { label: 'Medicare Supplement (Medigap)', type: 'checkbox-field', group: 'medinterest' },
+  mi_pdp:               { label: 'Prescription Drug Plan (Part D)', type: 'checkbox-field', group: 'medinterest' },
+  mi_advantage:         { label: 'Medicare Advantage', type: 'checkbox-field', group: 'medinterest' },
+  mi_dental:            { label: 'Dental / Vision / Hearing options', type: 'checkbox-field', group: 'medinterest' },
   notes:                { label: 'Anything else you\'d like us to know', type: 'textarea', placeholder: 'Questions, comments, special circumstances…' }
 };
 
 const CHECKBOX_GROUP_LABELS = {
   goals:    'Financial goals — select all that apply',
   coverage: 'Coverage types needed — select all that apply',
-  looking:  'What are you looking for? — select all that apply'
+  looking:  'What are you looking for? — select all that apply',
+  medinterest: 'What would you like help with? — select all that apply'
 };
 
 function renderField(id, def, prefillVal) {
@@ -251,6 +264,7 @@ function renderForm(session, contact) {
 
   const typeLabel = {
     'financial': 'Life &amp; Financial Services',
+    'medicare': 'Medicare Review',
     'health-individual': 'Health Insurance — Individual &amp; Family',
     'health-group': 'Health Insurance — Group Benefits',
     'career-kfg': 'Career Opportunity — Kannon Financial Group',
@@ -341,15 +355,27 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
     body: JSON.stringify({ p_session_id: sessionId })
   });
 
+  // Medicare intakes trigger an automatic branded welcome email
+  if (formType === 'medicare') {
+    try {
+      fetch('https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec'
+        + '?action=medicare_welcome&session_id=' + encodeURIComponent(sessionId)
+        + '&contact_id=' + encodeURIComponent(contactId || '')
+        + '&agent_id=' + encodeURIComponent(agentId || ''), { mode: 'no-cors' });
+    } catch (err) { /* non-blocking */ }
+  }
+
   if (contactId) {
     const contactUpdate = { sequence_status: 'Interested' };
     if (responses.email) contactUpdate.email = responses.email;
     if (responses.phone) contactUpdate.phone = responses.phone;
     if (responses.dob) contactUpdate.date_of_birth = responses.dob;
+    if (responses.zip) contactUpdate.zip = responses.zip;
+    if (responses.street_address) contactUpdate.street_address = responses.street_address;
     if (responses.business_name) contactUpdate.company = responses.business_name;
 
     const ts = new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-    const typeLabel = {'financial':'Life & Financial','health-individual':'Health — Individual','health-group':'Health — Group','career-kfg':'Career — KFG','career-ia':'Career — IA'}[formType]||formType;
+    const typeLabel = {'financial':'Life & Financial','medicare':'Medicare','health-individual':'Health — Individual','health-group':'Health — Group','career-kfg':'Career — KFG','career-ia':'Career — IA'}[formType]||formType;
     let noteLines = `[Intake Form • ${typeLabel} • ${ts}]`;
     Object.entries(responses).forEach(([k,v]) => {
       const label = (FIELD_DEFS[k]||{}).label || k.replace(/_/g,' ');
@@ -365,7 +391,7 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
 
   // Notify the agent — log intake_completed activity so it appears in Needs Attention
   if (agentId) {
-    const actTypeLabel = {'financial':'Life & Financial','health-individual':'Health — Individual/Family','health-group':'Health — Group/Employer','career-kfg':'Career — KFG','career-ia':'Career — Insured America'}[formType] || formType;
+    const actTypeLabel = {'financial':'Life & Financial','medicare':'Medicare — Insured America','health-individual':'Health — Individual/Family','health-group':'Health — Group/Employer','career-kfg':'Career — KFG','career-ia':'Career — Insured America'}[formType] || formType;
     await supa('/rest/v1/activities', {
       method: 'POST',
       headers: { Prefer: 'return=minimal' },

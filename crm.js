@@ -12,6 +12,7 @@ const GMAIL_SCOPES = 'https://mail.google.com/ https://www.googleapis.com/auth/c
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
+  'medicare': { name: 'Medicare — Insured America', stages: ['Inquiry','Intake Complete','SOA Signed','Needs Analysis','Plan Comparison','Application Submitted','Enrolled','Annual Review'] },
   'agent-insured': { name: 'Agent Recruiting — Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
   'agent-kannon': { name: 'Agent Recruiting — Kannon Financial', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] }
 };
@@ -2528,6 +2529,7 @@ const INTAKE_TYPE_DEFAULTS = {
   'financial':       ['dob','marital_status','best_time','household_income','dependents_count','dependents_ages',
                       'has_life_insurance','life_coverage_amount','has_investments',
                       'goal_debt','goal_protection','goal_retirement'],
+  'medicare':['dob','zip','best_time','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier','med_medications','med_doctors','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental','notes'],
   'health-individual':['dob','best_time','household_size','member_ages','aca_income',
                        'currently_insured','current_carrier','current_premium',
                        'employer_plan_available','coverage_start_date','health_priority'],
@@ -2542,6 +2544,7 @@ const INTAKE_TYPE_DEFAULTS = {
 
 const INTAKE_TYPE_LABELS = {
   'financial':        'Life & Financial',
+  'medicare':'Medicare — Insured America',
   'health-individual':'Health – Individual/Family',
   'health-group':     'Health – Group/Employer',
   'career-kfg':       'Career – KFG (Primerica)',
@@ -2577,6 +2580,7 @@ let _intakeEditResponses = {};     // pre-fill values for edit mode
 function _intakeTypeFromContact(c) {
   if (!c) return 'financial';
   const t = (c.type || c.contact_type || '').toLowerCase();
+  if (t.includes('medicare')) return 'medicare';
   if (t.includes('individual') || t.includes('family')) return 'health-individual';
   if (t.includes('group') || t.includes('employer')) return 'health-group';
   if (t.includes('insured america') || t.includes('insuredamerica')) return 'career-ia';
@@ -5143,7 +5147,8 @@ function openDealPanel(dealId) {
 function renderPipelines() {
   const pipeline = PIPELINES[currentPipeline];
   const pipelineDeals = deals.filter(d => d.pipeline === currentPipeline);
-  const tabs = Object.entries(PIPELINES).map(([key, p]) => `<button class="pipeline-tab ${key===currentPipeline?'active':''}" onclick="switchPipeline('${key}')">${p.name}</button>`).join('');
+  if (currentPipeline === 'medicare' && !medicareCertified_()) currentPipeline = 'group-employer';
+  const tabs = Object.entries(PIPELINES).filter(([key]) => key !== 'medicare' || medicareCertified_()).map(([key, p]) => `<button class="pipeline-tab ${key===currentPipeline?'active':''}" onclick="switchPipeline('${key}')">${p.name}</button>`).join('');
   const columns = pipeline.stages.map(stage => {
     const stageDeals = pipelineDeals.filter(d => d.stage === stage);
     const cards = stageDeals.map(deal => {
@@ -5873,7 +5878,7 @@ function editContact(id, onSave) {
     <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
     <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
     <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
-    <label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
+    <label>Date of Birth</label><input type="date" id="con-dob" value="${c.date_of_birth||''}" /><label>Street Address</label><input type="text" id="con-street" value="${(c.street_address||'').replace(/"/g,'&quot;')}" /><label>ZIP Code</label><input type="text" id="con-zip" value="${c.zip||''}" /><label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
     <label>State</label><input type="text" id="con-state" value="${c.state||''}" placeholder="e.g. MT" maxlength="2" style="width:80px;" />
     <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
@@ -5925,7 +5930,7 @@ function editContact(id, onSave) {
       : newOptOut ? 'opted_out'
       : (c.email_status === 'opted_out' && !newOptOut) ? null
       : c.email_status || null;
-    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
+    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, date_of_birth: (document.getElementById('con-dob') ? document.getElementById('con-dob').value : '')||null, street_address: (document.getElementById('con-street') ? document.getElementById('con-street').value.trim() : '')||null, zip: (document.getElementById('con-zip') ? document.getElementById('con-zip').value.trim() : '')||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -5955,6 +5960,7 @@ async function loadIntakeHistoryPanel(contactId) {
   }
   const LABELS = {
     'financial':         'Life & Financial',
+    'medicare': 'Medicare — Insured America',
     'health-individual': 'Health – Individual/Family',
     'health-group':      'Health – Group/Employer',
     'career-kfg':        'Career – KFG',
@@ -9289,3 +9295,10 @@ async function unenrollMfa_(factorId) {
   loadMfaCard_();
 }
 
+// Medicare features are IA-brand only: visible to system owners and to
+// agents with a current AHIP certification year on file.
+function medicareCertified_() {
+  const role = previewRole || (currentAgent && currentAgent.role);
+  if (role === 'system_owner') return true;
+  return !!(currentAgent && currentAgent.ahip_certified_year);
+}
