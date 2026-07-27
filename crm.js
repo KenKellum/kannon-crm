@@ -9124,6 +9124,7 @@ function openAgentWebsiteProfile(id) {
     </select>
     <label>Specialties (comma-separated)</label><input type="text" id="wp-specs" value="${escWeb(specs)}" />
     <label>Licensed states (comma-separated)</label><input type="text" id="wp-states" value="${escWeb(states)}" placeholder="MT, AZ, TX" />
+    <label>AHIP certified year (Medicare Advantage / Part D only — blank if none)</label><input type="number" id="wp-ahip" value="${a.ahip_certified_year || ''}" placeholder="e.g. 2026" />
     <label>Headshot image URL</label><input type="text" id="wp-headshot" value="${escWeb(a.headshot_url || '')}" placeholder="https://..." />
     <label>URL slug ${a.slug ? `— <a href="https://thekannongroup.com/team/${escWeb(a.slug)}" target="_blank" style="font-weight:400;">view live page ↗</a>` : ''}</label>
     <input type="text" id="wp-slug" value="${escWeb(a.slug || '')}" placeholder="auto-generated from name" />
@@ -9144,6 +9145,7 @@ function openAgentWebsiteProfile(id) {
       brand: document.getElementById('wp-brand').value,
       specialties: list(v('specs')),
       licensed_states: list(v('states')).map(s => s.toUpperCase()),
+      ahip_certified_year: parseInt(v('ahip'), 10) || null,
       headshot_url: v('headshot') || null,
       bio: v('bio') || null,
       public_profile: document.getElementById('wp-public').checked,
@@ -9343,10 +9345,16 @@ async function unenrollMfa_(factorId) {
   loadMfaCard_();
 }
 
-// Medicare features are IA-brand only: visible to system owners and to
-// agents with a current AHIP certification year on file.
+// Medicare access rule (Ken 2026-07-27):
+// 1) must be on the Insured America side (agent brand 'ia' or 'both'), and
+// 2) must hold a health insurance license (enough for Medigap/PDP-era launch).
+// ahip_certified_year additionally marks who may sell MA/PDP (used for
+// content gating later — AHIP is only required for Advantage + Part D).
+// System owner always sees everything.
 function medicareCertified_() {
   const role = previewRole || (currentAgent && currentAgent.role);
   if (role === 'system_owner') return true;
-  return !!(currentAgent && currentAgent.ahip_certified_year);
+  if (!currentAgent) return false;
+  const iaSide = currentAgent.brand === 'ia' || currentAgent.brand === 'both';
+  return iaSide && !!currentAgent.has_health_license;
 }
