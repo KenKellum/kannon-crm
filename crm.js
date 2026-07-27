@@ -6246,7 +6246,6 @@ async function renderAdmin() {
       </div>
       <div class="agent-actions">
         <button class="btn btn-outline btn-sm" onclick="editAgent('${a.id}')">Edit</button>
-        <button class="btn btn-outline btn-sm" onclick="openAgentWebsiteProfile('${a.id}')">Website</button>
         ${a.id !== currentAgent.id ? `<button class="btn btn-danger btn-sm" onclick="deleteAgent('${a.id}')">&#10005;</button>` : ''}
       </div>
     </div>`;
@@ -6431,6 +6430,17 @@ function openAddAgent() {
     <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
     <label>Companies</label>
     ${companyCheckboxes}
+    <label>Company / Brand (drives Medicare &amp; brand features)</label>
+    <select id="ag-brand">
+      <option value="both">Both brands</option>
+      <option value="kfg">Kannon Financial</option>
+      <option value="ia">Insured America</option>
+    </select>
+    <label>Licenses held</label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="ag-lic-life" style="width:auto;" /> Life insurance</label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="ag-lic-health" style="width:auto;" /> Health insurance (required for Medicare access)</label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="ag-lic-invest" style="width:auto;" /> Securities / investments</label>
+    <label>AHIP certified year (blank if none)</label><input type="number" id="ag-ahip" placeholder="e.g. 2026" />
   `, async () => {
     const name = document.getElementById('ag-name').value.trim();
     const email = document.getElementById('ag-email').value.trim();
@@ -6438,7 +6448,12 @@ function openAddAgent() {
     const { data, error } = await supabaseClient.from('agents').insert({
       name, email,
       role: document.getElementById('ag-role').value,
-      agency_id: document.getElementById('ag-agency').value || null
+      agency_id: document.getElementById('ag-agency').value || null,
+      brand: document.getElementById('ag-brand').value,
+      has_life_license: !!document.getElementById('ag-lic-life').checked,
+      has_health_license: !!document.getElementById('ag-lic-health').checked,
+      has_investment_license: !!document.getElementById('ag-lic-invest').checked,
+      ahip_certified_year: parseInt(document.getElementById('ag-ahip').value, 10) || null
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -6455,9 +6470,13 @@ function openAddAgent() {
 function editAgent(id) {
   const a = allAgents.find(x => x.id === id); if (!a) return;
   const agencyOptions = allAgencies.map(ag => `<option value="${ag.id}" ${ag.id===a.agency_id?'selected':''}>${ag.name} — ${ag.companies?.name||''}</option>`).join('');
-  showModal('Edit Agent', `
-    <label>Full Name *</label><input type="text" id="ag-name" value="${a.name}" />
-    <label>Email *</label><input type="email" id="ag-email" value="${a.email}" />
+  const secHead = (t) => `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-accent);border-bottom:1px solid var(--border);padding-bottom:5px;margin:18px 0 4px;">${t}</div>`;
+  const specs  = (a.specialties || []).join(', ');
+  const states = (a.licensed_states || []).join(', ');
+  showModal('Edit Agent — ' + (a.display_name || a.name), `
+    ${secHead('Identity & Access')}
+    <label>Full Name *</label><input type="text" id="ag-name" value="${escWeb(a.name)}" />
+    <label>Email *</label><input type="email" id="ag-email" value="${escWeb(a.email)}" />
     <label>Role</label>
     <select id="ag-role">
       <option value="agent" ${a.role==='agent'?'selected':''}>Agent</option>
@@ -6466,14 +6485,60 @@ function editAgent(id) {
     </select>
     <label>Agency</label>
     <select id="ag-agency"><option value="">— No agency —</option>${agencyOptions}</select>
+
+    ${secHead('Company & Credentials')}
+    <label>Company (drives Medicare &amp; brand features)</label>
+    <select id="ag-brand">
+      <option value="both" ${a.brand==='both'?'selected':''}>Both brands</option>
+      <option value="kfg" ${a.brand==='kfg'?'selected':''}>Kannon Financial</option>
+      <option value="ia" ${a.brand==='ia'?'selected':''}>Insured America</option>
+    </select>
+    <label>Licenses held</label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="ag-lic-life" style="width:auto;" ${a.has_life_license?'checked':''}/> Life insurance</label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="ag-lic-health" style="width:auto;" ${a.has_health_license?'checked':''}/> Health insurance (required for Medicare access)</label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="ag-lic-invest" style="width:auto;" ${a.has_investment_license?'checked':''}/> Securities / investments</label>
+    <label>Licensed states (comma-separated)</label><input type="text" id="ag-states" value="${escWeb(states)}" placeholder="MT, AZ, TX" />
+    <label>AHIP certified year (Medicare Advantage / Part D only — blank if none)</label><input type="number" id="ag-ahip" value="${a.ahip_certified_year || ''}" placeholder="e.g. 2026" />
+
+    ${secHead('Website Profile')}
+    <label>Display name</label><input type="text" id="ag-display" value="${escWeb(a.display_name || a.name)}" />
+    <label>Public title</label><input type="text" id="ag-title" value="${escWeb(a.title || '')}" placeholder="e.g. Licensed Insurance Advisor" />
+    <label>Specialties (comma-separated)</label><input type="text" id="ag-specs" value="${escWeb(specs)}" />
+    <label>Headshot image URL</label><input type="text" id="ag-headshot" value="${escWeb(a.headshot_url || '')}" placeholder="https://..." />
+    <label>Page URL slug ${a.slug ? `— <a href="https://thekannongroup.com/team/${escWeb(a.slug)}" target="_blank" style="font-weight:400;">view live ↗</a>` : ''}</label>
+    <input type="text" id="ag-slug" value="${escWeb(a.slug || '')}" placeholder="auto-generated from name" />
+    <label>Bio</label><textarea id="ag-bio" rows="4">${escWeb(a.bio || '')}</textarea>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="ag-public" style="width:auto;" ${a.public_profile?'checked':''}/> Show this agent on the website</label>
   `, async () => {
-    const name = document.getElementById('ag-name').value.trim();
-    const email = document.getElementById('ag-email').value.trim();
+    const v = x => (document.getElementById('ag-' + x) || { value: '' }).value.trim();
+    const chk = x => !!(document.getElementById('ag-' + x) || {}).checked;
+    const list = t => t ? t.split(',').map(x => x.trim()).filter(Boolean) : [];
+    const name = v('name'), email = v('email');
     if (!name || !email) { showToast('Name and email are required'); return false; }
-    const updates = { name, email, role: document.getElementById('ag-role').value, agency_id: document.getElementById('ag-agency').value || null };
+    const displayName = v('display') || name;
+    let slug = v('slug');
+    if (!slug) slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const updates = {
+      name, email,
+      role: document.getElementById('ag-role').value,
+      agency_id: document.getElementById('ag-agency').value || null,
+      brand: document.getElementById('ag-brand').value,
+      has_life_license: chk('lic-life'),
+      has_health_license: chk('lic-health'),
+      has_investment_license: chk('lic-invest'),
+      licensed_states: list(v('states')).map(x => x.toUpperCase()),
+      ahip_certified_year: parseInt(v('ahip'), 10) || null,
+      display_name: displayName,
+      title: v('title') || null,
+      specialties: list(v('specs')),
+      headshot_url: v('headshot') || null,
+      slug: slug || null,
+      bio: v('bio') || null,
+      public_profile: chk('public'),
+    };
     const { error } = await supabaseClient.from('agents').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
-    Object.assign(a, updates); showToast('Agent updated!'); renderAdmin();
+    Object.assign(a, updates); showToast('Agent updated — website changes live within ~5 minutes.'); renderAdmin();
   });
 }
 
