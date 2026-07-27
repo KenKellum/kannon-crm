@@ -5120,6 +5120,12 @@ function openDealPanel(dealId) {
     setTimeout(function() { loadSoaStatus_(deal); }, 50);
   }
 
+  healthHTML += '<div class="panel-section"><div class="panel-label">Quotes</div>'
+    + '<div id="quotes-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking quotes&hellip;</div>'
+    + '<button class="btn btn-outline btn-sm" onclick="openQuoteBuilder(\'' + deal.id + '\')">&#128181; Create Quote</button>'
+    + '</div>';
+  setTimeout(function() { loadQuotesStatus_(deal); }, 60);
+
   var nextStepHTML = deal.next_step
     ? '<div style="margin-top:10px;"><div class="deal-field-label" style="margin-bottom:4px;">Next Step</div>'
       + '<div class="next-step-box">' + deal.next_step
@@ -9741,6 +9747,7 @@ function openCarrierProductModal(crId, prodId) {
       <option value="kfg" ${p && p.brand === 'kfg' ? 'selected' : ''}>Kannon Financial</option>
       <option value="ia" ${p && p.brand === 'ia' ? 'selected' : ''}>Insured America</option>
     </select>
+    <label>Client-facing benefit bullets (one per line &mdash; shown on quotes)</label><textarea id="cp-bullets" rows="3" placeholder="Covers Part A &amp; B deductibles&#10;See any doctor who accepts Medicare&#10;No network restrictions">${p ? escWeb(((p.metadata || {}).bullets || []).join('\n')) : ''}</textarea>
     <label>Notes</label><textarea id="cp-notes" rows="2">${p ? escWeb(p.notes || '') : ''}</textarea>
     <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="cp-active" style="width:auto;" ${!p || p.is_active ? 'checked' : ''}/> Active</label>
   `, async () => {
@@ -9756,6 +9763,9 @@ function openCarrierProductModal(crId, prodId) {
       brand: document.getElementById('cp-brand').value,
       notes: document.getElementById('cp-notes').value.trim() || null,
       is_active: document.getElementById('cp-active').checked,
+      metadata: Object.assign({}, (p && p.metadata) || {}, {
+        bullets: document.getElementById('cp-bullets').value.split('\n').map(x => x.trim()).filter(Boolean)
+      }),
     };
     const q = p
       ? supabaseClient.from('carrier_products').update(payload).eq('id', p.id)
@@ -9830,4 +9840,199 @@ async function openMyCarriers() {
     if (currentAgent.role === 'agent') renderSettings();
     else { renderAdmin(); renderSettings(); }
   });
+}
+
+// ============================================================
+// QUOTING ENGINE — Phase 1 (Quick Quote)
+// Agent assembles 1-4 options -> client gets a branded page at
+// quote.html?q=<uuid> -> "I'm interested" advances the follow-up.
+// ============================================================
+const QUOTE_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Other'];
+const MEDICARE_QUOTE_LINES = ['Medicare Advantage','Medicare Supplement','Part D (PDP)'];
+
+async function loadQuotesStatus_(deal) {
+  const el = document.getElementById('quotes-status-' + deal.id);
+  if (!el) return;
+  const { data: qs } = await supabaseClient.from('quotes')
+    .select('id,line,status,created_at,viewed_at,client_email')
+    .eq('deal_id', deal.id).order('created_at', { ascending: false });
+  if (!qs || !qs.length) { el.textContent = 'No quotes yet for this deal.'; return; }
+  el.innerHTML = qs.map(q => {
+    const d = new Date(q.created_at).toLocaleDateString();
+    let badge;
+    if (q.status === 'interested') badge = '<span style="color:var(--success);font-weight:700;">&#11088; INTERESTED &mdash; follow up!</span>';
+    else if (q.status === 'viewed') badge = '<span style="color:#3b82f6;font-weight:600;">Viewed</span>';
+    else if (q.status === 'sent') badge = 'Sent';
+    else badge = '<span style="color:#f59e0b;">Draft</span>';
+    const send = (q.status === 'draft' && q.client_email)
+      ? ` &middot; <a href="#" onclick="sendQuote_('${q.id}', this); return false;">Send now</a>` : '';
+    return `<div style="padding:3px 0;">${escWeb(q.line)} &middot; ${d} &middot; ${badge}
+      &middot; <a href="quote.html?q=${q.id}" target="_blank">view &#8599;</a>${send}</div>`;
+  }).join('');
+}
+
+async function openQuoteBuilder(dealId) {
+  const deal = deals.find(d => d.id === dealId); if (!deal) return;
+  const contact = contacts.find(c => c.id === deal.contact_id);
+  if (!contact) { showToast('No contact linked to this deal.'); return; }
+
+  // Carriers the agent can quote: their active appointments; owners fall back to full master
+  const { data: master } = await supabaseClient.from('carriers').select('*').eq('is_active', true).order('name');
+  const { data: myAppts } = await supabaseClient.from('carrier_appointments')
+    .select('carrier_id').eq('agent_id', currentAgent.id).eq('is_active', true);
+  const apptIds = new Set((myAppts || []).map(a => a.carrier_id));
+  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner';
+  let myCarriers = (master || []).filter(c => apptIds.has(c.id));
+  if (!myCarriers.length && isOwner) myCarriers = master || [];
+  if (!myCarriers.length) {
+    showToast('Set up your carrier appointments first (Settings \u2192 My Carrier Appointments).');
+    return;
+  }
+  const { data: prods } = await supabaseClient.from('carrier_products')
+    .select('*').eq('is_active', true).in('carrier_id', myCarriers.map(c => c.id));
+  window._qbCarriers = myCarriers;
+  window._qbProds = prods || [];
+
+  const carOpts = '<option value="">— pick carrier —</option>'
+    + myCarriers.map(c => `<option value="${c.id}">${escWeb(c.name)}</option>`).join('');
+  const lineOpts = QUOTE_LINES.map(l => `<option value="${l}">${l}</option>`).join('');
+  const defValid = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const optBlock = i => `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:12px;">
+      <div style="font-weight:700;font-size:12px;color:var(--text-muted);margin-bottom:6px;">OPTION ${i + 1}${i > 0 ? ' <span style="font-weight:400;">(optional)</span>' : ''}</div>
+      <label>Carrier</label>
+      <select id="qb-car-${i}" onchange="qbFillProducts_(${i})">${carOpts}</select>
+      <label>Product (from carrier's catalog — optional)</label>
+      <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
+      <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
+      <label>Monthly premium ($) *</label><input type="number" step="0.01" id="qb-prem-${i}" placeholder="e.g. 128.50" />
+      <label>Benefit bullets (one per line)</label><textarea id="qb-bul-${i}" rows="3"></textarea>
+      <label>Short note to client (optional)</label><input type="text" id="qb-note-${i}" placeholder="e.g. Best value if you travel often" />
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:400;"><input type="radio" name="qb-rec" id="qb-rec-${i}" style="width:auto;" /> Mark as my recommendation</label>
+    </div>`;
+
+  showModal('Create Quote — ' + escWeb(contact.name || ''), `
+    <label>Line of business</label>
+    <select id="qb-line" onchange="qbLineChanged_()">${lineOpts}</select>
+    <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
+    <label>Brand on the client's page</label>
+    <select id="qb-brand">
+      <option value="ia" selected>Insured America</option>
+      <option value="kfg">Kannon Financial</option>
+    </select>
+    <label>Valid until</label><input type="date" id="qb-valid" value="${defValid}" />
+    ${[0,1,2,3].map(optBlock).join('')}
+    <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Client: <strong>${escWeb(contact.name || '')}</strong>${contact.email ? ' &middot; ' + escWeb(contact.email) : ' &middot; <span style="color:#f59e0b;">no email on file — you can still copy the link</span>'}</p>
+  `, async () => {
+    const line = document.getElementById('qb-line').value;
+    if (MEDICARE_QUOTE_LINES.includes(line) && typeof medicareCertified_ === 'function' && !medicareCertified_()) {
+      showToast('Medicare quoting requires Insured America + health license.'); return false;
+    }
+    const options = [];
+    for (let i = 0; i < 4; i++) {
+      const name = document.getElementById('qb-name-' + i).value.trim();
+      const prem = parseFloat(document.getElementById('qb-prem-' + i).value);
+      if (!name && !document.getElementById('qb-prem-' + i).value) continue;
+      if (!name || isNaN(prem)) { showToast('Option ' + (i + 1) + ' needs a plan name and premium.'); return false; }
+      const carId = document.getElementById('qb-car-' + i).value || null;
+      const car = (window._qbCarriers || []).find(c => c.id === carId);
+      if (!car) { showToast('Option ' + (i + 1) + ': pick a carrier.'); return false; }
+      const prodId = document.getElementById('qb-prod-' + i).value || null;
+      let bullets = document.getElementById('qb-bul-' + i).value.split('\n').map(x => x.trim()).filter(Boolean);
+      if (MEDICARE_QUOTE_LINES.includes(line)) {
+        const prod = (window._qbProds || []).find(p => p.id === prodId);
+        bullets = (prod && (prod.metadata || {}).bullets) || [];
+      }
+      options.push({
+        carrier_id: carId, product_id: prodId, carrier_name: car.name,
+        display_name: name, monthly_premium: prem, benefit_bullets: bullets,
+        agent_note: document.getElementById('qb-note-' + i).value.trim() || null,
+        is_recommended: document.getElementById('qb-rec-' + i).checked,
+        sort_order: i,
+      });
+    }
+    if (!options.length) { showToast('Add at least one option.'); return false; }
+    const { data: q, error } = await supabaseClient.from('quotes').insert({
+      contact_id: contact.id, deal_id: deal.id, agent_id: currentAgent.id,
+      agent_name: currentAgent.display_name || currentAgent.name,
+      agent_email: currentAgent.email, agent_phone: currentAgent.phone || null,
+      client_name: contact.name || 'Client', client_email: contact.email || null,
+      line: line, brand: document.getElementById('qb-brand').value,
+      valid_until: document.getElementById('qb-valid').value || null,
+    }).select().single();
+    if (error) { showToast('Error: ' + error.message); return false; }
+    const { error: e2 } = await supabaseClient.from('quote_options')
+      .insert(options.map(o => Object.assign({ quote_id: q.id }, o)));
+    if (e2) { showToast('Error saving options: ' + e2.message); return false; }
+    closeModal();
+    openQuoteReady_(q, contact);
+    loadQuotesStatus_(deal);
+    return false;
+  }, { confirmLabel: 'Save Quote' });
+  qbLineChanged_();
+}
+
+function qbLineChanged_() {
+  const line = document.getElementById('qb-line').value;
+  const isMed = MEDICARE_QUOTE_LINES.includes(line);
+  document.getElementById('qb-med-note').style.display = isMed ? 'block' : 'none';
+  const brand = document.getElementById('qb-brand');
+  if (isMed) { brand.value = 'ia'; brand.disabled = true; } else { brand.disabled = false; }
+  for (let i = 0; i < 4; i++) {
+    const bul = document.getElementById('qb-bul-' + i);
+    bul.readOnly = isMed;
+    bul.placeholder = isMed ? 'Locked — filled from the product record' : 'e.g. $0 deductible';
+    qbFillProducts_(i);
+  }
+}
+
+function qbFillProducts_(i) {
+  const carId = document.getElementById('qb-car-' + i).value;
+  const line = document.getElementById('qb-line').value;
+  const sel = document.getElementById('qb-prod-' + i);
+  let list = (window._qbProds || []).filter(p => p.carrier_id === carId);
+  const inLine = list.filter(p => p.line_of_business === line);
+  if (inLine.length) list = inLine;
+  sel.innerHTML = '<option value="">— none / type manually —</option>'
+    + list.map(p => `<option value="${p.id}">${escWeb(p.name)}${p.plan_year ? ' (' + p.plan_year + ')' : ''}</option>`).join('');
+}
+
+function qbApplyProduct_(i) {
+  const prod = (window._qbProds || []).find(p => p.id === document.getElementById('qb-prod-' + i).value);
+  if (!prod) return;
+  document.getElementById('qb-name-' + i).value = prod.name;
+  document.getElementById('qb-bul-' + i).value = ((prod.metadata || {}).bullets || []).join('\n');
+}
+
+function openQuoteReady_(q, contact) {
+  const link = 'https://crm.thekannongroup.com/quote.html?q=' + q.id;
+  showModal('Quote ready to send', `
+    <p style="font-size:13px;">The client's page is live at:</p>
+    <input type="text" value="${link}" readonly onclick="this.select()" style="width:100%;font-size:12px;" />
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+      ${contact.email ? `<button class="btn btn-primary" onclick="sendQuote_('${q.id}', this)">&#9993; Email it to ${escWeb(contact.email)}</button>` : ''}
+      <button class="btn btn-outline" onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copied.'))">Copy link</button>
+      <a class="btn btn-outline" href="${link}" target="_blank" style="text-decoration:none;">Preview &#8599;</a>
+    </div>
+    <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Emailing uses the branded template and marks the quote as Sent. Copying the link (for a text message) — click "Mark as sent" after you share it.</p>
+    <button class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="markQuoteSent_('${q.id}', this)">Mark as sent (shared another way)</button>
+  `, null, { hideConfirm: true });
+}
+
+async function sendQuote_(quoteId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  const { error } = await supabaseClient.from('quotes')
+    .update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', quoteId);
+  if (error) { showToast('Error: ' + error.message); if (btn) { btn.disabled = false; } return; }
+  try { fetch(APPS_SCRIPT_URL + '?action=send_quote&quote_id=' + quoteId, { mode: 'no-cors' }); } catch (e) {}
+  showToast('Quote email is on its way.');
+  if (btn) btn.textContent = '\u2713 Sent';
+}
+
+async function markQuoteSent_(quoteId, btn) {
+  const { error } = await supabaseClient.from('quotes')
+    .update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', quoteId);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('Marked as sent.');
+  if (btn) btn.textContent = '\u2713 Marked sent';
 }

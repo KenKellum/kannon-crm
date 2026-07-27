@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Your Quote</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; padding: 24px 16px; }
+  .card { max-width: 860px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+  .head { padding: 18px 26px; display: flex; align-items: center; gap: 14px; }
+  .head.ia  { background: #1d3557; }
+  .head.kfg { background: #1e293b; }
+  .head .brand { color: #fff; font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+  .head .tag { color: #c8a84b; font-size: 10px; font-style: italic; letter-spacing: 1.2px; margin-top: 3px; }
+  .body { padding: 28px; }
+  h1 { font-size: 21px; color: #1d3557; margin-bottom: 4px; }
+  .kfg-theme h1 { color: #1e293b; }
+  p { font-size: 14px; line-height: 1.7; color: #334155; }
+  .agent-line { font-size: 13px; color: #64748b; margin-bottom: 6px; }
+  .valid { font-size: 12px; color: #64748b; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 18px 0 8px; }
+  .opt { border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 18px 16px 16px; position: relative; display: flex; flex-direction: column; }
+  .opt.rec { border-color: #c8a84b; box-shadow: 0 2px 12px rgba(200,168,75,.18); }
+  .rec-badge { position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: #c8a84b; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .8px; padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+  .opt .carrier { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #64748b; }
+  .opt .plan { font-size: 15px; font-weight: 700; margin: 3px 0 10px; color: #1e293b; }
+  .opt .prem { font-size: 30px; font-weight: 800; color: #1d3557; }
+  .opt .prem small { font-size: 12px; font-weight: 400; color: #64748b; }
+  .opt ul { list-style: none; margin: 12px 0 14px; flex: 1; }
+  .opt li { font-size: 12.5px; line-height: 1.5; color: #334155; padding: 3px 0 3px 18px; position: relative; }
+  .opt li::before { content: "\2713"; position: absolute; left: 0; color: #16a34a; font-weight: 700; }
+  .opt .note { font-size: 11.5px; color: #64748b; font-style: italic; margin-bottom: 10px; }
+  .pick { width: 100%; background: #1d3557; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .pick:hover { background: #16304f; }
+  .pick:disabled { opacity: .55; cursor: default; }
+  .picked { background: #16a34a !important; }
+  .ask { display: block; text-align: center; margin: 22px auto 0; font-size: 13px; color: #1d3557; }
+  .fine { font-size: 10.5px; color: #94a3b8; line-height: 1.6; margin-top: 20px; }
+  #done-msg { display: none; background: #f0fdf4; border: 1.5px solid #16a34a; border-radius: 10px; padding: 14px 18px; margin-top: 18px; font-size: 14px; color: #14532d; }
+  #loader { text-align: center; padding: 50px 0; color: #64748b; font-size: 14px; }
+  #error-screen { display: none; text-align: center; padding: 30px 10px; }
+  @media (max-width: 560px) { .body { padding: 20px 16px; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="head ia" id="head">
+    <div>
+      <div class="brand" id="brand-name">&nbsp;</div>
+      <div class="tag" id="brand-tag">&nbsp;</div>
+    </div>
+  </div>
+  <div class="body">
+    <div id="loader">Loading your quote&hellip;</div>
+    <div id="quote-view" style="display:none;">
+      <h1 id="q-title">Your Coverage Options</h1>
+      <div class="agent-line" id="q-agent"></div>
+      <div class="valid" id="q-valid"></div>
+      <p style="font-size:13.5px;">Here are the options I've put together for you. Tap <strong>&ldquo;I'm interested&rdquo;</strong> on any option and I'll follow up personally &mdash; nothing is purchased or changed until we talk.</p>
+      <div class="grid" id="opts"></div>
+      <div id="done-msg"></div>
+      <a class="ask" id="q-ask" href="#">Questions? Contact me directly &rarr;</a>
+      <div class="fine" id="q-fine"></div>
+    </div>
+    <div id="error-screen">
+      <div style="font-size:46px;">&#9888;&#65039;</div>
+      <h1>We couldn't load this quote</h1>
+      <p>The link may be incomplete or the quote may have expired. Please use the exact link from your email, or contact your agent.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+const MEDICARE_LINES = ['Medicare Advantage', 'Medicare Supplement', 'Part D (PDP)'];
+const TPMO = 'We do not offer every plan available in your area. Any information we provide is limited to those plans we do offer in your area. Please contact Medicare.gov, 1-800-MEDICARE, or your local State Health Insurance Assistance Program (SHIP) to get information on all of your options.';
+const NOT_GOV = 'Not connected with or endorsed by the United States government or the federal Medicare program.';
+let qid = null, quote = null;
+
+async function supa(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({
+    'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+  }, opts.headers || {});
+  const res = await fetch(SUPA_URL + path, opts);
+  if (opts.method === 'PATCH') return res.ok;
+  return res.ok ? res.json() : null;
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+function setBrand(brand) {
+  const head = document.getElementById('head');
+  if (brand === 'ia') {
+    head.className = 'head ia';
+    document.getElementById('brand-name').textContent = 'THE INSURED AMERICA AGENCY';
+    document.getElementById('brand-tag').innerHTML = '&ldquo;Protect &amp; Build Your Potential&rdquo; &nbsp;&middot;&nbsp; A Kannon Financial Group Brand';
+  } else {
+    head.className = 'head kfg';
+    document.getElementById('card').classList.add('kfg-theme');
+    document.getElementById('brand-name').textContent = 'KANNON FINANCIAL GROUP';
+    document.getElementById('brand-tag').innerHTML = 'Protect &middot; Build &middot; Retire';
+  }
+}
+
+async function init() {
+  qid = new URLSearchParams(location.search).get('q');
+  if (!qid) { showErr(); return; }
+  const rows = await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid)
+    + '&select=id,client_name,line,brand,status,valid_until,viewed_at,agent_name,agent_email,agent_phone', { method: 'GET' });
+  quote = rows && rows[0];
+  if (!quote) { showErr(); return; }
+  if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showErr(); return; }
+  const opts = await supa('/rest/v1/quote_options?quote_id=eq.' + encodeURIComponent(qid)
+    + '&select=*&order=sort_order', { method: 'GET' }) || [];
+  if (!opts.length) { showErr(); return; }
+
+  setBrand(quote.brand);
+  document.title = 'Your Quote — ' + (quote.brand === 'ia' ? 'The Insured America Agency' : 'Kannon Financial Group');
+  document.getElementById('q-title').textContent = 'Coverage Options for ' + (quote.client_name.split(' ')[0] || 'You');
+  document.getElementById('q-agent').innerHTML = 'Prepared personally for you by <strong>' + esc(quote.agent_name || 'your licensed agent') + '</strong>'
+    + (quote.agent_phone ? ' &nbsp;&middot;&nbsp; ' + esc(quote.agent_phone) : '');
+  if (quote.valid_until) document.getElementById('q-valid').textContent =
+    'These quotes are valid through ' + new Date(quote.valid_until + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) + '.';
+  const ask = document.getElementById('q-ask');
+  if (quote.agent_email) ask.href = 'mailto:' + quote.agent_email + '?subject=' + encodeURIComponent('Question about my quote');
+  else if (quote.agent_phone) ask.href = 'tel:' + quote.agent_phone.replace(/[^0-9+]/g, '');
+
+  document.getElementById('opts').innerHTML = opts.map(o => `
+    <div class="opt${o.is_recommended ? ' rec' : ''}">
+      ${o.is_recommended ? '<div class="rec-badge">AGENT’S RECOMMENDATION</div>' : ''}
+      <div class="carrier">${esc(o.carrier_name)}</div>
+      <div class="plan">${esc(o.display_name)}</div>
+      <div class="prem">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<small> /month</small></div>
+      <ul>${(o.benefit_bullets || []).map(b => '<li>' + esc(b) + '</li>').join('')}</ul>
+      ${o.agent_note ? '<div class="note">' + esc(o.agent_note) + '</div>' : ''}
+      <button class="pick" id="pick-${o.id}" onclick="pick('${o.id}', this)">I’m interested in this one</button>
+    </div>`).join('');
+
+  let fine = 'Premiums shown are quotes only and are subject to carrier verification, underwriting where applicable, and final approval. No coverage is bound, changed, or cancelled by viewing this page or expressing interest.';
+  if (MEDICARE_LINES.includes(quote.line)) fine += '<br><br>' + TPMO + '<br>' + NOT_GOV;
+  document.getElementById('q-fine').innerHTML = fine;
+
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('quote-view').style.display = 'block';
+
+  // Stamp first view (sent -> viewed)
+  if (!quote.viewed_at) {
+    supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&status=eq.sent', {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'viewed', viewed_at: new Date().toISOString() })
+    });
+  }
+}
+
+async function pick(optId, btn) {
+  document.querySelectorAll('.pick').forEach(b => { b.disabled = true; });
+  btn.textContent = 'Got it — sending…';
+  const ok1 = await supa('/rest/v1/quote_options?id=eq.' + encodeURIComponent(optId), {
+    method: 'PATCH', body: JSON.stringify({ client_selected_at: new Date().toISOString() })
+  });
+  await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&status=in.(sent,viewed)', {
+    method: 'PATCH', body: JSON.stringify({ status: 'interested' })
+  });
+  try { fetch(APPS_SCRIPT_URL + '?action=quote_interested&quote_id=' + qid + '&option_id=' + optId, { mode: 'no-cors' }); } catch (e) {}
+  btn.textContent = '✓ Interest sent';
+  btn.classList.add('picked');
+  const dm = document.getElementById('done-msg');
+  dm.style.display = 'block';
+  dm.innerHTML = '<strong>Thank you!</strong> ' + esc((quote.agent_name || 'Your agent').split(' ')[0]) + ' has been notified and will reach out shortly. Nothing has been purchased or changed — this just starts the conversation.';
+  if (!ok1) dm.innerHTML += ' <span style="color:#b45309;">(If you don’t hear back within one business day, please call directly.)</span>';
+}
+
+function showErr() {
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('error-screen').style.display = 'block';
+}
+
+init();
+</script>
+</body>
+</html>
