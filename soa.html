@@ -29,6 +29,12 @@
   #done, #already, #error-screen { display: none; text-align: center; padding: 30px 10px; }
   #done .big, #already .big { font-size: 46px; margin-bottom: 10px; }
   #loader { text-align: center; padding: 50px 0; color: #64748b; font-size: 14px; }
+  #cert-view { display: none; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .card { box-shadow: none; max-width: 100%; }
+    .no-print { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -75,6 +81,7 @@
       <h1>Already signed</h1>
       <p>This Scope of Appointment has already been completed. Nothing more is needed — your agent will be in touch.</p>
     </div>
+    <div id="cert-view" style="display:none;"></div>
     <div id="error-screen">
       <div class="big" style="font-size:46px;">&#9888;&#65039;</div>
       <h1>We couldn't load this form</h1>
@@ -100,8 +107,10 @@ async function supa(path, opts) {
 }
 
 function show(id) {
-  ['loader','form-view','done','already','error-screen'].forEach(x =>
-    document.getElementById(x).style.display = x === id ? '' : 'none');
+  ['loader','form-view','done','already','error-screen','cert-view'].forEach(x => {
+    const el = document.getElementById(x);
+    if (el) el.style.display = x === id ? 'block' : 'none';
+  });
 }
 
 async function init() {
@@ -109,10 +118,13 @@ async function init() {
   soaId = params.get('s');
   if (!soaId) { show('error-screen'); return; }
   const rows = await supa('/rest/v1/soa_records?id=eq.' + encodeURIComponent(soaId)
-    + '&select=id,agent_name,beneficiary_name,products_offered,status', { method: 'GET' });
+    + '&select=id,agent_name,beneficiary_name,products_offered,products_agreed,status,sent_at,signed_at,signature_name,signer_attestation', { method: 'GET' });
   const r = rows && rows[0];
   if (!r) { show('error-screen'); return; }
-  if (r.status !== 'pending') { show('already'); return; }
+  if (r.status !== 'pending') {
+    if (params.get('view') === '1' && r.status === 'signed') { renderCertificate(r); return; }
+    show('already'); return;
+  }
   document.getElementById('agent-line').textContent =
     (r.agent_name || 'Your licensed agent') + ' of The Insured America Agency';
   document.getElementById('products').innerHTML = (r.products_offered || []).map((p, i) =>
@@ -140,7 +152,8 @@ async function sign() {
       signed_at: new Date().toISOString(),
       signature_name: name,
       signer_attestation: true,
-      products_agreed: agreed
+      products_agreed: agreed,
+      signer_user_agent: (navigator.userAgent || '').slice(0, 300)
     })
   });
   if (ok) { show('done'); }
@@ -149,6 +162,24 @@ async function sign() {
     err.textContent = 'Something went wrong — please try again or contact your agent.';
     err.style.display = 'block';
   }
+}
+
+function renderCertificate(r) {
+  const fmt = d => d ? new Date(d).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' }) : '—';
+  document.getElementById('cert-view').innerHTML =
+    '<h1>Scope of Appointment — Signed Record</h1>'
+    + '<p style="font-size:12px;color:#64748b;">Record ID: ' + r.id + ' &nbsp;·&nbsp; Retained 10 years per CMS requirements.</p>'
+    + '<div class="box"><div class="lbl">Beneficiary</div>'
+    + '<p style="margin:0;"><strong>' + (r.beneficiary_name || '—') + '</strong><br>'
+    + 'Electronic signature (typed name): <strong>' + (r.signature_name || '—') + '</strong><br>'
+    + 'Attestation confirmed: ' + (r.signer_attestation ? 'Yes' : 'No') + '</p></div>'
+    + '<div class="box"><div class="lbl">Agent</div><p style="margin:0;">' + (r.agent_name || '—') + ' — The Insured America Agency</p></div>'
+    + '<div class="box"><div class="lbl">Products proposed by agent</div><p style="margin:0;">' + (r.products_offered || []).join('<br>') + '</p></div>'
+    + '<div class="box" style="border-left-color:#0f766e;"><div class="lbl">Products the beneficiary agreed to discuss</div><p style="margin:0;"><strong>' + ((r.products_agreed || []).join('<br>') || 'None') + '</strong></p></div>'
+    + '<div class="box"><div class="lbl">Timeline</div><p style="margin:0;">Sent: ' + fmt(r.sent_at) + '<br>Signed: ' + fmt(r.signed_at) + '<br>Sales meeting permitted after: <strong>' + fmt(r.signed_at ? new Date(new Date(r.signed_at).getTime() + 48*3600*1000) : null) + '</strong> (48-hour rule)</p></div>'
+    + '<p class="fine">The beneficiary confirmed: they are the Medicare beneficiary or authorized representative; they agreed to discuss only the products marked above; and they understand a licensed agent may be compensated upon enrollment. Signature captured electronically with timestamp and device record on file.</p>'
+    + '<button class="btn no-print" onclick="window.print()">&#128424;&#65039; Print / Save as PDF</button>';
+  show('cert-view');
 }
 
 init();

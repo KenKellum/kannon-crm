@@ -9524,7 +9524,9 @@ async function loadSoaStatus_(deal) {
       ? '<span style="color:var(--success);">&#10003; 48-hour window satisfied — sales meeting permitted.</span>'
       : '<span style="color:#f59e0b;">&#9203; 48-hour rule: sales meeting permitted after ' + okAt.toLocaleString() + '.</span>';
     el.innerHTML = '<span style="color:var(--success);">&#10003; Signed ' + new Date(r.signed_at).toLocaleDateString() + '</span>'
-      + ' — agreed: ' + ((r.products_agreed || []).join(', ') || 'none') + '<br>' + gate;
+      + ' — agreed: ' + ((r.products_agreed || []).join(', ') || 'none')
+      + ' &nbsp;<a href="' + window.location.origin + '/soa.html?s=' + r.id + '&view=1" target="_blank" style="font-size:11px;">View / print record ↗</a>'
+      + '<br>' + gate;
   } else {
     el.innerHTML = 'SOA ' + r.status + '.';
   }
