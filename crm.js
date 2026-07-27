@@ -5085,7 +5085,7 @@ function openDealPanel(dealId) {
   const deal    = deals.find(d => d.id === dealId); if (!deal) return;
   const contact = contacts.find(c => c.id === deal.contact_id);
   const pipeline = PIPELINES[deal.pipeline] || { name: deal.pipeline };
-  const isHealth = ['group-employer','individual-family'].includes(deal.pipeline);
+  const dealCfg = DEAL_EDIT_CONFIG[deal.pipeline] || null;
 
   function fmtDate(d) {
     if (!d) return null;
@@ -5099,14 +5099,19 @@ function openDealPanel(dealId) {
       + (contact.email ? '<div class="panel-field"><span class="panel-field-icon">&#9993;</span><a href="mailto:' + contact.email + '">' + contact.email + '</a></div>' : '')
     : '<div class="panel-field" style="color:var(--text-muted);">No contact linked</div>';
 
-  var healthHTML = isHealth
-    ? '<div class="panel-section"><div class="panel-label">Plan Details</div><div class="deal-field-grid">'
-      + '<div class="deal-field"><div class="deal-field-label">Employees</div><div class="deal-field-value' + (deal.employees ? '' : ' empty') + '">' + (deal.employees || 'Not set') + '</div></div>'
-      + '<div class="deal-field"><div class="deal-field-label">Renewal Date</div><div class="deal-field-value' + (deal.renewal_date ? '' : ' empty') + '">' + (fmtDate(deal.renewal_date) || 'Not set') + '</div></div>'
-      + '<div class="deal-field"><div class="deal-field-label">Current Carrier</div><div class="deal-field-value' + (deal.current_carrier ? '' : ' empty') + '">' + (deal.current_carrier || 'Unknown') + '</div></div>'
-      + '<div class="deal-field"><div class="deal-field-label">Quoted Premium</div><div class="deal-field-value' + (deal.quoted_premium ? '' : ' empty') + '">' + (deal.quoted_premium ? '$' + parseFloat(deal.quoted_premium).toLocaleString() + '/mo' : 'Not quoted') + '</div></div>'
-      + '</div></div>'
-    : '';
+  var healthHTML = '';
+  if (dealCfg && dealCfg.fields.length) {
+    var _panelFieldHTML = dealCfg.fields.map(function(f) {
+      var raw = deal[f.col];
+      var disp;
+      if (f.type === 'date') disp = fmtDate(raw) || 'Not set';
+      else if (f.col === 'quoted_premium') disp = raw ? '$' + parseFloat(raw).toLocaleString() + '/mo' : 'Not quoted';
+      else if (f.type === 'number') disp = raw || 'Not set';
+      else disp = raw || 'Not set';
+      return '<div class="deal-field"><div class="deal-field-label">' + f.label.replace(' ($)','') + '</div><div class="deal-field-value' + (raw ? '' : ' empty') + '">' + disp + '</div></div>';
+    }).join('');
+    healthHTML = '<div class="panel-section"><div class="panel-label">' + dealCfg.section + '</div><div class="deal-field-grid">' + _panelFieldHTML + '</div></div>';
+  }
 
   var nextStepHTML = deal.next_step
     ? '<div style="margin-top:10px;"><div class="deal-field-label" style="margin-bottom:4px;">Next Step</div>'
@@ -5139,8 +5144,8 @@ function openDealPanel(dealId) {
     + '<div class="panel-section"><div class="panel-label">Linked Contact</div>' + contactHTML + '</div>'
     + '<div class="panel-section"><div class="panel-label">Deal Details</div>'
     + '<div class="deal-field-grid">'
-    + '<div class="deal-field"><div class="deal-field-label">Deal Value</div><div class="deal-field-value' + (deal.value ? '' : ' empty') + '">' + (deal.value ? '$' + parseFloat(deal.value).toLocaleString() : 'Not set') + '</div></div>'
-    + '<div class="deal-field"><div class="deal-field-label">Expected Close</div><div class="deal-field-value' + (deal.close_date ? '' : ' empty') + '">' + (fmtDate(deal.close_date) || 'Not set') + '</div></div>'
+    + ((!dealCfg || dealCfg.showValue) ? '<div class="deal-field"><div class="deal-field-label">Deal Value</div><div class="deal-field-value' + (deal.value ? '' : ' empty') + '">' + (deal.value ? '$' + parseFloat(deal.value).toLocaleString() : 'Not set') + '</div></div>' : '')
+    + '<div class="deal-field"><div class="deal-field-label">' + (dealCfg ? dealCfg.closeLabel : 'Expected Close') + '</div><div class="deal-field-value' + (deal.close_date ? '' : ' empty') + '">' + (fmtDate(deal.close_date) || 'Not set') + '</div></div>'
     + '</div>' + nextStepHTML + '</div>'
     + healthHTML
     + '<div class="panel-section" style="padding-top:0;">'
