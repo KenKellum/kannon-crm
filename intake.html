@@ -235,7 +235,8 @@ async function init() {
   if (!data || !data.length) { showError(); return; }
   const session = data[0];
 
-  if (session.status === 'completed') {
+  const isReview = params.get('review') === '1';
+  if (session.status === 'completed' && !isReview) {
     document.getElementById('loader').style.display = 'none';
     document.getElementById('success-screen').style.display = '';
     return;
@@ -261,6 +262,10 @@ function renderForm(session, contact) {
     name: contact.name || '', email: contact.email || '', phone: contact.phone || '',
     business_name: contact.company || '', dob: contact.date_of_birth || ''
   };
+  // Review mode (or any saved progress): overlay previously saved answers
+  Object.entries(session.responses || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') prefill[k] = Array.isArray(v) ? v[0] : v;
+  });
 
   const typeLabel = {
     'financial': 'Life &amp; Financial Services',
@@ -406,4 +411,16 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
     });
   }
 
-  document.getElementById('form-container').style.di
+  document.getElementById('form-container').style.display = 'none';
+  document.getElementById('success-screen').style.display = '';
+}
+
+function showError() {
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('error-screen').style.display = '';
+}
+
+init();
+</script>
+</body>
+</html>

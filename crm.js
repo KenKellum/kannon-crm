@@ -3021,6 +3021,26 @@ async function saveIntakeToCRM() {
       }
     }
 
+    // Client gets an email with a link to review/edit what was saved
+    if (sess && sess.id && c.email) {
+      try {
+        const reviewUrl = window.location.origin + '/intake.html?s=' + sess.id + '&review=1'
+          + '&name=' + encodeURIComponent(c.name || '')
+          + '&email=' + encodeURIComponent(c.email || '')
+          + '&phone=' + encodeURIComponent(c.phone || '');
+        const u = new URL(APPS_SCRIPT_URL);
+        u.searchParams.set('action', 'send_intake_link');
+        u.searchParams.set('agent_id', currentAgent ? currentAgent.id : '');
+        u.searchParams.set('to', c.email);
+        u.searchParams.set('to_name', c.name || '');
+        u.searchParams.set('contact_id', _intakeContactId);
+        u.searchParams.set('session_id', sess.id);
+        u.searchParams.set('intake_url', reviewUrl);
+        u.searchParams.set('form_type', _intakeFormType);
+        u.searchParams.set('review', '1');
+        fetch(u.toString(), { mode: 'no-cors' });
+      } catch (rlErr) { /* best-effort */ }
+    }
     if (_intakeFormType === 'medicare' && sess && sess.id) {
       try {
         fetch(APPS_SCRIPT_URL + '?action=medicare_welcome&session_id=' + sess.id
