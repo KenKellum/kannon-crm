@@ -6294,6 +6294,24 @@ async function renderAdmin() {
           </div>`).join('')}
     </div>`;
 
+  const { data: _activeBaa } = await supabaseClient.from('baa_versions')
+    .select('*').eq('is_active', true).order('version', { ascending: false }).limit(1);
+  window._activeBaaVersion = (_activeBaa && _activeBaa[0]) || null;
+  const _baaSignedCount = window._activeBaaVersion
+    ? (await supabaseClient.from('baa_records').select('id', { count: 'exact', head: true })
+        .eq('baa_version_id', window._activeBaaVersion.id).eq('status', 'signed')).count || 0
+    : 0;
+  const baaSection = `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-weight:700;font-size:14px;">&#128274; HIPAA Business Associate Agreement</div>
+        <button class="btn btn-outline btn-sm" onclick="openBaaVersionModal()">Publish new version</button>
+      </div>
+      ${window._activeBaaVersion
+        ? `<div style="font-size:12px;color:var(--text-muted);">Active: <strong>v${window._activeBaaVersion.version}</strong> &middot; effective ${window._activeBaaVersion.effective_date} &middot; ${_baaSignedCount} compan${_baaSignedCount === 1 ? 'y has' : 'ies have'} signed this version. Companies are asked to sign automatically when a census is requested; publishing a new version flags every group deal for re-signature.</div>`
+        : '<div style="font-size:12px;color:var(--danger);">No active BAA version — census requests will NOT include the HIPAA agreement!</div>'}
+    </div>`;
+
   const { data: _newApps } = await supabaseClient.from('recruit_applications')
     .select('*').eq('status', 'new').order('created_at', { ascending: true });
   const newApps = _newApps || [];
@@ -6445,6 +6463,7 @@ async function renderAdmin() {
       ${applicationsSection}
       ${pendingAgentSection}
       ${carriersSection}
+      ${baaSection}
       ${agentRows || '<div class="empty-state" style="padding:20px;"><p>No active agents yet.</p></div>'}
     </div>
 
@@ -10077,13 +10096,71 @@ async function markQuoteSent_(quoteId, btn) {
 // GROUP CENSUS — request -> employer completes company profile +
 // census at census.html?c=<uuid> (template / smart upload / manual)
 // ============================================================
+async function loadBaaLine_(deal) {
+  // Latest BAA for this deal's contact + whether it matches the active version
+  const dealContactId = deal.contact_id;
+  if (!dealContactId) return '';
+  const { data: av } = await supabaseClient.from('baa_versions')
+    .select('id,version').eq('is_active', true).order('version', { ascending: false }).limit(1);
+  const activeVer = av && av[0];
+  const { data: recs } = await supabaseClient.from('baa_records')
+    .select('id,status,signed_at,signer_name,baa_version_id,baa_versions(version)')
+    .eq('contact_id', dealContactId).order('created_at', { ascending: false }).limit(5);
+  if (!recs || !recs.length) return '';
+  const signed = recs.find(x => x.status === 'signed');
+  const pending = recs.find(x => x.status === 'pending');
+  let line = '<div style="margin-top:6px;padding-top:6px;border-top:0.5px dashed var(--border);">&#128274; HIPAA BAA: ';
+  if (signed) {
+    const sv = signed.baa_versions ? signed.baa_versions.version : '?';
+    line += '<span style="color:var(--success);font-weight:600;">&#10003; signed v' + sv + '</span> '
+      + new Date(signed.signed_at).toLocaleDateString() + ' by ' + escWeb(signed.signer_name || '')
+      + ' &middot; <a href="baa.html?b=' + signed.id + '" target="_blank">view / print &#8599;</a>';
+    if (activeVer && signed.baa_version_id !== activeVer.id) {
+      line += '<br><span style="color:#f59e0b;font-weight:600;">&#9888; Master agreement updated to v' + activeVer.version + '</span>'
+        + (pending ? ' &mdash; re-signature pending.' : ' &middot; <a href="#" onclick="requestBaaResign_(\'' + deal.id + '\'); return false;">request re-signature</a>');
+    }
+  } else if (pending) {
+    line += '<span style="color:#f59e0b;">pending signature</span>'
+      + ' &middot; <a href="baa.html?b=' + pending.id + '" target="_blank">open &#8599;</a>'
+      + ' &middot; <a href="#" onclick="resendBaa_(\'' + pending.id + '\', this); return false;">resend email</a>';
+  }
+  return line + '</div>';
+}
+
+async function requestBaaResign_(dealId) {
+  const deal = deals.find(d => d.id === dealId); if (!deal) return;
+  const contact = contacts.find(c => c.id === deal.contact_id);
+  if (!contact || !contact.email) { showToast('Contact needs an email on file.'); return; }
+  const { data: av } = await supabaseClient.from('baa_versions')
+    .select('id').eq('is_active', true).order('version', { ascending: false }).limit(1);
+  if (!av || !av.length) { showToast('No active BAA version found.'); return; }
+  const { data: b, error } = await supabaseClient.from('baa_records').insert({
+    baa_version_id: av[0].id, contact_id: contact.id, deal_id: deal.id,
+    agent_id: currentAgent.id,
+    agent_name: currentAgent.display_name || currentAgent.name,
+    agent_email: currentAgent.email,
+    company_legal_name: contact.company || null,
+  }).select().single();
+  if (error) { showToast('Error: ' + error.message); return; }
+  try { fetch(APPS_SCRIPT_URL + '?action=send_baa&baa_id=' + b.id, { mode: 'no-cors' }); } catch (e) {}
+  showToast('Updated agreement sent to ' + contact.email + ' for signature.');
+  loadCensusStatus_(deal);
+}
+
+async function resendBaa_(baaId, a) {
+  try { fetch(APPS_SCRIPT_URL + '?action=send_baa&baa_id=' + baaId, { mode: 'no-cors' }); } catch (e) {}
+  showToast('Agreement email re-sent.');
+  if (a) a.textContent = 'sent again ✓';
+}
+
 async function loadCensusStatus_(deal) {
   const el = document.getElementById('census-status-' + deal.id);
   if (!el) return;
   const { data: reqs } = await supabaseClient.from('census_requests')
     .select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).limit(1);
   const r = reqs && reqs[0];
-  if (!r) { el.textContent = 'No census requested yet — group quotes need one first.'; return; }
+  const baaLine = await loadBaaLine_(deal);
+  if (!r) { el.innerHTML = 'No census requested yet — group quotes need one first.' + baaLine; return; }
   const link = 'https://crm.thekannongroup.com/census.html?c=' + r.id;
   if (r.status === 'submitted') {
     const { data: emps } = await supabaseClient.from('census_employees')
@@ -10102,13 +10179,15 @@ async function loadCensusStatus_(deal) {
       + (avg !== null ? ' &middot; avg employee age ' + avg : '')
       + '<br>Contact: ' + escWeb(r.contact_name || '') + (r.contact_phone ? ' &middot; ' + escWeb(r.contact_phone) : '')
       + ' &middot; <a href="#" onclick="openCensusEditor(\'' + r.id + '\'); return false;">view / edit census</a>'
-      + ' &middot; <a href="#" onclick="downloadCensusCsv_(\'' + r.id + '\', \'' + escWeb((r.company_legal_name || 'census').replace(/[^a-z0-9 ]/gi, '')) + '\'); return false;">download CSV</a>';
+      + ' &middot; <a href="#" onclick="downloadCensusCsv_(\'' + r.id + '\', \'' + escWeb((r.company_legal_name || 'census').replace(/[^a-z0-9 ]/gi, '')) + '\'); return false;">download CSV</a>'
+      + baaLine;
   } else {
     el.innerHTML = 'Requested ' + new Date(r.created_at).toLocaleDateString()
       + ' &mdash; waiting on the employer.'
       + '<br><a href="' + link + '" target="_blank">open form &#8599;</a>'
       + ' &middot; <a href="#" onclick="resendCensus_(\'' + r.id + '\', this); return false;">resend email</a>'
-      + ' &middot; <a href="#" onclick="navigator.clipboard.writeText(\'' + link + '\').then(()=>showToast(\'Link copied.\')); return false;">copy link</a>';
+      + ' &middot; <a href="#" onclick="navigator.clipboard.writeText(\'' + link + '\').then(()=>showToast(\'Link copied.\')); return false;">copy link</a>'
+      + baaLine;
   }
 }
 
@@ -10144,8 +10223,28 @@ function openCensusRequest(dealId) {
       contact_email: email,
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
+    // HIPAA: attach a BAA unless one is already signed on the ACTIVE version
+    try {
+      const { data: av } = await supabaseClient.from('baa_versions')
+        .select('id,version').eq('is_active', true).order('version', { ascending: false }).limit(1);
+      const activeVer = av && av[0];
+      if (activeVer) {
+        const { data: signed } = await supabaseClient.from('baa_records').select('id')
+          .eq('contact_id', contact.id).eq('baa_version_id', activeVer.id).eq('status', 'signed').limit(1);
+        if (!signed || !signed.length) {
+          const { data: b } = await supabaseClient.from('baa_records').insert({
+            baa_version_id: activeVer.id, contact_id: contact.id, deal_id: deal.id,
+            agent_id: currentAgent.id,
+            agent_name: currentAgent.display_name || currentAgent.name,
+            agent_email: currentAgent.email,
+            company_legal_name: document.getElementById('cx-legal').value.trim() || contact.company || null,
+          }).select().single();
+          if (b) await supabaseClient.from('census_requests').update({ baa_record_id: b.id }).eq('id', r.id);
+        }
+      }
+    } catch (e) { console.error('BAA attach:', e); }
     try { fetch(APPS_SCRIPT_URL + '?action=send_census&census_id=' + r.id, { mode: 'no-cors' }); } catch (e) {}
-    showToast('Census request sent to ' + email + '.');
+    showToast('Census request sent to ' + email + ' (HIPAA agreement included if needed).');
     loadCensusStatus_(deal);
   }, { confirmLabel: 'Send Request' });
 }
@@ -10307,4 +10406,44 @@ async function openCensusEditor(reqId) {
 
   (emps || []).forEach(e => ceAddRow_(e.row_type, e));
   if (!emps || !emps.length) ceAddRow_('employee');
+}
+
+// ============================================================
+// HIPAA BAA — master version management (system owner)
+// ============================================================
+function openBaaVersionModal() {
+  const cur = window._activeBaaVersion;
+  const nextVer = cur ? cur.version + 1 : 1;
+  showModal('Publish BAA Version ' + nextVer, `
+    <div style="padding:16px 20px;">
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;font-size:12px;color:#854d0e;margin-bottom:12px;">
+        &#9888; Publishing replaces the active agreement. Every company that signed an older version will show
+        <strong>"master agreement updated — request re-signature"</strong> on their deals, and all new census
+        requests will carry version ${nextVer}. Have your attorney review changes before publishing.
+      </div>
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Title</label>
+      <input type="text" id="bv-title" value="${cur ? escWeb(cur.title) : 'HIPAA Business Associate Agreement'}" style="width:100%;box-sizing:border-box;" />
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px;">Effective date</label>
+      <input type="date" id="bv-date" value="${new Date().toISOString().slice(0, 10)}" />
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px;">Agreement text (HTML paragraphs)</label>
+      <textarea id="bv-body" rows="18" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:11.5px;">${cur ? escWeb(cur.body_html) : ''}</textarea>
+    </div>
+  `, async () => {
+    const body = document.getElementById('bv-body').value.trim();
+    if (body.length < 500) { showToast('Agreement text looks too short — paste the full agreement.'); return false; }
+    if (cur) {
+      const { error: e0 } = await supabaseClient.from('baa_versions').update({ is_active: false }).eq('id', cur.id);
+      if (e0) { showToast('Error: ' + e0.message); return false; }
+    }
+    const { error } = await supabaseClient.from('baa_versions').insert({
+      version: nextVer,
+      title: document.getElementById('bv-title').value.trim() || 'HIPAA Business Associate Agreement',
+      body_html: body,
+      effective_date: document.getElementById('bv-date').value || new Date().toISOString().slice(0, 10),
+      is_active: true,
+    });
+    if (error) { showToast('Error: ' + error.message); return false; }
+    showToast('BAA version ' + nextVer + ' is now active.');
+    renderAdmin();
+  }, { confirmLabel: 'Publish v' + nextVer, wide: true });
 }

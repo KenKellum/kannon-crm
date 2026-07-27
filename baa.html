@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Business Associate Agreement — The Insured America Agency</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; padding: 24px 16px; }
+  .card { max-width: 780px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+  .head { background: #1d3557; padding: 18px 26px; }
+  .head .brand { color: #fff; font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+  .head .tag { color: #c8a84b; font-size: 10px; font-style: italic; letter-spacing: 1.2px; margin-top: 3px; }
+  .body { padding: 28px; }
+  h1 { font-size: 20px; color: #1d3557; margin-bottom: 4px; }
+  h3 { font-size: 14px; color: #1d3557; margin: 16px 0 6px; }
+  p { font-size: 13px; line-height: 1.7; color: #334155; margin-bottom: 10px; }
+  .agreement { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 18px 20px; max-height: 420px; overflow-y: auto; margin: 14px 0; background: #fcfcfd; }
+  label { display: block; font-size: 11px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: .5px; margin: 12px 0 4px; }
+  input[type=text], input[type=email] { width: 100%; padding: 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+  .attest { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: #334155; margin: 16px 0; cursor: pointer; line-height: 1.6; }
+  .attest input { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }
+  .btn { display: block; width: 100%; background: #1d3557; color: #fff; border: none; border-radius: 8px; padding: 14px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 10px; }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 10px; display: none; }
+  .fine { font-size: 10.5px; color: #94a3b8; line-height: 1.6; margin-top: 16px; }
+  .sigbox { background: #f0fdf4; border: 1.5px solid #16a34a; border-radius: 10px; padding: 14px 18px; margin: 14px 0; font-size: 13px; line-height: 1.8; color: #14532d; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  #loader { text-align: center; padding: 50px 0; color: #64748b; font-size: 14px; }
+  #done, #error-screen { display: none; text-align: center; padding: 30px 10px; }
+  .no-print {}
+  @media print {
+    body { background: #fff; padding: 0; }
+    .card { box-shadow: none; max-width: 100%; }
+    .agreement { max-height: none; overflow: visible; border: none; padding: 0; }
+    .no-print { display: none !important; }
+  }
+  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } .body { padding: 20px 14px; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div class="brand">THE INSURED AMERICA AGENCY</div>
+    <div class="tag">&ldquo;Protect &amp; Build Your Potential&rdquo; &nbsp;&middot;&nbsp; A Kannon Financial Group Brand</div>
+  </div>
+  <div class="body">
+    <div id="loader">Loading&hellip;</div>
+
+    <div id="sign-view" style="display:none;">
+      <h1 id="baa-title">HIPAA Business Associate Agreement</h1>
+      <p id="baa-sub" style="font-size:12px;color:#64748b;"></p>
+      <p>Before we receive employee health-related information (like a census), federal law (HIPAA) requires this agreement between your company's group health plan and our agency. It legally binds <strong>us</strong> to protect your employees' information. Please review and sign below.</p>
+      <div class="agreement" id="agreement-body"></div>
+      <div id="sig-section">
+        <div class="grid2">
+          <div><label>Company legal name *</label><input type="text" id="s-company" /></div>
+          <div><label>Your full name (electronic signature) *</label><input type="text" id="s-name" autocomplete="name" /></div>
+          <div><label>Your title *</label><input type="text" id="s-title" placeholder="e.g. Owner, HR Director" /></div>
+          <div><label>Your email *</label><input type="email" id="s-email" /></div>
+        </div>
+        <label class="attest">
+          <input type="checkbox" id="s-attest" />
+          <span>I am authorized to sign on behalf of the company and its group health plan(s), I have reviewed this Business Associate Agreement, and I agree to its terms. I understand my typed name constitutes a legally binding electronic signature.</span>
+        </label>
+        <button class="btn" id="sign-btn" onclick="sign()">Sign Agreement</button>
+        <p class="err" id="err"></p>
+      </div>
+      <p class="fine">Signed electronically with date, time, and device record retained. A copy of the executed agreement remains available at this link at any time.</p>
+    </div>
+
+    <div id="signed-view" style="display:none;">
+      <h1 id="c-title">HIPAA Business Associate Agreement</h1>
+      <p id="c-sub" style="font-size:12px;color:#64748b;"></p>
+      <div class="sigbox" id="c-sig"></div>
+      <div class="agreement" id="c-body" style="max-height:none;"></div>
+      <button class="btn no-print" onclick="window.print()" style="max-width:280px;">&#128424;&#65039; Print / Save as PDF</button>
+      <p class="fine">This is the executed agreement of record, retained by The Insured America Agency.</p>
+    </div>
+
+    <div id="done">
+      <div style="font-size:46px;">&#9989;</div>
+      <h1>Agreement signed — thank you!</h1>
+      <p>A copy remains available at this link at any time. You can now return to the census page to continue, or simply close this window.</p>
+      <button class="btn" style="max-width:280px;margin:14px auto 0;" onclick="location.reload()">View the executed agreement</button>
+    </div>
+    <div id="error-screen">
+      <div style="font-size:46px;">&#9888;&#65039;</div>
+      <h1>We couldn't load this agreement</h1>
+      <p>The link may be incomplete. Please use the exact link from your email, or contact your advisor at (406) 404-7602.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+let baaId = null, rec = null, ver = null;
+
+async function supa(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({
+    'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+  }, opts.headers || {});
+  const res = await fetch(SUPA_URL + path, opts);
+  if (opts.method === 'PATCH') return res.ok;
+  return res.ok ? res.json() : null;
+}
+function show(id) {
+  ['loader','sign-view','signed-view','done','error-screen'].forEach(x => {
+    const el = document.getElementById(x);
+    if (el) el.style.display = x === id ? 'block' : 'none';
+  });
+}
+function fmt(d) { return d ? new Date(d).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' }) : '—'; }
+
+async function init() {
+  baaId = new URLSearchParams(location.search).get('b');
+  if (!baaId) { show('error-screen'); return; }
+  const rows = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(baaId) + '&select=*', { method: 'GET' });
+  rec = rows && rows[0];
+  if (!rec) { show('error-screen'); return; }
+  const vers = await supa('/rest/v1/baa_versions?id=eq.' + encodeURIComponent(rec.baa_version_id) + '&select=*', { method: 'GET' });
+  ver = vers && vers[0];
+  if (!ver) { show('error-screen'); return; }
+
+  if (rec.status === 'signed') {
+    document.getElementById('c-title').textContent = ver.title;
+    document.getElementById('c-sub').textContent = 'Version ' + ver.version + ' · Effective ' + ver.effective_date + ' · Record ID ' + rec.id;
+    document.getElementById('c-body').innerHTML = ver.body_html;
+    document.getElementById('c-sig').innerHTML =
+      '<strong>Executed electronically</strong><br>'
+      + 'Company: <strong>' + (rec.company_legal_name || '—') + '</strong><br>'
+      + 'Signed by: <strong>' + (rec.signer_name || '—') + '</strong>' + (rec.signer_title ? ', ' + rec.signer_title : '') + '<br>'
+      + 'Date: ' + fmt(rec.signed_at) + '<br>'
+      + 'Attestation of authority: ' + (rec.signer_attestation ? 'Yes' : 'No')
+      + '<br>Accepted by: The Insured America Agency, a brand of Kannon Financial Group';
+    show('signed-view');
+    return;
+  }
+
+  document.getElementById('baa-title').textContent = ver.title;
+  document.getElementById('baa-sub').textContent = 'Version ' + ver.version + ' · Effective ' + ver.effective_date;
+  document.getElementById('agreement-body').innerHTML = ver.body_html;
+  if (rec.company_legal_name) document.getElementById('s-company').value = rec.company_legal_name;
+  show('sign-view');
+}
+
+async function sign() {
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  const company = document.getElementById('s-company').value.trim();
+  const name = document.getElementById('s-name').value.trim();
+  const title = document.getElementById('s-title').value.trim();
+  const email = document.getElementById('s-email').value.trim();
+  if (!company || name.length < 3 || !title || !email) {
+    err.textContent = 'Please complete all signature fields.'; err.style.display = 'block'; return;
+  }
+  if (!document.getElementById('s-attest').checked) {
+    err.textContent = 'Please check the authorization box above the Sign button.'; err.style.display = 'block'; return;
+  }
+  const btn = document.getElementById('sign-btn');
+  btn.disabled = true; btn.textContent = 'Signing…';
+  // company name travels via signer fields; the record's company field is set at request time by the agent
+  const ok = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(baaId) + '&status=eq.pending', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status: 'signed',
+      signed_at: new Date().toISOString(),
+      company_legal_name: company,
+      signer_name: name,
+      signer_title: title,
+      signer_email: email,
+      signer_attestation: true,
+      signer_user_agent: (navigator.userAgent || '').slice(0, 300)
+    })
+  });
+  if (ok) { show('done'); }
+  else {
+    btn.disabled = false; btn.textContent = 'Sign Agreement';
+    err.textContent = 'Something went wrong — please try again or contact your advisor.';
+    err.style.display = 'block';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

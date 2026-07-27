@@ -78,7 +78,14 @@
         <div><label>Contact email *</label><input type="email" id="c-cemail" /></div>
       </div>
 
-      <h2><span class="step-badge">STEP 2 — EMPLOYEE CENSUS</span></h2>
+      <div id="baa-step" style="display:none;">
+        <h2><span class="step-badge">STEP 2 — HIPAA AGREEMENT</span></h2>
+        <p style="font-size:13px;">An employee census contains health-related information, so federal law (HIPAA) requires a signed agreement <strong>before we receive it</strong>. It legally binds <em>us</em> to protect your employees' information — review and sign below (about a minute).</p>
+        <iframe id="baa-frame" title="Business Associate Agreement" style="width:100%;height:660px;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;"></iframe>
+        <p class="note">Trouble with the embedded form? <a id="baa-link" href="#" target="_blank">Open it in its own tab &#8599;</a> — then come back here and continue.</p>
+      </div>
+
+      <h2><span class="step-badge" id="census-step-label">STEP 2 — EMPLOYEE CENSUS</span></h2>
       <div class="paths" id="paths">
         <div class="path" onclick="document.getElementById('file-input').click()">
           <div class="ico">&#128228;</div>
@@ -370,6 +377,19 @@ async function init() {
     'c-street': 'company_street', 'c-city': 'company_city', 'c-state': 'company_state', 'c-zip': 'company_zip',
     'c-cname': 'contact_name', 'c-ctitle': 'contact_title', 'c-cphone': 'contact_phone', 'c-cemail': 'contact_email' };
   for (const id in pre) { if (req[pre[id]]) document.getElementById(id).value = req[pre[id]]; }
+
+  // HIPAA BAA gate: if this request carries an unsigned agreement, it becomes Step 2
+  if (req.baa_record_id) {
+    const brows = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(req.baa_record_id) + '&select=id,status', { method: 'GET' });
+    const baa = brows && brows[0];
+    if (baa && baa.status === 'pending') {
+      const url = 'baa.html?b=' + baa.id;
+      document.getElementById('baa-step').style.display = 'block';
+      document.getElementById('baa-frame').src = url;
+      document.getElementById('baa-link').href = url;
+      document.getElementById('census-step-label').textContent = 'STEP 3 — EMPLOYEE CENSUS';
+    }
+  }
   show('main');
 }
 
@@ -385,9 +405,20 @@ async function submitCensus() {
       return;
     }
   }
+  // HIPAA gate: the census cannot be received without a signed BAA
+  if (req.baa_record_id) {
+    const brows = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(req.baa_record_id) + '&select=status', { method: 'GET' });
+    if (!brows || !brows[0] || brows[0].status !== 'signed') {
+      err.textContent = 'Please sign the HIPAA agreement (Step 2) first — federal law requires it before we can receive your census.';
+      err.style.display = 'block';
+      document.getElementById('baa-step').scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    document.getElementById('baa-step').style.display = 'none';
+  }
   const trs = [...document.querySelectorAll('#rows tr')];
   const emps = trs.filter(t => t.dataset.rowType === 'employee');
-  if (!emps.length) { err.textContent = 'Please add at least one employee to the census (Step 2).'; err.style.display = 'block'; return; }
+  if (!emps.length) { err.textContent = 'Please add at least one employee to the census.'; err.style.display = 'block'; return; }
   for (const t of trs) {
     if (!t.querySelector('.f-name').value.trim() || !t.querySelector('.f-dob').value) {
       err.textContent = 'Every row needs at least a name and a date of birth — carriers require both.';
