@@ -2444,6 +2444,19 @@ const INTAKE_FIELD_DEFS = {
   email:                 { label: 'Email',                  type: 'email',  section: 'Contact Info' },
   phone:                 { label: 'Phone',                  type: 'tel',    section: 'Contact Info' },
   dob:                   { label: 'Date of Birth',          type: 'date',   section: 'Contact Info' },
+  zip:                   { label: 'ZIP Code',               type: 'text',   section: 'Contact Info' },
+  med_ab_status:         { label: 'Where are they with Medicare?', type: 'select', section: 'Medicare',
+                           options: ['Not enrolled yet','Enrolled in Part A only','Enrolled in Parts A & B','On a Medicare Advantage plan','Have a Medicare Supplement (Medigap) plan'] },
+  med_part_a_date:       { label: 'Part A effective date',  type: 'date',   section: 'Medicare' },
+  med_part_b_date:       { label: 'Part B effective date',  type: 'date',   section: 'Medicare' },
+  med_employer_coverage: { label: 'Still on employer health plan?', type: 'select', section: 'Medicare', options: ['Yes','No'] },
+  med_medications:       { label: 'Current medications (names & dosages)', type: 'textarea', section: 'Medicare' },
+  med_doctors:           { label: 'Doctors to keep',        type: 'text',   section: 'Medicare' },
+  med_pharmacy:          { label: 'Preferred pharmacy',     type: 'text',   section: 'Medicare' },
+  mi_supplement:         { label: 'Interested: Medicare Supplement (Medigap)', type: 'checkbox', section: 'Medicare' },
+  mi_pdp:                { label: 'Interested: Prescription Drug Plan (Part D)', type: 'checkbox', section: 'Medicare' },
+  mi_advantage:          { label: 'Interested: Medicare Advantage', type: 'checkbox', section: 'Medicare' },
+  mi_dental:             { label: 'Interested: Dental / Vision / Hearing', type: 'checkbox', section: 'Medicare' },
   best_time:             { label: 'Best Time to Reach',     type: 'select', section: 'Contact Info',
                            options: ['Morning','Afternoon','Evening','Anytime'] },
   marital_status:        { label: 'Marital Status',         type: 'select', section: 'Contact Info',
@@ -2553,7 +2566,10 @@ const INTAKE_TYPE_LABELS = {
 
 // All field IDs grouped by logical section for the checklist panel
 const INTAKE_ALL_FIELDS = [
-  { section: 'Contact Info',    ids: ['name','email','phone','dob','marital_status','best_time'] },
+  { section: 'Contact Info',    ids: ['name','email','phone','dob','zip','marital_status','best_time'] },
+  { section: 'Medicare',        ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage',
+                                       'med_medications','med_doctors','med_pharmacy',
+                                       'mi_supplement','mi_pdp','mi_advantage','mi_dental'] },
   { section: 'Finances',        ids: ['household_income','dependents_count','dependents_ages','has_investments'] },
   { section: 'Life Insurance',  ids: ['has_life_insurance','life_coverage_amount'] },
   { section: 'Goals',           ids: ['goal_debt','goal_protection','goal_retirement','goal_college','goal_business',
@@ -2884,7 +2900,7 @@ function _intakeCollectResponses() {
 
 async function saveIntakeToCRM() {
   const c = contacts.find(x => x.id === _intakeContactId);
-  if (!c) return;
+  if (!c) { showToast('Could not save: contact not loaded — close this form and reopen it from the contact.'); return; }
   const responses = _intakeCollectResponses();
   const selectedFields = Array.from(_intakeChecked);
 
@@ -2901,7 +2917,7 @@ async function saveIntakeToCRM() {
         .eq('id', _editId);
       if (_updErr) throw _updErr;
       // Sync key contact fields from updated responses
-      const _efm = { dob:'dob', email:'email', phone:'phone', business_name:'company', marital_status:'marital_status' };
+      const _efm = { dob:'date_of_birth', zip:'zip', email:'email', phone:'phone', business_name:'company', marital_status:'marital_status' };
       const _ecu = {};
       for (const [fid, col] of Object.entries(_efm)) {
         if (responses[fid] !== undefined && responses[fid] !== '') _ecu[col] = responses[fid];
@@ -2942,7 +2958,7 @@ async function saveIntakeToCRM() {
     // 2. Update contact: sequence_status = 'Interested' + key fields from responses
     const contactUpdates = { sequence_status: 'Interested' };
     const fieldMap = {
-      dob: 'dob', email: 'email', phone: 'phone',
+      dob: 'date_of_birth', zip: 'zip', email: 'email', phone: 'phone',
       business_name: 'company', marital_status: 'marital_status',
     };
     for (const [fid, col] of Object.entries(fieldMap)) {
@@ -2975,6 +2991,7 @@ async function saveIntakeToCRM() {
       health_group:      { pipeline: 'group-employer',    stage: 'Responded' },        // prospect engaged, info gathered
       career_new:        { pipeline: 'agent-kannon',      stage: 'Identified' },
       career_existing:   { pipeline: 'agent-kannon',      stage: 'Identified' },
+      medicare:          { pipeline: 'medicare',          stage: 'Intake Complete' },
     };
     const _idest = _intakePipelineMap[_intakeFormType] || { pipeline: 'individual-family', stage: 'Needs Assessment' };
     const _iexisting = deals.find(function(d) { return d.contact_id === _intakeContactId && d.pipeline === _idest.pipeline; });
@@ -3096,7 +3113,7 @@ function _renderDealMergedTimeline(dealId, sysActs) {
 
 async function sendIntakeLink() {
   const c = contacts.find(x => x.id === _intakeContactId);
-  if (!c) return;
+  if (!c) { showToast('Could not send: contact not loaded — close this form and reopen it from the contact.'); return; }
   if (!c.email) { showToast('No email address on file for this contact'); return; }
 
   const btn = document.getElementById('intakeSendBtn');
