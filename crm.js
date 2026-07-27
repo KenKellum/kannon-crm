@@ -6237,6 +6237,29 @@ async function renderAdmin() {
   if (currentAgent.role !== 'system_owner' && currentAgent.role !== 'agency_owner') { document.getElementById('page-admin').innerHTML = '<div class="empty-state"><div class="emoji">&#128274;</div><p>Access denied.</p></div>'; return; }
 
   const totalContacts = (await supabaseClient.from('contacts').select('id', { count: 'exact', head: true })).count || 0;
+  const { data: _carriers } = await supabaseClient.from('carriers')
+    .select('*').order('name');
+  window._allCarriers = _carriers || [];
+  const carriersSection = `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:14px;">&#127970; Carriers <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— reference for appointments, SOA forms &amp; future per-carrier features</span></div>
+        <button class="btn btn-primary btn-sm" onclick="openCarrierModal(null)">+ Add Carrier</button>
+      </div>
+      ${window._allCarriers.length === 0
+        ? '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No carriers yet — add the companies you hold appointments with.</div>'
+        : window._allCarriers.map(cr => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);${cr.is_active ? '' : 'opacity:.5;'}">
+            <div style="flex:1;min-width:0;">
+              <span style="font-weight:600;font-size:13px;">${escWeb(cr.name)}</span>
+              <span style="font-size:11px;color:var(--text-muted);"> · ${(cr.lines_of_business||[]).join(', ') || 'no lines set'}</span>
+              ${cr.soa_required ? '<span style="font-size:10px;font-weight:700;color:#f59e0b;"> · SOA: ' + (cr.soa_form_type === 'ours' ? 'our form OK' : escWeb(cr.soa_form_type)) + '</span>' : ''}
+              ${cr.is_active ? '' : '<span style="font-size:10px;color:var(--text-muted);"> · inactive</span>'}
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="openCarrierModal('${cr.id}')">Edit</button>
+          </div>`).join('')}
+    </div>`;
+
   const { data: _newApps } = await supabaseClient.from('recruit_applications')
     .select('*').eq('status', 'new').order('created_at', { ascending: true });
   const newApps = _newApps || [];
@@ -6385,6 +6408,7 @@ async function renderAdmin() {
       </div>
       ${applicationsSection}
       ${pendingAgentSection}
+      ${carriersSection}
       ${agentRows || '<div class="empty-state" style="padding:20px;"><p>No active agents yet.</p></div>'}
     </div>
 
@@ -9570,4 +9594,64 @@ function openSoaModal(dealId) {
     showToast('SOA sent to ' + contact.email + ' for signature.');
     loadSoaStatus_(deal);
   }, { confirmLabel: 'Send SOA' });
+}
+
+// ============================================================
+// CARRIERS — master reference (owners only, Admin page)
+// ============================================================
+const CARRIER_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Auto/Home','Commercial','Other'];
+
+function openCarrierModal(id) {
+  const cr = id ? (window._allCarriers || []).find(x => x.id === id) : null;
+  const lines = new Set((cr && cr.lines_of_business) || []);
+  const lineBoxes = CARRIER_LINES.map((l, i) =>
+    `<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="cr-line-${i}" style="width:auto;" ${lines.has(l) ? 'checked' : ''}/> ${l}</label>`
+  ).join('');
+  showModal(cr ? 'Edit Carrier — ' + cr.name : 'Add Carrier', `
+    <label>Carrier Name *</label><input type="text" id="cr-name" value="${cr ? escWeb(cr.name) : ''}" placeholder="e.g. Blue Cross Blue Shield of Montana" />
+    <label>Brand</label>
+    <select id="cr-brand">
+      <option value="both" ${!cr || cr.brand==='both' ? 'selected' : ''}>Both brands</option>
+      <option value="kfg" ${cr && cr.brand==='kfg' ? 'selected' : ''}>Kannon Financial</option>
+      <option value="ia" ${cr && cr.brand==='ia' ? 'selected' : ''}>Insured America</option>
+    </select>
+    <label>Lines of business</label>
+    ${lineBoxes}
+    <label>Phone</label><input type="text" id="cr-phone" value="${cr ? escWeb(cr.phone || '') : ''}" />
+    <label>Website</label><input type="text" id="cr-website" value="${cr ? escWeb(cr.website || '') : ''}" placeholder="https://..." />
+    <label>Broker portal URL</label><input type="text" id="cr-portal" value="${cr ? escWeb(cr.broker_portal_url || '') : ''}" placeholder="https://..." />
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="cr-soa-req" style="width:auto;" ${cr && cr.soa_required ? 'checked' : ''}/> Requires Scope of Appointment (Medicare)</label>
+    <label>SOA form accepted</label>
+    <select id="cr-soa-type">
+      <option value="ours" ${!cr || cr.soa_form_type==='ours' ? 'selected' : ''}>Our digital SOA is accepted</option>
+      <option value="carrier" ${cr && cr.soa_form_type==='carrier' ? 'selected' : ''}>Carrier's proprietary form required</option>
+      <option value="vendor" ${cr && cr.soa_form_type==='vendor' ? 'selected' : ''}>Approved vendor tool required</option>
+    </select>
+    <label>Carrier SOA form URL (if proprietary)</label><input type="text" id="cr-soa-url" value="${cr ? escWeb(cr.soa_form_url || '') : ''}" placeholder="https://..." />
+    <label>Notes</label><textarea id="cr-notes" rows="2">${cr ? escWeb(cr.notes || '') : ''}</textarea>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="cr-active" style="width:auto;" ${!cr || cr.is_active ? 'checked' : ''}/> Active</label>
+  `, async () => {
+    const name = document.getElementById('cr-name').value.trim();
+    if (!name) { showToast('Carrier name is required'); return false; }
+    const payload = {
+      name,
+      brand: document.getElementById('cr-brand').value,
+      lines_of_business: CARRIER_LINES.filter((l, i) => document.getElementById('cr-line-' + i).checked),
+      phone: document.getElementById('cr-phone').value.trim() || null,
+      website: document.getElementById('cr-website').value.trim() || null,
+      broker_portal_url: document.getElementById('cr-portal').value.trim() || null,
+      soa_required: document.getElementById('cr-soa-req').checked,
+      soa_form_type: document.getElementById('cr-soa-type').value,
+      soa_form_url: document.getElementById('cr-soa-url').value.trim() || null,
+      notes: document.getElementById('cr-notes').value.trim() || null,
+      is_active: document.getElementById('cr-active').checked,
+    };
+    const q = cr
+      ? supabaseClient.from('carriers').update(payload).eq('id', cr.id)
+      : supabaseClient.from('carriers').insert(payload);
+    const { error } = await q;
+    if (error) { showToast('Error: ' + error.message); return false; }
+    showToast(cr ? 'Carrier updated.' : 'Carrier added.');
+    renderAdmin();
+  });
 }
