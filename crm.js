@@ -6007,7 +6007,9 @@ function editContact(id, onSave) {
     <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
     <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
     <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
-    <label>Date of Birth</label><input type="date" id="con-dob" value="${c.date_of_birth||''}" /><label>Street Address</label><input type="text" id="con-street" value="${(c.street_address||'').replace(/"/g,'&quot;')}" /><label>ZIP Code</label><input type="text" id="con-zip" value="${c.zip||''}" /><label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
+    <label>Date of Birth</label><input type="date" id="con-dob" value="${c.date_of_birth||''}" />
+    <label>Gender</label><select id="con-gender"><option value=""></option><option value="M" ${c.gender==='M'?'selected':''}>Male</option><option value="F" ${c.gender==='F'?'selected':''}>Female</option></select>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:10px;"><input type="checkbox" id="con-tobacco" style="width:auto;" ${c.tobacco_use?'checked':''}/> Tobacco user <span style="font-size:11px;color:var(--muted);">(affects insurance rates)</span></label><label>Street Address</label><input type="text" id="con-street" value="${(c.street_address||'').replace(/"/g,'&quot;')}" /><label>ZIP Code</label><input type="text" id="con-zip" value="${c.zip||''}" /><label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
     <label>State</label><input type="text" id="con-state" value="${c.state||''}" placeholder="e.g. MT" maxlength="2" style="width:80px;" />
     <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
     ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
@@ -6064,7 +6066,7 @@ function editContact(id, onSave) {
       : newOptOut ? 'opted_out'
       : (c.email_status === 'opted_out' && !newOptOut) ? null
       : c.email_status || null;
-    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, date_of_birth: (document.getElementById('con-dob') ? document.getElementById('con-dob').value : '')||null, street_address: (document.getElementById('con-street') ? document.getElementById('con-street').value.trim() : '')||null, zip: (document.getElementById('con-zip') ? document.getElementById('con-zip').value.trim() : '')||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: (document.getElementById('con-track') ? document.getElementById('con-track').value : c.sequence_track)||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
+    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, date_of_birth: (document.getElementById('con-dob') ? document.getElementById('con-dob').value : '')||null, gender: (document.getElementById('con-gender') ? document.getElementById('con-gender').value : '')||null, tobacco_use: document.getElementById('con-tobacco') ? document.getElementById('con-tobacco').checked : null, street_address: (document.getElementById('con-street') ? document.getElementById('con-street').value.trim() : '')||null, zip: (document.getElementById('con-zip') ? document.getElementById('con-zip').value.trim() : '')||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: (document.getElementById('con-track') ? document.getElementById('con-track').value : c.sequence_track)||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -9798,6 +9800,7 @@ async function openCarrierProducts(crId) {
   const rows = window._crProds.length ? window._crProds.map(p => `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);${p.is_active ? '' : 'opacity:.5;'}">
       <div style="flex:1;min-width:0;font-size:13px;"><strong>${escWeb(p.name)}</strong> <span style="font-size:11px;color:var(--text-muted);">&middot; ${escWeb(p.line_of_business)}${p.product_code ? ' &middot; ' + escWeb(p.product_code) : ''}${p.plan_year ? ' &middot; ' + p.plan_year : ''}${p.is_active ? '' : ' &middot; inactive'}</span></div>
+      <button class="btn btn-outline btn-sm" onclick="openRateCharts('${p.id}')">Rates</button>
       <button class="btn btn-outline btn-sm" onclick="openCarrierProductModal('${crId}','${p.id}')">Edit</button>
     </div>`).join('')
     : '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No products yet for this carrier.</div>';
@@ -9965,6 +9968,7 @@ async function openQuoteBuilder(dealId) {
     .select('*').eq('is_active', true).in('carrier_id', myCarriers.map(c => c.id));
   window._qbCarriers = myCarriers;
   window._qbProds = prods || [];
+  window._qbContact = contact;
 
   const carOpts = '<option value="">— pick carrier —</option>'
     + myCarriers.map(c => `<option value="${c.id}">${escWeb(c.name)}</option>`).join('');
@@ -9988,6 +9992,19 @@ async function openQuoteBuilder(dealId) {
     <label>Line of business</label>
     <select id="qb-line" onchange="qbLineChanged_()">${lineOpts}</select>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
+    <div id="qb-rate-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#9889; Auto-rating inputs</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;">
+        <span id="qb-rt-age"></span>
+        <span>Gender:
+          <select id="qb-rt-gender" onchange="qbReRate_()" style="width:auto;display:inline-block;">
+            <option value="">?</option><option value="M">M</option><option value="F">F</option>
+          </select></span>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0;"><input type="checkbox" id="qb-rt-tob" onchange="qbReRate_()" style="width:auto;" /> Tobacco</label>
+        <span id="qb-rt-loc"></span>
+      </div>
+      <div id="qb-rt-warn" style="font-size:11px;color:#f59e0b;margin-top:5px;"></div>
+    </div>
     <label>Brand on the client's page</label>
     <select id="qb-brand">
       <option value="ia" selected>Insured America</option>
@@ -10025,6 +10042,15 @@ async function openQuoteBuilder(dealId) {
       });
     }
     if (!options.length) { showToast('Add at least one option.'); return false; }
+    // Remember rating inputs on the contact (silent, best-effort)
+    try {
+      const rg = document.getElementById('qb-rt-gender');
+      if (document.getElementById('qb-line').value === 'Medicare Supplement' && rg && rg.value) {
+        const cPatch = { gender: rg.value, tobacco_use: document.getElementById('qb-rt-tob').checked };
+        await supabaseClient.from('contacts').update(cPatch).eq('id', contact.id);
+        Object.assign(contact, cPatch);
+      }
+    } catch (e) {}
     const { data: q, error } = await supabaseClient.from('quotes').insert({
       contact_id: contact.id, deal_id: deal.id, agent_id: currentAgent.id,
       agent_name: currentAgent.display_name || currentAgent.name,
@@ -10049,6 +10075,11 @@ function qbLineChanged_() {
   const line = document.getElementById('qb-line').value;
   const isMed = MEDICARE_QUOTE_LINES.includes(line);
   document.getElementById('qb-med-note').style.display = isMed ? 'block' : 'none';
+  const strip = document.getElementById('qb-rate-strip');
+  if (strip) {
+    strip.style.display = line === 'Medicare Supplement' ? 'block' : 'none';
+    if (line === 'Medicare Supplement') qbInitRateStrip_();
+  }
   const brand = document.getElementById('qb-brand');
   if (isMed) { brand.value = 'ia'; brand.disabled = true; } else { brand.disabled = false; }
   for (let i = 0; i < 4; i++) {
@@ -10075,6 +10106,71 @@ function qbApplyProduct_(i) {
   if (!prod) return;
   document.getElementById('qb-name-' + i).value = prod.name;
   document.getElementById('qb-bul-' + i).value = ((prod.metadata || {}).bullets || []).join('\n');
+  qbAutoRateOption_(i);
+}
+
+function qbInitRateStrip_() {
+  const c = window._qbContact;
+  if (!c) return;
+  const ageEl = document.getElementById('qb-rt-age');
+  const age = c.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth + 'T12:00:00')) / 31557600000) : null;
+  window._qbRateAge = age;
+  ageEl.innerHTML = age !== null
+    ? 'Age: <strong>' + age + '</strong>'
+    : '<span style="color:#f59e0b;">No DOB on contact &mdash; add it for auto-rating</span>';
+  const g = document.getElementById('qb-rt-gender');
+  if (!g.value) g.value = c.gender || '';
+  const t = document.getElementById('qb-rt-tob');
+  t.checked = !!c.tobacco_use;
+  document.getElementById('qb-rt-loc').innerHTML = 'State: <strong>' + (c.state || '?') + '</strong>' + (c.zip ? ' &middot; Zip ' + escWeb(c.zip) : '');
+  document.getElementById('qb-rt-warn').textContent = c.state ? '' : 'No state on the contact — auto-rating needs it.';
+}
+
+async function medigapRate_(productId) {
+  const c = window._qbContact;
+  const age = window._qbRateAge;
+  const gender = document.getElementById('qb-rt-gender').value;
+  const tobacco = document.getElementById('qb-rt-tob').checked;
+  if (!c || age === null || age === undefined || !c.state) return null;
+  const { data: charts } = await supabaseClient.from('rate_charts').select('*')
+    .eq('product_id', productId).eq('is_active', true).eq('state', c.state.toUpperCase());
+  if (!charts || !charts.length) return null;
+  // Prefer a chart scoped to the client's zip area, else the statewide chart
+  const zp = (c.zip || '').slice(0, 3);
+  const chart = charts.find(ch => ch.zip_prefixes && zp && ch.zip_prefixes.split(',').map(x => x.trim()).includes(zp))
+    || charts.find(ch => !ch.zip_prefixes)
+    || charts[0];
+  const { data: rows } = await supabaseClient.from('rate_rows').select('*')
+    .eq('chart_id', chart.id).lte('age_min', age).gte('age_max', age);
+  if (!rows || !rows.length) return null;
+  const g = gender === 'F' ? 'F' : 'M';
+  const pick = rows.find(r => r.gender === g && r.tobacco === tobacco)
+    || rows.find(r => r.gender === 'U' && r.tobacco === tobacco)
+    || rows.find(r => r.gender === g && !r.tobacco)
+    || rows.find(r => r.gender === 'U' && !r.tobacco);
+  return pick ? { rate: pick.monthly_rate, chart } : null;
+}
+
+async function qbAutoRateOption_(i) {
+  if (document.getElementById('qb-line').value !== 'Medicare Supplement') return;
+  const prodId = document.getElementById('qb-prod-' + i).value;
+  if (!prodId) return;
+  const hit = await medigapRate_(prodId);
+  const premEl = document.getElementById('qb-prem-' + i);
+  if (hit) {
+    premEl.value = Number(hit.rate).toFixed(2);
+    premEl.style.borderColor = '#16a34a';
+    premEl.title = 'Auto-rated from the ' + hit.chart.state + ' rate chart ('
+      + hit.chart.rating_method + (hit.chart.effective_date ? ', effective ' + hit.chart.effective_date : '') + ')'
+      + (hit.chart.household_discount_pct ? ' — household discount available: ' + hit.chart.household_discount_pct + '%' : '');
+  } else {
+    premEl.style.borderColor = '';
+    premEl.title = '';
+  }
+}
+
+function qbReRate_() {
+  for (let i = 0; i < 4; i++) qbAutoRateOption_(i);
 }
 
 function openQuoteReady_(q, contact) {
@@ -10504,4 +10600,150 @@ function openNppVersionModal() {
     showToast('Privacy notice version ' + nextVer + ' is now live.');
     renderAdmin();
   }, { confirmLabel: 'Publish v' + nextVer, wide: true });
+}
+
+// ============================================================
+// RATE CHARTS — enter a carrier's Medigap grid once (typed or
+// pasted straight from Excel); the quote builder rates from it.
+// ============================================================
+async function openRateCharts(productId) {
+  const prod = (window._allCarrierProducts_full || window._qbProds || []).find(p => p.id === productId)
+    || (await supabaseClient.from('carrier_products').select('*').eq('id', productId).single()).data;
+  if (!prod) { showToast('Product not found.'); return; }
+  window._rcProduct = prod;
+  const { data: charts } = await supabaseClient.from('rate_charts')
+    .select('*').eq('product_id', productId).order('state').order('created_at', { ascending: false });
+  window._rcCharts = charts || [];
+  let rowCounts = {};
+  if (charts && charts.length) {
+    const { data: rr } = await supabaseClient.from('rate_rows')
+      .select('chart_id').in('chart_id', charts.map(c => c.id));
+    (rr || []).forEach(r => { rowCounts[r.chart_id] = (rowCounts[r.chart_id] || 0) + 1; });
+  }
+  const rows = (charts && charts.length) ? charts.map(ch => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);${ch.is_active ? '' : 'opacity:.5;'}">
+      <div style="flex:1;min-width:0;font-size:13px;">
+        <strong>${escWeb(ch.state)}</strong>${ch.zip_prefixes ? ' <span style="font-size:11px;color:var(--text-muted);">(zips ' + escWeb(ch.zip_prefixes) + ')</span>' : ''}
+        <span style="font-size:11px;color:var(--text-muted);">&middot; ${escWeb(ch.rating_method)}${ch.effective_date ? ' &middot; eff. ' + ch.effective_date : ''} &middot; ${rowCounts[ch.id] || 0} rates${ch.household_discount_pct ? ' &middot; HH disc ' + ch.household_discount_pct + '%' : ''}${ch.is_active ? '' : ' &middot; inactive'}</span>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="openRateChartModal('${productId}','${ch.id}')">Edit</button>
+    </div>`).join('')
+    : '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No rate charts yet — add one and the quote builder starts rating this product automatically.</div>';
+  showModal('Rate Charts — ' + escWeb(prod.name), `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;"><button class="btn btn-primary btn-sm" onclick="openRateChartModal('${productId}', null)">+ Add Rate Chart</button></div>
+    ${rows}`, null, { hideConfirm: true });
+}
+
+function parseRateGrid_(text, hasGender, hasTobacco) {
+  const combos = hasGender && hasTobacco ? [['M', false], ['M', true], ['F', false], ['F', true]]
+    : hasGender ? [['M', false], ['F', false]]
+    : hasTobacco ? [['U', false], ['U', true]]
+    : [['U', false]];
+  const out = [];
+  for (const raw of text.split(/\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const cells = line.split(/[\t;,]+|\s{2,}/).map(c => c.trim()).filter(c => c !== '');
+    if (cells.length < 2) continue;
+    const ageCell = cells[0].replace(/\s/g, '').toLowerCase();
+    let m, aMin, aMax;
+    if ((m = ageCell.match(/^(\d{1,3})[-\u2013](\d{1,3})$/))) { aMin = +m[1]; aMax = +m[2]; }
+    else if ((m = ageCell.match(/^(\d{1,3})\+$/))) { aMin = +m[1]; aMax = 120; }
+    else if (/^(under65|<65|u65)$/.test(ageCell)) { aMin = 0; aMax = 64; }
+    else if ((m = ageCell.match(/^(\d{1,3})$/))) { aMin = aMax = +m[1]; }
+    else continue; // header or junk line
+    if (aMin > 120 || aMax > 121) continue;
+    const rates = cells.slice(1).map(c => parseFloat(c.replace(/[$,]/g, ''))).filter(n => !isNaN(n) && n > 0);
+    if (rates.length < combos.length) continue;
+    combos.forEach((cb, i) => out.push({ age_min: aMin, age_max: aMax, gender: cb[0], tobacco: cb[1], monthly_rate: rates[i] }));
+  }
+  return out;
+}
+
+function rcPreview_() {
+  const hasGender = document.getElementById('rc-gen').checked;
+  const hasTobacco = document.getElementById('rc-tob').checked;
+  const rows = parseRateGrid_(document.getElementById('rc-grid').value, hasGender, hasTobacco);
+  const pv = document.getElementById('rc-preview');
+  if (!rows.length) {
+    pv.innerHTML = '<div style="font-size:12px;color:var(--danger);margin-top:8px;">Nothing recognized yet — each line should start with an age (65, 65-69, or 80+) followed by the rate column(s).</div>';
+    return;
+  }
+  const ages = [...new Set(rows.map(r => r.age_min + (r.age_max !== r.age_min ? '-' + r.age_max : '')))];
+  const sample = rows.slice(0, 8).map(r =>
+    `<tr><td style="padding:2px 8px;">${r.age_min}${r.age_max !== r.age_min ? '-' + r.age_max : ''}</td><td style="padding:2px 8px;">${r.gender}</td><td style="padding:2px 8px;">${r.tobacco ? 'Tobacco' : 'Non-tob'}</td><td style="padding:2px 8px;">$${r.monthly_rate.toFixed(2)}</td></tr>`).join('');
+  pv.innerHTML = `<div style="font-size:12px;color:var(--success);margin-top:8px;font-weight:600;">&#10003; Recognized ${rows.length} rates across ${ages.length} age band${ages.length === 1 ? '' : 's'}.</div>
+    <table style="font-size:11px;border-collapse:collapse;margin-top:4px;color:var(--text-muted);"><tr><th style="text-align:left;padding:2px 8px;">Age</th><th style="text-align:left;padding:2px 8px;">Gender</th><th style="text-align:left;padding:2px 8px;">Tobacco</th><th style="text-align:left;padding:2px 8px;">Monthly</th></tr>${sample}</table>
+    ${rows.length > 8 ? '<div style="font-size:11px;color:var(--text-muted);">&hellip;and ' + (rows.length - 8) + ' more</div>' : ''}`;
+  window._rcParsed = rows;
+}
+
+function openRateChartModal(productId, chartId) {
+  const ch = chartId ? (window._rcCharts || []).find(x => x.id === chartId) : null;
+  showModal(ch ? 'Edit Rate Chart — ' + ch.state : 'Add Rate Chart', `
+    <div style="padding:16px 20px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 14px;">
+        <div><label>State *</label><input type="text" id="rc-state" maxlength="2" value="${ch ? escWeb(ch.state) : 'MT'}" style="text-transform:uppercase;" /></div>
+        <div><label>Rating method</label>
+          <select id="rc-method">
+            <option value="attained-age" ${!ch || ch.rating_method === 'attained-age' ? 'selected' : ''}>Attained-age</option>
+            <option value="issue-age" ${ch && ch.rating_method === 'issue-age' ? 'selected' : ''}>Issue-age</option>
+            <option value="community" ${ch && ch.rating_method === 'community' ? 'selected' : ''}>Community-rated</option>
+          </select></div>
+        <div><label>Effective date</label><input type="date" id="rc-eff" value="${ch && ch.effective_date ? ch.effective_date : ''}" /></div>
+        <div><label>Household discount % (optional)</label><input type="number" step="0.1" id="rc-hh" value="${ch && ch.household_discount_pct ? ch.household_discount_pct : ''}" /></div>
+        <div><label>Zip prefixes (optional, 3-digit, comma-sep)</label><input type="text" id="rc-zips" value="${ch ? escWeb(ch.zip_prefixes || '') : ''}" placeholder="e.g. 597,598 — blank = whole state" /></div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:12px;font-size:13px;">
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0;"><input type="checkbox" id="rc-gen" style="width:auto;" checked onchange="rcPreview_()" /> Separate male / female columns</label>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0;"><input type="checkbox" id="rc-tob" style="width:auto;" onchange="rcPreview_()" /> Separate tobacco columns</label>
+      </div>
+      <label style="margin-top:12px;">Paste the rate grid from the carrier's sheet (Excel paste works — one line per age)</label>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Column order per line: Age, then ${'{'}M non-tob, M tob, F non-tob, F tob{'}'} / {'{'}M, F{'}'} / {'{'}non-tob, tob{'}'} / single rate — matching the checkboxes above. Ages: 65 &middot; 65-69 &middot; 80+ &middot; under65.</div>
+      <textarea id="rc-grid" rows="9" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px;" placeholder="65   128.40   147.66&#10;66   131.20   150.88&#10;67-69   135.75   156.11" oninput="rcPreview_()"></textarea>
+      <div id="rc-preview">${ch ? '<div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Existing rates stay unless you paste a new grid — pasting REPLACES all rates for this chart.</div>' : ''}</div>
+      <label style="margin-top:10px;">Notes</label><input type="text" id="rc-notes" value="${ch ? escWeb(ch.notes || '') : ''}" />
+      ${ch ? `<label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="rc-active" style="width:auto;" ${ch.is_active ? 'checked' : ''}/> Active</label>` : ''}
+    </div>
+  `, async () => {
+    const state = document.getElementById('rc-state').value.trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(state)) { showToast('State must be the 2-letter code.'); return false; }
+    const meta = {
+      product_id: productId,
+      state,
+      rating_method: document.getElementById('rc-method').value,
+      effective_date: document.getElementById('rc-eff').value || null,
+      household_discount_pct: parseFloat(document.getElementById('rc-hh').value) || null,
+      zip_prefixes: document.getElementById('rc-zips').value.trim() || null,
+      notes: document.getElementById('rc-notes').value.trim() || null,
+    };
+    if (ch) meta.is_active = document.getElementById('rc-active').checked;
+    const gridText = document.getElementById('rc-grid').value.trim();
+    let parsed = null;
+    if (gridText) {
+      parsed = parseRateGrid_(gridText, document.getElementById('rc-gen').checked, document.getElementById('rc-tob').checked);
+      if (!parsed.length) { showToast('The pasted grid could not be read — check the preview.'); return false; }
+    } else if (!ch) {
+      showToast('Paste the rate grid — a chart with no rates cannot quote.'); return false;
+    }
+    let chartRow = ch;
+    if (ch) {
+      const { error } = await supabaseClient.from('rate_charts').update(meta).eq('id', ch.id);
+      if (error) { showToast('Error: ' + error.message); return false; }
+    } else {
+      const { data: ins, error } = await supabaseClient.from('rate_charts').insert(meta).select().single();
+      if (error) { showToast('Error: ' + error.message); return false; }
+      chartRow = ins;
+    }
+    if (parsed) {
+      const { error: eDel } = await supabaseClient.from('rate_rows').delete().eq('chart_id', chartRow.id);
+      if (eDel) { showToast('Error: ' + eDel.message); return false; }
+      const { error: eIns } = await supabaseClient.from('rate_rows')
+        .insert(parsed.map(r => Object.assign({ chart_id: chartRow.id }, r)));
+      if (eIns) { showToast('Error: ' + eIns.message); return false; }
+    }
+    showToast(ch ? 'Rate chart updated.' : 'Rate chart added — quoting is now automatic for this product.');
+    openRateCharts(productId);
+    return false;
+  }, { confirmLabel: ch ? 'Save Chart' : 'Add Chart', wide: true });
 }
