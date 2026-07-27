@@ -10063,8 +10063,13 @@ async function openQuoteBuilder(dealId) {
       const prodId = document.getElementById('qb-prod-' + i).value || null;
       let bullets = document.getElementById('qb-bul-' + i).value.split('\n').map(x => x.trim()).filter(Boolean);
       if (MEDICARE_QUOTE_LINES.includes(line)) {
-        const prod = (window._qbProds || []).find(p => p.id === prodId);
-        bullets = (prod && (prod.metadata || {}).bullets) || [];
+        if (cmsSel) {
+          // CMS-picked plan: keep the factual CMS-sourced bullets in the (locked) box
+          bullets = document.getElementById('qb-bul-' + i).value.split('\n').map(x => x.trim()).filter(Boolean);
+        } else {
+          const prod = (window._qbProds || []).find(p => p.id === prodId);
+          bullets = (prod && (prod.metadata || {}).bullets) || [];
+        }
       }
       options.push({
         carrier_id: carId, product_id: prodId,
