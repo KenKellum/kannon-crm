@@ -9630,7 +9630,7 @@ function openCarrierModal(id) {
   const cr = id ? (window._allCarriers || []).find(x => x.id === id) : null;
   const lines = new Set((cr && cr.lines_of_business) || []);
   const lineBoxes = CARRIER_LINES.map((l, i) =>
-    `<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="cr-line-${i}" style="width:auto;" ${lines.has(l) ? 'checked' : ''}/> ${l}</label>`
+    `<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px;"><input type="checkbox" id="cr-line-${i}" style="width:auto;" onchange="toggleCarrierSoaFields_()" ${lines.has(l) ? 'checked' : ''}/> ${l}</label>`
   ).join('');
   showModal(cr ? 'Edit Carrier — ' + cr.name : 'Add Carrier', `
     <label>Carrier Name *</label><input type="text" id="cr-name" value="${cr ? escWeb(cr.name) : ''}" placeholder="e.g. Blue Cross Blue Shield of Montana" />
@@ -9645,14 +9645,17 @@ function openCarrierModal(id) {
     <label>Phone</label><input type="text" id="cr-phone" value="${cr ? escWeb(cr.phone || '') : ''}" />
     <label>Website</label><input type="text" id="cr-website" value="${cr ? escWeb(cr.website || '') : ''}" placeholder="https://..." />
     <label>Broker portal URL</label><input type="text" id="cr-portal" value="${cr ? escWeb(cr.broker_portal_url || '') : ''}" placeholder="https://..." />
-    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="cr-soa-req" style="width:auto;" ${cr && cr.soa_required ? 'checked' : ''}/> Requires Scope of Appointment (Medicare)</label>
-    <label>SOA form accepted</label>
-    <select id="cr-soa-type">
-      <option value="ours" ${!cr || cr.soa_form_type==='ours' ? 'selected' : ''}>Our digital SOA is accepted</option>
-      <option value="carrier" ${cr && cr.soa_form_type==='carrier' ? 'selected' : ''}>Carrier's proprietary form required</option>
-      <option value="vendor" ${cr && cr.soa_form_type==='vendor' ? 'selected' : ''}>Approved vendor tool required</option>
-    </select>
-    <label>Carrier SOA form URL (if proprietary)</label><input type="text" id="cr-soa-url" value="${cr ? escWeb(cr.soa_form_url || '') : ''}" placeholder="https://..." />
+    <div id="cr-soa-wrap" style="display:${lines.has('Medicare Advantage') || lines.has('Part D (PDP)') ? 'block' : 'none'};">
+      <div style="font-size:11px;color:var(--text-muted);margin-top:12px;">Medicare Advantage / Part D selected &mdash; CMS requires a Scope of Appointment for these products.</div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:6px;font-weight:400;"><input type="checkbox" id="cr-soa-req" style="width:auto;" ${cr && cr.soa_required ? 'checked' : ''}/> Requires Scope of Appointment</label>
+      <label>SOA form accepted</label>
+      <select id="cr-soa-type">
+        <option value="ours" ${!cr || cr.soa_form_type==='ours' ? 'selected' : ''}>Our digital SOA is accepted</option>
+        <option value="carrier" ${cr && cr.soa_form_type==='carrier' ? 'selected' : ''}>Carrier's proprietary form required</option>
+        <option value="vendor" ${cr && cr.soa_form_type==='vendor' ? 'selected' : ''}>Approved vendor tool required</option>
+      </select>
+      <label>Carrier SOA form URL (if proprietary)</label><input type="text" id="cr-soa-url" value="${cr ? escWeb(cr.soa_form_url || '') : ''}" placeholder="https://..." />
+    </div>
     <label>Notes</label><textarea id="cr-notes" rows="2">${cr ? escWeb(cr.notes || '') : ''}</textarea>
     <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="cr-active" style="width:auto;" ${!cr || cr.is_active ? 'checked' : ''}/> Active</label>
   `, async () => {
@@ -9665,7 +9668,8 @@ function openCarrierModal(id) {
       phone: document.getElementById('cr-phone').value.trim() || null,
       website: document.getElementById('cr-website').value.trim() || null,
       broker_portal_url: document.getElementById('cr-portal').value.trim() || null,
-      soa_required: document.getElementById('cr-soa-req').checked,
+      soa_required: document.getElementById('cr-soa-wrap').style.display !== 'none'
+        && document.getElementById('cr-soa-req').checked,
       soa_form_type: document.getElementById('cr-soa-type').value,
       soa_form_url: document.getElementById('cr-soa-url').value.trim() || null,
       notes: document.getElementById('cr-notes').value.trim() || null,
@@ -9679,6 +9683,20 @@ function openCarrierModal(id) {
     showToast(cr ? 'Carrier updated.' : 'Carrier added.');
     renderAdmin();
   });
+}
+
+// SOA fields only apply to Medicare Advantage / Part D — CMS's
+// Scope of Appointment rule doesn't cover other lines (Medigap included).
+function toggleCarrierSoaFields_() {
+  const w = document.getElementById('cr-soa-wrap');
+  if (!w) return;
+  const soaLines = ['Medicare Advantage', 'Part D (PDP)'];
+  const on = CARRIER_LINES.some((l, i) =>
+    soaLines.includes(l) && document.getElementById('cr-line-' + i)?.checked);
+  const wasHidden = w.style.display === 'none';
+  w.style.display = on ? 'block' : 'none';
+  // First reveal: default "Requires SOA" to checked, since CMS mandates it
+  if (on && wasHidden) document.getElementById('cr-soa-req').checked = true;
 }
 
 // ============================================================
