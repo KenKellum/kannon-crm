@@ -5377,24 +5377,75 @@ function openAddDeal(stage = '') {
   });
 }
 
+// Per-pipeline deal-editor field configs: only fields that make sense for
+// the client's pipeline, with labels in that pipeline's language.
+// Underlying columns are reused (close_date, renewal_date, quoted_premium...)
+// so no schema change is needed.
+const DEAL_EDIT_CONFIG = {
+  'group-employer': {
+    section: 'Group Health Details',
+    showValue: true, closeLabel: 'Expected Close Date',
+    fields: [
+      { id: 'deal-employees',   col: 'employees',       label: '# of Employees',              type: 'number' },
+      { id: 'deal-renewal-date',col: 'renewal_date',    label: 'Current Plan Renewal Date',   type: 'date' },
+      { id: 'deal-carrier',     col: 'current_carrier', label: 'Current Carrier',             type: 'text', ph: 'e.g. BlueCross, PacificSource...' },
+      { id: 'deal-quoted',      col: 'quoted_premium',  label: 'Quoted Monthly Premium ($)',  type: 'number' },
+    ],
+  },
+  'individual-family': {
+    section: 'Coverage Details',
+    showValue: true, closeLabel: 'Expected Close Date',
+    fields: [
+      { id: 'deal-carrier',     col: 'current_carrier', label: 'Current Carrier',             type: 'text', ph: 'e.g. BlueCross, Cigna...' },
+      { id: 'deal-quoted',      col: 'quoted_premium',  label: 'Quoted Monthly Premium ($)',  type: 'number' },
+    ],
+  },
+  'medicare': {
+    section: 'Medicare Details',
+    showValue: true, closeLabel: 'Target Effective Date',
+    fields: [
+      { id: 'deal-carrier',     col: 'current_carrier', label: 'Current Plan / Carrier',      type: 'text', ph: 'e.g. Original Medicare, Humana MA...' },
+      { id: 'deal-quoted',      col: 'quoted_premium',  label: 'Quoted Monthly Premium ($)',  type: 'number' },
+      { id: 'deal-renewal-date',col: 'renewal_date',    label: 'Plan Anniversary / Renewal',  type: 'date' },
+    ],
+  },
+  'agent-insured': {
+    section: null,
+    showValue: false, closeLabel: 'Target Contracting Date',
+    fields: [],
+  },
+  'agent-kannon': {
+    section: null,
+    showValue: false, closeLabel: 'Target Contracting Date',
+    fields: [],
+  },
+};
+
 function editDeal(id) {
   const deal = deals.find(d => d.id === id); if (!deal) return;
   const pipeline = PIPELINES[deal.pipeline];
+  const cfg = DEAL_EDIT_CONFIG[deal.pipeline] || DEAL_EDIT_CONFIG['individual-family'];
   const stageOptions = pipeline.stages.map(s => `<option value="${s}" ${s===deal.stage?'selected':''}>${s}</option>`).join('');
-  showModal('Edit Deal', `
+
+  let extras = '';
+  if (cfg.section && cfg.fields.length) {
+    extras += `<hr style="border-color:var(--border);margin:8px 0;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);margin-bottom:8px;">${cfg.section}</div>`;
+  }
+  cfg.fields.forEach(f => {
+    const val = deal[f.col] || '';
+    extras += `<label>${f.label}</label><input type="${f.type}" id="${f.id}" value="${String(val).replace(/"/g,'&quot;')}"${f.ph ? ` placeholder="${f.ph}"` : ''}${f.type==='number' ? ' min="0"' : ''} />`;
+  });
+
+  showModal('Edit Deal — ' + (pipeline ? pipeline.name : deal.pipeline), `
     <label>Deal Name *</label><input type="text" id="deal-title" value="${deal.title}" />
     <label>Stage</label><select id="deal-stage">${stageOptions}</select>
     <label>Contact</label>${buildContactSearch(deal.contact_id || '', 'deal-contact', deal.pipeline)}
-    <label>Deal Value ($)</label><input type="number" id="deal-value" value="${deal.value||''}" min="0" />
-    <label>Expected Close Date</label><input type="date" id="deal-close-date" value="${deal.close_date||''}" />
+    ${cfg.showValue ? `<label>Deal Value ($)</label><input type="number" id="deal-value" value="${deal.value||''}" min="0" />` : ''}
+    <label>${cfg.closeLabel}</label><input type="date" id="deal-close-date" value="${deal.close_date||''}" />
     <label>Next Step</label><input type="text" id="deal-next-step" value="${deal.next_step||''}" placeholder="e.g. Send proposal, Schedule call..." />
     <label>Next Step Due Date</label><input type="date" id="deal-next-step-date" value="${deal.next_step_date||''}" />
-    <hr style="border-color:var(--border);margin:8px 0;">
-    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);margin-bottom:8px;">Group Health Details</div>
-    <label># of Employees</label><input type="number" id="deal-employees" value="${deal.employees||''}" min="1" />
-    <label>Renewal Date</label><input type="date" id="deal-renewal-date" value="${deal.renewal_date||''}" />
-    <label>Current Carrier</label><input type="text" id="deal-carrier" value="${deal.current_carrier||''}" placeholder="e.g. BlueCross, PacificSource..." />
-    <label>Quoted Monthly Premium ($)</label><input type="number" id="deal-quoted" value="${deal.quoted_premium||''}" min="0" />
+    ${extras}
     <label>Notes</label><textarea id="deal-notes">${deal.notes||''}</textarea>
   `, async () => {
     const title = document.getElementById('deal-title').value.trim();
@@ -5403,16 +5454,20 @@ function editDeal(id) {
       title,
       stage:          document.getElementById('deal-stage').value,
       contact_id:     document.getElementById('deal-contact').value || null,
-      value:          parseFloat(document.getElementById('deal-value').value) || null,
       close_date:     document.getElementById('deal-close-date').value || null,
       next_step:      document.getElementById('deal-next-step').value.trim() || null,
       next_step_date: document.getElementById('deal-next-step-date').value || null,
-      employees:      parseInt(document.getElementById('deal-employees').value) || null,
-      renewal_date:   document.getElementById('deal-renewal-date').value || null,
-      current_carrier:document.getElementById('deal-carrier').value.trim() || null,
-      quoted_premium: parseFloat(document.getElementById('deal-quoted').value) || null,
       notes:          document.getElementById('deal-notes').value.trim() || null
     };
+    const valEl = document.getElementById('deal-value');
+    if (valEl) updates.value = parseFloat(valEl.value) || null;
+    cfg.fields.forEach(f => {
+      const el = document.getElementById(f.id);
+      if (!el) return;
+      updates[f.col] = f.type === 'number'
+        ? (parseFloat(el.value) || null)
+        : (el.value.trim() || null);
+    });
     const { error } = await supabaseClient.from('deals').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
     Object.assign(deal, updates); showToast('Deal updated!'); renderPipelines();
