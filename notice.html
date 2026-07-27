@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Notice — Kannon Financial Group</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; padding: 24px 16px; }
+  .card { max-width: 760px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+  .head { background: #1e293b; padding: 18px 26px; }
+  .head .brand { color: #fff; font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+  .head .tag { color: #c8a84b; font-size: 10px; font-style: italic; letter-spacing: 1.2px; margin-top: 3px; }
+  .body { padding: 28px; }
+  h1 { font-size: 20px; color: #1e293b; margin-bottom: 4px; }
+  h3 { font-size: 14px; color: #1e293b; margin: 18px 0 6px; }
+  p { font-size: 13.5px; line-height: 1.75; color: #334155; margin-bottom: 10px; }
+  .sub { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+  .no-print { display: block; }
+  .btn { background: #1e293b; color: #fff; border: none; border-radius: 8px; padding: 12px 22px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 18px; }
+  #loader { text-align: center; padding: 50px 0; color: #64748b; font-size: 14px; }
+  @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; max-width: 100%; } .no-print { display: none !important; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div class="brand">KANNON FINANCIAL GROUP</div>
+    <div class="tag">Protect &middot; Build &middot; Retire &nbsp;&middot;&nbsp; including The Insured America Agency</div>
+  </div>
+  <div class="body">
+    <div id="loader">Loading&hellip;</div>
+    <div id="notice-view" style="display:none;">
+      <h1 id="n-title"></h1>
+      <div class="sub" id="n-sub"></div>
+      <div id="n-body"></div>
+      <button class="btn no-print" onclick="window.print()">&#128424;&#65039; Print / Save as PDF</button>
+    </div>
+  </div>
+</div>
+<script>
+const SUPA_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+(async function() {
+  const params = new URLSearchParams(location.search);
+  const vq = params.get('v');
+  const filter = vq ? '&version=eq.' + encodeURIComponent(vq) : '&is_active=eq.true';
+  const res = await fetch(SUPA_URL + '/rest/v1/privacy_notice_versions?select=*' + filter + '&order=version.desc&limit=1', {
+    headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+  });
+  const rows = res.ok ? await res.json() : [];
+  const n = rows && rows[0];
+  document.getElementById('loader').style.display = 'none';
+  if (!n) { document.querySelector('.body').innerHTML = '<p>The privacy notice is temporarily unavailable. Please call (406) 624-6018.</p>'; return; }
+  document.getElementById('n-title').textContent = n.title;
+  document.getElementById('n-sub').textContent = 'Version ' + n.version + ' · Effective ' + n.effective_date;
+  document.getElementById('n-body').innerHTML = n.body_html;
+  document.getElementById('notice-view').style.display = 'block';
+})();
+</script>
+</body>
+</html>

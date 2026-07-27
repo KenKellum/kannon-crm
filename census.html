@@ -388,9 +388,66 @@ async function init() {
       document.getElementById('baa-frame').src = url;
       document.getElementById('baa-link').href = url;
       document.getElementById('census-step-label').textContent = 'STEP 3 — EMPLOYEE CENSUS';
+      // Watch for the signature and flip the step to "done" automatically
+      const watcher = setInterval(async () => {
+        const chk = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(baa.id) + '&select=status', { method: 'GET' });
+        if (chk && chk[0] && chk[0].status === 'signed') {
+          clearInterval(watcher);
+          document.getElementById('baa-step').innerHTML =
+            '<h2><span class="step-badge" style="background:#16a34a;">STEP 2 — HIPAA AGREEMENT &#10003;</span></h2>'
+            + '<div class="summary" style="border-left-color:#16a34a;">&#9989; <strong>Agreement signed — thank you!</strong> Continue with your census below.</div>';
+        }
+      }, 4000);
     }
   }
+  // Auto-save Step 1 as they type — nothing is lost if the page reloads
+  const persistMap = { 'c-legal': 'company_legal_name', 'c-dba': 'company_dba', 'c-sic': 'sic_code',
+    'c-street': 'company_street', 'c-city': 'company_city', 'c-state': 'company_state', 'c-zip': 'company_zip',
+    'c-cname': 'contact_name', 'c-ctitle': 'contact_title', 'c-cphone': 'contact_phone', 'c-cemail': 'contact_email' };
+  for (const id in persistMap) {
+    document.getElementById(id).addEventListener('change', function() {
+      const patch = {};
+      patch[persistMap[id]] = this.value.trim() || null;
+      supa('/rest/v1/census_requests?id=eq.' + encodeURIComponent(reqId) + '&status=eq.pending', {
+        method: 'PATCH', body: JSON.stringify(patch)
+      });
+    });
+  }
+
+  // Census rows draft: kept on this device until submitted
+  document.getElementById('rows').addEventListener('input', saveDraft);
+  document.getElementById('rows').addEventListener('change', saveDraft);
+  restoreDraft();
+
   show('main');
+}
+
+function collectRows_() {
+  return [...document.querySelectorAll('#rows tr')].map(t => ({
+    row_type: t.dataset.rowType,
+    full_name: t.querySelector('.f-name').value,
+    employee_number: t.querySelector('.f-num').value,
+    date_of_birth: t.querySelector('.f-dob').value,
+    gender: t.querySelector('.f-gen').value,
+    zip: t.querySelector('.f-zip').value,
+    relationship: t.querySelector('.f-rel').value,
+    employee_class: t.querySelector('.f-class').value,
+    hours_per_week: t.querySelector('.f-hrs').value,
+  }));
+}
+function saveDraft() {
+  try { localStorage.setItem('census-draft-' + reqId, JSON.stringify(collectRows_())); } catch (e) {}
+}
+function restoreDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem('census-draft-' + reqId) || 'null');
+    if (d && d.length) {
+      d.forEach(r => addRow(r.row_type, r));
+      const rpt = document.getElementById('map-report');
+      rpt.style.display = 'block';
+      rpt.innerHTML = '<strong>&#8635; We restored the census you were working on.</strong> Review below and send when ready.';
+    }
+  } catch (e) {}
 }
 
 async function submitCensus() {
@@ -399,9 +456,14 @@ async function submitCensus() {
   const need = { 'c-legal': 'Legal company name', 'c-state': 'State', 'c-zip': 'Zip',
     'c-cname': 'Main contact name', 'c-cphone': 'Contact phone', 'c-cemail': 'Contact email' };
   for (const id in need) {
-    if (!document.getElementById(id).value.trim()) {
-      err.textContent = 'Please fill in: ' + need[id] + ' (Step 1).'; err.style.display = 'block';
-      document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const el = document.getElementById(id);
+    el.style.borderColor = '';
+    if (!el.value.trim()) {
+      err.textContent = 'Please fill in: ' + need[id] + ' (Step 1) — it\'s highlighted in red.';
+      err.style.display = 'block';
+      el.style.borderColor = '#dc2626';
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.focus();
       return;
     }
   }
@@ -416,14 +478,22 @@ async function submitCensus() {
     }
     document.getElementById('baa-step').style.display = 'none';
   }
+  // Drop rows that are completely blank (an accidental extra "Add" click shouldn't block anyone)
+  [...document.querySelectorAll('#rows tr')].forEach(t => {
+    if (!t.querySelector('.f-name').value.trim() && !t.querySelector('.f-dob').value) t.remove();
+  });
+  tally();
   const trs = [...document.querySelectorAll('#rows tr')];
   const emps = trs.filter(t => t.dataset.rowType === 'employee');
-  if (!emps.length) { err.textContent = 'Please add at least one employee to the census.'; err.style.display = 'block'; return; }
+  if (!emps.length) { err.textContent = 'Please add at least one employee to the census (Step ' + (document.getElementById('baa-step').style.display !== 'none' ? '3' : '2') + ').'; err.style.display = 'block'; return; }
   for (const t of trs) {
     if (!t.querySelector('.f-name').value.trim() || !t.querySelector('.f-dob').value) {
-      err.textContent = 'Every row needs at least a name and a date of birth — carriers require both.';
+      err.textContent = 'One census row is missing a name or date of birth — carriers require both. It\'s highlighted below.';
       err.style.display = 'block';
-      t.querySelector('.f-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const miss = !t.querySelector('.f-name').value.trim() ? t.querySelector('.f-name') : t.querySelector('.f-dob');
+      miss.style.borderColor = '#dc2626';
+      miss.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      miss.focus();
       return;
     }
   }
@@ -480,6 +550,7 @@ async function submitCensus() {
     err.textContent = 'Something went wrong finishing the submission — please try again.'; err.style.display = 'block';
     return;
   }
+  try { localStorage.removeItem('census-draft-' + reqId); } catch (e) {}
   try { fetch(APPS_SCRIPT_URL + '?action=census_submitted&census_id=' + reqId, { mode: 'no-cors' }); } catch (e) {}
   document.getElementById('done-sub').textContent =
     (req.agent_name || 'Your advisor') + ' has been notified and will start preparing your group quotes right away.';

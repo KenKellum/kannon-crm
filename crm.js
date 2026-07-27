@@ -6312,6 +6312,23 @@ async function renderAdmin() {
         : '<div style="font-size:12px;color:var(--danger);">No active BAA version — census requests will NOT include the HIPAA agreement!</div>'}
     </div>`;
 
+  const { data: _activeNpp } = await supabaseClient.from('privacy_notice_versions')
+    .select('*').eq('is_active', true).order('version', { ascending: false }).limit(1);
+  window._activeNppVersion = (_activeNpp && _activeNpp[0]) || null;
+  const nppSection = `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-weight:700;font-size:14px;">&#128737;&#65039; Privacy Notice (GLBA)</div>
+        <div style="display:flex;gap:6px;">
+          <a class="btn btn-outline btn-sm" href="notice.html" target="_blank" style="text-decoration:none;">View &#8599;</a>
+          <button class="btn btn-outline btn-sm" onclick="openNppVersionModal()">Publish new version</button>
+        </div>
+      </div>
+      ${window._activeNppVersion
+        ? `<div style="font-size:12px;color:var(--text-muted);">Active: <strong>v${window._activeNppVersion.version}</strong> &middot; effective ${window._activeNppVersion.effective_date}. Delivery is fully automated: new clients get it on becoming a client, everyone gets it annually, and every send is logged on the contact's activity history. Agents never have to think about it.</div>`
+        : '<div style="font-size:12px;color:var(--danger);">No active privacy notice — automated delivery is paused!</div>'}
+    </div>`;
+
   const { data: _newApps } = await supabaseClient.from('recruit_applications')
     .select('*').eq('status', 'new').order('created_at', { ascending: true });
   const newApps = _newApps || [];
@@ -6464,6 +6481,7 @@ async function renderAdmin() {
       ${pendingAgentSection}
       ${carriersSection}
       ${baaSection}
+      ${nppSection}
       ${agentRows || '<div class="empty-state" style="padding:20px;"><p>No active agents yet.</p></div>'}
     </div>
 
@@ -10444,6 +10462,46 @@ function openBaaVersionModal() {
     });
     if (error) { showToast('Error: ' + error.message); return false; }
     showToast('BAA version ' + nextVer + ' is now active.');
+    renderAdmin();
+  }, { confirmLabel: 'Publish v' + nextVer, wide: true });
+}
+
+// ============================================================
+// GLBA PRIVACY NOTICE — master version management (system owner)
+// ============================================================
+function openNppVersionModal() {
+  const cur = window._activeNppVersion;
+  const nextVer = cur ? cur.version + 1 : 1;
+  showModal('Publish Privacy Notice Version ' + nextVer, `
+    <div style="padding:16px 20px;">
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;font-size:12px;color:#1d4ed8;margin-bottom:12px;">
+        Publishing replaces the notice at notice.html immediately. The automated annual cycle
+        delivers the new version to every client over the following year; no re-signature is
+        needed (privacy notices are informational, not agreements). Have your attorney review first.
+      </div>
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Title</label>
+      <input type="text" id="nv-title" value="${cur ? escWeb(cur.title) : 'Privacy Notice'}" style="width:100%;box-sizing:border-box;" />
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px;">Effective date</label>
+      <input type="date" id="nv-date" value="${new Date().toISOString().slice(0, 10)}" />
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px;">Notice text (HTML paragraphs)</label>
+      <textarea id="nv-body" rows="18" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:11.5px;">${cur ? escWeb(cur.body_html) : ''}</textarea>
+    </div>
+  `, async () => {
+    const body = document.getElementById('nv-body').value.trim();
+    if (body.length < 400) { showToast('Notice text looks too short — paste the full notice.'); return false; }
+    if (cur) {
+      const { error: e0 } = await supabaseClient.from('privacy_notice_versions').update({ is_active: false }).eq('id', cur.id);
+      if (e0) { showToast('Error: ' + e0.message); return false; }
+    }
+    const { error } = await supabaseClient.from('privacy_notice_versions').insert({
+      version: nextVer,
+      title: document.getElementById('nv-title').value.trim() || 'Privacy Notice',
+      body_html: body,
+      effective_date: document.getElementById('nv-date').value || new Date().toISOString().slice(0, 10),
+      is_active: true,
+    });
+    if (error) { showToast('Error: ' + error.message); return false; }
+    showToast('Privacy notice version ' + nextVer + ' is now live.');
     renderAdmin();
   }, { confirmLabel: 'Publish v' + nextVer, wide: true });
 }
