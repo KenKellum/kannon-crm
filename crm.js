@@ -5112,6 +5112,13 @@ function openDealPanel(dealId) {
     }).join('');
     healthHTML = '<div class="panel-section"><div class="panel-label">' + dealCfg.section + '</div><div class="deal-field-grid">' + _panelFieldHTML + '</div></div>';
   }
+  if (deal.pipeline === 'medicare') {
+    healthHTML += '<div class="panel-section"><div class="panel-label">Scope of Appointment</div>'
+      + '<div id="soa-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking SOA status...</div>'
+      + '<button class="btn btn-outline btn-sm" onclick="openSoaModal(\'' + deal.id + '\')">&#128221; Send SOA for signature</button>'
+      + '</div>';
+    setTimeout(function() { loadSoaStatus_(deal); }, 50);
+  }
 
   var nextStepHTML = deal.next_step
     ? '<div style="margin-top:10px;"><div class="deal-field-label" style="margin-bottom:4px;">Next Step</div>'
@@ -6631,11 +6638,13 @@ async function startSequence(contactId) {
       <option value="Individual/Family" ${cur === 'Individual/Family' ? 'selected' : ''}>B2C — Individual / Family</option>
       <option value="Group/Employer" ${cur === 'Group/Employer' ? 'selected' : ''}>B2B — Group / Employer</option>
       <option value="Recruit" ${cur === 'Recruit' ? 'selected' : ''}>Recruit — State Farm Agent</option>
+      <option value="medicare">Medicare — Insured America</option>
     </select>
     <p style="font-size:11px;color:#94a3b8;margin:0;">Changing the track also updates the contact type. Any previous sequence progress is reset.</p>
   `, async () => {
     const track = document.getElementById('seq-track-select')?.value || cur;
-    const updates = { type: track, sequence_status: null, sequence_step: 0, last_email_sent_at: null };
+    const updates = { type: track === 'medicare' ? 'Individual/Family' : track, sequence_status: null, sequence_step: 0, last_email_sent_at: null };
+    if (track === 'medicare') updates.sequence_track = 'medicare';
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', contactId);
     if (error) { showToast('Error: ' + error.message); return false; }
     Object.assign(c, updates);
@@ -9482,4 +9491,81 @@ function medicareCertified_() {
   if (!currentAgent) return false;
   const iaSide = currentAgent.brand === 'ia' || currentAgent.brand === 'both';
   return iaSide && !!currentAgent.has_health_license;
+}
+
+// ============================================================
+// SCOPE OF APPOINTMENT (Medicare compliance)
+// Send a digital SOA for signature; show status on the deal panel.
+// Records are retained permanently (10-year CMS rule).
+// ============================================================
+const SOA_PRODUCTS = [
+  ['medigap', 'Medicare Supplement (Medigap)'],
+  ['pdp', 'Stand-alone Prescription Drug Plan (Part D)'],
+  ['ma', 'Medicare Advantage (Part C)'],
+  ['dvh', 'Dental / Vision / Hearing products'],
+];
+
+async function loadSoaStatus_(deal) {
+  const el = document.getElementById('soa-status-' + deal.id);
+  if (!el || !deal.contact_id) { if (el) el.textContent = 'No contact linked.'; return; }
+  const { data } = await supabaseClient.from('soa_records')
+    .select('id,status,sent_at,signed_at,products_agreed')
+    .eq('contact_id', deal.contact_id)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const r = data && data[0];
+  if (!r) { el.innerHTML = '<span style="color:#f59e0b;">&#9888; No SOA on file — required before a Medicare sales meeting.</span>'; return; }
+  if (r.status === 'pending') {
+    el.innerHTML = '&#9203; SOA sent ' + new Date(r.sent_at).toLocaleDateString() + ' — awaiting signature.';
+  } else if (r.status === 'signed') {
+    const okAt = new Date(new Date(r.signed_at).getTime() + 48 * 3600 * 1000);
+    const now = new Date();
+    const gate = now >= okAt
+      ? '<span style="color:var(--success);">&#10003; 48-hour window satisfied — sales meeting permitted.</span>'
+      : '<span style="color:#f59e0b;">&#9203; 48-hour rule: sales meeting permitted after ' + okAt.toLocaleString() + '.</span>';
+    el.innerHTML = '<span style="color:var(--success);">&#10003; Signed ' + new Date(r.signed_at).toLocaleDateString() + '</span>'
+      + ' — agreed: ' + ((r.products_agreed || []).join(', ') || 'none') + '<br>' + gate;
+  } else {
+    el.innerHTML = 'SOA ' + r.status + '.';
+  }
+}
+
+function openSoaModal(dealId) {
+  const deal = deals.find(d => d.id === dealId); if (!deal) return;
+  const contact = contacts.find(c => c.id === deal.contact_id);
+  if (!contact) { showToast('No contact linked to this deal.'); return; }
+  if (!contact.email) { showToast('Contact has no email on file.'); return; }
+  const boxes = SOA_PRODUCTS.map(p =>
+    `<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px;"><input type="checkbox" id="soa-p-${p[0]}" style="width:auto;" ${p[0] !== 'ma' ? 'checked' : ''}/> ${p[1]}</label>`
+  ).join('');
+  showModal('Send Scope of Appointment — ' + (contact.name || ''), `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+      The beneficiary signs before any Medicare sales meeting (48-hour rule).
+      Select the products you propose to discuss — they can adjust before signing.
+    </p>
+    <label>Products to discuss</label>
+    ${boxes}
+    <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">
+      Sent to <strong>${contact.email}</strong>. The signed record is kept permanently (CMS 10-year rule).
+    </p>
+  `, async () => {
+    const products = SOA_PRODUCTS.filter(p => document.getElementById('soa-p-' + p[0]).checked).map(p => p[1]);
+    if (!products.length) { showToast('Select at least one product.'); return false; }
+    const { data: rec, error } = await supabaseClient.from('soa_records').insert({
+      contact_id: contact.id,
+      agent_id: currentAgent ? currentAgent.id : null,
+      agent_name: currentAgent ? (currentAgent.display_name || currentAgent.name) : null,
+      beneficiary_name: contact.name || '',
+      beneficiary_email: contact.email,
+      products_offered: products,
+    }).select().single();
+    if (error) { showToast('Error: ' + error.message); return false; }
+    try {
+      fetch(APPS_SCRIPT_URL + '?action=send_soa&soa_id=' + rec.id
+        + '&contact_id=' + contact.id
+        + '&agent_id=' + (currentAgent ? currentAgent.id : ''), { mode: 'no-cors' });
+    } catch (e) { /* email engine reports its own errors */ }
+    showToast('SOA sent to ' + contact.email + ' for signature.');
+    loadSoaStatus_(deal);
+  }, { confirmLabel: 'Send SOA' });
 }

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scope of Appointment — The Insured America Agency</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; padding: 24px 16px; }
+  .card { max-width: 640px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+  .head { background: #1d3557; padding: 18px 26px; display: flex; align-items: center; gap: 14px; }
+  .head .brand { color: #fff; font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+  .head .tag { color: #c8a84b; font-size: 10px; font-style: italic; letter-spacing: 1.2px; margin-top: 3px; }
+  .body { padding: 28px; }
+  h1 { font-size: 20px; color: #1d3557; margin-bottom: 6px; }
+  p { font-size: 14px; line-height: 1.7; margin-bottom: 12px; color: #334155; }
+  .box { background: #f8fafc; border-left: 4px solid #1d3557; border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 14px 0; }
+  .box .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 8px; font-weight: 700; }
+  label.prod { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin: 10px 0; cursor: pointer; }
+  label.prod input { width: 18px; height: 18px; margin-top: 1px; }
+  .sig label { display: block; font-size: 12px; font-weight: 700; color: #374151; margin: 14px 0 5px; }
+  .sig input[type=text] { width: 100%; padding: 11px 13px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 15px; }
+  .attest { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: #334155; margin: 16px 0; cursor: pointer; line-height: 1.6; }
+  .attest input { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }
+  .btn { display: block; width: 100%; background: #1d3557; color: #fff; border: none; border-radius: 8px; padding: 14px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 10px; }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .fine { font-size: 10.5px; color: #94a3b8; line-height: 1.6; margin-top: 18px; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 10px; display: none; }
+  #done, #already, #error-screen { display: none; text-align: center; padding: 30px 10px; }
+  #done .big, #already .big { font-size: 46px; margin-bottom: 10px; }
+  #loader { text-align: center; padding: 50px 0; color: #64748b; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div>
+      <div class="brand">THE INSURED AMERICA AGENCY</div>
+      <div class="tag">&ldquo;Protect &amp; Build Your Potential&rdquo; &nbsp;&middot;&nbsp; A Kannon Financial Group Brand</div>
+    </div>
+  </div>
+  <div class="body">
+    <div id="loader">Loading your form&hellip;</div>
+
+    <div id="form-view" style="display:none;">
+      <h1>Scope of Appointment Confirmation</h1>
+      <p>Medicare requires that before an agent discusses specific plan options with you, you confirm <strong>in advance</strong> which topics you agree to discuss. That's all this form does &mdash; it protects you.</p>
+      <div class="box">
+        <div class="lbl">Signing this form does NOT&hellip;</div>
+        <p style="margin:0;font-size:13.5px;">&bull; obligate you to enroll in any plan<br>&bull; change or affect your current coverage<br>&bull; enroll you in anything automatically</p>
+      </div>
+      <p><strong id="agent-line"></strong> would like to discuss the products below. Uncheck anything you'd rather not cover:</p>
+      <div id="products"></div>
+      <div class="sig">
+        <label for="sig-name">Your full name (this is your electronic signature)</label>
+        <input type="text" id="sig-name" placeholder="Type your full legal name" autocomplete="name" />
+      </div>
+      <label class="attest">
+        <input type="checkbox" id="attest" />
+        <span>I am the Medicare beneficiary (or their authorized representative). I agree to discuss only the products checked above at my upcoming appointment, and I understand a licensed agent may be compensated if I enroll in a plan.</span>
+      </label>
+      <button class="btn" id="sign-btn" onclick="sign()">Sign &amp; Confirm</button>
+      <p class="err" id="err"></p>
+      <p class="fine">Appointments to discuss Medicare Advantage or Part D plans generally occur no sooner than 48 hours after this form is signed, except where CMS permits otherwise. This record is retained for 10 years as required by CMS.</p>
+      <p class="fine">We do not offer every plan available in your area. Any information we provide is limited to those plans we do offer in your area. Please contact Medicare.gov, 1-800-MEDICARE, or your local State Health Insurance Assistance Program (SHIP) to get information on all of your options. Not connected with or endorsed by the United States government or the federal Medicare program.</p>
+    </div>
+
+    <div id="done">
+      <div class="big">&#9989;</div>
+      <h1>Thank you — you're all set.</h1>
+      <p>Your Scope of Appointment is signed and on file. Your agent will be in touch to confirm your appointment time.</p>
+    </div>
+    <div id="already">
+      <div class="big">&#128203;</div>
+      <h1>Already signed</h1>
+      <p>This Scope of Appointment has already been completed. Nothing more is needed — your agent will be in touch.</p>
+    </div>
+    <div id="error-screen">
+      <div class="big" style="font-size:46px;">&#9888;&#65039;</div>
+      <h1>We couldn't load this form</h1>
+      <p>The link may be incomplete. Please use the exact link from your email, or contact your agent at (406) 404-7602.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+let soaId = null;
+
+async function supa(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({
+    'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+  }, opts.headers || {});
+  const res = await fetch(SUPA_URL + path, opts);
+  if (opts.method === 'PATCH') return res.ok;
+  return res.ok ? res.json() : null;
+}
+
+function show(id) {
+  ['loader','form-view','done','already','error-screen'].forEach(x =>
+    document.getElementById(x).style.display = x === id ? '' : 'none');
+}
+
+async function init() {
+  const params = new URLSearchParams(location.search);
+  soaId = params.get('s');
+  if (!soaId) { show('error-screen'); return; }
+  const rows = await supa('/rest/v1/soa_records?id=eq.' + encodeURIComponent(soaId)
+    + '&select=id,agent_name,beneficiary_name,products_offered,status', { method: 'GET' });
+  const r = rows && rows[0];
+  if (!r) { show('error-screen'); return; }
+  if (r.status !== 'pending') { show('already'); return; }
+  document.getElementById('agent-line').textContent =
+    (r.agent_name || 'Your licensed agent') + ' of The Insured America Agency';
+  document.getElementById('products').innerHTML = (r.products_offered || []).map((p, i) =>
+    '<label class="prod"><input type="checkbox" id="prod-' + i + '" checked data-name="' + p.replace(/"/g,'&quot;') + '" /> <span>' + p + '</span></label>'
+  ).join('');
+  const nm = document.getElementById('sig-name');
+  if (r.beneficiary_name) nm.placeholder = r.beneficiary_name;
+  show('form-view');
+}
+
+async function sign() {
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  const name = document.getElementById('sig-name').value.trim();
+  const agreed = [...document.querySelectorAll('#products input:checked')].map(cb => cb.getAttribute('data-name'));
+  if (name.length < 3) { err.textContent = 'Please type your full name as your signature.'; err.style.display = 'block'; return; }
+  if (!agreed.length) { err.textContent = 'Please leave at least one product checked (or contact your agent to cancel).'; err.style.display = 'block'; return; }
+  if (!document.getElementById('attest').checked) { err.textContent = 'Please check the agreement box above your signature.'; err.style.display = 'block'; return; }
+  const btn = document.getElementById('sign-btn');
+  btn.disabled = true; btn.textContent = 'Signing…';
+  const ok = await supa('/rest/v1/soa_records?id=eq.' + encodeURIComponent(soaId) + '&status=eq.pending', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status: 'signed',
+      signed_at: new Date().toISOString(),
+      signature_name: name,
+      signer_attestation: true,
+      products_agreed: agreed
+    })
+  });
+  if (ok) { show('done'); }
+  else {
+    btn.disabled = false; btn.textContent = 'Sign & Confirm';
+    err.textContent = 'Something went wrong — please try again or contact your agent.';
+    err.style.display = 'block';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
