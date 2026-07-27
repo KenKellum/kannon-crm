@@ -2667,7 +2667,7 @@ async function showIntakeForm(contactId, opts) {
              display:flex;gap:0;flex-wrap:wrap;flex-shrink:0;background:#fff;"></div>
 
     <!-- SPLIT BODY -->
-    <div style="display:flex;flex:1;overflow:hidden;">
+    <div style="display:flex;flex:1;overflow:hidden;min-height:0;">
       <div id="intakeFieldList"
         style="width:260px;min-width:220px;border-right:1px solid #e8edf3;
                overflow-y:auto;flex-shrink:0;background:#f6f8fb;padding-bottom:8px;"></div>
@@ -3019,6 +3019,14 @@ async function saveIntakeToCRM() {
         await supabaseClient.from('deals').update({ stage: _idest.stage }).eq('id', _iexisting.id);
         _iexisting.stage = _idest.stage;
       }
+    }
+
+    if (_intakeFormType === 'medicare' && sess && sess.id) {
+      try {
+        fetch(APPS_SCRIPT_URL + '?action=medicare_welcome&session_id=' + sess.id
+          + '&contact_id=' + _intakeContactId
+          + '&agent_id=' + (currentAgent ? currentAgent.id : ''), { mode: 'no-cors' });
+      } catch (whErr) { /* best-effort — email engine reports its own errors */ }
     }
 
     showToast('✓ Intake saved — ' + (c.name || 'Contact') + ' advanced to ' + _idest.stage);
