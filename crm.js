@@ -6240,6 +6240,19 @@ async function renderAdmin() {
   const { data: _carriers } = await supabaseClient.from('carriers')
     .select('*').order('name');
   window._allCarriers = _carriers || [];
+  const { data: _crProdsAll } = await supabaseClient.from('carrier_products').select('id,carrier_id');
+  window._allCarrierProducts = _crProdsAll || [];
+  const { data: _myApptsAdm } = await supabaseClient.from('carrier_appointments')
+    .select('*, carriers(name)').eq('agent_id', currentAgent.id);
+  const myApptsCard = `
+    <div class="card" style="margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:16px;">&#9997;&#65039; My Carrier Appointments</div>
+        <button class="btn btn-primary btn-sm" onclick="openMyCarriers()">Manage</button>
+      </div>
+      ${currentAgent.role === 'agency_owner' ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Your active appointments define which carriers the agents in your agency can select.</div>' : ''}
+      ${carrierApptsSummaryHtml_(_myApptsAdm)}
+    </div>`;
   const carriersSection = `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -6256,6 +6269,7 @@ async function renderAdmin() {
               ${cr.soa_required ? '<span style="font-size:10px;font-weight:700;color:#f59e0b;"> · SOA: ' + (cr.soa_form_type === 'ours' ? 'our form OK' : escWeb(cr.soa_form_type)) + '</span>' : ''}
               ${cr.is_active ? '' : '<span style="font-size:10px;color:var(--text-muted);"> · inactive</span>'}
             </div>
+            <button class="btn btn-outline btn-sm" onclick="openCarrierProducts('${cr.id}')">Products (${(window._allCarrierProducts||[]).filter(p => p.carrier_id === cr.id).length})</button>
             <button class="btn btn-outline btn-sm" onclick="openCarrierModal('${cr.id}')">Edit</button>
           </div>`).join('')}
     </div>`;
@@ -6400,6 +6414,8 @@ async function renderAdmin() {
       ${appRows || `<div style="font-size:13px;color:var(--muted);padding:8px 0;text-align:center;">No pending applications.</div>`}
       ${applications.filter(a=>a.status!=='pending').length > 0 ? `<div style="font-size:11px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">Approved: ${applications.filter(a=>a.status==='approved').length} &nbsp;&#183;&nbsp; Denied: ${applications.filter(a=>a.status==='denied').length}</div>` : ''}
     </div>
+
+    ${myApptsCard}
 
     ${currentAgent.role === 'system_owner' ? `<div class="card" style="margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -6954,6 +6970,8 @@ async function renderSettings() {
   if (fresh) Object.assign(currentAgent, fresh);
 
   const agencyName = currentAgent.agencies?.name || allAgencies.find(a => a.id === currentAgent.agency_id)?.name || '—';
+  const { data: _myApptsSet } = await supabaseClient.from('carrier_appointments')
+    .select('*, carriers(name)').eq('agent_id', currentAgent.id);
 
   pg.innerHTML = `
     <h2 class="section-title" style="margin-bottom:20px;">⚙ Settings</h2>
@@ -7010,6 +7028,13 @@ async function renderSettings() {
           <button class="btn btn-primary" onclick="saveMyWebsiteProfile()">Save website profile</button>
           <span id="swp-msg" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
         </div>
+      </div>
+
+      <div class="dash-card" style="margin-bottom:16px;">
+        <div class="dash-card-title"><i class="ti ti-building-bank"></i>My Carrier Appointments</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">The carriers you're contracted with. These drive Scope of Appointment rules and, soon, quoting.</div>
+        ${carrierApptsSummaryHtml_(_myApptsSet)}
+        <div style="margin-top:12px;"><button class="btn btn-primary" onclick="openMyCarriers()">Manage my carriers</button></div>
       </div>
 
       <div class="dash-card" style="margin-bottom:16px;">
@@ -9653,5 +9678,138 @@ function openCarrierModal(id) {
     if (error) { showToast('Error: ' + error.message); return false; }
     showToast(cr ? 'Carrier updated.' : 'Carrier added.');
     renderAdmin();
+  });
+}
+
+// ============================================================
+// CARRIER PRODUCTS + APPOINTMENTS
+// Master list (system owner) -> agency owner appointments ->
+// agent appointments limited to their agency owner's list.
+// ============================================================
+function carrierApptsSummaryHtml_(appts) {
+  const act = (appts || []).filter(a => a.is_active);
+  if (!act.length) return '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No carrier appointments recorded yet.</div>';
+  return act.map(a => `<div style="font-size:13px;padding:4px 0;">&#10003; <strong>${escWeb(a.carriers?.name || '')}</strong>${a.writing_number ? ` <span style="font-size:11px;color:var(--text-muted);">&middot; writing #${escWeb(a.writing_number)}</span>` : ''}</div>`).join('');
+}
+
+async function openCarrierProducts(crId) {
+  const cr = (window._allCarriers || []).find(x => x.id === crId);
+  if (!cr) return;
+  const { data: prods } = await supabaseClient.from('carrier_products')
+    .select('*').eq('carrier_id', crId).order('line_of_business').order('name');
+  window._crProds = prods || [];
+  const rows = window._crProds.length ? window._crProds.map(p => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);${p.is_active ? '' : 'opacity:.5;'}">
+      <div style="flex:1;min-width:0;font-size:13px;"><strong>${escWeb(p.name)}</strong> <span style="font-size:11px;color:var(--text-muted);">&middot; ${escWeb(p.line_of_business)}${p.product_code ? ' &middot; ' + escWeb(p.product_code) : ''}${p.plan_year ? ' &middot; ' + p.plan_year : ''}${p.is_active ? '' : ' &middot; inactive'}</span></div>
+      <button class="btn btn-outline btn-sm" onclick="openCarrierProductModal('${crId}','${p.id}')">Edit</button>
+    </div>`).join('')
+    : '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No products yet for this carrier.</div>';
+  showModal('Products \u2014 ' + escWeb(cr.name), `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;"><button class="btn btn-primary btn-sm" onclick="openCarrierProductModal('${crId}', null)">+ Add Product</button></div>
+    ${rows}`, null, { hideConfirm: true });
+}
+
+function openCarrierProductModal(crId, prodId) {
+  const p = prodId ? (window._crProds || []).find(x => x.id === prodId) : null;
+  const lineOpts = CARRIER_LINES.map(l => `<option value="${l}" ${p && p.line_of_business === l ? 'selected' : ''}>${l}</option>`).join('');
+  showModal(p ? 'Edit Product \u2014 ' + escWeb(p.name) : 'Add Product', `
+    <label>Product Name *</label><input type="text" id="cp-name" value="${p ? escWeb(p.name) : ''}" placeholder="e.g. Medicare Supplement Plan G" />
+    <label>Line of business *</label><select id="cp-line">${lineOpts}</select>
+    <label>Product code / plan letter</label><input type="text" id="cp-code" value="${p ? escWeb(p.product_code || '') : ''}" placeholder="e.g. Plan G, 20-Year Term, HMO-POS" />
+    <label>Plan year (Medicare products change yearly; blank = evergreen)</label><input type="number" id="cp-year" value="${p && p.plan_year ? p.plan_year : ''}" placeholder="e.g. 2026" />
+    <label>Brand</label>
+    <select id="cp-brand">
+      <option value="both" ${!p || p.brand === 'both' ? 'selected' : ''}>Both brands</option>
+      <option value="kfg" ${p && p.brand === 'kfg' ? 'selected' : ''}>Kannon Financial</option>
+      <option value="ia" ${p && p.brand === 'ia' ? 'selected' : ''}>Insured America</option>
+    </select>
+    <label>Notes</label><textarea id="cp-notes" rows="2">${p ? escWeb(p.notes || '') : ''}</textarea>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="cp-active" style="width:auto;" ${!p || p.is_active ? 'checked' : ''}/> Active</label>
+  `, async () => {
+    const name = document.getElementById('cp-name').value.trim();
+    if (!name) { showToast('Product name is required'); return false; }
+    const yr = document.getElementById('cp-year').value.trim();
+    const payload = {
+      carrier_id: crId,
+      name,
+      line_of_business: document.getElementById('cp-line').value,
+      product_code: document.getElementById('cp-code').value.trim() || null,
+      plan_year: yr ? parseInt(yr, 10) : null,
+      brand: document.getElementById('cp-brand').value,
+      notes: document.getElementById('cp-notes').value.trim() || null,
+      is_active: document.getElementById('cp-active').checked,
+    };
+    const q = p
+      ? supabaseClient.from('carrier_products').update(payload).eq('id', p.id)
+      : supabaseClient.from('carrier_products').insert(payload);
+    const { error } = await q;
+    if (error) { showToast('Error: ' + error.message); return false; }
+    showToast(p ? 'Product updated.' : 'Product added.');
+    openCarrierProducts(crId); // back to the product list
+    return false;              // keep the (replaced) modal open
+  });
+}
+
+async function openMyCarriers() {
+  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner';
+  const { data: master } = await supabaseClient.from('carriers')
+    .select('*').eq('is_active', true).order('name');
+  let allowed = master || [];
+  if (!isOwner) {
+    // Plain agents pick only from their agency leadership's active appointments
+    let ownerIds = [];
+    if (currentAgent.agency_id) {
+      const { data: owners } = await supabaseClient.from('agents').select('id')
+        .eq('agency_id', currentAgent.agency_id).in('role', ['agency_owner', 'system_owner']);
+      ownerIds = (owners || []).map(o => o.id);
+    }
+    if (ownerIds.length) {
+      const { data: oa } = await supabaseClient.from('carrier_appointments')
+        .select('carrier_id').in('agent_id', ownerIds).eq('is_active', true);
+      const okIds = new Set((oa || []).map(x => x.carrier_id));
+      allowed = allowed.filter(c => okIds.has(c.id));
+    } else {
+      allowed = [];
+    }
+  }
+  if (!allowed.length) {
+    showModal('My Carrier Appointments', `<p style="font-size:13px;line-height:1.6;">${isOwner
+      ? 'The master carrier list is empty (or inactive). Add carriers in the Admin page first.'
+      : "Your agency's carrier list isn't set up yet. Your agency owner needs to record their carrier appointments first \u2014 then you can select yours from that list."}</p>`, null, { hideConfirm: true });
+    return;
+  }
+  const { data: mine } = await supabaseClient.from('carrier_appointments')
+    .select('*').eq('agent_id', currentAgent.id);
+  const mineBy = {};
+  (mine || []).forEach(m => { mineBy[m.carrier_id] = m; });
+  const rows = allowed.map((c, i) => {
+    const m = mineBy[c.id];
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);">
+      <input type="checkbox" id="appt-${i}" style="width:auto;flex-shrink:0;" ${m && m.is_active ? 'checked' : ''} />
+      <label for="appt-${i}" style="flex:1;min-width:0;font-size:13px;font-weight:600;cursor:pointer;">${escWeb(c.name)} <span style="font-weight:400;font-size:11px;color:var(--text-muted);">${(c.lines_of_business || []).join(', ')}</span></label>
+      <input type="text" id="appt-wn-${i}" value="${m ? escWeb(m.writing_number || '') : ''}" placeholder="writing #" style="width:110px;font-size:12px;flex-shrink:0;" />
+    </div>`;
+  }).join('');
+  showModal('My Carrier Appointments', `
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">Check each carrier you're contracted (appointed) with${isOwner ? ' \u2014 your list also defines what agents in your agency can select' : ''}. Writing numbers are optional but useful.</p>
+    ${rows}`, async () => {
+    for (let i = 0; i < allowed.length; i++) {
+      const c = allowed[i], m = mineBy[c.id];
+      const on = document.getElementById('appt-' + i).checked;
+      const wn = document.getElementById('appt-wn-' + i).value.trim() || null;
+      if (on && !m) {
+        const { error } = await supabaseClient.from('carrier_appointments')
+          .insert({ agent_id: currentAgent.id, carrier_id: c.id, writing_number: wn });
+        if (error) { showToast('Error: ' + error.message); return false; }
+      } else if (m && (on !== m.is_active || wn !== (m.writing_number || null))) {
+        const { error } = await supabaseClient.from('carrier_appointments')
+          .update({ is_active: on, writing_number: wn }).eq('id', m.id);
+        if (error) { showToast('Error: ' + error.message); return false; }
+      }
+    }
+    showToast('Carrier appointments saved.');
+    if (currentAgent.role === 'agent') renderSettings();
+    else { renderAdmin(); renderSettings(); }
   });
 }
