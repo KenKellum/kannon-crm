@@ -6025,6 +6025,11 @@ function editContact(id, onSave) {
     </div>
     <label>Status <span style="font-size:11px;color:var(--muted);">(sequence stage)</span></label>
     <select id="con-seqstatus">${seqOptions}</select>
+    <label>Email Track <span style="font-size:11px;color:var(--muted);">(which sequence content they receive)</span></label>
+    <select id="con-track">
+      <option value="standard" ${(c.sequence_track||'standard')!=='medicare'?'selected':''}>Standard</option>
+      <option value="medicare" ${c.sequence_track==='medicare'?'selected':''}>Medicare</option>
+    </select>
     <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Compliance</div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
@@ -6058,7 +6063,7 @@ function editContact(id, onSave) {
       : newOptOut ? 'opted_out'
       : (c.email_status === 'opted_out' && !newOptOut) ? null
       : c.email_status || null;
-    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, date_of_birth: (document.getElementById('con-dob') ? document.getElementById('con-dob').value : '')||null, street_address: (document.getElementById('con-street') ? document.getElementById('con-street').value.trim() : '')||null, zip: (document.getElementById('con-zip') ? document.getElementById('con-zip').value.trim() : '')||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: document.getElementById('con-track').value||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
+    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, date_of_birth: (document.getElementById('con-dob') ? document.getElementById('con-dob').value : '')||null, street_address: (document.getElementById('con-street') ? document.getElementById('con-street').value.trim() : '')||null, zip: (document.getElementById('con-zip') ? document.getElementById('con-zip').value.trim() : '')||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: (document.getElementById('con-track') ? document.getElementById('con-track').value : c.sequence_track)||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -6727,7 +6732,15 @@ function showModal(title, bodyHtml, onSave, opts = {}) {
 }
 
 async function handleModalSave() {
-  if (window._modalSaveHandler) { const result = await window._modalSaveHandler(); if (result !== false) closeModal(); }
+  if (!window._modalSaveHandler) return;
+  // Never fail silently: any crash inside a save handler surfaces as a toast
+  try {
+    const result = await window._modalSaveHandler();
+    if (result !== false) closeModal();
+  } catch (e) {
+    console.error('Modal save failed:', e);
+    showToast('Save failed: ' + (e && e.message ? e.message : e));
+  }
 }
 
 function closeModal() { document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
