@@ -2968,13 +2968,15 @@ async function saveIntakeToCRM() {
 
     // 3. Log a note (activity_log + contact notes for Last Interaction badge)
     const noteText = '[Intake Form] ' + INTAKE_TYPE_LABELS[_intakeFormType] + ' — completed by agent';
-    await supabaseClient.from('activity_log').insert({
-      contact_id: _intakeContactId,
-      agent_id:   currentAgent ? currentAgent.id : null,
-      type:       'note',
-      note:       noteText,
-      created_at: new Date().toISOString(),
-    }).catch(() => {});
+    try {
+      await supabaseClient.from('activity_log').insert({
+        contact_id: _intakeContactId,
+        agent_id:   currentAgent ? currentAgent.id : null,
+        type:       'note',
+        note:       noteText,
+        created_at: new Date().toISOString(),
+      });
+    } catch (noteErr) { /* best-effort log — never blocks the save */ }
     const _its = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
     const _iEntry = '[Intake Completed • ' + _its + ']\n' + (INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType) + ' intake saved to CRM';
     const _iNewNotes = c.notes ? _iEntry + '\n\n' + c.notes.trim() : _iEntry;
@@ -6520,6 +6522,7 @@ function closeModal() { document.getElementById('modal-container').innerHTML = '
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.style.opacity = '1';
+  t.style.zIndex = '100000'; // above every overlay/modal
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(() => { t.style.opacity = '0'; }, 2800);
 }
