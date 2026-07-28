@@ -5378,7 +5378,6 @@ function openDealPanel(dealId) {
     : '';
   var footerIntake = contact
     ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="closeDealPanel();setTimeout(function(){dialerViewIntake(&#39;' + contact.id + '&#39;);},150)">&#128196; View Intakes</button>'
-      + ' <button class="btn btn-accent btn-sm" onclick="closeDealPanel();setTimeout(function(){showIntakeForm(&#39;' + contact.id + '&#39;);},150)">&#129309; New Intake</button>'
     : '';
 
   document.getElementById('deal-panel').innerHTML =
