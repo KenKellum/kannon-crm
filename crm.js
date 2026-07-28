@@ -10062,6 +10062,10 @@ async function openQuoteBuilder(dealId) {
         <label>Official CMS plan</label>
         <select id="qb-cms-${i}" onchange="qbApplyCmsPlan_(${i})"><option value="">&mdash; pick a plan &mdash;</option></select>
       </div>
+      <div id="qb-aca-wrap-${i}" style="display:none;">
+        <label>Official Marketplace plan</label>
+        <select id="qb-aca-${i}" onchange="qbApplyAcaPlan_(${i})"><option value="">&mdash; get plans above first &mdash;</option></select>
+      </div>
       <label>Carrier <span id="qb-car-opt-${i}" style="display:none;font-size:10px;color:var(--text-muted);">(optional when a CMS plan is picked)</span></label>
       <select id="qb-car-${i}" onchange="qbFillProducts_(${i})">${carOpts}</select>
       <label>Product (from carrier's catalog — optional)</label>
@@ -10077,6 +10081,19 @@ async function openQuoteBuilder(dealId) {
     <label>Line of business</label>
     <select id="qb-line" onchange="qbLineChanged_()">${lineOpts}</select>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
+    <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; ACA Marketplace — household &amp; subsidy</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;font-size:13px;">
+        <div><label style="font-size:10px;margin:0 0 2px;">Yearly household income ($)</label>
+          <input type="number" id="qb-aca-income" placeholder="e.g. 48000" style="width:120px;" /></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">County</label>
+          <select id="qb-aca-county" style="width:auto;"></select></div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="qbAcaGetPlans_()">Get plans &amp; subsidy</button>
+      </div>
+      <div id="qb-aca-members" style="margin-top:8px;"></div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="qbAcaAddMember_()">+ Add household member</button>
+      <div id="qb-aca-result" style="font-size:12px;margin-top:8px;color:var(--text-muted);"></div>
+    </div>
     <div id="qb-cms-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; Official CMS plan data</div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;">
@@ -10121,7 +10138,8 @@ async function openQuoteBuilder(dealId) {
       const carId = document.getElementById('qb-car-' + i).value || null;
       const car = (window._qbCarriers || []).find(c => c.id === carId);
       const cmsSel = (window._qbCmsSel || {})[i];
-      if (!car && !cmsSel) { showToast('Option ' + (i + 1) + ': pick a carrier or a CMS plan.'); return false; }
+      const acaSel = (window._qbAcaSel || {})[i];
+      if (!car && !cmsSel && !acaSel) { showToast('Option ' + (i + 1) + ': pick a carrier or an official plan.'); return false; }
       const prodId = document.getElementById('qb-prod-' + i).value || null;
       let bullets = document.getElementById('qb-bul-' + i).value.split('\n').map(x => x.trim()).filter(Boolean);
       if (MEDICARE_QUOTE_LINES.includes(line)) {
@@ -10135,7 +10153,7 @@ async function openQuoteBuilder(dealId) {
       }
       options.push({
         carrier_id: carId, product_id: prodId,
-        carrier_name: car ? car.name : (cmsSel.org_name || 'Medicare Plan'),
+        carrier_name: car ? car.name : (cmsSel ? (cmsSel.org_name || 'Medicare Plan') : (acaSel.issuer || 'Marketplace Plan')),
         display_name: name, monthly_premium: prem, benefit_bullets: bullets,
         agent_note: document.getElementById('qb-note-' + i).value.trim() || null,
         is_recommended: document.getElementById('qb-rec-' + i).checked,
@@ -10180,6 +10198,17 @@ function qbLineChanged_() {
   if (strip) {
     strip.style.display = line === 'Medicare Supplement' ? 'block' : 'none';
     if (line === 'Medicare Supplement') qbInitRateStrip_();
+  }
+  const acaStrip = document.getElementById('qb-aca-strip');
+  if (acaStrip) {
+    const isAca = line === 'Health — Individual';
+    acaStrip.style.display = isAca ? 'block' : 'none';
+    for (let k = 0; k < 4; k++) {
+      const w = document.getElementById('qb-aca-wrap-' + k);
+      if (w) w.style.display = isAca ? 'block' : 'none';
+    }
+    window._qbAcaSel = {};
+    if (isAca) qbAcaInit_();
   }
   const cmsStrip = document.getElementById('qb-cms-strip');
   if (cmsStrip) {
@@ -10714,6 +10743,123 @@ function openNppVersionModal() {
     showToast('Privacy notice version ' + nextVer + ' is now live.');
     renderAdmin();
   }, { confirmLabel: 'Publish v' + nextVer, wide: true });
+}
+
+// ============================================================
+// ACA MARKETPLACE — household panel + official plans with the
+// government-calculated subsidy (via the Apps Script relay).
+// ============================================================
+async function acaProxy_(action, params) {
+  const qs = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+  const res = await fetch(APPS_SCRIPT_URL + '?action=' + action + '&' + qs);
+  return res.json();
+}
+
+function qbAcaMemberRow_(m) {
+  const wrap = document.getElementById('qb-aca-members');
+  const n = wrap.children.length;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:10px;align-items:center;margin-top:4px;font-size:12.5px;flex-wrap:wrap;';
+  div.innerHTML = `
+    <select class="aca-rel" style="width:auto;" ${n === 0 ? 'disabled' : ''}>
+      <option value="Self" ${(m.relationship || 'Self') === 'Self' ? 'selected' : ''}>Client</option>
+      <option value="Spouse" ${m.relationship === 'Spouse' ? 'selected' : ''}>Spouse</option>
+      <option value="Child" ${m.relationship === 'Child' ? 'selected' : ''}>Child</option>
+    </select>
+    <span>Age <input type="number" class="aca-age" value="${m.age != null ? m.age : ''}" style="width:60px;" /></span>
+    <select class="aca-gen" style="width:auto;">
+      <option value="M" ${m.gender !== 'F' ? 'selected' : ''}>M</option>
+      <option value="F" ${m.gender === 'F' ? 'selected' : ''}>F</option>
+    </select>
+    <label style="display:flex;gap:5px;align-items:center;font-weight:400;margin:0;"><input type="checkbox" class="aca-tob" style="width:auto;" ${m.uses_tobacco ? 'checked' : ''}/> Tobacco</label>
+    ${n > 0 ? '<button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>' : ''}`;
+  wrap.appendChild(div);
+}
+
+function qbAcaAddMember_() { qbAcaMemberRow_({ relationship: 'Spouse' }); }
+
+async function qbAcaInit_() {
+  const c = window._qbContact;
+  const res = document.getElementById('qb-aca-result');
+  document.getElementById('qb-aca-members').innerHTML = '';
+  const age = c && c.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth + 'T12:00:00')) / 31557600000) : null;
+  qbAcaMemberRow_({ relationship: 'Self', age: age, gender: c && c.gender, uses_tobacco: c && c.tobacco_use });
+  const countySel = document.getElementById('qb-aca-county');
+  countySel.innerHTML = '<option value="">loading…</option>';
+  if (!c || !c.zip) {
+    countySel.innerHTML = '<option value="">no zip on contact</option>';
+    res.innerHTML = '<span style="color:#f59e0b;">Add a ZIP code to the contact for marketplace lookups.</span>';
+    return;
+  }
+  try {
+    const data = await acaProxy_('aca_counties', { zip: c.zip });
+    if (data.status !== 'ok') { countySel.innerHTML = '<option value="">unavailable</option>'; res.innerHTML = '<span style="color:#f59e0b;">' + escWeb(data.message || 'Marketplace lookup failed.') + '</span>'; return; }
+    countySel.innerHTML = data.counties.map(x =>
+      `<option value="${escWeb(x.fips)}|${escWeb(x.state)}">${escWeb(x.name)}, ${escWeb(x.state)}</option>`).join('');
+    res.textContent = 'Enter the yearly household income, adjust the household, then "Get plans & subsidy".';
+  } catch (e) {
+    countySel.innerHTML = '<option value="">unavailable</option>';
+    res.innerHTML = '<span style="color:#f59e0b;">Marketplace relay unreachable — is the API key set up?</span>';
+  }
+}
+
+async function qbAcaGetPlans_() {
+  const c = window._qbContact;
+  const res = document.getElementById('qb-aca-result');
+  const income = parseFloat(document.getElementById('qb-aca-income').value);
+  const county = document.getElementById('qb-aca-county').value;
+  if (!income || !county) { showToast('Enter household income and pick the county.'); return; }
+  const people = [...document.querySelectorAll('#qb-aca-members > div')].map(d => ({
+    relationship: d.querySelector('.aca-rel').value,
+    age: parseInt(d.querySelector('.aca-age').value),
+    gender: d.querySelector('.aca-gen').value,
+    uses_tobacco: d.querySelector('.aca-tob').checked,
+  })).filter(m => !isNaN(m.age));
+  if (!people.length) { showToast('Add at least the client with an age.'); return; }
+  res.textContent = 'Asking healthcare.gov…';
+  try {
+    const data = await acaProxy_('aca_quote', {
+      payload: JSON.stringify({
+        zipcode: c.zip, countyfips: county.split('|')[0], state: county.split('|')[1],
+        income: income, people: people,
+      })
+    });
+    if (data.status !== 'ok') { res.innerHTML = '<span style="color:var(--danger);">' + escWeb(data.message || 'Marketplace error.') + '</span>'; return; }
+    window._qbAcaPlans = data.plans || [];
+    const subsidy = data.aptc != null && data.aptc > 0
+      ? '<span style="color:var(--success);font-weight:700;">Estimated tax credit: $' + Number(data.aptc).toFixed(0) + '/mo</span>'
+      : 'No tax credit at this income';
+    res.innerHTML = subsidy
+      + (data.csr && !/none/i.test(String(data.csr)) ? ' &middot; extra Silver savings (CSR: ' + escWeb(String(data.csr)) + ')' : '')
+      + ' &middot; ' + window._qbAcaPlans.length + ' plans (' + data.year + ') — pick inside each option below. Prices shown are AFTER the credit.';
+    const opts = '<option value="">&mdash; pick a plan &mdash;</option>'
+      + window._qbAcaPlans.map(p =>
+        `<option value="${escWeb(p.id)}">${escWeb(p.metal)}: ${escWeb((p.issuer ? p.issuer + ' — ' : '') + p.name)} ($${Number(p.net).toFixed(2)}/mo)</option>`).join('');
+    for (let i = 0; i < 4; i++) {
+      const sel = document.getElementById('qb-aca-' + i);
+      if (sel) sel.innerHTML = opts;
+    }
+  } catch (e) {
+    res.innerHTML = '<span style="color:var(--danger);">Marketplace relay unreachable — is the API key set up?</span>';
+  }
+}
+
+function qbApplyAcaPlan_(i) {
+  const plan = (window._qbAcaPlans || []).find(p => p.id === document.getElementById('qb-aca-' + i).value);
+  window._qbAcaSel = window._qbAcaSel || {};
+  if (!plan) { delete window._qbAcaSel[i]; return; }
+  window._qbAcaSel[i] = plan;
+  document.getElementById('qb-name-' + i).value = plan.name + (plan.metal ? ' (' + plan.metal + ')' : '');
+  document.getElementById('qb-prem-' + i).value = Number(plan.net).toFixed(2);
+  const bullets = [];
+  if (plan.metal) bullets.push(plan.metal + ' plan' + (plan.type ? ' · ' + plan.type : ''));
+  if (plan.premium != null && plan.net != null && plan.premium > plan.net)
+    bullets.push('Full price $' + Number(plan.premium).toFixed(2) + '/mo — your estimated tax credit covers $' + Number(plan.premium - plan.net).toFixed(2));
+  if (plan.deductible != null) bullets.push('Deductible: $' + Number(plan.deductible).toLocaleString());
+  if (plan.moop != null) bullets.push('Yearly max out-of-pocket: $' + Number(plan.moop).toLocaleString());
+  if (plan.hsa) bullets.push('HSA-eligible');
+  if (plan.rating) bullets.push('Quality rating: ' + plan.rating + ' of 5');
+  document.getElementById('qb-bul-' + i).value = bullets.join('\n');
 }
 
 // ============================================================
