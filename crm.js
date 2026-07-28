@@ -7360,6 +7360,10 @@ async function renderSettings() {
             <input type="text" id="swp-headshot" value="${escWeb(currentAgent.headshot_url||'')}" placeholder="https://..." style="width:100%;box-sizing:border-box;" />
           </div>
         </div>
+        <div style="margin-top:10px;">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Office address (shown to clients who choose an in-person meeting on your booking page)</label>
+          <input type="text" id="swp-office" value="${escWeb(currentAgent.office_address||'')}" placeholder="e.g. 123 Main St, Suite 200, Bozeman, MT 59715" style="width:100%;box-sizing:border-box;" />
+        </div>
         <div style="margin-top:12px;">
           <button class="btn btn-primary" onclick="saveMyWebsiteProfile()">Save website profile</button>
           <span id="swp-msg" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
@@ -8487,6 +8491,7 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
       ${a.company ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.company}</div>` : ''}
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${a.appointment_label || a.appointment_type || 'Appointment'} · ${received}</div>
+      ${a.meeting_method ? `<div style="font-size:11px;color:var(--text-primary);margin-bottom:4px;">${a.meeting_method === 'phone' ? '📞 Phone call' + (a.booker_phone ? ' · <strong>' + escWeb(a.booker_phone) + '</strong>' : '') : a.meeting_method === 'web' ? '💻 Web meeting' : '🏢 In person'}</div>` : ''}
       ${proposedTime}
       <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
         <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="apptSchedule('${a.id}')">${btnLabel}</button>
@@ -9743,6 +9748,7 @@ async function saveMyWebsiteProfile() {
     bio: document.getElementById('swp-bio').value.trim() || null,
     specialties: list(document.getElementById('swp-specs').value),
     headshot_url: document.getElementById('swp-headshot').value.trim() || null,
+    office_address: document.getElementById('swp-office').value.trim() || null,
   };
   const msg = document.getElementById('swp-msg');
   msg.textContent = 'Saving...';
@@ -10626,12 +10632,13 @@ async function openQuoteBuilder(dealId) {
       contact_id: contact.id, deal_id: deal.id, agent_id: currentAgent.id,
       agent_name: currentAgent.display_name || currentAgent.name,
       agent_email: currentAgent.email, agent_phone: currentAgent.phone || null,
-      agent_booking_url: currentAgent.booking_link
-        || (currentAgent.booking_types && currentAgent.booking_types.length
-            ? window.location.origin + '/book.html?agent=' + currentAgent.id : null),
+      agent_booking_url: (currentAgent.booking_types && currentAgent.booking_types.length
+            ? window.location.origin + '/book.html?agent=' + currentAgent.id + '&context=client'
+            : currentAgent.booking_link || null),
       client_name: contact.name || 'Client', client_email: contact.email || null,
       line: line, brand: document.getElementById('qb-brand').value,
       valid_until: document.getElementById('qb-valid').value || null,
+      quote_inputs: (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null,
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
     const { error: e2 } = await supabaseClient.from('quote_options')
@@ -12208,6 +12215,16 @@ async function qbAcaGetPlans_() {
     window._qbAcaPlans = data.plans || [];
     window._qbAcaYear = data.year;
     window._qbAcaFamilyQuote = (data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length) > 1;
+    // Snapshot the inputs behind these numbers — saved onto the quote for the client's "based on" panel
+    const countySel2 = document.getElementById('qb-aca-county');
+    window._qbAcaInputs = {
+      income: income, zip: c.zip || null,
+      county: countySel2.options[countySel2.selectedIndex] ? countySel2.options[countySel2.selectedIndex].text : null,
+      aptc: data.aptc != null ? data.aptc : null,
+      household: people.map(m => ({ relationship: m.relationship, age: m.age, applying: !!m.applying })),
+      applicant_count: data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length,
+      household_count: data.household_count != null ? data.household_count : people.length,
+    };
     let subsidy = data.aptc != null && data.aptc > 0
       ? '<span style="color:var(--success);font-weight:700;">Estimated tax credit: $' + Number(data.aptc).toFixed(0) + '/mo</span>'
       : 'No tax credit at this income';

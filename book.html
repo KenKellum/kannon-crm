@@ -307,6 +307,19 @@
         <input type="email" id="field-email" placeholder="jane@company.com" autocomplete="email" required>
       </div>
       <div class="form-group">
+        <label>Your Phone <span id="phone-req" style="color:#ef4444;">*</span></label>
+        <input type="tel" id="field-phone" placeholder="(406) 555-0123" autocomplete="tel">
+      </div>
+      <div class="form-group">
+        <label>How would you like to meet?</label>
+        <select id="field-method" onchange="methodChanged()" style="width:100%;padding:11px 12px;border:1px solid #d7dde6;border-radius:9px;font-size:14.5px;background:#fff;">
+          <option value="phone" selected>&#128222; Phone call</option>
+          <option value="web">&#128187; Web meeting (video)</option>
+          <option value="in_person" id="opt-in-person">&#127970; In person at the office</option>
+        </select>
+        <p id="method-info" style="font-size:12.5px;color:#475569;margin-top:7px;line-height:1.5;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 11px;"></p>
+      </div>
+      <div class="form-group">
         <label>Company Name <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
         <input type="text" id="field-company" placeholder="Big Sky Brewing Co." autocomplete="new-password">
         <p style="font-size:12px;color:#94a3b8;margin-top:5px;line-height:1.4;">If you're looking for coverage for your business or employees, enter your company name here.</p>
@@ -331,9 +344,10 @@ const params     = new URLSearchParams(window.location.search);
 const agentId    = params.get('agent');
 const context    = params.get('context') || 'all'; // client | recruit | all
 let   preCompany = params.get('co')      || '';     // pre-filled company from contact record
-const preEmail   = params.get('email')   || '';     // pre-filled email (when sent via CRM)
-const preName    = params.get('name')    || '';     // pre-filled name (when sent via CRM)
-const contactId  = params.get('cid')     || '';     // contact ID for existing contacts
+let   preEmail   = params.get('email')   || '';     // pre-filled email (when sent via CRM)
+let   preName    = params.get('name')    || '';     // pre-filled name (when sent via CRM)
+let   contactId  = params.get('cid')     || '';     // contact ID for existing contacts
+const quoteId    = params.get('q')       || '';     // arriving from a quote page — prefill from its record
 
 let selectedType = null;
 let agent = null;
@@ -344,12 +358,28 @@ async function init() {
 
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/agents?id=eq.${agentId}&select=id,name,booking_types`,
+      `${SUPABASE_URL}/rest/v1/agents?id=eq.${agentId}&select=id,name,booking_types,phone,office_address`,
       { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
     );
     const rows = await res.json();
     if (!rows || rows.length === 0) { showError('Booking page not found.'); return; }
     agent = rows[0];
+
+    // Arriving from a quote link: pull their details from the quote record (no PII in the URL)
+    if (quoteId && !preName) {
+      try {
+        const qRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/quotes?id=eq.${encodeURIComponent(quoteId)}&select=client_name,client_email,contact_id`,
+          { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
+        );
+        const qRows = await qRes.json();
+        if (qRows && qRows.length) {
+          preName = qRows[0].client_name || preName;
+          preEmail = qRows[0].client_email || preEmail;
+          contactId = qRows[0].contact_id || contactId;
+        }
+      } catch (e) { /* non-fatal — they just type their details */ }
+    }
     renderPage();
 
     // Pull the contact's company from the database so we can pre-fill it correctly
@@ -411,6 +441,21 @@ function renderPage() {
 }
 
 // ── Modal ─────────────────────────────────────────────────
+function methodChanged() {
+  const m = document.getElementById('field-method').value;
+  const info = document.getElementById('method-info');
+  const phone = agent.phone || '';
+  if (m === 'phone') {
+    info.innerHTML = '&#128222; ' + agent.name.split(' ')[0] + ' will call you at the number above at your appointment time.'
+      + (phone ? '<br>Or reach me directly anytime: <a href="tel:' + phone.replace(/[^0-9+]/g, '') + '" style="font-weight:700;color:#1d3557;text-decoration:none;">' + phone + '</a>' : '');
+  } else if (m === 'web') {
+    info.innerHTML = '&#128187; A video-meeting link will arrive with your calendar confirmation — just click it at your appointment time.';
+  } else {
+    info.innerHTML = '&#127970; Come see us at:<br><strong>' + (agent.office_address || 'Address provided in your confirmation') + '</strong>';
+  }
+  document.getElementById('phone-req').style.display = m === 'phone' ? 'inline' : 'none';
+}
+
 function openModal(typeObj) {
   selectedType = typeObj;
   document.getElementById('modal-title').textContent = typeObj.label;
@@ -419,6 +464,10 @@ function openModal(typeObj) {
   document.getElementById('field-email').value   = preEmail;
   document.getElementById('field-company').value = preCompany;
   document.getElementById('field-note').value    = '';
+  // In-person only makes sense when the agent has published an office address
+  document.getElementById('opt-in-person').style.display = agent.office_address ? '' : 'none';
+  document.getElementById('field-method').value = 'phone';
+  methodChanged();
   document.getElementById('overlay').classList.add('active');
   // Chrome ignores autocomplete="off" and autofills after modal opens —
   // override it after a tick so our value wins
@@ -443,6 +492,13 @@ async function submitAndBook() {
   const visitorEmail = document.getElementById('field-email').value.trim();
   const company      = document.getElementById('field-company').value.trim();
   const note         = document.getElementById('field-note').value.trim();
+  const method       = document.getElementById('field-method').value;
+  const visitorPhone = document.getElementById('field-phone').value.trim();
+  if (method === 'phone' && !visitorPhone) {
+    document.getElementById('field-phone').focus();
+    document.getElementById('field-phone').style.borderColor = '#ef4444';
+    return;
+  }
 
   if (!visitorName) {
     document.getElementById('field-name').focus();
@@ -524,7 +580,9 @@ async function submitAndBook() {
       appointment_type:  selectedType.type,
       appointment_label: selectedType.label,
       booker_name:       visitorName,
-      booker_email:      visitorEmail
+      booker_email:      visitorEmail,
+      meeting_method:    method,
+      booker_phone:      visitorPhone || null
     })
   }).catch(() => {});
 

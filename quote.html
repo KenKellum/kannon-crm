@@ -139,6 +139,7 @@
       <h1 id="q-title">Your Coverage Options</h1>
       <div class="agent-line" id="q-agent"></div>
       <div class="valid" id="q-valid"></div>
+      <div id="q-inputs"></div>
       <div class="howto" id="q-howto"></div>
       <div class="grid" id="opts"></div>
       <a class="ask" id="q-ask" href="#">Questions? Contact me directly &rarr;</a>
@@ -291,6 +292,12 @@ function renderCards() {
   refreshBar();
 }
 
+// If the booking page is ours, tell it which quote sent them so it can prefill their details
+function bookingHref() {
+  const u = quote.agent_booking_url || '';
+  return /\/book\.html\?/.test(u) ? u + '&q=' + encodeURIComponent(qid) : u;
+}
+
 function toggleCompare(id, cb) {
   if (cb.checked) {
     if (compareSet.size >= 4) { cb.checked = false; alert('You can compare up to 4 plans at a time.'); return; }
@@ -329,7 +336,7 @@ function refreshBar() {
   sendBtn.textContent = 'Send my list to ' + agentFirst() + ' (' + discussSet.size + ')';
   if (quote.agent_booking_url) {
     bookBtn.style.display = 'inline-block';
-    bookBtn.href = quote.agent_booking_url;
+    bookBtn.href = bookingHref();
     bookBtn.target = '_blank';
   }
 }
@@ -462,7 +469,7 @@ async function sendPicks() {
     + esc(agentFirst()) + ' has been notified and will reach out shortly — nothing is purchased or changed until you talk.'
     + (ok ? '' : ' <span style="color:#b45309;">(If you don’t hear back within one business day, please call directly.)</span>');
   const book = document.getElementById('done-book');
-  if (quote.agent_booking_url) { book.style.display = 'inline-block'; book.href = quote.agent_booking_url; book.target = '_blank'; }
+  if (quote.agent_booking_url) { book.style.display = 'inline-block'; book.href = bookingHref(); book.target = '_blank'; }
   document.getElementById('done-panel').style.display = 'block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -471,7 +478,7 @@ async function init() {
   qid = new URLSearchParams(location.search).get('q');
   if (!qid) { showErr(); return; }
   const rows = await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid)
-    + '&select=id,client_name,line,brand,status,valid_until,viewed_at,agent_name,agent_email,agent_phone,agent_booking_url', { method: 'GET' });
+    + '&select=id,client_name,line,brand,status,valid_until,viewed_at,agent_name,agent_email,agent_phone,agent_booking_url,quote_inputs', { method: 'GET' });
   quote = rows && rows[0];
   if (!quote) { showErr(); return; }
   if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showExpired(); return; }
@@ -488,6 +495,26 @@ async function init() {
     + (quote.agent_phone ? '<br><a href="tel:' + esc(quote.agent_phone.replace(/[^0-9+]/g, '')) + '" style="color:var(--brand);text-decoration:none;font-weight:600;">' + esc(quote.agent_phone) + '</a>' : '') + '</span>';
   if (quote.valid_until) document.getElementById('q-valid').textContent =
     'These quotes are valid through ' + new Date(quote.valid_until + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) + '.';
+  const qi = quote.quote_inputs;
+  if (qi && (qi.income != null || (qi.household || []).length)) {
+    const money0 = v => '$' + Number(v).toLocaleString();
+    const hh = qi.household || [];
+    const applying = hh.filter(m => m.applying), notApplying = hh.filter(m => !m.applying);
+    const person = m => esc(m.relationship || 'Member') + (m.age != null ? ' (' + m.age + ')' : '');
+    document.getElementById('q-inputs').innerHTML = `
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 18px;margin:6px 0 18px;">
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#64748b;margin-bottom:8px;">&#128203; What these quotes are based on</div>
+        <div style="display:flex;gap:8px 26px;flex-wrap:wrap;font-size:13px;color:#334155;">
+          ${qi.zip || qi.county ? `<span>&#128205; ${esc([qi.zip, qi.county].filter(Boolean).join(' · '))}</span>` : ''}
+          ${qi.income != null ? `<span>&#128181; Household income <strong>${money0(qi.income)}/yr</strong></span>` : ''}
+          ${hh.length ? `<span>&#128106; Household of <strong>${qi.household_count || hh.length}</strong></span>` : ''}
+          ${applying.length ? `<span>&#9989; Applying for coverage: <strong>${applying.map(person).join(', ')}</strong></span>` : ''}
+          ${notApplying.length ? `<span>&#10060; Not applying: ${notApplying.map(person).join(', ')}</span>` : ''}
+          ${qi.aptc != null && qi.aptc > 0 ? `<span>&#127775; Estimated tax credit <strong style="color:#15803d;">$${Number(qi.aptc).toFixed(0)}/mo</strong></span>` : ''}
+        </div>
+        <div style="font-size:11.5px;color:#94a3b8;margin-top:8px;">If any of this looks wrong or has changed, tell me — it changes the prices and the tax credit.</div>
+      </div>`;
+  }
   document.getElementById('q-howto').innerHTML = allOpts.length > 1
     ? '<strong>How this works:</strong> tap <em>&ldquo;I’d like to discuss this one&rdquo;</em> on any plan that interests you (as many as you like)'
       + (allOpts.length > 2 ? ', tick <em>Compare</em> on up to 4 to see them side by side' : '')
@@ -557,7 +584,7 @@ function showExpired() {
       Let's get you <strong>current pricing</strong> before you decide anything.</p>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px;">
         <button class="btn btn-gold" id="refresh-btn" onclick="requestRefresh()">&#10024; Send me fresh quotes</button>
-        ${quote.agent_booking_url ? `<a class="btn btn-ghost" style="text-decoration:none;" href="${esc(quote.agent_booking_url)}" target="_blank">&#128197; Book a time instead</a>` : ''}
+        ${quote.agent_booking_url ? `<a class="btn btn-ghost" style="text-decoration:none;" href="${esc(bookingHref())}" target="_blank">&#128197; Book a time instead</a>` : ''}
         ${tel ? `<a class="btn btn-ghost" style="text-decoration:none;" href="tel:${esc(tel)}">&#128222; Call ${esc(quote.agent_phone)}</a>` : ''}
       </div>
       <div id="refresh-done" style="display:none;margin:18px auto 0;max-width:420px;background:linear-gradient(120deg,#f0fdf4,#ecfdf5);border:1.5px solid #16a34a;border-radius:12px;padding:14px 18px;font-size:14px;color:#14532d;animation:rise .4s ease-out;"></div>
