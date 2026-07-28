@@ -141,6 +141,7 @@ const FIELD_DEFS = {
   aca_qle_date:         { label: 'If yes: when did it happen?', type: 'date' },
   aca_tobacco:          { label: 'Does anyone applying for coverage use tobacco?', type: 'text', placeholder: 'e.g. No / Yes \u2014 John' },
   aca_lawful:           { label: 'Is everyone applying a U.S. citizen or lawfully present?', type: 'select', options: ['Yes','No','Not sure'] },
+  household_members:    { label: 'Your household', type: 'household-table' },
   currently_insured:    { label: 'Currently have health insurance?', type: 'radio', options: ['Yes','No'] },
   current_carrier:      { label: 'Current insurance carrier', type: 'text', placeholder: 'e.g. Blue Cross, Cigna' },
   current_premium:      { label: 'Current monthly premium', type: 'text', placeholder: 'e.g. $450/month' },
@@ -210,6 +211,7 @@ const CHECKBOX_GROUP_LABELS = {
 function renderField(id, def, prefillVal) {
   if (def.type === 'checkbox-field') return '';
   if (id === 'med_medications' || id === 'med_doctors') return renderPickerField_(id, def, prefillVal);
+  if (def.type === 'household-table') return renderHouseholdTable_(id, def);
   const val = prefillVal || '';
   const isPrefilled = !!val;
   let input = '';
@@ -226,7 +228,109 @@ function renderField(id, def, prefillVal) {
   } else if (def.type === 'textarea') {
     input = `<textarea id="f_${id}" name="${id}" placeholder="${def.placeholder||''}">${val}</textarea>`;
   }
-  return `<div class="field-group"><label for="f_${id}">${def.label}</label>${input}</div>`;
+  return `<div class="field-group" id="wrap_${id}"><label for="f_${id}">${def.label}</label>${input}</div>`;
+}
+
+// ---- Household members table: who's covered, age, gender, tobacco ----
+let _hh = [];
+function renderHouseholdTable_(id, def) {
+  try {
+    const all = window._prefillAll || {};
+    if (all.household_struct) _hh = JSON.parse(all.household_struct);
+    else if (all.member_ages) _hh = String(all.member_ages).split(/[^0-9]+/).filter(Boolean)
+      .map((a, i) => ({ relationship: i === 0 ? 'Self' : (parseInt(a) >= 18 ? 'Spouse' : 'Child'), age: parseInt(a), gender: '', tobacco: false, covered: true }));
+    else _hh = [];
+  } catch (e) { _hh = []; }
+  if (!_hh.length) {
+    let selfAge = '';
+    const dobVal = (window._prefillAll || {}).dob;
+    if (dobVal) { const a = Math.floor((Date.now() - new Date(dobVal + 'T12:00:00')) / 31557600000); if (a > 0 && a < 120) selfAge = a; }
+    _hh = [{ relationship: 'Self', age: selfAge, gender: '', tobacco: false, covered: true }];
+  }
+  setTimeout(() => { try { hhPaint_(); } catch (e) {} }, 80);
+  return `<div class="field-group" id="wrap_${id}">
+    <label>${def.label} <span style="font-weight:400;color:#94a3b8;">\u2014 add everyone who lives with you; untick \u201cCover\u201d for anyone not applying</span></label>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;">
+        <th style="padding:4px;">Who</th><th style="padding:4px;">Age</th><th style="padding:4px;">Gender</th>
+        <th style="padding:4px;">Tobacco</th><th style="padding:4px;">Cover</th><th></th></tr></thead>
+      <tbody id="hh-rows"></tbody>
+    </table></div>
+    <button type="button" class="btn-secondary" style="margin-top:8px;padding:8px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;font-size:13px;" onclick="hhAdd_()">+ Add family member</button>
+    <input type="hidden" name="household_struct" id="f_household_struct">
+    <input type="hidden" name="household_size" id="f_household_size">
+    <input type="hidden" name="member_ages" id="f_member_ages">
+  </div>`;
+}
+
+function hhPaint_() {
+  const tb = document.getElementById('hh-rows');
+  if (!tb) return;
+  tb.innerHTML = _hh.map((m, i) => `
+    <tr>
+      <td style="padding:3px;">${i === 0
+        ? '<strong style="font-size:13px;">You</strong><input type="hidden" class="hh-rel" value="Self">'
+        : `<select class="hh-rel" onchange="hhRead_()" style="padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;">
+            <option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option>
+            <option${m.relationship === 'Child' ? ' selected' : ''}>Child</option>
+            <option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`}</td>
+      <td style="padding:3px;"><input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" min="0" max="120" style="width:64px;padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;" oninput="hhRead_()"></td>
+      <td style="padding:3px;"><select class="hh-gen" onchange="hhRead_()" style="padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;">
+        <option value=""${!m.gender ? ' selected' : ''}>Select\u2026</option>
+        <option value="M"${m.gender === 'M' ? ' selected' : ''}>Male</option>
+        <option value="F"${m.gender === 'F' ? ' selected' : ''}>Female</option>
+        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Decline to answer</option></select></td>
+      <td style="padding:3px;text-align:center;"><input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;"></td>
+      <td style="padding:3px;text-align:center;"><input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;"></td>
+      <td style="padding:3px;">${i === 0 ? '' : `<button type="button" onclick="_hh.splice(${i},1);hhPaint_();hhRead_();" style="background:none;border:none;color:#dc2626;cursor:pointer;">&#10005;</button>`}</td>
+    </tr>`).join('');
+  hhRead_();
+}
+
+function hhRead_() {
+  const rows = [...document.querySelectorAll('#hh-rows tr')];
+  _hh = rows.map(tr => ({
+    relationship: tr.querySelector('.hh-rel').value,
+    age: tr.querySelector('.hh-age').value === '' ? '' : parseInt(tr.querySelector('.hh-age').value),
+    gender: tr.querySelector('.hh-gen').value,
+    tobacco: tr.querySelector('.hh-tob').checked,
+    covered: tr.querySelector('.hh-cov').checked,
+  }));
+  const fs = document.getElementById('f_household_struct');
+  if (fs) fs.value = JSON.stringify(_hh);
+  const sz = document.getElementById('f_household_size');
+  if (sz) sz.value = _hh.length;
+  const ma = document.getElementById('f_member_ages');
+  if (ma) ma.value = _hh.map(m => m.age).filter(a => a !== '').join(', ');
+}
+
+function hhAdd_() { _hh.push({ relationship: 'Child', age: '', gender: '', tobacco: false, covered: true }); hhPaint_(); }
+
+// ---- Conditional questions: only ask what applies ----
+function _fv(id) { const el = document.getElementById('f_' + id); return el ? el.value : ''; }
+function _sepNeeded_() {
+  const now = new Date(), y = now.getFullYear();
+  const inOEP = (now >= new Date(y, 10, 1)) || (now <= new Date(y, 0, 15, 23, 59, 59));
+  if (inOEP) return false;
+  const start = _fv('coverage_start_date');
+  if (start) {
+    const nextJan1 = new Date(now < new Date(y, 0, 16) ? y : y + 1, 0, 1);
+    if (new Date(start + 'T12:00:00') >= nextJan1) return false; // OEP will cover a Jan 1 start
+  }
+  return true;
+}
+const FIELD_RULES = {
+  current_carrier:  () => _fv('currently_insured') !== 'No',
+  current_premium:  () => _fv('currently_insured') !== 'No',
+  aca_ichra_amount: () => _fv('aca_ichra_offer') === 'Yes',
+  aca_qle:          () => _sepNeeded_(),
+  aca_qle_date:     () => _sepNeeded_() && _fv('aca_qle') && !/^no\b/i.test(_fv('aca_qle')),
+};
+function applyFieldRules_() {
+  Object.keys(FIELD_RULES).forEach(id => {
+    const w = document.getElementById('wrap_' + id);
+    if (w) w.style.display = FIELD_RULES[id]() ? '' : 'none';
+  });
 }
 
 const PICKER_RELAY = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
@@ -241,13 +345,13 @@ function renderPickerField_(id, def, prefillVal) {
     else if (prefillVal) _pickers[id] = String(prefillVal).split(/[\n,;]+/).map(x => x.trim()).filter(Boolean).map(n => ({ name: n }));
   } catch (e) { _pickers[id] = []; }
   setTimeout(() => { try { pickerSync_(id); } catch (e) {} }, 80); // paint restored chips once the DOM exists
-  return `<div class="field-group"><label>${def.label}</label>
+  return `<div class="field-group" id="wrap_${id}"><label>${def.label}</label>
     <div style="display:flex;gap:8px;">
       <input type="text" id="pk_q_${id}" placeholder="${isMed ? 'Start typing a medication\u2026' : 'Start typing a doctor\u2019s name\u2026'}" style="flex:1;"
         onkeydown="if(event.key==='Enter'){event.preventDefault();pickerSearch_('${id}');}">
       <button type="button" class="btn-secondary" style="white-space:nowrap;padding:10px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;" onclick="pickerSearch_('${id}')">Find</button>
     </div>
-    <div id="pk_m_${id}" style="font-size:13px;margin-top:5px;"></div>
+    <div id="pk_m_${id}" style="font-size:13px;margin-top:5px;max-height:190px;overflow-y:auto;"></div>
     <div id="pk_c_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
     <input type="hidden" name="${id}" id="f_${id}">
     <input type="hidden" name="${id}_struct" id="f_${id}_struct">
@@ -286,11 +390,12 @@ async function pickerSearch_(id) {
       }
       const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
       const ad = (o.addresses && o.addresses[0]) || o.address || {};
-      const where = [ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
-      return { key: o.npi, distance: (o.distance != null ? Number(o.distance) : (ad.distance != null ? Number(ad.distance) : null)), name: nm, extra: [o.taxonomy || (o.specialties || [])[0] || '', where].filter(Boolean).join(' \u00b7 ') };
+      const where = [ad.street_1 || ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
+      const isFac = o._ptype === 'Facility' || o.provider_type === 'Facility';
+      return { key: o.npi, distance: (o.distance != null ? Number(o.distance) : (ad.distance != null ? Number(ad.distance) : null)), name: (isFac ? '\u{1F3E5} ' : '') + nm, extra: [o.taxonomy || (o.specialties || [])[0] || (isFac ? 'Facility' : ''), where].filter(Boolean).join(' \u00b7 ') };
     }).filter(x => x.key && x.name);
     items.sort((a, b) => ((a.distance != null ? a.distance : 1e9) - (b.distance != null ? b.distance : 1e9)) || String(a.name).localeCompare(String(b.name)));
-    items = items.slice(0, 6);
+    items = items.slice(0, 20);
     if (!items.length) {
       out.innerHTML = 'No matches \u2014 <a href="#" onclick="_pickers[\'' + id + '\'].push({name:document.getElementById(\'pk_q_' + id + '\').value.trim()});document.getElementById(\'pk_q_' + id + '\').value=\'\';this.parentElement.innerHTML=\'\';pickerSync_(\'' + id + '\');return false;">add it as typed</a>.';
       return;
@@ -350,6 +455,13 @@ async function init() {
   if (!contact.phone) contact.phone = params.get('phone') || '';
 
   renderForm(session, contact);
+  setTimeout(() => {
+    try {
+      applyFieldRules_();
+      const form = document.getElementById('intake-form');
+      if (form) form.addEventListener('change', applyFieldRules_);
+    } catch (e) {}
+  }, 150);
 }
 
 function renderForm(session, contact) {
