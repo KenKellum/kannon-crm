@@ -2962,6 +2962,89 @@ function imPickerPick_(id, i) {
 }
 
 
+window._imHH = [];
+function _imHHTable_(id, def) {
+  const all = window._imPrefillAll || {};
+  try {
+    if (all.household_struct) window._imHH = JSON.parse(all.household_struct);
+    else if (all.member_ages) window._imHH = String(all.member_ages).split(/[^0-9]+/).filter(Boolean)
+      .map((a, i) => ({ relationship: i === 0 ? 'Self' : (parseInt(a) >= 18 ? 'Spouse' : 'Child'), age: parseInt(a), gender: '', tobacco: false, covered: true }));
+    else window._imHH = [];
+  } catch (e) { window._imHH = []; }
+  if (!window._imHH.length) {
+    const c = contacts.find(x => x.id === _intakeContactId) || {};
+    let a = '';
+    if (c.date_of_birth) { const yrs = Math.floor((Date.now() - new Date(c.date_of_birth + 'T12:00:00')) / 31557600000); if (yrs > 0 && yrs < 120) a = yrs; }
+    window._imHH = [{ relationship: 'Self', age: a, gender: c.gender || '', tobacco: !!c.tobacco_use, covered: true }];
+  }
+  setTimeout(() => { try { imHHPaint_(); } catch (e) {} }, 80);
+  return `<div id="iwrap_${id}">
+    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">${def.label}</label>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+      <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">
+        <th>Who</th><th>Age</th><th>Gender</th><th>Tob.</th><th>Cover</th><th></th></tr></thead>
+      <tbody id="im-hh-rows"></tbody>
+    </table></div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="imHHAdd_()">+ Add member</button>
+  </div>`;
+}
+
+function imHHPaint_() {
+  const tb = document.getElementById('im-hh-rows');
+  if (!tb) return;
+  tb.innerHTML = window._imHH.map((m, i) => `
+    <tr>
+      <td style="padding:2px;">${i === 0 ? '<strong>Client</strong><input type="hidden" class="hh-rel" value="Self">'
+        : `<select class="hh-rel" onchange="imHHRead_()"><option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option><option${m.relationship === 'Child' ? ' selected' : ''}>Child</option><option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`}</td>
+      <td style="padding:2px;"><input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" style="width:58px;" oninput="imHHRead_()"></td>
+      <td style="padding:2px;"><select class="hh-gen" onchange="imHHRead_()">
+        <option value=""${!m.gender ? ' selected' : ''}>\u2014</option>
+        <option value="M"${m.gender === 'M' ? ' selected' : ''}>M</option>
+        <option value="F"${m.gender === 'F' ? ' selected' : ''}>F</option>
+        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Declined</option></select></td>
+      <td style="padding:2px;text-align:center;"><input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;"></td>
+      <td style="padding:2px;text-align:center;"><input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;"></td>
+      <td style="padding:2px;">${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}</td>
+    </tr>`).join('');
+  imHHRead_();
+}
+function imHHRead_() {
+  window._imHH = [...document.querySelectorAll('#im-hh-rows tr')].map(tr => ({
+    relationship: tr.querySelector('.hh-rel').value,
+    age: tr.querySelector('.hh-age').value === '' ? '' : parseInt(tr.querySelector('.hh-age').value),
+    gender: tr.querySelector('.hh-gen').value,
+    tobacco: tr.querySelector('.hh-tob').checked,
+    covered: tr.querySelector('.hh-cov').checked,
+  }));
+}
+function imHHAdd_() { window._imHH.push({ relationship: 'Child', age: '', gender: '', tobacco: false, covered: true }); imHHPaint_(); }
+
+function _imFv_(id) { const el = document.getElementById('ifield_' + id); return el ? el.value : ''; }
+function _imSepNeeded_() {
+  const now = new Date(), y = now.getFullYear();
+  const inOEP = (now >= new Date(y, 10, 1)) || (now <= new Date(y, 0, 15, 23, 59, 59));
+  if (inOEP) return false;
+  const start = _imFv_('coverage_start_date');
+  if (start) {
+    const nextJan1 = new Date(now < new Date(y, 0, 16) ? y : y + 1, 0, 1);
+    if (new Date(start + 'T12:00:00') >= nextJan1) return false;
+  }
+  return true;
+}
+const IM_FIELD_RULES = {
+  current_carrier:  () => _imFv_('currently_insured') !== 'No',
+  current_premium:  () => _imFv_('currently_insured') !== 'No',
+  aca_ichra_amount: () => _imFv_('aca_ichra_offer') === 'Yes',
+  aca_qle:          () => _imSepNeeded_(),
+  aca_qle_date:     () => _imSepNeeded_() && _imFv_('aca_qle') && !/^no\b/i.test(_imFv_('aca_qle')),
+};
+function imApplyRules_() {
+  Object.keys(IM_FIELD_RULES).forEach(id => {
+    const w = document.getElementById('iwrap_' + id);
+    if (w) w.style.display = IM_FIELD_RULES[id]() ? '' : 'none';
+  });
+}
+
 function _intakeRenderField(id, def, prefillVal) {
   if (id === 'med_medications' || id === 'med_doctors') return _imPickerField_(id, def);
   if (def.type === 'household-table') return _imHHTable_(id, def);
