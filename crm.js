@@ -6221,6 +6221,19 @@ function editContact(id, onSave) {
   loadIntakeHistoryPanel(id);
 }
 
+async function deleteIntakeSession(sessionId, formType, status, contactId) {
+  let msg = 'Delete this intake? The form link stops working and its answers are gone for good.';
+  if (formType === 'medicare' && status === 'completed') {
+    msg = '\u26a0\ufe0f MEDICARE RECORD: completed Medicare intakes support your CMS compliance trail '
+        + '(10-year retention posture). Only delete if this was a test or a mistake.\n\nReally delete it?';
+  }
+  if (!confirm(msg)) return;
+  const { error } = await supabaseClient.from('intake_sessions').delete().eq('id', sessionId);
+  if (error) { showToast('Could not delete: ' + error.message); return; }
+  showToast('Intake deleted.');
+  loadIntakeHistoryPanel(contactId);
+}
+
 async function loadIntakeHistoryPanel(contactId) {
   const panel = document.getElementById('intake-history-panel');
   if (!panel) return;
@@ -6249,11 +6262,12 @@ async function loadIntakeHistoryPanel(contactId) {
     const viewBtn = s.status === 'completed'
       ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 8px;margin-top:4px;" onclick="viewIntakeSession('${s.id}')">&#128065; View</button>`
       : '';
+    const delBtn = `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 8px;margin-top:4px;color:var(--danger);border-color:var(--danger);" onclick="deleteIntakeSession('${s.id}','${s.form_type}','${s.status}','${contactId}')" title="Delete this intake">&#128465;</button>`;
     return `<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f1f5f9;gap:8px;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:600;color:var(--text);">${LABELS[s.form_type]||s.form_type}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${dt}</div>
-        ${viewBtn}
+        ${viewBtn} ${delBtn}
       </div>
       <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;${badge}">${s.status.toUpperCase()}</span>
     </div>`;
