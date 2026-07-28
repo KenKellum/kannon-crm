@@ -8366,6 +8366,17 @@ async function loadNeedsAttention() {
       .order('created_at', { ascending: false })
       .limit(10);
 
+    // 3. ALL pending/rescheduled bookings — fetched here so the dashboard never
+    // depends on the Appointments page having loaded calAppointments first
+    const { data: pend } = await supabaseClient
+      .from('booking_intents')
+      .select('*')
+      .eq('agent_id', currentAgent.id)
+      .or('status.is.null,status.eq.pending,status.eq.rescheduled')
+      .order('created_at', { ascending: false })
+      .limit(30);
+    window._naPendingBookings = pend || [];
+
     naItems = [
       ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, censusId: (a.metadata && a.metadata.census_id) || null, dealId: (a.metadata && a.metadata.deal_id) || null, quoteId: (a.metadata && a.metadata.quote_id) || null, createdAt: a.created_at })),
       ...(appts || []).map(a => ({ kind: 'meeting_canceled', bookingId: a.id, contactId: a.contact_id, contactName: a.contact_name, company: a.company, apptLabel: a.appointment_label || a.appointment_type || 'Appointment', scheduledAt: a.scheduled_at, createdAt: a.created_at }))
@@ -8637,7 +8648,7 @@ async function naReengage(activityId, contactId) {
 function _buildNeedsAttentionHTML(appointmentsOnly) {
   // Combine: pending booking_intents (from calAppointments) + naItems
   // When appointmentsOnly=true (Appointments page), skip naItems — only show pending/rescheduled bookings
-  const pending = (calAppointments || []).filter(a => !a.status || a.status === 'pending' || a.status === 'rescheduled');
+  const pending = (window._naPendingBookings || calAppointments || []).filter(a => !a.status || a.status === 'pending' || a.status === 'rescheduled');
   const activeNaItems = appointmentsOnly ? [] : naItems;
   const total = pending.length + activeNaItems.length;
   if (total === 0) return '';
