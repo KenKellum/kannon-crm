@@ -302,6 +302,8 @@ function toggleDiscuss(id, btn) {
   if (card) card.innerHTML = optCardHtml(o, false);
   const col = document.getElementById('cmp-' + id);
   if (col) col.innerHTML = optCardHtml(o, true);
+  if (document.getElementById('cmp-table'))
+    document.getElementById('cmp-row').innerHTML = cmpTableHtml(allOpts.filter(x => compareSet.has(x.id)));
   refreshBar();
 }
 
@@ -328,13 +330,99 @@ function refreshBar() {
   }
 }
 
-function enterCompare() {
-  const row = document.getElementById('cmp-row');
-  row.innerHTML = allOpts.filter(o => compareSet.has(o.id)).map(o =>
-    `<div class="cmp-col${o.is_recommended ? ' rec' : ''}" id="cmp-${o.id}">${optCardHtml(o, true)}</div>`).join('');
+async function enterCompare() {
+  const list = allOpts.filter(o => compareSet.has(o.id));
   document.getElementById('quote-view').style.display = 'none';
   document.getElementById('compare-view').style.display = 'block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  const row = document.getElementById('cmp-row');
+  const detailed = list.length >= 2 && list.every(o => o.plan_meta && o.plan_meta.src === 'aca' && o.plan_meta.plan_id);
+  if (!detailed) {
+    row.innerHTML = list.map(o =>
+      `<div class="cmp-col${o.is_recommended ? ' rec' : ''}" id="cmp-${o.id}">${optCardHtml(o, true)}</div>`).join('');
+    return;
+  }
+  row.innerHTML = '<div style="padding:30px;color:var(--muted);font-size:13px;">Pulling the official plan details…</div>';
+  window._planDetailCache = window._planDetailCache || {};
+  await Promise.all(list.map(async o => {
+    const pid = o.plan_meta.plan_id;
+    if (window._planDetailCache[pid]) return;
+    try {
+      const r = await fetch(APPS_SCRIPT_URL + '?action=aca_plan_detail&id=' + encodeURIComponent(pid)
+        + '&year=' + encodeURIComponent(o.plan_meta.year || new Date().getFullYear()));
+      const j = await r.json();
+      if (j.status === 'ok') window._planDetailCache[pid] = (j.data && (j.data.plan || j.data)) || {};
+    } catch (e) {}
+  }));
+  row.innerHTML = cmpTableHtml(list);
+}
+
+function csTextC(b) {
+  const cs = (b.cost_sharings || [])[0] || {};
+  if (cs.display_string) return cs.display_string;
+  const bits = [];
+  if (cs.copay_amount != null && cs.copay_amount > 0) bits.push('$' + cs.copay_amount + ' copay');
+  if (cs.coinsurance_rate != null && cs.coinsurance_rate > 0) bits.push(Math.round(cs.coinsurance_rate * 100) + '% coinsurance');
+  if (cs.copay_amount === 0 && !cs.coinsurance_rate) bits.push('No charge');
+  return bits.join(' + ') || '';
+}
+
+function cmpTableHtml(list) {
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '—';
+  const famQ = list.some(o => o.plan_meta.family_quote);
+  const det = o => window._planDetailCache[o.plan_meta.plan_id] || null;
+  const names = [];
+  list.forEach(o => ((det(o) || {}).benefits || []).forEach(b => { if (b.name && !names.includes(b.name)) names.push(b.name); }));
+  const th = 'position:sticky;left:0;background:#fff;z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:#64748b;padding:9px 12px;border-bottom:1px solid #eef2f7;min-width:140px;max-width:180px;';
+  const td = o => 'padding:9px 12px;border-bottom:1px solid #eef2f7;font-size:12.5px;vertical-align:top;min-width:185px;color:#334155;'
+    + (o.is_recommended ? 'background:#fffdf5;' : '');
+  const rowH = (label, fn) => `<tr><th style="${th}">${label}</th>${list.map(o => `<td style="${td(o)}">${fn(o)}</td>`).join('')}</tr>`;
+  return `<table id="cmp-table" style="border-collapse:collapse;background:#fff;border:1px solid #eef2f7;border-radius:12px;">
+    <thead><tr>
+      <th style="${th}"></th>
+      ${list.map(o => {
+        const pm = o.plan_meta;
+        const credit = (pm.full_premium != null && pm.net_premium != null && pm.full_premium > pm.net_premium) ? pm.full_premium - pm.net_premium : 0;
+        const metalTip = METAL_TIPS[pm.metal], typeTip = TYPE_TIPS[String(pm.plan_type || '').toUpperCase()];
+        return `<td style="${td(o)}border-bottom:1.5px solid #e2e8f0;">
+          ${o.is_recommended ? '<div style="color:#b3903a;font-size:10px;font-weight:800;letter-spacing:.8px;">&#11088; RECOMMENDED</div>' : ''}
+          <div class="pm-chips" style="margin:4px 0 6px;">
+            ${pm.metal ? `<span class="pm-chip m-${esc(pm.metal)}"${metalTip ? ` data-tip="${esc(metalTip)}" tabindex="0"` : ''}>${esc(pm.metal)}</span>` : ''}
+            ${pm.plan_type ? `<span class="pm-chip"${typeTip ? ` data-tip="${esc(typeTip)}" tabindex="0"` : ''}>${esc(pm.plan_type)}</span>` : ''}
+          </div>
+          <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#64748b;">${esc(o.carrier_name)}</div>
+          <div style="font-size:13px;font-weight:700;margin:2px 0 6px;color:var(--ink);">${esc(o.display_name)}</div>
+          <div style="font-size:22px;font-weight:800;color:var(--brand);">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<span style="font-size:10px;font-weight:500;color:#64748b;"> /mo</span></div>
+          ${credit ? `<div style="font-size:10.5px;color:#64748b;">full $${Number(pm.full_premium).toFixed(0)} − <span style="color:#15803d;font-weight:700;">$${credit.toFixed(0)} credit</span></div>` : ''}
+          <button class="pick ${discussSet.has(o.id) ? 'on' : ''}" style="margin-top:8px;padding:8px;font-size:12px;" onclick="toggleDiscuss('${o.id}', this)">
+            ${discussSet.has(o.id) ? '✓ On my discuss list' : '💬 Discuss this one'}</button>
+        </td>`;
+      }).join('')}
+    </tr></thead>
+    <tbody>
+      ${rowH('Deductible' + (famQ ? ' (per person)' : ''), o => `<strong>${money(o.plan_meta.deductible)}</strong>`)}
+      ${famQ ? rowH('Deductible (family)', o => money(o.plan_meta.deductible_family)) : ''}
+      ${rowH('Max out-of-pocket' + (famQ ? ' (per person)' : ''), o => `<strong>${money(o.plan_meta.moop)}</strong>`)}
+      ${famQ ? rowH('Max out-of-pocket (family)', o => money(o.plan_meta.moop_family)) : ''}
+      ${rowH('HSA-eligible', o => o.plan_meta.hsa ? '<span style="color:#0d9488;font-weight:700;">✓ Yes</span>' : '—')}
+      ${rowH('Star rating', o => o.plan_meta.rating ? '&#11088; ' + esc(String(o.plan_meta.rating)) + ' of 5' : '—')}
+      ${rowH('Plan documents', o => {
+        const L = o.plan_meta.links || {};
+        const links = [['sbc', '&#128196; Benefits summary'], ['brochure', '&#128216; Brochure'], ['formulary', '&#128138; Drug list'], ['network', '&#129658; Find a doctor']]
+          .filter(([k]) => L[k])
+          .map(([k, lbl]) => `<a href="${esc(L[k])}" target="_blank" rel="noopener" style="font-size:11px;font-weight:600;display:inline-block;border:1px solid #e2e8f0;border-radius:999px;padding:3px 9px;text-decoration:none;color:var(--brand);margin:1px 2px 1px 0;">${lbl}</a>`).join('');
+        return links || '—';
+      })}
+      ${names.map(name => rowH(esc(name), o => {
+        const b = ((det(o) || {}).benefits || []).find(x => x.name === name);
+        if (!b) return '<span style="color:#94a3b8;">—</span>';
+        return b.covered
+          ? '<span style="color:#15803d;font-weight:800;">✓</span> <span style="font-size:12px;color:#475569;">' + esc(csTextC(b)) + '</span>'
+          : '<span style="color:#b91c1c;">✗ Not covered</span>';
+      })).join('')}
+    </tbody>
+  </table>
+  <div style="font-size:11px;color:#94a3b8;margin-top:8px;">Benefit details come straight from the official healthcare.gov record for each plan.</div>`;
 }
 function exitCompare() {
   document.getElementById('compare-view').style.display = 'none';

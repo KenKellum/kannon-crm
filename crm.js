@@ -10329,6 +10329,8 @@ async function requoteFromQuote_(quoteId, dealId) {
       }
       if (o.agent_note) document.getElementById('qb-note-' + i).value = o.agent_note;
       if (o.is_recommended) { const r = document.getElementById('qb-rec-' + i); if (r) r.checked = true; }
+      // Keep the official plan snapshot (facts + document links) alive across the re-quote
+      if (o.plan_meta) window._qbRequoteOpt[i] = { plan_meta: o.plan_meta, display_name: o.display_name };
     });
     showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
   }, 350);
@@ -10429,6 +10431,7 @@ async function openQuoteBuilder(dealId) {
   window._qbCarriers = myCarriers;
   window._qbProds = prods || [];
   window._qbContact = contact;
+  window._qbRequoteOpt = {};
   // Agency-level carrier list (owners' active appointments) — powers the ACA appointment warning
   window._qbAgencyCarrierNames = [];
   try {
@@ -10583,6 +10586,10 @@ async function openQuoteBuilder(dealId) {
           hsa: !!acaSel.hsa, rating: acaSel.rating || null,
           family_quote: !!window._qbAcaFamilyQuote, links: null,
         };
+      } else {
+        // Re-quoted option left untouched: reuse the previous quote's snapshot
+        const rq = (window._qbRequoteOpt || {})[i];
+        if (rq && rq.plan_meta && rq.display_name === name) planMeta = rq.plan_meta;
       }
       options.push({
         carrier_id: carId, product_id: prodId,
