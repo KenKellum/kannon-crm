@@ -9724,6 +9724,55 @@ function openSoaModal(dealId) {
 // ============================================================
 // CARRIERS — master reference (owners only, Admin page)
 // ============================================================
+// Federally standardized Medigap plans: the letter defines the benefits
+// at EVERY carrier, so the product form fills itself from this list.
+const MEDIGAP_PLANS = [
+  ['G',   'Plan G — most popular comprehensive plan', [
+    'Covers the Part A hospital deductible',
+    'Covers Part A & B coinsurance and copays in full',
+    'Covers Part B excess charges',
+    'Foreign travel emergency (80%, up to plan limits)',
+    'You pay only the annual Part B deductible']],
+  ['HDG', 'High-Deductible Plan G — low premium', [
+    'Same coverage as Plan G after the annual high deductible is met',
+    'Much lower monthly premium',
+    'You pay costs out of pocket until the deductible is met']],
+  ['N',   'Plan N — lower premium, small copays', [
+    'Covers the Part A hospital deductible',
+    'Small copays: up to $20 office visits / $50 emergency room',
+    'Foreign travel emergency (80%, up to plan limits)',
+    'Does not cover Part B excess charges']],
+  ['A',   'Plan A — basic benefits', [
+    'Part A & B coinsurance covered',
+    '365 extra hospital days after Medicare benefits end',
+    'Does not cover the Part A or Part B deductibles']],
+  ['B',   'Plan B — basic + Part A deductible', [
+    'Basic benefits plus the Part A hospital deductible',
+    'Does not cover skilled nursing coinsurance']],
+  ['D',   'Plan D — comprehensive minus excess charges', [
+    'Covers the Part A deductible and skilled nursing coinsurance',
+    'Foreign travel emergency (80%, up to plan limits)',
+    'Does not cover Part B excess charges']],
+  ['K',   'Plan K — 50% cost-sharing, yearly limit', [
+    'Pays 50% of most cost-sharing until the yearly out-of-pocket limit, then 100%',
+    'Lower premium in exchange for sharing costs']],
+  ['L',   'Plan L — 75% cost-sharing, yearly limit', [
+    'Pays 75% of most cost-sharing until the yearly out-of-pocket limit, then 100%']],
+  ['M',   'Plan M — 50% of Part A deductible', [
+    'Covers half the Part A deductible',
+    'Skilled nursing coinsurance and foreign travel emergency covered']],
+  ['C',   'Plan C (only if Medicare-eligible before 2020)', [
+    'Covers Part A & B deductibles and most cost-sharing',
+    'Only available if Medicare-eligible before Jan 1, 2020',
+    'Does not cover Part B excess charges']],
+  ['F',   'Plan F (only if Medicare-eligible before 2020)', [
+    'The most complete coverage: both deductibles, all coinsurance, excess charges',
+    'Only available if Medicare-eligible before Jan 1, 2020']],
+  ['HDF', 'High-Deductible Plan F (pre-2020 eligibles)', [
+    'Same as Plan F after the annual high deductible is met',
+    'Only available if Medicare-eligible before Jan 1, 2020']],
+];
+
 const CARRIER_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Auto/Home','Commercial','Other'];
 
 function openCarrierModal(id) {
@@ -9833,7 +9882,18 @@ function openCarrierProductModal(crId, prodId) {
   const lineOpts = CARRIER_LINES.map(l => `<option value="${l}" ${p && p.line_of_business === l ? 'selected' : ''}>${l}</option>`).join('');
   showModal(p ? 'Edit Product \u2014 ' + escWeb(p.name) : 'Add Product', `
     <label>Product Name *</label><input type="text" id="cp-name" value="${p ? escWeb(p.name) : ''}" placeholder="e.g. Medicare Supplement Plan G" />
-    <label>Line of business *</label><select id="cp-line">${lineOpts}</select>
+    <label>Line of business *</label><select id="cp-line" onchange="cpProductLineChanged_()">${lineOpts}</select>
+    <div id="cp-mg-wrap" style="display:none;">
+      <label>Standardized plan <span style="font-size:10px;color:var(--text-muted);">(picks name, code &amp; benefits for you — same at every carrier by law)</span></label>
+      <select id="cp-mg" onchange="cpApplyMedigap_()">
+        <option value="">&mdash; pick the plan letter &mdash;</option>
+        ${MEDIGAP_PLANS.map(p => `<option value="${p[0]}">${p[1]}</option>`).join('')}
+      </select>
+    </div>
+    <div id="cp-cms-hint" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:#1d4ed8;">
+      Heads up: quoting for this line already uses the <strong>official CMS plan list</strong> automatically —
+      you usually don't need to add products here at all.
+    </div>
     <label>Product code / plan letter</label><input type="text" id="cp-code" value="${p ? escWeb(p.product_code || '') : ''}" placeholder="e.g. Plan G, 20-Year Term, HMO-POS" />
     <label>Plan year (Medicare products change yearly; blank = evergreen)</label><input type="number" id="cp-year" value="${p && p.plan_year ? p.plan_year : ''}" placeholder="e.g. 2026" />
     <label>Brand</label>
@@ -9848,6 +9908,7 @@ function openCarrierProductModal(crId, prodId) {
   `, async () => {
     const name = document.getElementById('cp-name').value.trim();
     if (!name) { showToast('Product name is required'); return false; }
+    void 0;
     const yr = document.getElementById('cp-year').value.trim();
     const payload = {
       carrier_id: crId,
@@ -9871,6 +9932,7 @@ function openCarrierProductModal(crId, prodId) {
     openCarrierProducts(crId); // back to the product list
     return false;              // keep the (replaced) modal open
   });
+  setTimeout(cpProductLineChanged_, 0); // set picker/hint visibility for the pre-selected line
 }
 
 async function openMyCarriers() {
@@ -11007,4 +11069,27 @@ function openCmsImportModal() {
     showToast('Imported ' + kept.length + ' plans for ' + states.join(', ') + ' (' + year + ').');
     renderAdmin();
   }, { confirmLabel: 'Import' });
+}
+
+// ============================================================
+// PRODUCT MODAL SMARTS — standardized Medigap picker + CMS hints
+// ============================================================
+function cpProductLineChanged_() {
+  const line = document.getElementById('cp-line').value;
+  const mg = document.getElementById('cp-mg-wrap');
+  const hint = document.getElementById('cp-cms-hint');
+  if (mg) mg.style.display = line === 'Medicare Supplement' ? 'block' : 'none';
+  if (hint) hint.style.display = (line === 'Medicare Advantage' || line === 'Part D (PDP)') ? 'block' : 'none';
+}
+
+function cpApplyMedigap_() {
+  const code = document.getElementById('cp-mg').value;
+  const plan = MEDIGAP_PLANS.find(p => p[0] === code);
+  if (!plan) return;
+  const label = code.startsWith('HD')
+    ? 'Medicare Supplement High-Deductible Plan ' + code.slice(2)
+    : 'Medicare Supplement Plan ' + code;
+  document.getElementById('cp-name').value = label;
+  document.getElementById('cp-code').value = code.startsWith('HD') ? 'HD Plan ' + code.slice(2) : 'Plan ' + code;
+  document.getElementById('cp-bullets').value = plan[2].join('\n');
 }
