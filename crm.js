@@ -2829,6 +2829,8 @@ function _intakeRenderForm() {
   // In edit mode, overlay saved responses onto prefill
   if (_intakeEditResponses && Object.keys(_intakeEditResponses).length) {
     Object.keys(_intakeEditResponses).forEach(function(k) { prefill[k] = _intakeEditResponses[k]; });
+  }
+  // Always: stash for special renderers + wire the conditional rules
   window._imPrefillAll = prefill;
   setTimeout(() => {
     try {
@@ -2837,7 +2839,6 @@ function _intakeRenderForm() {
       if (box && !box._rulesWired) { box._rulesWired = true; box.addEventListener('change', imApplyRules_); }
     } catch (e) {}
   }, 200);
-  }
 
   const sections = {};
   for (const grp of INTAKE_ALL_FIELDS) {
