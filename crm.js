@@ -2562,7 +2562,8 @@ const INTAKE_TYPE_DEFAULTS = {
   'medicare':['dob','zip','best_time','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier','med_medications','med_doctors','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental','notes'],
   'health-individual':['dob','best_time','household_size','member_ages','aca_income',
                        'currently_insured','current_carrier','current_premium',
-                       'employer_plan_available','coverage_start_date','health_priority'],
+                       'employer_plan_available','coverage_start_date','health_priority',
+                       'med_medications','med_doctors'],
   'health-group':    ['business_name','best_time','employee_count','enrollment_count','avg_age_range',
                       'has_current_plan','current_group_carrier','group_start_date',
                       'cov_medical','cov_dental','cov_vision'],
@@ -10998,10 +10999,99 @@ async function qbAcaInit_() {
     countySel.innerHTML = data.counties.map(x =>
       `<option value="${escWeb(x.fips)}|${escWeb(x.state)}">${escWeb(x.name)}, ${escWeb(x.state)}</option>`).join('');
     res.textContent = 'Enter the yearly household income, adjust the household, then "Get plans & subsidy".';
+    window._qbAcaDocs = []; window._qbAcaMeds = [];
+    qbAcaRenderChips_();
+    qbAcaPrefillFromIntake_();
   } catch (e) {
     countySel.innerHTML = '<option value="">unavailable</option>';
     res.innerHTML = '<span style="color:#f59e0b;">Marketplace relay unreachable — is the API key set up?</span>';
   }
+}
+
+const ACA_INCOME_MIDPOINTS = {
+  'Under $25,000': 20000, '$25,000\u2013$50,000': 37500, '$50,000\u2013$75,000': 62500,
+  '$75,000\u2013$100,000': 87500, 'Over $100,000': 110000,
+};
+
+async function qbAcaPrefillFromIntake_() {
+  const c = window._qbContact;
+  if (!c) return;
+  try {
+    const { data: sess } = await supabaseClient.from('intake_sessions')
+      .select('form_type,responses').eq('contact_id', c.id)
+      .eq('status', 'completed').order('created_at', { ascending: false }).limit(5);
+    const best = (sess || []).find(x => x.form_type === 'health-individual')
+      || (sess || []).find(x => x.form_type === 'medicare');
+    if (!best || !best.responses) return;
+    const r = best.responses;
+    const pulled = [];
+
+    // Income (range midpoint — an estimate the agent can refine)
+    const incEl = document.getElementById('qb-aca-income');
+    if (incEl && !incEl.value && r.aca_income && ACA_INCOME_MIDPOINTS[r.aca_income]) {
+      incEl.value = ACA_INCOME_MIDPOINTS[r.aca_income];
+      pulled.push('income (midpoint of \u201c' + r.aca_income + '\u201d \u2014 refine if you know the exact figure)');
+    }
+
+    // Household members from the ages list
+    if (r.member_ages) {
+      const ages = String(r.member_ages).split(/[^0-9]+/).map(x => parseInt(x)).filter(n => n > 0 && n < 120);
+      if (ages.length > 1) {
+        const wrap = document.getElementById('qb-aca-members');
+        const firstAge = wrap.querySelector('.aca-age') ? wrap.querySelector('.aca-age').value : '';
+        wrap.innerHTML = '';
+        qbAcaMemberRow_({ relationship: 'Self', age: firstAge || ages[0], gender: c.gender, uses_tobacco: c.tobacco_use });
+        ages.slice(1).forEach((a, i) => qbAcaMemberRow_({ relationship: a >= 18 && i === 0 ? 'Spouse' : 'Child', age: a }));
+        pulled.push('household (' + ages.length + ' members \u2014 check relationships)');
+      }
+    }
+
+    // Medications -> resolved chips
+    if (r.med_medications) {
+      const terms = String(r.med_medications).split(/[\n,;]+/).map(x => x.trim()).filter(x => x.length > 2).slice(0, 4);
+      for (const t of terms) {
+        try {
+          const resp = await acaProxy_('aca_drug_search', { q: t.split(' ')[0] });
+          const raw = resp.data || [];
+          const items = Array.isArray(raw) ? raw : (raw.drugs || raw.suggestions || []);
+          const hit = items[0];
+          if (hit && hit.rxcui) {
+            window._qbAcaMeds = window._qbAcaMeds || [];
+            const nm = (hit.name || hit.full_name || t) + (hit.strength ? ' ' + hit.strength : '');
+            if (!window._qbAcaMeds.some(m => String(m.rxcui) === String(hit.rxcui)))
+              window._qbAcaMeds.push({ rxcui: hit.rxcui, name: nm });
+          }
+        } catch (e) {}
+      }
+      if ((window._qbAcaMeds || []).length) pulled.push('medications (' + window._qbAcaMeds.length + ')');
+    }
+
+    // Doctors -> resolved chips (matched near their zip)
+    if (r.med_doctors) {
+      const terms = String(r.med_doctors).split(/[\n,;]+|\band\b/i).map(x => x.replace(/^dr\.?\s*/i, '').trim()).filter(x => x.length > 2).slice(0, 3);
+      for (const t of terms) {
+        try {
+          const resp = await acaProxy_('aca_provider_search', { q: t, zip: c.zip || '' });
+          const raw = resp.data || [];
+          const items = Array.isArray(raw) ? raw : (raw.providers || raw.suggestions || []);
+          const o = items[0] && (items[0].provider || items[0]);
+          if (o && o.npi) {
+            window._qbAcaDocs = window._qbAcaDocs || [];
+            const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || t);
+            if (!window._qbAcaDocs.some(d => String(d.npi) === String(o.npi)))
+              window._qbAcaDocs.push({ npi: o.npi, name: nm });
+          }
+        } catch (e) {}
+      }
+      if ((window._qbAcaDocs || []).length) pulled.push('doctors (' + window._qbAcaDocs.length + ' \u2014 verify the match)');
+    }
+
+    if (pulled.length) {
+      qbAcaRenderChips_();
+      document.getElementById('qb-aca-matches').innerHTML =
+        '<span style="color:#0d9488;">\u26a1 Pulled from their intake: ' + pulled.join(' \u00b7 ') + '. Remove anything that doesn\u2019t fit, then \u201cGet plans &amp; subsidy\u201d.</span>';
+    }
+  } catch (e) { console.error('qbAcaPrefillFromIntake_:', e); }
 }
 
 function qbAcaRenderChips_() {
