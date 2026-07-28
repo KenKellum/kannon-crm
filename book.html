@@ -358,7 +358,7 @@ async function init() {
 
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/agents?id=eq.${agentId}&select=id,name,booking_types,phone,office_address`,
+      `${SUPABASE_URL}/rest/v1/agents?id=eq.${agentId}&select=id,name,booking_types,phone,office_address,meeting_link`,
       { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
     );
     const rows = await res.json();
@@ -449,7 +449,9 @@ function methodChanged() {
     info.innerHTML = '&#128222; ' + agent.name.split(' ')[0] + ' will call you at the number above at your appointment time.'
       + (phone ? '<br>Or reach me directly anytime: <a href="tel:' + phone.replace(/[^0-9+]/g, '') + '" style="font-weight:700;color:#1d3557;text-decoration:none;">' + phone + '</a>' : '');
   } else if (m === 'web') {
-    info.innerHTML = '&#128187; A video-meeting link will arrive with your calendar confirmation — just click it at your appointment time.';
+    info.innerHTML = agent.meeting_link
+      ? '&#128187; We\'ll meet by video. Join here at your appointment time:<br><a href="' + agent.meeting_link + '" target="_blank" rel="noopener" style="font-weight:700;color:#1d3557;word-break:break-all;">' + agent.meeting_link + '</a><br>(The link will also be in your confirmation.)'
+      : '&#128187; A video-meeting link will arrive with your calendar confirmation — just click it at your appointment time.';
   } else {
     info.innerHTML = '&#127970; Come see us at:<br><strong>' + (agent.office_address || 'Address provided in your confirmation') + '</strong>';
   }

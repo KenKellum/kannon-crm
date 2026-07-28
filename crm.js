@@ -7364,6 +7364,10 @@ async function renderSettings() {
           <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Office address (shown to clients who choose an in-person meeting on your booking page)</label>
           <input type="text" id="swp-office" value="${escWeb(currentAgent.office_address||'')}" placeholder="e.g. 123 Main St, Suite 200, Bozeman, MT 59715" style="width:100%;box-sizing:border-box;" />
         </div>
+        <div style="margin-top:10px;">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Video meeting link (Google Meet, Zoom personal room, etc. — shown to clients who choose a web meeting)</label>
+          <input type="text" id="swp-meet" value="${escWeb(currentAgent.meeting_link||'')}" placeholder="https://meet.google.com/xxx-xxxx-xxx" style="width:100%;box-sizing:border-box;" />
+        </div>
         <div style="margin-top:12px;">
           <button class="btn btn-primary" onclick="saveMyWebsiteProfile()">Save website profile</button>
           <span id="swp-msg" style="font-size:12px;color:var(--text-muted);margin-left:8px;"></span>
@@ -9749,6 +9753,7 @@ async function saveMyWebsiteProfile() {
     specialties: list(document.getElementById('swp-specs').value),
     headshot_url: document.getElementById('swp-headshot').value.trim() || null,
     office_address: document.getElementById('swp-office').value.trim() || null,
+    meeting_link: document.getElementById('swp-meet').value.trim() || null,
   };
   const msg = document.getElementById('swp-msg');
   msg.textContent = 'Saving...';
