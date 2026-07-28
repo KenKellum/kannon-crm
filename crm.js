@@ -9894,7 +9894,7 @@ function openCarrierProductModal(crId, prodId) {
       Heads up: quoting for this line already uses the <strong>official CMS plan list</strong> automatically —
       you usually don't need to add products here at all.
     </div>
-    <label>Product code / plan letter</label><input type="text" id="cp-code" value="${p ? escWeb(p.product_code || '') : ''}" placeholder="e.g. Plan G, 20-Year Term, HMO-POS" />
+    <div id="cp-code-wrap"><label>Product code</label><input type="text" id="cp-code" value="${p ? escWeb(p.product_code || '') : ''}" placeholder="e.g. 20-Year Term, HMO-POS" /></div>
     <label>Plan year (Medicare products change yearly; blank = evergreen)</label><input type="number" id="cp-year" value="${p && p.plan_year ? p.plan_year : ''}" placeholder="e.g. 2026" />
     <label>Brand</label>
     <select id="cp-brand">
@@ -11076,9 +11076,13 @@ function openCmsImportModal() {
 // ============================================================
 function cpProductLineChanged_() {
   const line = document.getElementById('cp-line').value;
+  const isMedigap = line === 'Medicare Supplement';
   const mg = document.getElementById('cp-mg-wrap');
   const hint = document.getElementById('cp-cms-hint');
-  if (mg) mg.style.display = line === 'Medicare Supplement' ? 'block' : 'none';
+  const codeWrap = document.getElementById('cp-code-wrap');
+  if (mg) mg.style.display = isMedigap ? 'block' : 'none';
+  // The standardized-plan dropdown sets the code itself — hide the manual field for Medigap
+  if (codeWrap) codeWrap.style.display = isMedigap ? 'none' : 'block';
   if (hint) hint.style.display = (line === 'Medicare Advantage' || line === 'Part D (PDP)') ? 'block' : 'none';
 }
 
