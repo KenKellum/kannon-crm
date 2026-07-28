@@ -11718,6 +11718,8 @@ function openAcaPicker_() {
 function closeAcaPicker_() {
   const ov = document.getElementById('qb-aca-picker');
   if (ov) ov.remove();
+  const dr = document.getElementById('qb-plan-detail');
+  if (dr) dr.remove();
   qbAcaRenderBrowser_();
 }
 
@@ -11829,6 +11831,80 @@ function renderPickerBody_() {
     </div>`;
 }
 
+async function openPlanDetail_(planId) {
+  const p = (window._qbAcaPlans || []).find(x => x.id === planId);
+  let dr = document.getElementById('qb-plan-detail');
+  if (!dr) {
+    dr = document.createElement('div');
+    dr.id = 'qb-plan-detail';
+    dr.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:min(560px,92vw);z-index:99995;background:var(--surface-1,#fff);border-left:1px solid var(--border);box-shadow:-12px 0 40px rgba(15,23,42,.18);display:flex;flex-direction:column;';
+    document.body.appendChild(dr);
+  }
+  dr.style.display = 'flex';
+  dr.innerHTML = `<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <div style="font-weight:800;font-size:15px;flex:1;min-width:0;">${escWeb(p ? p.name : 'Plan details')}</div>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('qb-plan-detail').style.display='none'">\u2715 Close</button>
+    </div>
+    <div style="padding:24px;color:var(--text-muted);font-size:13px;">Loading the official plan record\u2026</div>`;
+  try {
+    const resp = await acaProxy_('aca_plan_detail', { id: planId, year: window._qbAcaYear || new Date().getFullYear() });
+    if (resp.status !== 'ok') throw new Error(resp.message || 'detail fetch failed');
+    const d = (resp.data && (resp.data.plan || resp.data)) || {};
+    const LINK_LABELS = {
+      benefits_url: '\u{1F4C4} Summary of Benefits & Coverage (SBC)',
+      brochure_url: '\u{1F4D8} Plan brochure',
+      formulary_url: '\u{1F48A} Drug formulary',
+      network_url: '\u{1FA7A} Provider directory',
+    };
+    const links = Object.keys(LINK_LABELS)
+      .filter(k => d[k])
+      .map(k => `<a class="btn btn-outline btn-sm" style="text-decoration:none;" href="${escWeb(d[k])}" target="_blank" rel="noopener">${LINK_LABELS[k]} \u2197</a>`)
+      .join(' ');
+    const csText = b => {
+      const cs = (b.cost_sharings || [])[0] || {};
+      if (cs.display_string) return cs.display_string;
+      const bits = [];
+      if (cs.copay_amount != null && cs.copay_amount > 0) bits.push('$' + cs.copay_amount + ' copay');
+      if (cs.coinsurance_rate != null && cs.coinsurance_rate > 0) bits.push(Math.round(cs.coinsurance_rate * 100) + '% coinsurance');
+      if (cs.copay_amount === 0 && !cs.coinsurance_rate) bits.push('No charge');
+      return bits.join(' + ') || '';
+    };
+    const benefits = (d.benefits || []).map(b => `
+      <tr>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);font-size:12.5px;">${escWeb(b.name || '')}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:center;">${b.covered ? '<span style="color:var(--success);font-weight:700;">\u2713</span>' : '<span style="color:var(--danger);">\u2717</span>'}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);font-size:12px;color:var(--text-secondary);">${escWeb(csText(b))}</td>
+      </tr>`).join('');
+    const head = p ? `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+        <span style="background:${(METAL_STYLE[p.metal] || {}).bg || 'var(--surface-2)'};color:${(METAL_STYLE[p.metal] || {}).fg || 'inherit'};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
+        ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+        <span style="font-size:12px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
+        <span style="margin-left:auto;font-size:18px;font-weight:800;color:var(--accent,#1d3557);">$${Number(p.net).toFixed(2)}/mo</span>
+      </div>
+      <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;margin-bottom:10px;">
+        ${p.deductible != null ? `<span>Deductible <strong>$${Number(p.deductible).toLocaleString()}</strong></span>` : ''}
+        ${p.moop != null ? `<span>Max OOP <strong>$${Number(p.moop).toLocaleString()}</strong></span>` : ''}
+        ${p.rating ? `<span>\u2b50 ${p.rating} of 5</span>` : ''}
+      </div>` : '';
+    dr.querySelector('div:last-child').outerHTML = `
+      <div style="flex:1;overflow-y:auto;padding:16px 20px;">
+        ${head}
+        ${links ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">${links}</div>` : '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">No official documents published for this plan.</div>'}
+        ${benefits ? `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">What it covers</div>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--text-muted);">
+              <th style="padding:4px 8px;">Benefit</th><th style="padding:4px 8px;">Covered</th><th style="padding:4px 8px;">You pay</th></tr></thead>
+            <tbody>${benefits}</tbody></table>` : '<div style="font-size:12px;color:var(--text-muted);">Benefit details not published \u2014 use the SBC link above.</div>'}
+        <div style="margin-top:14px;">
+          <button class="btn btn-primary" style="width:100%;" onclick="qbAcaAddPlan_('${escWeb(planId)}');document.getElementById('qb-plan-detail').style.display='none';">\uff0b Add this plan to the quote</button>
+        </div>
+      </div>`;
+  } catch (e) {
+    dr.querySelector('div:last-child').innerHTML = '<span style="color:var(--danger);">Could not load plan details: ' + escWeb(e.message || e) + '</span>';
+  }
+}
+
 function pkCard_(p) {
   const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
   const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
@@ -11853,8 +11929,11 @@ function pkCard_(p) {
       <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}</div>
       <div style="font-size:10.5px;color:var(--text-muted);">/mo to client</div>
       ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);text-align:right;">full $${Number(p.premium).toFixed(0)} \u2212 <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
-      <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:4px;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
-        onclick="qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="openPlanDetail_('${escWeb(p.id)}')">Details</button>
+        <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
+          onclick="qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
+      </div>
     </div>
   </div>`;
 }
