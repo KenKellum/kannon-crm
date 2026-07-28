@@ -133,6 +133,9 @@ const FIELD_DEFS = {
   household_size:       { label: 'Number of people in household', type: 'number' },
   member_ages:          { label: 'Ages of all household members', type: 'text', placeholder: 'e.g. 34, 32, 6, 4' },
   aca_income:           { label: 'Estimated annual household income ($)', type: 'number', placeholder: 'e.g. 48000 — an accurate figure gives an accurate tax-credit estimate' },
+  aca_not_applying:     { label: 'Is anyone in your household NOT applying for this coverage?', type: 'text', placeholder: 'e.g. spouse has coverage through work; kids are on her plan' },
+  aca_ichra_offer:      { label: 'Does an employer offer you an ICHRA / HRA (health reimbursement)?', type: 'select', options: ['No','Yes','Not sure'] },
+  aca_ichra_amount:     { label: 'If yes: monthly reimbursement amount ($)', type: 'number', placeholder: 'e.g. 400' },
   currently_insured:    { label: 'Currently have health insurance?', type: 'radio', options: ['Yes','No'] },
   current_carrier:      { label: 'Current insurance carrier', type: 'text', placeholder: 'e.g. Blue Cross, Cigna' },
   current_premium:      { label: 'Current monthly premium', type: 'text', placeholder: 'e.g. $450/month' },
@@ -279,8 +282,10 @@ async function pickerSearch_(id) {
       const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
       const ad = (o.addresses && o.addresses[0]) || o.address || {};
       const where = [ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
-      return { key: o.npi, name: nm, extra: [o.taxonomy || (o.specialties || [])[0] || '', where].filter(Boolean).join(' \u00b7 ') };
-    }).filter(x => x.key && x.name).slice(0, 6);
+      return { key: o.npi, distance: (o.distance != null ? Number(o.distance) : (ad.distance != null ? Number(ad.distance) : null)), name: nm, extra: [o.taxonomy || (o.specialties || [])[0] || '', where].filter(Boolean).join(' \u00b7 ') };
+    }).filter(x => x.key && x.name);
+    items.sort((a, b) => ((a.distance != null ? a.distance : 1e9) - (b.distance != null ? b.distance : 1e9)) || String(a.name).localeCompare(String(b.name)));
+    items = items.slice(0, 6);
     if (!items.length) {
       out.innerHTML = 'No matches \u2014 <a href="#" onclick="_pickers[\'' + id + '\'].push({name:document.getElementById(\'pk_q_' + id + '\').value.trim()});document.getElementById(\'pk_q_' + id + '\').value=\'\';this.parentElement.innerHTML=\'\';pickerSync_(\'' + id + '\');return false;">add it as typed</a>.';
       return;

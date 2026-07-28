@@ -2501,6 +2501,9 @@ const INTAKE_FIELD_DEFS = {
   member_ages:           { label: 'Member Ages',            type: 'text',   section: 'Household',
                            placeholder: 'e.g. 35, 32, 7' },
   aca_income:            { label: 'Estimated annual household income ($)', type: 'number', section: 'Household' },
+  aca_not_applying:      { label: 'Anyone NOT applying for this coverage? (who & why)', type: 'text', section: 'Household' },
+  aca_ichra_offer:       { label: 'Employer offers ICHRA/HRA reimbursement?', type: 'select', section: 'Household', options: ['No','Yes','Not sure'] },
+  aca_ichra_amount:      { label: 'ICHRA/HRA monthly amount ($)', type: 'number', section: 'Household' },
   currently_insured:     { label: 'Currently Insured?',     type: 'select', section: 'Current Coverage',
                            options: ['Yes','No'] },
   current_carrier:       { label: 'Current Carrier',        type: 'text',   section: 'Current Coverage' },
@@ -2562,6 +2565,7 @@ const INTAKE_TYPE_DEFAULTS = {
   'health-individual':['dob','best_time','household_size','member_ages','aca_income',
                        'currently_insured','current_carrier','current_premium',
                        'employer_plan_available','coverage_start_date','health_priority',
+                       'aca_not_applying','aca_ichra_offer','aca_ichra_amount',
                        'med_medications','med_doctors'],
   'health-group':    ['business_name','best_time','employee_count','enrollment_count','avg_age_range',
                       'has_current_plan','current_group_carrier','group_start_date',
@@ -2591,7 +2595,7 @@ const INTAKE_ALL_FIELDS = [
   { section: 'Life Insurance',  ids: ['has_life_insurance','life_coverage_amount'] },
   { section: 'Goals',           ids: ['goal_debt','goal_protection','goal_retirement','goal_college','goal_business',
                                        'income_goal_12mo','why_interested'] },
-  { section: 'Household',       ids: ['household_size','member_ages','aca_income'] },
+  { section: 'Household',       ids: ['household_size','member_ages','aca_income','aca_not_applying','aca_ichra_offer','aca_ichra_amount'] },
   { section: 'Business',        ids: ['business_name','employee_count','enrollment_count','avg_age_range'] },
   { section: 'Current Coverage',ids: ['currently_insured','current_carrier','current_premium',
                                        'employer_plan_available','has_current_plan','current_group_carrier'] },
@@ -10234,6 +10238,14 @@ async function openQuoteBuilder(dealId) {
       </div>
       <div id="qb-aca-members" style="margin-top:8px;"></div>
       <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="qbAcaAddMember_()">+ Add household member</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px;">
+        <span>Employer ICHRA / HRA offer?
+          <select id="qb-aca-ichra" style="width:auto;display:inline-block;">
+            <option value="">No / unknown</option><option value="yes">Yes</option>
+          </select></span>
+        <span id="qb-aca-ichra-amt-wrap" style="display:none;">$<input type="number" id="qb-aca-ichra-amt" placeholder="mo. amount" style="width:90px;" />/mo</span>
+      </div>
+      <div id="qb-aca-intake-note" style="display:none;font-size:12px;color:#b45309;margin-top:6px;"></div>
       <div style="margin-top:10px;border-top:0.5px dashed var(--border);padding-top:8px;">
         <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Optional: check their doctors &amp; medications against each plan</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center;">
@@ -10981,11 +10993,20 @@ function qbAcaMemberRow_(m) {
       <option value="F" ${m.gender === 'F' ? 'selected' : ''}>F</option>
     </select>
     <label style="display:flex;gap:5px;align-items:center;font-weight:400;margin:0;"><input type="checkbox" class="aca-tob" style="width:auto;" ${m.uses_tobacco ? 'checked' : ''}/> Tobacco</label>
+    <label style="display:flex;gap:5px;align-items:center;font-weight:400;margin:0;" title="Uncheck if this person is NOT applying for this coverage (they still count for the subsidy math)"><input type="checkbox" class="aca-app" style="width:auto;" ${m.applying === false ? '' : 'checked'}/> Applying</label>
+    <label style="display:flex;gap:5px;align-items:center;font-weight:400;margin:0;" title="Check if this person has other coverage (job plan, Medicare, Medicaid) — it affects the household's tax credit"><input type="checkbox" class="aca-mec" style="width:auto;" ${m.has_mec ? 'checked' : ''}/> Other cov.</label>
     ${n > 0 ? '<button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>' : ''}`;
   wrap.appendChild(div);
 }
 
 function qbAcaAddMember_() { qbAcaMemberRow_({ relationship: 'Spouse' }); }
+
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.id === 'qb-aca-ichra') {
+    const w = document.getElementById('qb-aca-ichra-amt-wrap');
+    if (w) w.style.display = e.target.value === 'yes' ? 'inline' : 'none';
+  }
+});
 
 async function qbAcaInit_() {
   const c = window._qbContact;
@@ -11114,6 +11135,19 @@ async function qbAcaPrefillFromIntake_() {
       if ((window._qbAcaDocs || []).length) pulled.push('doctors (' + window._qbAcaDocs.length + ' \u2014 verify the match)');
     }
 
+    if (r.aca_ichra_offer === 'Yes') {
+      const sel = document.getElementById('qb-aca-ichra');
+      if (sel) { sel.value = 'yes'; sel.dispatchEvent(new Event('change')); }
+      const amt = document.getElementById('qb-aca-ichra-amt');
+      if (amt && r.aca_ichra_amount) amt.value = r.aca_ichra_amount;
+      pulled.push('ICHRA offer flagged');
+    }
+    if (r.aca_not_applying) {
+      const note = document.getElementById('qb-aca-intake-note');
+      if (note) { note.style.display = 'block';
+        note.innerHTML = '&#9888; Intake note \u2014 not everyone is applying: \u201c' + escWeb(r.aca_not_applying) + '\u201d \u2014 uncheck \u201cApplying\u201d on those members.'; }
+      pulled.push('who\u2019s-applying note');
+    }
     if (pulled.length) {
       qbAcaRenderChips_();
       document.getElementById('qb-aca-matches').innerHTML =
@@ -11161,11 +11195,12 @@ async function qbAcaSearch_(kind) {
           : (o.name || o.provider_name || '');
         const ad = (o.addresses && o.addresses[0]) || o.address || {};
         const where = [ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
-        return { key: o.npi || o.id, name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (where ? ' \u00b7 ' + where : ''), cleanName: nm };
+        return { key: o.npi || o.id, distance: (o.distance != null ? Number(o.distance) : (ad.distance != null ? Number(ad.distance) : null)), name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (where ? ' \u00b7 ' + where : ''), cleanName: nm };
       }
       const medNm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
       return { key: o.rxcui || o.id, name: medNm + (o.route ? ' · ' + o.route : ''), cleanName: medNm };
     }).filter(x => x.key && x.name);
+    items.sort((a, b) => ((a.distance != null ? a.distance : 1e9) - (b.distance != null ? b.distance : 1e9)) || String(a.cleanName).localeCompare(String(b.cleanName)));
     if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
     out.innerHTML = items.slice(0, 6).map((x, i) =>
       `<a href="#" onclick="qbAcaPick_('${kind}', ${i}); return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}</a>`).join('');
@@ -11256,6 +11291,29 @@ function qbAcaRefreshOptionLabels_() {
   }
 }
 
+async function qbAcaIchraVerdict_(income, county, people, hraMonthly) {
+  try {
+    const c = window._qbContact || {};
+    const resp = await acaProxy_('aca_ichra', { payload: JSON.stringify({
+      household: { income: income, people: people.filter(m => m.applying !== false).map(m => ({
+        age: m.age, aptc_eligible: true, gender: m.gender === 'F' ? 'Female' : 'Male',
+        uses_tobacco: !!m.uses_tobacco, relationship: m.relationship })) },
+      place: { countyfips: county.split('|')[0], state: county.split('|')[1], zipcode: c.zip || '' },
+      hra_monthly: hraMonthly,
+    }) });
+    if (resp.status !== 'ok' || !resp.data) return;
+    const d = resp.data;
+    const affordable = d.affordable != null ? d.affordable : (d.is_affordable != null ? d.is_affordable : null);
+    if (affordable === null) return;
+    const res = document.getElementById('qb-aca-result');
+    res.innerHTML = '<span style="font-weight:700;color:' + (affordable ? 'var(--danger)' : 'var(--success)') + ';">'
+      + (affordable
+        ? '&#128683; Official verdict: the ICHRA offer IS affordable \u2014 this household is NOT eligible for tax credits. Quote full prices.'
+        : '&#9989; Official verdict: the ICHRA offer is NOT affordable \u2014 they may decline it and keep the tax credit.')
+      + '</span><br>' + res.innerHTML;
+  } catch (e) { console.error('ichra verdict:', e); }
+}
+
 async function qbAcaGetPlans_() {
   const c = window._qbContact;
   const res = document.getElementById('qb-aca-result');
@@ -11267,7 +11325,10 @@ async function qbAcaGetPlans_() {
     age: parseInt(d.querySelector('.aca-age').value),
     gender: d.querySelector('.aca-gen').value,
     uses_tobacco: d.querySelector('.aca-tob').checked,
+    applying: d.querySelector('.aca-app') ? d.querySelector('.aca-app').checked : true,
+    has_mec: d.querySelector('.aca-mec') ? d.querySelector('.aca-mec').checked : false,
   })).filter(m => !isNaN(m.age));
+  if (!people.some(m => m.applying)) { showToast('At least one household member must be marked Applying.'); return; }
   if (!people.length) { showToast('Add at least the client with an age.'); return; }
   res.textContent = 'Asking healthcare.gov…';
   try {
@@ -11280,9 +11341,18 @@ async function qbAcaGetPlans_() {
     if (data.status !== 'ok') { res.innerHTML = '<span style="color:var(--danger);">' + escWeb(data.message || 'Marketplace error.') + '</span>'; return; }
     window._qbAcaPlans = data.plans || [];
     window._qbAcaYear = data.year;
-    const subsidy = data.aptc != null && data.aptc > 0
+    let subsidy = data.aptc != null && data.aptc > 0
       ? '<span style="color:var(--success);font-weight:700;">Estimated tax credit: $' + Number(data.aptc).toFixed(0) + '/mo</span>'
       : 'No tax credit at this income';
+    if (data.medicaid_chip) subsidy = '<span style="color:#b45309;font-weight:700;">&#9888; This household may qualify for Medicaid/CHIP \u2014 check that door before quoting marketplace plans.</span> ' + subsidy;
+    if (data.applicant_count != null && data.household_count != null && data.applicant_count < data.household_count)
+      subsidy += ' <span style="color:var(--text-muted);">(pricing ' + data.applicant_count + ' of ' + data.household_count + ' household members)</span>';
+    const ichraSel = document.getElementById('qb-aca-ichra');
+    if (ichraSel && ichraSel.value === 'yes') {
+      const amt = parseFloat(document.getElementById('qb-aca-ichra-amt').value) || 0;
+      subsidy = '<span style="color:var(--danger);font-weight:700;">&#9888; ICHRA/HRA offer on file' + (amt ? ' ($' + amt + '/mo)' : '') + ': if that offer meets federal affordability rules, tax credits do NOT apply \u2014 verify before presenting net prices.</span><br>' + subsidy;
+      qbAcaIchraVerdict_(income, county, people, amt);
+    }
     res.innerHTML = subsidy
       + (data.csr && !/none/i.test(String(data.csr)) ? ' &middot; extra Silver savings (CSR: ' + escWeb(String(data.csr)) + ')' : '')
       + ' &middot; ' + window._qbAcaPlans.length + ' plans (' + data.year + ') — pick inside each option below. Prices shown are AFTER the credit.';
