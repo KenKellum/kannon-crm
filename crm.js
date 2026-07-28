@@ -4443,7 +4443,7 @@ async function addContactNote(contactId) {
 // ============================================================
 // NOTIFICATION BELL (Phase 3D)
 // ============================================================
-const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received'];
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested'];
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
@@ -4520,6 +4520,7 @@ function _renderNotificationDropdown() {
     meeting_no_show:  { icon: '👻', label: 'No-show',             color: '#fbbf24' },
     meeting_canceled: { icon: '❌', label: 'Meeting canceled',    color: '#fbbf24' },
     census_received:  { icon: '📋', label: 'Census received',     color: '#0d9488' },
+    quote_interested: { icon: '⭐', label: 'Quote interest — HOT', color: '#c8a84b' },
   };
   const _relTime = ts => {
     const diff = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -7919,7 +7920,7 @@ async function loadNeedsAttention() {
     const { data: acts } = await supabaseClient
       .from('activities')
       .select('id,contact_id,activity_type,subject,body_snippet,metadata,created_at,contacts(name,company)')
-      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received'])
+      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested'])
       .is('read_at', null)
       .eq('agent_id', currentAgent.id)
       .gte('created_at', thirtyDaysAgo)
@@ -7938,7 +7939,7 @@ async function loadNeedsAttention() {
       .limit(10);
 
     naItems = [
-      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, censusId: (a.metadata && a.metadata.census_id) || null, createdAt: a.created_at })),
+      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, censusId: (a.metadata && a.metadata.census_id) || null, dealId: (a.metadata && a.metadata.deal_id) || null, quoteId: (a.metadata && a.metadata.quote_id) || null, createdAt: a.created_at })),
       ...(appts || []).map(a => ({ kind: 'meeting_canceled', bookingId: a.id, contactId: a.contact_id, contactName: a.contact_name, company: a.company, apptLabel: a.appointment_label || a.appointment_type || 'Appointment', scheduledAt: a.scheduled_at, createdAt: a.created_at }))
     ];
 
@@ -8310,6 +8311,23 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="${rescheduleOnclick}">📅 Reschedule</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.kind === 'quote_interested') {
+      const openDeal = item.dealId
+        ? `naDismissActivity('${item.activityId}');showPage('pipelines');setTimeout(()=>openDealPanel('${item.dealId}'),400)`
+        : `naDismissActivity('${item.activityId}');viewContact('${item.contactId}')`;
+      return `<div style="flex-shrink:0;width:230px;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(200,168,75,0.10),var(--surface-1) 55%);border:1.5px solid #c8a84b;border-left:4px solid #c8a84b;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:#b3903a;margin-bottom:4px;">&#11088; Quote Interest <span style="background:#c8a84b;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:2px;">HOT</span></div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.subject || name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
+        ${item.snippet ? `<div style="font-size:11px;color:#8a6d1f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(item.snippet)}">${esc(item.snippet)}</div>` : ''}
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#b3903a;border-color:#b3903a;" onclick="${openDeal}">&#127919; Open Deal</button>
+          ${item.quoteId ? `<a class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;text-decoration:none;" href="quote.html?q=${item.quoteId}" target="_blank">Quote &#8599;</a>` : ''}
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
     }
