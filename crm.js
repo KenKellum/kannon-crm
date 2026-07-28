@@ -2504,6 +2504,9 @@ const INTAKE_FIELD_DEFS = {
   aca_not_applying:      { label: 'Anyone NOT applying for this coverage? (who & why)', type: 'text', section: 'Household' },
   aca_ichra_offer:       { label: 'Employer offers ICHRA/HRA reimbursement?', type: 'select', section: 'Household', options: ['No','Yes','Not sure'] },
   aca_ichra_amount:      { label: 'ICHRA/HRA monthly amount ($)', type: 'number', section: 'Household' },
+  aca_qle:               { label: 'Qualifying life event in the last 60 days?', type: 'select', section: 'Household',
+                           options: ['No \u2014 none of these','Lost other health coverage','Moved to a new area','Got married','Had or adopted a baby','Divorce or legal separation (lost coverage)','Lost Medicaid/CHIP eligibility','Left incarceration','Gained citizenship or lawful presence','Other qualifying life change'] },
+  aca_qle_date:          { label: 'Date of that life event', type: 'date', section: 'Household' },
   currently_insured:     { label: 'Currently Insured?',     type: 'select', section: 'Current Coverage',
                            options: ['Yes','No'] },
   current_carrier:       { label: 'Current Carrier',        type: 'text',   section: 'Current Coverage' },
@@ -2566,6 +2569,7 @@ const INTAKE_TYPE_DEFAULTS = {
                        'currently_insured','current_carrier','current_premium',
                        'employer_plan_available','coverage_start_date','health_priority',
                        'aca_not_applying','aca_ichra_offer','aca_ichra_amount',
+                       'aca_qle','aca_qle_date',
                        'med_medications','med_doctors'],
   'health-group':    ['business_name','best_time','employee_count','enrollment_count','avg_age_range',
                       'has_current_plan','current_group_carrier','group_start_date',
@@ -2595,7 +2599,7 @@ const INTAKE_ALL_FIELDS = [
   { section: 'Life Insurance',  ids: ['has_life_insurance','life_coverage_amount'] },
   { section: 'Goals',           ids: ['goal_debt','goal_protection','goal_retirement','goal_college','goal_business',
                                        'income_goal_12mo','why_interested'] },
-  { section: 'Household',       ids: ['household_size','member_ages','aca_income','aca_not_applying','aca_ichra_offer','aca_ichra_amount'] },
+  { section: 'Household',       ids: ['household_size','member_ages','aca_income','aca_not_applying','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date'] },
   { section: 'Business',        ids: ['business_name','employee_count','enrollment_count','avg_age_range'] },
   { section: 'Current Coverage',ids: ['currently_insured','current_carrier','current_premium',
                                        'employer_plan_available','has_current_plan','current_group_carrier'] },
@@ -10245,6 +10249,7 @@ async function openQuoteBuilder(dealId) {
           </select></span>
         <span id="qb-aca-ichra-amt-wrap" style="display:none;">$<input type="number" id="qb-aca-ichra-amt" placeholder="mo. amount" style="width:90px;" />/mo</span>
       </div>
+      <div id="qb-aca-sep" style="font-size:12px;margin-top:8px;"></div>
       <div id="qb-aca-intake-note" style="display:none;font-size:12px;color:#b45309;margin-top:6px;"></div>
       <div style="margin-top:10px;border-top:0.5px dashed var(--border);padding-top:8px;">
         <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Optional: check their doctors &amp; medications against each plan</div>
@@ -11029,6 +11034,7 @@ async function qbAcaInit_() {
     res.textContent = 'Enter the yearly household income, adjust the household, then "Get plans & subsidy".';
     window._qbAcaDocs = []; window._qbAcaMeds = [];
     qbAcaRenderChips_();
+    qbAcaSepStatus_(null, null);
     qbAcaPrefillFromIntake_();
   } catch (e) {
     countySel.innerHTML = '<option value="">unavailable</option>';
@@ -11042,6 +11048,36 @@ const ACA_INCOME_MIDPOINTS = {
   'Under $20k': 15000, '$20k\u2013$40k': 30000, '$40k\u2013$60k': 50000,
   '$60k\u2013$80k': 70000, '$80k\u2013$100k': 90000, '$100k+': 110000,
 };
+
+// Federal ACA enrollment windows: OEP Nov 1 \u2013 Jan 15; otherwise a
+// Qualifying Life Event opens a 60-day Special Enrollment Period.
+function qbAcaSepStatus_(qle, qleDate) {
+  const el = document.getElementById('qb-aca-sep');
+  if (!el) return;
+  const now = new Date();
+  const y = now.getFullYear();
+  const inOEP = (now >= new Date(y, 10, 1)) || (now <= new Date(y, 0, 15, 23, 59, 59));
+  if (inOEP) {
+    el.innerHTML = '<span style="color:var(--success);font-weight:700;">\u{1F7E2} Open Enrollment is ON (Nov 1 \u2013 Jan 15) \u2014 anyone can enroll.</span>';
+    return;
+  }
+  let html = '<span style="color:#b45309;font-weight:700;">\u{1F7E0} Outside Open Enrollment \u2014 enrolling requires a Qualifying Life Event (Special Enrollment Period).</span>';
+  if (qle && !/^no\b/i.test(qle)) {
+    if (qleDate) {
+      const d = new Date(qleDate + 'T12:00:00');
+      const end = new Date(d.getTime() + 60 * 86400000);
+      const open = now <= end;
+      html += open
+        ? '<br><span style="color:var(--success);font-weight:600;">\u2713 SEP on file: ' + escWeb(qle) + ' (' + d.toLocaleDateString() + ') \u2014 their 60-day enrollment window runs through <strong>' + end.toLocaleDateString() + '</strong>.</span>'
+        : '<br><span style="color:var(--danger);font-weight:600;">\u2717 Reported event: ' + escWeb(qle) + ' (' + d.toLocaleDateString() + ') \u2014 the 60-day window CLOSED ' + end.toLocaleDateString() + '. A new event (or Open Enrollment) is needed.</span>';
+    } else {
+      html += '<br><span style="color:#b45309;">Reported event: ' + escWeb(qle) + ' \u2014 get the event DATE to confirm the 60-day window.</span>';
+    }
+  } else {
+    html += '<br><span style="color:var(--text-muted);">No qualifying event on file \u2014 ask about: lost coverage, a move, marriage, a new baby, loss of Medicaid, and similar life changes.</span>';
+  }
+  el.innerHTML = html;
+}
 
 async function qbAcaPrefillFromIntake_() {
   const c = window._qbContact;
@@ -11141,6 +11177,10 @@ async function qbAcaPrefillFromIntake_() {
       const amt = document.getElementById('qb-aca-ichra-amt');
       if (amt && r.aca_ichra_amount) amt.value = r.aca_ichra_amount;
       pulled.push('ICHRA offer flagged');
+    }
+    if (r.aca_qle) {
+      qbAcaSepStatus_(r.aca_qle, r.aca_qle_date || null);
+      if (!/^no\b/i.test(r.aca_qle)) pulled.push('SEP life event');
     }
     if (r.aca_not_applying) {
       const note = document.getElementById('qb-aca-intake-note');
