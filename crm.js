@@ -10430,6 +10430,19 @@ async function openQuoteBuilder(dealId) {
   window._qbCarriers = myCarriers;
   window._qbProds = prods || [];
   window._qbContact = contact;
+  // Agency-level carrier list (owners' active appointments) — powers the ACA appointment warning
+  window._qbAgencyCarrierNames = [];
+  try {
+    const { data: owners } = await supabaseClient.from('agents').select('id')
+      .eq('agency_id', currentAgent.agency_id).in('role', ['agency_owner', 'system_owner']);
+    const oIds = (owners || []).map(a => a.id);
+    if (oIds.length) {
+      const { data: agAppts } = await supabaseClient.from('carrier_appointments')
+        .select('carrier_id').in('agent_id', oIds).eq('is_active', true);
+      const agIds = new Set((agAppts || []).map(a => a.carrier_id));
+      window._qbAgencyCarrierNames = (master || []).filter(c => agIds.has(c.id)).map(c => c.name);
+    }
+  } catch (e) {}
 
   const carOpts = '<option value="">— pick carrier —</option>'
     + myCarriers.map(c => `<option value="${c.id}">${escWeb(c.name)}</option>`).join('');
@@ -10450,10 +10463,13 @@ async function openQuoteBuilder(dealId) {
         <label>Official Marketplace plan</label>
         <select id="qb-aca-${i}" onchange="qbApplyAcaPlan_(${i})"><option value="">&mdash; get plans above first &mdash;</option></select>
       </div>
-      <label>Carrier <span id="qb-car-opt-${i}" style="display:none;font-size:10px;color:var(--text-muted);">(optional when a CMS plan is picked)</span></label>
-      <select id="qb-car-${i}" onchange="qbFillProducts_(${i})">${carOpts}</select>
-      <label>Product (from carrier's catalog — optional)</label>
-      <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
+      <div id="qb-aca-warn-${i}" style="display:none;font-size:11.5px;line-height:1.5;border-radius:8px;padding:8px 10px;margin:6px 0;"></div>
+      <div id="qb-carprod-${i}">
+        <label>Carrier <span id="qb-car-opt-${i}" style="display:none;font-size:10px;color:var(--text-muted);">(optional when a CMS plan is picked)</span></label>
+        <select id="qb-car-${i}" onchange="qbFillProducts_(${i})">${carOpts}</select>
+        <label>Product (from carrier's catalog — optional)</label>
+        <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
+      </div>
       <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
       <label>Monthly premium ($) *</label><input type="number" step="0.01" id="qb-prem-${i}" placeholder="e.g. 128.50" />
       <label>Benefit bullets (one per line)</label><textarea id="qb-bul-${i}" rows="3"></textarea>
@@ -10642,6 +10658,9 @@ function qbLineChanged_() {
     for (let k = 0; k < QB_MAX_OPTIONS; k++) {
       const w = document.getElementById('qb-aca-wrap-' + k);
       if (w) w.style.display = isAca ? 'block' : 'none';
+      const cp = document.getElementById('qb-carprod-' + k);
+      if (cp) cp.style.display = '';
+      qbAcaApptWarn_(k, null);
     }
     window._qbAcaSel = {};
     if (isAca) qbAcaInit_();
@@ -12214,11 +12233,52 @@ async function qbAcaGetPlans_() {
   }
 }
 
+// Fuzzy carrier-name match: "Blue Cross and Blue Shield of Montana" should hit "BCBS MT"
+function qbCarrierMatch_(issuer, names) {
+  const norm = s => String(s || '').toLowerCase()
+    .replace(/blue[\s\/\-\.]*cross[\s\/\-\.]*(and|&)?[\s\/\-\.]*blue[\s\/\-\.]*shield/g, 'bcbs')
+    .replace(/\bmontana\b/g, 'mt').replace(/\barizona\b/g, 'az').replace(/\btexas\b/g, 'tx')
+    .replace(/\b(health plans?|insurance( company)?|of|the)\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+  const A = norm(issuer);
+  return (names || []).some(n => { const B = norm(n); return A && B && (A.includes(B) || B.includes(A)); });
+}
+
+function qbAcaApptWarn_(i, plan) {
+  const warn = document.getElementById('qb-aca-warn-' + i);
+  if (!warn) return;
+  if (!plan) { warn.style.display = 'none'; warn.innerHTML = ''; return; }
+  const agentOk = qbCarrierMatch_(plan.issuer, (window._qbCarriers || []).map(c => c.name));
+  const agencyOk = agentOk || qbCarrierMatch_(plan.issuer, window._qbAgencyCarrierNames || []);
+  if (agentOk) { warn.style.display = 'none'; warn.innerHTML = ''; return; }
+  warn.style.display = 'block';
+  if (agencyOk) {
+    warn.style.background = '#fef9e7'; warn.style.border = '1px solid #f0d47a'; warn.style.color = '#8a6d1f';
+    warn.innerHTML = '&#9888;&#65039; You’re not contracted with <strong>' + escWeb(plan.issuer || 'this carrier')
+      + '</strong>. Your agency offers it — check your appointment before enrolling the client (Settings → My Carrier Appointments).';
+  } else {
+    warn.style.background = '#fdeaea'; warn.style.border = '1px solid #e8a1a1'; warn.style.color = '#9b2c2c';
+    warn.innerHTML = '&#9888;&#65039; <strong>' + escWeb(plan.issuer || 'This carrier')
+      + '</strong> isn’t on your agency’s carrier list — you likely can’t enroll the client in this plan. Confirm with your agency before presenting it.';
+  }
+}
+
 function qbApplyAcaPlan_(i) {
   const plan = (window._qbAcaPlans || []).find(p => p.id === document.getElementById('qb-aca-' + i).value);
   window._qbAcaSel = window._qbAcaSel || {};
-  if (!plan) { delete window._qbAcaSel[i]; return; }
+  const cp = document.getElementById('qb-carprod-' + i);
+  if (!plan) {
+    delete window._qbAcaSel[i];
+    if (cp) cp.style.display = '';
+    qbAcaApptWarn_(i, null);
+    return;
+  }
   window._qbAcaSel[i] = plan;
+  // Official Marketplace plan: our carrier/product catalog doesn't apply — hide it, warn on appointments instead
+  if (cp) cp.style.display = 'none';
+  const carSel = document.getElementById('qb-car-' + i);
+  if (carSel && carSel.value) { carSel.value = ''; qbFillProducts_(i); }
+  qbAcaApptWarn_(i, plan);
   document.getElementById('qb-name-' + i).value = plan.name + (plan.metal ? ' (' + plan.metal + ')' : '');
   document.getElementById('qb-prem-' + i).value = Number(plan.net).toFixed(2);
   const bullets = [];
