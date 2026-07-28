@@ -5260,6 +5260,14 @@ function openDealPanel(dealId) {
     setTimeout(function() { loadCensusStatus_(deal); }, 70);
   }
 
+  if (deal.contact_id && (!deal.pipeline || !deal.pipeline.startsWith('agent-'))) {
+    healthHTML += '<div class="panel-section"><div class="panel-label">Intake</div>'
+      + '<div id="deal-intake-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking intakes&hellip;</div>'
+      + '<button class="btn btn-outline btn-sm" onclick="showIntakeForm(\'' + deal.contact_id + '\')">&#129309; New Intake</button>'
+      + '</div>';
+    setTimeout(function() { loadDealIntakeStatus_(deal); }, 55);
+  }
+
   if (!deal.pipeline || !deal.pipeline.startsWith('agent-')) {
     healthHTML += '<div class="panel-section"><div class="panel-label">Quotes</div>'
       + '<div id="quotes-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking quotes&hellip;</div>'
@@ -10235,6 +10243,25 @@ async function requoteFromQuote_(quoteId, dealId) {
     });
     showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
   }, 350);
+}
+
+async function loadDealIntakeStatus_(deal) {
+  const el = document.getElementById('deal-intake-status-' + deal.id);
+  if (!el || !deal.contact_id) return;
+  const { data: sess } = await supabaseClient.from('intake_sessions')
+    .select('id,form_type,status,created_at')
+    .eq('contact_id', deal.contact_id).order('created_at', { ascending: false }).limit(3);
+  if (!sess || !sess.length) { el.textContent = 'No intakes yet for this client.'; return; }
+  el.innerHTML = sess.map(x => {
+    const lbl = (INTAKE_TYPE_LABELS[x.form_type] || x.form_type);
+    const d = new Date(x.created_at).toLocaleDateString();
+    const badge = x.status === 'completed'
+      ? '<span style="color:var(--success);font-weight:600;">completed</span>'
+      : '<span style="color:#f59e0b;">pending</span>';
+    const view = x.status === 'completed'
+      ? ` &middot; <a href="#" onclick="viewIntakeSession('${x.id}'); return false;">view</a>` : '';
+    return `<div style="padding:2px 0;">${escWeb(lbl)} &middot; ${d} &middot; ${badge}${view}</div>`;
+  }).join('') + '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Full history &amp; delete: open the contact\u2019s Edit window.</div>';
 }
 
 async function loadQuotesStatus_(deal) {
