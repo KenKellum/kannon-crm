@@ -10056,8 +10056,12 @@ async function openQuoteBuilder(dealId) {
   const lineOpts = QUOTE_LINES.map(l => `<option value="${l}">${l}</option>`).join('');
   const defValid = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const optBlock = i => `
-    <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:12px;">
-      <div style="font-weight:700;font-size:12px;color:var(--text-muted);margin-bottom:6px;">OPTION ${i + 1}${i > 0 ? ' <span style="font-weight:400;">(optional)</span>' : ''}</div>
+    <div id="qb-opt-wrap-${i}" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-top:14px;${i > 0 ? 'display:none;' : ''}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent,#1d3557);color:#fff;font-size:11px;font-weight:800;">${i + 1}</span>
+        <span style="font-weight:700;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Option ${i + 1}</span>
+        ${i > 0 ? `<button type="button" onclick="qbHideOption_(${i})" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;" title="Remove this option">&#10005;</button>` : ''}
+      </div>
       <div id="qb-cms-wrap-${i}" style="display:none;">
         <label>Official CMS plan</label>
         <select id="qb-cms-${i}" onchange="qbApplyCmsPlan_(${i})"><option value="">&mdash; pick a plan &mdash;</option></select>
@@ -10123,6 +10127,7 @@ async function openQuoteBuilder(dealId) {
     </select>
     <label>Valid until</label><input type="date" id="qb-valid" value="${defValid}" />
     ${[0,1,2,3].map(optBlock).join('')}
+    <button type="button" id="qb-add-opt" class="btn btn-outline btn-sm" style="margin-top:12px;" onclick="qbRevealOption_()">+ Add another option</button>
     <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Client: <strong>${escWeb(contact.name || '')}</strong>${contact.email ? ' &middot; ' + escWeb(contact.email) : ' &middot; <span style="color:#f59e0b;">no email on file — you can still copy the link</span>'}</p>
   `, async () => {
     const line = document.getElementById('qb-line').value;
@@ -10749,6 +10754,29 @@ function openNppVersionModal() {
 // ACA MARKETPLACE — household panel + official plans with the
 // government-calculated subsidy (via the Apps Script relay).
 // ============================================================
+function qbRevealOption_() {
+  for (let i = 1; i < 4; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (w && w.style.display === 'none') {
+      w.style.display = 'block';
+      if (i === 3) document.getElementById('qb-add-opt').style.display = 'none';
+      return;
+    }
+  }
+}
+
+function qbHideOption_(i) {
+  const w = document.getElementById('qb-opt-wrap-' + i);
+  if (!w) return;
+  w.style.display = 'none';
+  // clear its fields so a hidden option never sneaks into the quote
+  ['qb-name-' + i, 'qb-prem-' + i, 'qb-bul-' + i, 'qb-note-' + i].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const rec = document.getElementById('qb-rec-' + i); if (rec) rec.checked = false;
+  const addBtn = document.getElementById('qb-add-opt'); if (addBtn) addBtn.style.display = '';
+}
+
 async function acaProxy_(action, params) {
   const qs = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
   const res = await fetch(APPS_SCRIPT_URL + '?action=' + action + '&' + qs);
