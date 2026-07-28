@@ -11869,6 +11869,26 @@ function renderPickerBody_() {
     </div>`;
 }
 
+const ACA_TYPE_TIPS = {
+  HMO: 'HMO — Health Maintenance Organization. You pick a primary doctor in the plan’s network and need referrals to see specialists. No coverage outside the network except true emergencies. Usually the lowest premiums.',
+  PPO: 'PPO — Preferred Provider Organization. See any doctor without a referral, in or out of network (staying in network costs less). The most flexibility, usually higher premiums.',
+  EPO: 'EPO — Exclusive Provider Organization. No referrals needed, but you must stay in the plan’s network except emergencies. A middle ground between HMO and PPO.',
+  POS: 'POS — Point of Service. You pick a primary doctor and need referrals like an HMO, but you can go out of network at a higher cost, like a PPO.',
+  Indemnity: 'Indemnity — the plan pays a set share of each service and you can use any provider. Rare on the Marketplace.',
+};
+const ACA_HSA_TIP = 'HSA-eligible — this high-deductible plan lets you open a Health Savings Account: money goes in tax-free, grows tax-free, and comes out tax-free for qualified medical costs.';
+const ACA_METAL_TIPS = {
+  Bronze: 'Bronze — the plan pays about 60% of covered costs on average; you pay the rest. Lowest premiums, highest out-of-pocket. Good if you rarely use care.',
+  Silver: 'Silver — the plan pays about 70% of covered costs on average. Only Silver plans qualify for extra cost-sharing reduction (CSR) savings at lower incomes.',
+  Gold: 'Gold — the plan pays about 80% of covered costs on average. Higher premiums, lower costs when you actually use care.',
+  Platinum: 'Platinum — the plan pays about 90% of covered costs on average. Highest premiums, lowest out-of-pocket.',
+  Catastrophic: 'Catastrophic — a bare-bones safety net with a very high deductible. Only for people under 30 or with a hardship exemption; tax credits can’t be used on it.',
+};
+function acaTip_(map, key) {
+  const t = map === 'hsa' ? ACA_HSA_TIP : (map === 'metal' ? ACA_METAL_TIPS[key] : ACA_TYPE_TIPS[String(key || '').toUpperCase()]);
+  return t ? ` title="${escWeb(t)}" ` : ' ';
+}
+
 function pkCmpToggle_(id, cb) {
   if (cb.checked) {
     if (_qbPk.cmp.size >= 5) { cb.checked = false; showToast('Compare up to 5 plans at a time.'); return; }
@@ -11952,8 +11972,8 @@ function renderAcaCompare_() {
             const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
             const slot = qbAcaAddedSlot_(p.id);
             return `<td style="${td}border-bottom:1px solid var(--border);background:var(--surface-1);">
-              <span style="background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
-              ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+              <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
+              ${p.type ? `<span${acaTip_('type', p.type)}style="cursor:help;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:5px;">${escWeb(p.issuer || '')}</div>
               <div style="font-size:13px;font-weight:600;margin:2px 0 6px;">${escWeb(p.name)}</div>
               <div style="font-size:21px;font-weight:800;color:var(--accent,#1d3557);">$${Number(p.net).toFixed(2)}<span style="font-size:10px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
@@ -12041,8 +12061,8 @@ async function openPlanDetail_(planId) {
       </tr>`).join('');
     const head = p ? `
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
-        <span style="background:${(METAL_STYLE[p.metal] || {}).bg || 'var(--surface-2)'};color:${(METAL_STYLE[p.metal] || {}).fg || 'inherit'};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
-        ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+        <span${acaTip_('metal', p.metal)}style="cursor:help;background:${(METAL_STYLE[p.metal] || {}).bg || 'var(--surface-2)'};color:${(METAL_STYLE[p.metal] || {}).fg || 'inherit'};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
+        ${p.type ? `<span${acaTip_('type', p.type)}style="cursor:help;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
         <span style="font-size:12px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
         <span style="margin-left:auto;font-size:18px;font-weight:800;color:var(--accent,#1d3557);">$${Number(p.net).toFixed(2)}/mo</span>
       </div>
@@ -12076,9 +12096,9 @@ function pkCard_(p) {
   return `<div style="display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);">
     <div style="flex:1;min-width:0;">
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-        <span style="background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
-        ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
-        ${p.hsa ? '<span style="font-size:10px;color:#0d9488;border:1px solid #0d9488;border-radius:6px;padding:2px 6px;">HSA</span>' : ''}
+        <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
+        ${p.type ? `<span${acaTip_('type', p.type)}style="cursor:help;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+        ${p.hsa ? `<span${acaTip_('hsa')}style="cursor:help;font-size:10px;color:#0d9488;border:1px solid #0d9488;border-radius:6px;padding:2px 6px;">HSA</span>` : ''}
         ${p.rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${p.rating}</span>` : ''}
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
       </div>

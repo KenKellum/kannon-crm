@@ -61,6 +61,15 @@
   .pm-chip.m-Platinum { background: #e2e6ea; color: #4b5563; }
   .pm-chip.m-Catastrophic { background: #e4e9ef; color: #64748b; }
   .pm-chip.hsa { background: #d9f2ef; color: #0d9488; }
+  .pm-chip[data-tip] { cursor: help; position: relative; outline: none; }
+  .pm-chip[data-tip]:hover::after, .pm-chip[data-tip]:focus::after {
+    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 7px); z-index: 40;
+    width: 230px; background: #1e293b; color: #fff; font-size: 11.5px; font-weight: 500;
+    text-transform: none; letter-spacing: 0; line-height: 1.55; padding: 9px 11px; border-radius: 9px;
+    box-shadow: 0 8px 24px rgba(15,23,42,.3); white-space: normal; }
+  .pm-chip[data-tip]:hover::before, .pm-chip[data-tip]:focus::before {
+    content: ""; position: absolute; left: 14px; bottom: calc(100% + 1px); z-index: 41;
+    border: 6px solid transparent; border-top-color: #1e293b; }
   .pm-facts { margin: 10px 0 0; border-top: 1px dashed #e2e8f0; padding-top: 9px; display: grid; gap: 5px; }
   .pm-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: #334155; }
   .pm-row .lbl { color: var(--muted); }
@@ -206,6 +215,22 @@ function setBrand(brand) {
   }
 }
 
+const TYPE_TIPS = {
+  HMO: 'HMO — Health Maintenance Organization. You pick a primary doctor in the plan’s network and need referrals to see specialists. No coverage outside the network except true emergencies. Usually the lowest premiums.',
+  PPO: 'PPO — Preferred Provider Organization. See any doctor without a referral, in or out of network (staying in network costs less). The most flexibility, usually higher premiums.',
+  EPO: 'EPO — Exclusive Provider Organization. No referrals needed, but you must stay in the plan’s network except emergencies. A middle ground between HMO and PPO.',
+  POS: 'POS — Point of Service. You pick a primary doctor and need referrals like an HMO, but you can go out of network at a higher cost, like a PPO.',
+  INDEMNITY: 'Indemnity — the plan pays a set share of each service and you can use any provider. Rare on the Marketplace.',
+};
+const HSA_TIP = 'HSA-eligible — this high-deductible plan lets you open a Health Savings Account: money goes in tax-free, grows tax-free, and comes out tax-free for qualified medical costs.';
+const METAL_TIPS = {
+  Bronze: 'Bronze — the plan pays about 60% of covered costs on average; you pay the rest. Lowest premiums, highest out-of-pocket. Good if you rarely use care.',
+  Silver: 'Silver — the plan pays about 70% of covered costs on average. Only Silver plans qualify for extra cost-sharing reduction (CSR) savings at lower incomes.',
+  Gold: 'Gold — the plan pays about 80% of covered costs on average. Higher premiums, lower costs when you actually use care.',
+  Platinum: 'Platinum — the plan pays about 90% of covered costs on average. Highest premiums, lowest out-of-pocket.',
+  Catastrophic: 'Catastrophic — a bare-bones safety net with a very high deductible. Only for people under 30 or with a hardship exemption; tax credits can’t be used on it.',
+};
+
 function optCardHtml(o, inCompare) {
   const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
   let bl = o.benefit_bullets || [];
@@ -218,11 +243,12 @@ function optCardHtml(o, inCompare) {
     const credit = (pm.full_premium != null && pm.net_premium != null && pm.full_premium > pm.net_premium)
       ? pm.full_premium - pm.net_premium : 0;
     if (credit) creditHtml = `<div class="subline">Full price $${Number(pm.full_premium).toFixed(2)}/mo — <b>your tax credit covers $${credit.toFixed(2)}</b></div>`;
+    const metalTip = METAL_TIPS[pm.metal], typeTip = TYPE_TIPS[String(pm.plan_type || '').toUpperCase()];
     chipsHtml = `<div class="pm-chips">
-      ${pm.metal ? `<span class="pm-chip m-${esc(pm.metal)}">${esc(pm.metal)}</span>` : ''}
-      ${pm.plan_type ? `<span class="pm-chip">${esc(pm.plan_type)}</span>` : ''}
-      ${pm.hsa ? '<span class="pm-chip hsa">HSA-eligible</span>' : ''}
-      ${pm.rating ? `<span class="pm-chip">&#11088; ${esc(String(pm.rating))} / 5</span>` : ''}
+      ${pm.metal ? `<span class="pm-chip m-${esc(pm.metal)}"${metalTip ? ` data-tip="${esc(metalTip)}" tabindex="0"` : ''}>${esc(pm.metal)}</span>` : ''}
+      ${pm.plan_type ? `<span class="pm-chip"${typeTip ? ` data-tip="${esc(typeTip)}" tabindex="0"` : ''}>${esc(pm.plan_type)}</span>` : ''}
+      ${pm.hsa ? `<span class="pm-chip hsa" data-tip="${esc(HSA_TIP)}" tabindex="0">HSA-eligible</span>` : ''}
+      ${pm.rating ? `<span class="pm-chip" data-tip="The federal government’s quality rating for this plan, out of 5 stars." tabindex="0">&#11088; ${esc(String(pm.rating))} / 5</span>` : ''}
     </div>`;
     const fam = pm.family_quote;
     const factRow = (lbl, ind, famVal) => ind == null ? '' :
