@@ -132,7 +132,7 @@ const FIELD_DEFS = {
   goal_wealth:          { label: 'Wealth building', type: 'checkbox-field', group: 'goals' },
   household_size:       { label: 'Number of people in household', type: 'number' },
   member_ages:          { label: 'Ages of all household members', type: 'text', placeholder: 'e.g. 34, 32, 6, 4' },
-  aca_income:           { label: 'Estimated annual household income', type: 'select', options: ['Under $25,000','$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','Over $100,000'] },
+  aca_income:           { label: 'Estimated annual household income ($)', type: 'number', placeholder: 'e.g. 48000 — an accurate figure gives an accurate tax-credit estimate' },
   currently_insured:    { label: 'Currently have health insurance?', type: 'radio', options: ['Yes','No'] },
   current_carrier:      { label: 'Current insurance carrier', type: 'text', placeholder: 'e.g. Blue Cross, Cigna' },
   current_premium:      { label: 'Current monthly premium', type: 'text', placeholder: 'e.g. $450/month' },
@@ -266,7 +266,7 @@ async function pickerSearch_(id) {
     const zipEl = document.getElementById('f_zip');
     const url = PICKER_RELAY + (isMed
       ? '?action=aca_drug_search&q=' + encodeURIComponent(q)
-      : '?action=aca_provider_search&q=' + encodeURIComponent(q) + '&zip=' + encodeURIComponent(zipEl ? zipEl.value : ''));
+      : '?action=aca_provider_search&mode=search&q=' + encodeURIComponent(q) + '&zip=' + encodeURIComponent(zipEl ? zipEl.value : ''));
     const resp = await (await fetch(url)).json();
     const raw = resp.data || [];
     let items = Array.isArray(raw) ? raw : (raw.drugs || raw.providers || raw.suggestions || []);
@@ -277,7 +277,9 @@ async function pickerSearch_(id) {
         return { key: o.rxcui, name: nm, extra: o.route || '' };
       }
       const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
-      return { key: o.npi, name: nm, extra: o.taxonomy || (o.specialties || [])[0] || '' };
+      const ad = (o.addresses && o.addresses[0]) || o.address || {};
+      const where = [ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
+      return { key: o.npi, name: nm, extra: [o.taxonomy || (o.specialties || [])[0] || '', where].filter(Boolean).join(' \u00b7 ') };
     }).filter(x => x.key && x.name).slice(0, 6);
     if (!items.length) {
       out.innerHTML = 'No matches \u2014 <a href="#" onclick="_pickers[\'' + id + '\'].push({name:document.getElementById(\'pk_q_' + id + '\').value.trim()});document.getElementById(\'pk_q_' + id + '\').value=\'\';this.parentElement.innerHTML=\'\';pickerSync_(\'' + id + '\');return false;">add it as typed</a>.';
@@ -342,9 +344,10 @@ async function init() {
 
 function renderForm(session, contact) {
   const sf = new Set(session.selected_fields || []);
+  const cp = session.contact_prefill || {};
   const prefill = {
-    name: contact.name || '', email: contact.email || '', phone: contact.phone || '',
-    business_name: contact.company || '', dob: contact.date_of_birth || ''
+    name: contact.name || cp.name || '', email: contact.email || cp.email || '', phone: contact.phone || cp.phone || '',
+    business_name: contact.company || '', dob: contact.date_of_birth || cp.dob || '', zip: cp.zip || ''
   };
   // Review mode (or any saved progress): overlay previously saved answers
   Object.entries(session.responses || {}).forEach(([k, v]) => {

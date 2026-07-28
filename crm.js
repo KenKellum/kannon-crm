@@ -2500,8 +2500,7 @@ const INTAKE_FIELD_DEFS = {
   household_size:        { label: 'Household Size',         type: 'number', section: 'Household' },
   member_ages:           { label: 'Member Ages',            type: 'text',   section: 'Household',
                            placeholder: 'e.g. 35, 32, 7' },
-  aca_income:            { label: 'Est. Annual Income (ACA)',type: 'select', section: 'Household',
-                           options: ['Under $20k','$20k–$40k','$40k–$60k','$60k–$80k','$80k–$100k','$100k+'] },
+  aca_income:            { label: 'Estimated annual household income ($)', type: 'number', section: 'Household' },
   currently_insured:     { label: 'Currently Insured?',     type: 'select', section: 'Current Coverage',
                            options: ['Yes','No'] },
   current_carrier:       { label: 'Current Carrier',        type: 'text',   section: 'Current Coverage' },
@@ -2965,6 +2964,7 @@ async function saveIntakeToCRM() {
         agent_id:        currentAgent ? currentAgent.id : null,
         form_type:       _intakeFormType,
         selected_fields: selectedFields,
+        contact_prefill: contactPrefillFor_(_intakeContactId),
         responses:       responses,
         status:          'completed',
         completed_at:    new Date().toISOString(),
@@ -3177,6 +3177,7 @@ async function sendIntakeLink() {
         agent_id:        currentAgent ? currentAgent.id : null,
         form_type:       _intakeFormType,
         selected_fields: selectedFields,
+        contact_prefill: contactPrefillFor_(_intakeContactId),
         responses:       {},
         status:          'pending',
         sent_at:         new Date().toISOString(),
@@ -5995,6 +5996,12 @@ function openAddContact() {
       setTimeout(() => showIntakeForm(data.id), 300);
     }
   });
+}
+
+function contactPrefillFor_(contactId) {
+  const c = contacts.find(x => x.id === contactId) || {};
+  return { name: c.name || '', email: c.email || '', phone: c.phone || '',
+           dob: c.date_of_birth || '', zip: c.zip || '' };
 }
 
 function editContact(id, onSave) {
@@ -11011,6 +11018,8 @@ async function qbAcaInit_() {
 const ACA_INCOME_MIDPOINTS = {
   'Under $25,000': 20000, '$25,000\u2013$50,000': 37500, '$50,000\u2013$75,000': 62500,
   '$75,000\u2013$100,000': 87500, 'Over $100,000': 110000,
+  'Under $20k': 15000, '$20k\u2013$40k': 30000, '$40k\u2013$60k': 50000,
+  '$60k\u2013$80k': 70000, '$80k\u2013$100k': 90000, '$100k+': 110000,
 };
 
 async function qbAcaPrefillFromIntake_() {
@@ -11028,9 +11037,15 @@ async function qbAcaPrefillFromIntake_() {
 
     // Income (range midpoint — an estimate the agent can refine)
     const incEl = document.getElementById('qb-aca-income');
-    if (incEl && !incEl.value && r.aca_income && ACA_INCOME_MIDPOINTS[r.aca_income]) {
-      incEl.value = ACA_INCOME_MIDPOINTS[r.aca_income];
-      pulled.push('income (midpoint of \u201c' + r.aca_income + '\u201d \u2014 refine if you know the exact figure)');
+    if (incEl && !incEl.value && r.aca_income) {
+      const exact = parseFloat(String(r.aca_income).replace(/[^0-9.]/g, ''));
+      if (!isNaN(exact) && exact >= 1000) {
+        incEl.value = Math.round(exact);
+        pulled.push('income ($' + Math.round(exact).toLocaleString() + ' from their intake)');
+      } else if (ACA_INCOME_MIDPOINTS[r.aca_income]) {
+        incEl.value = ACA_INCOME_MIDPOINTS[r.aca_income];
+        pulled.push('income (midpoint of \u201c' + r.aca_income + '\u201d \u2014 refine if you know the exact figure)');
+      }
     }
 
     // Household members from the ages list
@@ -11133,7 +11148,7 @@ async function qbAcaSearch_(kind) {
   try {
     const c = window._qbContact || {};
     const resp = kind === 'doc'
-      ? await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '' })
+      ? await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', mode: 'search' })
       : await acaProxy_('aca_drug_search', { q: q });
     if (resp.status !== 'ok') { out.innerHTML = '<span style="color:var(--danger);">' + escWeb(resp.message || 'Search failed') + '</span>'; return; }
     const raw = resp.data || {};
@@ -11144,7 +11159,9 @@ async function qbAcaSearch_(kind) {
         const nm = typeof o.name === 'object' && o.name
           ? [o.name.first, o.name.last].filter(Boolean).join(' ')
           : (o.name || o.provider_name || '');
-        return { key: o.npi || o.id, name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (o.city ? ' \u00b7 ' + o.city : '') , cleanName: nm };
+        const ad = (o.addresses && o.addresses[0]) || o.address || {};
+        const where = [ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
+        return { key: o.npi || o.id, name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (where ? ' \u00b7 ' + where : ''), cleanName: nm };
       }
       const medNm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
       return { key: o.rxcui || o.id, name: medNm + (o.route ? ' · ' + o.route : ''), cleanName: medNm };
