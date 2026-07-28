@@ -304,7 +304,7 @@ async function init() {
     + '&select=id,client_name,line,brand,status,valid_until,viewed_at,agent_name,agent_email,agent_phone,agent_booking_url', { method: 'GET' });
   quote = rows && rows[0];
   if (!quote) { showErr(); return; }
-  if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showErr(); return; }
+  if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showExpired(); return; }
   allOpts = await supa('/rest/v1/quote_options?quote_id=eq.' + encodeURIComponent(qid)
     + '&select=*&order=sort_order', { method: 'GET' }) || [];
   if (!allOpts.length) { showErr(); return; }
@@ -347,6 +347,33 @@ async function init() {
 function showErr() {
   document.getElementById('loader').style.display = 'none';
   document.getElementById('error-screen').style.display = 'block';
+}
+
+function showExpired() {
+  setBrand(quote.brand);
+  document.title = 'Quote Expired — ' + (quote.brand === 'ia' ? 'The Insured America Agency' : 'Kannon Financial Group');
+  const first = (quote.client_name || 'there').split(' ')[0];
+  const initials = (quote.agent_name || 'A').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const tel = quote.agent_phone ? quote.agent_phone.replace(/[^0-9+]/g, '') : '';
+  document.getElementById('loader').style.display = 'none';
+  document.querySelector('.body').innerHTML = `
+    <div style="text-align:center;padding:26px 10px;animation:rise .4s ease-out;">
+      <div style="font-size:52px;margin-bottom:10px;">&#8987;</div>
+      <h1 style="margin-bottom:10px;">These quotes have expired</h1>
+      <div class="agent-line" style="justify-content:center;">
+        <span class="avatar">${esc(initials)}</span>
+        <span><strong style="color:var(--ink);">${esc(quote.agent_name || 'Your agent')}</strong></span>
+      </div>
+      <p style="max-width:460px;margin:14px auto 6px;">Good news and honest news, ${esc(first)}: premiums and plans change over time,
+      so the numbers you saw here are no longer guaranteed &mdash; but fresh ones take just a few minutes.
+      Let's get you <strong>current pricing</strong> before you decide anything.</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px;">
+        ${quote.agent_booking_url ? `<a class="btn btn-gold" style="text-decoration:none;" href="${esc(quote.agent_booking_url)}" target="_blank">&#128197; Book a time for fresh quotes</a>` : ''}
+        ${tel ? `<a class="btn btn-ghost" style="text-decoration:none;" href="tel:${esc(tel)}">&#128222; Call ${esc(quote.agent_phone)}</a>` : ''}
+        ${quote.agent_email ? `<a class="btn btn-ghost" style="text-decoration:none;" href="mailto:${esc(quote.agent_email)}?subject=${encodeURIComponent('Please update my quotes')}">&#9993; Ask for updated quotes</a>` : ''}
+      </div>
+      <p class="fine" style="border:none;margin-top:26px;">Your original quote details are safely on file with your agent.</p>
+    </div>`;
 }
 
 init();

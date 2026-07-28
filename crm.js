@@ -10026,6 +10026,48 @@ const QB_MAX_OPTIONS = 10; // agents sometimes compare 10+ carriers
 const QUOTE_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Other'];
 const MEDICARE_QUOTE_LINES = ['Medicare Advantage','Medicare Supplement','Part D (PDP)'];
 
+async function requoteFromQuote_(quoteId, dealId) {
+  const { data: q } = await supabaseClient.from('quotes').select('*').eq('id', quoteId).single();
+  const { data: opts } = await supabaseClient.from('quote_options')
+    .select('*').eq('quote_id', quoteId).order('sort_order');
+  if (!q) { showToast('Could not load the previous quote.'); return; }
+  await openQuoteBuilder(dealId);
+  setTimeout(() => {
+    const lineSel = document.getElementById('qb-line');
+    if (!lineSel) return;
+    if ([...lineSel.options].some(o => o.value === q.line)) { lineSel.value = q.line; qbLineChanged_(); }
+    const brandSel = document.getElementById('qb-brand');
+    if (!brandSel.disabled) brandSel.value = q.brand;
+    (opts || []).forEach((o, i) => {
+      if (i >= QB_MAX_OPTIONS) return;
+      if (i > 0) qbRevealOption_();
+      const car = (window._qbCarriers || []).find(c => c.name === o.carrier_name);
+      if (car) {
+        document.getElementById('qb-car-' + i).value = car.id;
+        qbFillProducts_(i);
+        // If the carrier still has this exact product, pick it — bullets refresh
+        // from the product record and Medigap auto-rating fetches CURRENT premiums
+        const prod = (window._qbProds || []).find(p => p.carrier_id === car.id && p.name === o.display_name);
+        if (prod) {
+          document.getElementById('qb-prod-' + i).value = prod.id;
+          qbApplyProduct_(i);
+        }
+      }
+      if (!document.getElementById('qb-name-' + i).value) document.getElementById('qb-name-' + i).value = o.display_name;
+      if (!document.getElementById('qb-prem-' + i).value) document.getElementById('qb-prem-' + i).value = o.monthly_premium;
+      const bul = document.getElementById('qb-bul-' + i);
+      if (!bul.value) {
+        const ro = bul.readOnly; bul.readOnly = false;
+        bul.value = (o.benefit_bullets || []).join('\n');
+        bul.readOnly = ro;
+      }
+      if (o.agent_note) document.getElementById('qb-note-' + i).value = o.agent_note;
+      if (o.is_recommended) { const r = document.getElementById('qb-rec-' + i); if (r) r.checked = true; }
+    });
+    showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
+  }, 350);
+}
+
 async function loadQuotesStatus_(deal) {
   const el = document.getElementById('quotes-status-' + deal.id);
   if (!el) return;
@@ -10043,7 +10085,8 @@ async function loadQuotesStatus_(deal) {
     const send = (q.status === 'draft' && q.client_email)
       ? ` &middot; <a href="#" onclick="sendQuote_('${q.id}', this); return false;">Send now</a>` : '';
     return `<div style="padding:3px 0;">${escWeb(q.line)} &middot; ${d} &middot; ${badge}
-      &middot; <a href="quote.html?q=${q.id}" target="_blank">view &#8599;</a>${send}</div>`;
+      &middot; <a href="quote.html?q=${q.id}" target="_blank">view &#8599;</a>${send}
+      &middot; <a href="#" onclick="requoteFromQuote_('${q.id}','${deal.id}'); return false;" title="Start a fresh quote pre-filled from this one">&#8635; re-quote</a></div>`;
   }).join('');
 }
 
