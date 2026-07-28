@@ -338,6 +338,25 @@ function applyFieldRules_() {
   });
 }
 
+function acaShapeProviders_(raw, clientZip) {
+  const items = (Array.isArray(raw) ? raw : (raw.providers || raw.suggestions || [])).map(x => {
+    const o = x.provider || x;
+    if (o.ptype) {
+      const where = [o.street, o.city, o.state].filter(Boolean).join(', ');
+      const isFac = o.ptype === 'Facility';
+      return { key: o.npi, zip: o.zip || '', cleanName: o.name,
+        name: (isFac ? '\u{1F3E5} ' : '') + o.name, extra: [o.taxonomy, where].filter(Boolean).join(' \u00b7 ') };
+    }
+    const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
+    return { key: o.npi, zip: '', cleanName: nm, name: nm, extra: o.taxonomy || '' };
+  }).filter(x => x.key && x.cleanName);
+  const z3 = String(clientZip || '').slice(0, 3);
+  items.sort((a, b) =>
+    ((z3 && a.zip.slice(0, 3) === z3 ? 0 : 1) - (z3 && b.zip.slice(0, 3) === z3 ? 0 : 1))
+    || String(a.cleanName).localeCompare(String(b.cleanName)));
+  return items;
+}
+
 const PICKER_RELAY = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
 const _pickers = { med_medications: [], med_doctors: [] };
 
@@ -381,26 +400,24 @@ async function pickerSearch_(id) {
   const isMed = id === 'med_medications';
   try {
     const zipEl = document.getElementById('f_zip');
+    const cp = (window._prefillAll || {});
     const url = PICKER_RELAY + (isMed
       ? '?action=aca_drug_search&q=' + encodeURIComponent(q)
-      : '?action=aca_provider_search&mode=search&q=' + encodeURIComponent(q) + '&zip=' + encodeURIComponent(zipEl ? zipEl.value : ''));
+      : '?action=aca_provider_search&q=' + encodeURIComponent(q)
+        + '&zip=' + encodeURIComponent(zipEl && zipEl.value ? zipEl.value : (cp.zip || ''))
+        + '&state=' + encodeURIComponent(cp.state || ''));
     const resp = await (await fetch(url)).json();
     const raw = resp.data || [];
-    let items = Array.isArray(raw) ? raw : (raw.drugs || raw.providers || raw.suggestions || []);
-    items = items.map(x => {
-      const o = x.provider || x;
-      if (isMed) {
+    let items;
+    if (isMed) {
+      items = (Array.isArray(raw) ? raw : (raw.drugs || raw.suggestions || [])).map(o => {
         const nm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
-        return { key: o.rxcui, name: nm, extra: o.route || '' };
-      }
-      const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
-      const ad = (o.addresses && o.addresses[0]) || o.address || {};
-      const where = [ad.street_1 || ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
-      const isFac = o._ptype === 'Facility' || o.provider_type === 'Facility';
-      return { key: o.npi, distance: (o.distance != null ? Number(o.distance) : (ad.distance != null ? Number(ad.distance) : null)), name: (isFac ? '\u{1F3E5} ' : '') + nm, extra: [o.taxonomy || (o.specialties || [])[0] || (isFac ? 'Facility' : ''), where].filter(Boolean).join(' \u00b7 ') };
-    }).filter(x => x.key && x.name);
-    items.sort((a, b) => ((a.distance != null ? a.distance : 1e9) - (b.distance != null ? b.distance : 1e9)) || String(a.name).localeCompare(String(b.name)));
-    items = items.slice(0, 20);
+        return { key: o.rxcui, name: nm, cleanName: nm, extra: o.route || '' };
+      }).filter(x => x.key && x.name);
+    } else {
+      items = acaShapeProviders_(raw, zipEl && zipEl.value ? zipEl.value : (cp.zip || ''));
+    }
+    items = items.slice(0, 30);
     if (!items.length) {
       out.innerHTML = 'No matches \u2014 <a href="#" onclick="_pickers[\'' + id + '\'].push({name:document.getElementById(\'pk_q_' + id + '\').value.trim()});document.getElementById(\'pk_q_' + id + '\').value=\'\';this.parentElement.innerHTML=\'\';pickerSync_(\'' + id + '\');return false;">add it as typed</a>.';
       return;
@@ -411,13 +428,14 @@ async function pickerSearch_(id) {
   } catch (e) { out.textContent = 'Search unavailable right now \u2014 you can just type it and continue.'; }
 }
 
+
 function pickerPick_(id, i) {
   const x = (window['_pkm_' + id] || [])[i];
   if (!x) return;
   const arr = _pickers[id];
   const keyField = id === 'med_medications' ? 'rxcui' : 'npi';
   if (!arr.some(a => String(a[keyField]) === String(x.key))) {
-    const item = { name: x.name };
+    const item = { name: x.cleanName || x.name };
     item[keyField] = x.key;
     arr.push(item);
   }
@@ -425,6 +443,7 @@ function pickerPick_(id, i) {
   document.getElementById('pk_m_' + id).innerHTML = '';
   pickerSync_(id);
 }
+
 
 function renderCheckboxGroup(groupKey, ids) {
   const label = CHECKBOX_GROUP_LABELS[groupKey] || groupKey;

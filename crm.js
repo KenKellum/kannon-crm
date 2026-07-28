@@ -2919,34 +2919,32 @@ async function imPickerSearch_(id) {
   const q = document.getElementById('imq_' + id).value.trim();
   const out = document.getElementById('imm_' + id);
   if (q.length < 3) { out.textContent = 'Type at least 3 letters.'; return; }
-  out.textContent = 'Searching…';
+  out.textContent = 'Searching\u2026';
   const isMed = id === 'med_medications';
   try {
     const c = contacts.find(x => x.id === _intakeContactId) || {};
     const resp = isMed
       ? await acaProxy_('aca_drug_search', { q: q })
-      : await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', mode: 'search' });
+      : await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', state: c.state || '' });
     const raw = resp.data || [];
-    let items = Array.isArray(raw) ? raw : (raw.drugs || raw.providers || raw.suggestions || []);
-    items = items.map(x => {
-      const o = x.provider || x;
-      if (isMed) {
+    let items;
+    if (isMed) {
+      items = (Array.isArray(raw) ? raw : (raw.drugs || raw.suggestions || [])).map(o => {
         const nm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
-        return { key: o.rxcui, name: nm, extra: o.route || '' };
-      }
-      const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
-      const ad = (o.addresses && o.addresses[0]) || {};
-      const where = [ad.street_1 || ad.street1 || ad.street, ad.city, ad.state].filter(Boolean).join(', ');
-      return { key: o.npi, name: nm, extra: [o.taxonomy || (o.specialties || [])[0] || '', where].filter(Boolean).join(' · ') };
-    }).filter(x => x.key && x.name);
-    items.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    items = items.slice(0, 6);
-    if (!items.length) { out.textContent = 'No matches — try a different spelling.'; return; }
+        return { key: o.rxcui, name: nm, cleanName: nm };
+      }).filter(x => x.key && x.name);
+    } else {
+      items = acaShapeProviders_(raw, c.zip);
+    }
+    items = items.slice(0, 30);
+    if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
     window['_imm_' + id] = items;
+    out.style.maxHeight = '190px'; out.style.overflowY = 'auto';
     out.innerHTML = items.map((x, i) =>
-      `<a href="#" onclick="imPickerPick_('${id}',${i});return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}${x.extra ? ' <span style="color:var(--text-muted);font-size:11px;">· ' + escWeb(x.extra) + '</span>' : ''}</a>`).join('');
-  } catch (e) { out.textContent = 'Search unavailable — you can leave a note instead.'; }
+      `<a href="#" onclick="imPickerPick_('${id}',${i});return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}</a>`).join('');
+  } catch (e) { out.textContent = 'Search unavailable \u2014 you can leave a note instead.'; }
 }
+
 
 function imPickerPick_(id, i) {
   const x = (window['_imm_' + id] || [])[i];
@@ -2954,96 +2952,13 @@ function imPickerPick_(id, i) {
   const keyField = id === 'med_medications' ? 'rxcui' : 'npi';
   const arr = window._imPickers[id];
   if (!arr.some(a => String(a[keyField]) === String(x.key))) {
-    const item = { name: x.name }; item[keyField] = x.key; arr.push(item);
+    const item = { name: x.cleanName || x.name }; item[keyField] = x.key; arr.push(item);
   }
   document.getElementById('imq_' + id).value = '';
   document.getElementById('imm_' + id).innerHTML = '';
   imPickerSync_(id);
 }
 
-window._imHH = [];
-function _imHHTable_(id, def) {
-  const all = window._imPrefillAll || {};
-  try {
-    if (all.household_struct) window._imHH = JSON.parse(all.household_struct);
-    else if (all.member_ages) window._imHH = String(all.member_ages).split(/[^0-9]+/).filter(Boolean)
-      .map((a, i) => ({ relationship: i === 0 ? 'Self' : (parseInt(a) >= 18 ? 'Spouse' : 'Child'), age: parseInt(a), gender: '', tobacco: false, covered: true }));
-    else window._imHH = [];
-  } catch (e) { window._imHH = []; }
-  if (!window._imHH.length) {
-    const c = contacts.find(x => x.id === _intakeContactId) || {};
-    let a = '';
-    if (c.date_of_birth) { const yrs = Math.floor((Date.now() - new Date(c.date_of_birth + 'T12:00:00')) / 31557600000); if (yrs > 0 && yrs < 120) a = yrs; }
-    window._imHH = [{ relationship: 'Self', age: a, gender: c.gender || '', tobacco: !!c.tobacco_use, covered: true }];
-  }
-  setTimeout(() => { try { imHHPaint_(); } catch (e) {} }, 80);
-  return `<div id="iwrap_${id}">
-    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">${def.label}</label>
-    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-      <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">
-        <th>Who</th><th>Age</th><th>Gender</th><th>Tob.</th><th>Cover</th><th></th></tr></thead>
-      <tbody id="im-hh-rows"></tbody>
-    </table></div>
-    <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="imHHAdd_()">+ Add member</button>
-  </div>`;
-}
-
-function imHHPaint_() {
-  const tb = document.getElementById('im-hh-rows');
-  if (!tb) return;
-  tb.innerHTML = window._imHH.map((m, i) => `
-    <tr>
-      <td style="padding:2px;">${i === 0 ? '<strong>Client</strong><input type="hidden" class="hh-rel" value="Self">'
-        : `<select class="hh-rel" onchange="imHHRead_()"><option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option><option${m.relationship === 'Child' ? ' selected' : ''}>Child</option><option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`}</td>
-      <td style="padding:2px;"><input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" style="width:58px;" oninput="imHHRead_()"></td>
-      <td style="padding:2px;"><select class="hh-gen" onchange="imHHRead_()">
-        <option value=""${!m.gender ? ' selected' : ''}>\u2014</option>
-        <option value="M"${m.gender === 'M' ? ' selected' : ''}>M</option>
-        <option value="F"${m.gender === 'F' ? ' selected' : ''}>F</option>
-        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Declined</option></select></td>
-      <td style="padding:2px;text-align:center;"><input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;"></td>
-      <td style="padding:2px;text-align:center;"><input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;"></td>
-      <td style="padding:2px;">${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}</td>
-    </tr>`).join('');
-  imHHRead_();
-}
-function imHHRead_() {
-  window._imHH = [...document.querySelectorAll('#im-hh-rows tr')].map(tr => ({
-    relationship: tr.querySelector('.hh-rel').value,
-    age: tr.querySelector('.hh-age').value === '' ? '' : parseInt(tr.querySelector('.hh-age').value),
-    gender: tr.querySelector('.hh-gen').value,
-    tobacco: tr.querySelector('.hh-tob').checked,
-    covered: tr.querySelector('.hh-cov').checked,
-  }));
-}
-function imHHAdd_() { window._imHH.push({ relationship: 'Child', age: '', gender: '', tobacco: false, covered: true }); imHHPaint_(); }
-
-// Conditional questions in the agent modal (mirror of the public form)
-function _imFv_(id) { const el = document.getElementById('ifield_' + id); return el ? el.value : ''; }
-function _imSepNeeded_() {
-  const now = new Date(), y = now.getFullYear();
-  const inOEP = (now >= new Date(y, 10, 1)) || (now <= new Date(y, 0, 15, 23, 59, 59));
-  if (inOEP) return false;
-  const start = _imFv_('coverage_start_date');
-  if (start) {
-    const nextJan1 = new Date(now < new Date(y, 0, 16) ? y : y + 1, 0, 1);
-    if (new Date(start + 'T12:00:00') >= nextJan1) return false;
-  }
-  return true;
-}
-const IM_FIELD_RULES = {
-  current_carrier:  () => _imFv_('currently_insured') !== 'No',
-  current_premium:  () => _imFv_('currently_insured') !== 'No',
-  aca_ichra_amount: () => _imFv_('aca_ichra_offer') === 'Yes',
-  aca_qle:          () => _imSepNeeded_(),
-  aca_qle_date:     () => _imSepNeeded_() && _imFv_('aca_qle') && !/^no\b/i.test(_imFv_('aca_qle')),
-};
-function imApplyRules_() {
-  Object.keys(IM_FIELD_RULES).forEach(id => {
-    const w = document.getElementById('iwrap_' + id);
-    if (w) w.style.display = IM_FIELD_RULES[id]() ? '' : 'none';
-  });
-}
 
 function _intakeRenderField(id, def, prefillVal) {
   if (id === 'med_medications' || id === 'med_doctors') return _imPickerField_(id, def);
@@ -6196,7 +6111,7 @@ function openAddContact() {
 function contactPrefillFor_(contactId) {
   const c = contacts.find(x => x.id === contactId) || {};
   return { name: c.name || '', email: c.email || '', phone: c.phone || '',
-           dob: c.date_of_birth || '', zip: c.zip || '' };
+           dob: c.date_of_birth || '', zip: c.zip || '', state: c.state || '' };
 }
 
 function editContact(id, onSave) {
@@ -11162,6 +11077,27 @@ function qbHideOption_(i) {
   const addBtn = document.getElementById('qb-add-opt'); if (addBtn) addBtn.style.display = '';
 }
 
+// Shared shaper for finder results (NPPES uniform shape, legacy-tolerant).
+// Client's zip area floats to the top, then A-Z.
+function acaShapeProviders_(raw, clientZip) {
+  const items = (Array.isArray(raw) ? raw : (raw.providers || raw.suggestions || [])).map(x => {
+    const o = x.provider || x;
+    if (o.ptype) {
+      const where = [o.street, o.city, o.state].filter(Boolean).join(', ');
+      const isFac = o.ptype === 'Facility';
+      return { key: o.npi, zip: o.zip || '', cleanName: o.name,
+        name: (isFac ? '\u{1F3E5} ' : '') + o.name + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (where ? ' \u00b7 ' + where : '') };
+    }
+    const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
+    return { key: o.npi, zip: '', cleanName: nm, name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') };
+  }).filter(x => x.key && x.cleanName);
+  const z3 = String(clientZip || '').slice(0, 3);
+  items.sort((a, b) =>
+    ((z3 && a.zip.slice(0, 3) === z3 ? 0 : 1) - (z3 && b.zip.slice(0, 3) === z3 ? 0 : 1))
+    || String(a.cleanName).localeCompare(String(b.cleanName)));
+  return items;
+}
+
 async function acaProxy_(action, params) {
   const qs = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
   const res = await fetch(APPS_SCRIPT_URL + '?action=' + action + '&' + qs);
@@ -11431,34 +11367,28 @@ async function qbAcaSearch_(kind) {
   try {
     const c = window._qbContact || {};
     const resp = kind === 'doc'
-      ? await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', mode: 'search' })
+      ? await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', state: c.state || '' })
       : await acaProxy_('aca_drug_search', { q: q });
     if (resp.status !== 'ok') { out.innerHTML = '<span style="color:var(--danger);">' + escWeb(resp.message || 'Search failed') + '</span>'; return; }
     const raw = resp.data || {};
-    let items = raw.providers || raw.drugs || raw.suggestions || (Array.isArray(raw) ? raw : []);
-    items = (items || []).map(x => {
-      const o = x.provider || x;
-      if (kind === 'doc') {
-        const nm = typeof o.name === 'object' && o.name
-          ? [o.name.first, o.name.last].filter(Boolean).join(' ')
-          : (o.name || o.provider_name || '');
-        const ad = (o.addresses && o.addresses[0]) || o.address || {};
-        const where = [ad.street_1 || ad.street1 || ad.address1 || ad.street, ad.city || o.city, ad.state || o.state].filter(Boolean).join(', ');
-        const isFac = o._ptype === 'Facility' || o.provider_type === 'Facility';
-        return { key: o.npi || o.id, distance: (o.distance != null ? Number(o.distance) : (ad.distance != null ? Number(ad.distance) : null)), name: (isFac ? '\u{1F3E5} ' : '') + nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : (isFac ? ' \u00b7 Facility' : '')) + (where ? ' \u00b7 ' + where : ''), cleanName: nm };
-      }
-      const medNm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
-      return { key: o.rxcui || o.id, name: medNm + (o.route ? ' · ' + o.route : ''), cleanName: medNm };
-    }).filter(x => x.key && x.name);
-    items.sort((a, b) => ((a.distance != null ? a.distance : 1e9) - (b.distance != null ? b.distance : 1e9)) || String(a.cleanName).localeCompare(String(b.cleanName)));
+    let items;
+    if (kind === 'doc') {
+      items = acaShapeProviders_(raw, c.zip);
+    } else {
+      items = (Array.isArray(raw) ? raw : (raw.drugs || raw.suggestions || [])).map(o => {
+        const medNm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
+        return { key: o.rxcui || o.id, name: medNm + (o.route ? ' \u00b7 ' + o.route : ''), cleanName: medNm };
+      }).filter(x => x.key && x.name);
+    }
     if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
     out.style.maxHeight = '190px'; out.style.overflowY = 'auto';
-    out.innerHTML = items.slice(0, 20).map((x, i) =>
+    out.innerHTML = items.slice(0, 30).map((x, i) =>
       `<a href="#" onclick="qbAcaPick_('${kind}', ${i}); return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}</a>`).join('');
-    window._qbAcaMatches = items.slice(0, 20);
+    window._qbAcaMatches = items.slice(0, 30);
     window._qbAcaMatchKind = kind;
   } catch (e) { out.innerHTML = '<span style="color:var(--danger);">Search unreachable.</span>'; }
 }
+
 
 function qbAcaPick_(kind, i) {
   const x = (window._qbAcaMatches || [])[i];
