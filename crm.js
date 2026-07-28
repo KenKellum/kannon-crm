@@ -5148,11 +5148,13 @@ function openDealPanel(dealId) {
     setTimeout(function() { loadCensusStatus_(deal); }, 70);
   }
 
-  healthHTML += '<div class="panel-section"><div class="panel-label">Quotes</div>'
-    + '<div id="quotes-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking quotes&hellip;</div>'
-    + '<button class="btn btn-outline btn-sm" onclick="openQuoteBuilder(\'' + deal.id + '\')">&#128181; Create Quote</button>'
-    + '</div>';
-  setTimeout(function() { loadQuotesStatus_(deal); }, 60);
+  if (!deal.pipeline || !deal.pipeline.startsWith('agent-')) {
+    healthHTML += '<div class="panel-section"><div class="panel-label">Quotes</div>'
+      + '<div id="quotes-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking quotes&hellip;</div>'
+      + '<button class="btn btn-outline btn-sm" onclick="openQuoteBuilder(\'' + deal.id + '\')">&#128181; Create Quote</button>'
+      + '</div>';
+    setTimeout(function() { loadQuotesStatus_(deal); }, 60);
+  }
 
   var nextStepHTML = deal.next_step
     ? '<div style="margin-top:10px;"><div class="deal-field-label" style="margin-bottom:4px;">Next Step</div>'
@@ -10436,6 +10438,32 @@ function openQuoteReady_(q, contact) {
   `, null, { hideConfirm: true });
 }
 
+// Sending a quote moves the deal to its pipeline's "quoted" stage —
+// forward only, never backward (an Enrolled client stays Enrolled).
+const QUOTE_SENT_STAGE = {
+  'individual-family': 'Quoted',
+  'group-employer': 'Proposal',
+  'medicare': 'Plan Comparison',
+};
+
+async function advanceDealOnQuoteSent_(quoteId) {
+  try {
+    const { data: q } = await supabaseClient.from('quotes').select('deal_id').eq('id', quoteId).single();
+    if (!q || !q.deal_id) return;
+    const deal = deals.find(d => d.id === q.deal_id);
+    if (!deal) return;
+    const target = QUOTE_SENT_STAGE[deal.pipeline];
+    if (!target || deal.stage === target) return;
+    const stages = (PIPELINES[deal.pipeline] || {}).stages || [];
+    if (stages.indexOf(deal.stage) >= stages.indexOf(target)) return;
+    const { error } = await supabaseClient.from('deals').update({ stage: target }).eq('id', deal.id);
+    if (error) return;
+    deal.stage = target;
+    showToast((deal.title || 'Deal') + ' advanced to "' + target + '".');
+    try { renderPipelines(); } catch (e) {}
+  } catch (e) { console.error('advanceDealOnQuoteSent_:', e); }
+}
+
 async function sendQuote_(quoteId, btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   const { error } = await supabaseClient.from('quotes')
@@ -10444,6 +10472,7 @@ async function sendQuote_(quoteId, btn) {
   try { fetch(APPS_SCRIPT_URL + '?action=send_quote&quote_id=' + quoteId, { mode: 'no-cors' }); } catch (e) {}
   showToast('Quote email is on its way.');
   if (btn) btn.textContent = '\u2713 Sent';
+  advanceDealOnQuoteSent_(quoteId);
 }
 
 async function markQuoteSent_(quoteId, btn) {
@@ -10452,6 +10481,7 @@ async function markQuoteSent_(quoteId, btn) {
   if (error) { showToast('Error: ' + error.message); return; }
   showToast('Marked as sent.');
   if (btn) btn.textContent = '\u2713 Marked sent';
+  advanceDealOnQuoteSent_(quoteId);
 }
 
 // ============================================================
