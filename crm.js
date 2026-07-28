@@ -10472,7 +10472,6 @@ async function openQuoteBuilder(dealId) {
           <input type="number" id="qb-aca-income" placeholder="e.g. 48000" style="width:120px;" /></div>
         <div><label style="font-size:10px;margin:0 0 2px;">County</label>
           <select id="qb-aca-county" style="width:auto;"></select></div>
-        <button type="button" class="btn btn-primary btn-sm" onclick="qbAcaGetPlans_()">\u{1F5D6} Find plans &amp; subsidy</button>
       </div>
       <div id="qb-aca-members" style="margin-top:8px;"></div>
       <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="qbAcaAddMember_()">+ Add household member</button>
@@ -10485,9 +10484,8 @@ async function openQuoteBuilder(dealId) {
       </div>
       <div id="qb-aca-sep" style="font-size:12px;margin-top:8px;"></div>
       <div id="qb-aca-intake-note" style="display:none;font-size:12px;color:#b45309;margin-top:6px;"></div>
-      <div id="qb-aca-browser" style="display:none;margin-top:12px;"></div>
       <div style="margin-top:10px;border-top:0.5px dashed var(--border);padding-top:8px;">
-        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Optional: check their doctors &amp; medications against each plan</div>
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Their doctors &amp; medications (optional — plans get ✓/✗ coverage marks)</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center;">
           <span><input type="text" id="qb-aca-doc-q" placeholder="Doctor name" style="width:150px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Dr</button></span>
           <span><input type="text" id="qb-aca-med-q" placeholder="Medication" style="width:150px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Rx</button></span>
@@ -10495,7 +10493,11 @@ async function openQuoteBuilder(dealId) {
         <div id="qb-aca-matches" style="font-size:12px;margin-top:5px;"></div>
         <div id="qb-aca-chips" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;"></div>
       </div>
+      <div style="margin-top:12px;border-top:0.5px dashed var(--border);padding-top:10px;">
+        <button type="button" class="btn btn-primary" style="width:100%;" onclick="qbAcaGetPlans_()">\u{1F5D6} Find plans &amp; subsidy</button>
+      </div>
       <div id="qb-aca-result" style="font-size:12px;margin-top:8px;color:var(--text-muted);"></div>
+      <div id="qb-aca-browser" style="display:none;margin-top:12px;"></div>
     </div>
     <div id="qb-cms-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; Official CMS plan data</div>
