@@ -126,6 +126,7 @@
 <body>
 <div class="card" id="card">
   <div class="head ia" id="head">
+    <img id="brand-logo" src="" alt="" style="display:none;width:52px;height:52px;object-fit:contain;background:#fff;border-radius:12px;padding:5px;border:2px solid var(--gold);box-shadow:0 3px 10px rgba(0,0,0,.25);flex-shrink:0;" />
     <div>
       <div class="brand" id="brand-name">&nbsp;</div>
       <div class="tag" id="brand-tag">&nbsp;</div>
@@ -203,15 +204,18 @@ function agentFirst() { return (quote.agent_name || 'your agent').split(' ')[0];
 
 function setBrand(brand) {
   const head = document.getElementById('head');
+  const logo = document.getElementById('brand-logo');
   if (brand === 'ia') {
     head.className = 'head ia';
     document.getElementById('brand-name').textContent = 'THE INSURED AMERICA AGENCY';
     document.getElementById('brand-tag').innerHTML = '&ldquo;Protect &amp; Build Your Potential&rdquo; &nbsp;&middot;&nbsp; A Kannon Financial Group Brand';
+    logo.src = 'ia_logo_email.png'; logo.alt = 'The Insured America Agency'; logo.style.display = 'block';
   } else {
     head.className = 'head kfg';
     document.getElementById('card').classList.add('kfg-theme');
     document.getElementById('brand-name').textContent = 'KANNON FINANCIAL GROUP';
     document.getElementById('brand-tag').innerHTML = 'Protect &middot; Build &middot; Retire';
+    logo.src = 'kfg_logo_email.png'; logo.alt = 'Kannon Financial Group'; logo.style.display = 'block';
   }
 }
 
