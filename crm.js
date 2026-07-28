@@ -2638,6 +2638,8 @@ async function showIntakeForm(contactId, opts) {
   if (!c) { showToast('Contact not found'); return; }
   _intakeContactId = contactId;
   if (!opts.editMode) {
+    _intakeEditSessionId = null;   // fresh form: never resume a prior edit
+    _intakeEditResponses = {};
     _intakeFormType = _intakeTypeFromContact(c);
     _intakeChecked  = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
   }
@@ -5263,7 +5265,7 @@ function openDealPanel(dealId) {
   if (deal.contact_id && (!deal.pipeline || !deal.pipeline.startsWith('agent-'))) {
     healthHTML += '<div class="panel-section"><div class="panel-label">Intake</div>'
       + '<div id="deal-intake-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking intakes&hellip;</div>'
-      + '<button class="btn btn-outline btn-sm" onclick="showIntakeForm(\'' + deal.contact_id + '\')">&#129309; New Intake</button>'
+      + '<button class="btn btn-accent btn-sm" onclick="showIntakeForm(\'' + deal.contact_id + '\')">&#129309; New Intake</button>'
       + '</div>';
     setTimeout(function() { loadDealIntakeStatus_(deal); }, 55);
   }
@@ -5291,7 +5293,8 @@ function openDealPanel(dealId) {
     ? '<button class="btn btn-outline btn-sm" onclick="closeDealPanel();viewContact(&#39;' + contact.id + '&#39;,&#39;&#39;)">&#128100; Contact</button>'
     : '';
   var footerIntake = contact
-    ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="closeDealPanel();setTimeout(function(){dialerViewIntake(&#39;' + contact.id + '&#39;);},150)">&#128196; Intake</button>'
+    ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="closeDealPanel();setTimeout(function(){dialerViewIntake(&#39;' + contact.id + '&#39;);},150)">&#128196; View Intakes</button>'
+      + ' <button class="btn btn-accent btn-sm" onclick="closeDealPanel();setTimeout(function(){showIntakeForm(&#39;' + contact.id + '&#39;);},150)">&#129309; New Intake</button>'
     : '';
 
   document.getElementById('deal-panel').innerHTML =
@@ -6239,7 +6242,10 @@ async function deleteIntakeSession(sessionId, formType, status, contactId) {
   const { error } = await supabaseClient.from('intake_sessions').delete().eq('id', sessionId);
   if (error) { showToast('Could not delete: ' + error.message); return; }
   showToast('Intake deleted.');
-  loadIntakeHistoryPanel(contactId);
+  if (document.getElementById('intake-history-panel')) loadIntakeHistoryPanel(contactId);
+  deals.filter(d => d.contact_id === contactId).forEach(d => {
+    if (document.getElementById('deal-intake-status-' + d.id)) loadDealIntakeStatus_(d);
+  });
 }
 
 async function loadIntakeHistoryPanel(contactId) {
@@ -10260,8 +10266,9 @@ async function loadDealIntakeStatus_(deal) {
       : '<span style="color:#f59e0b;">pending</span>';
     const view = x.status === 'completed'
       ? ` &middot; <a href="#" onclick="viewIntakeSession('${x.id}'); return false;">view</a>` : '';
-    return `<div style="padding:2px 0;">${escWeb(lbl)} &middot; ${d} &middot; ${badge}${view}</div>`;
-  }).join('') + '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Full history &amp; delete: open the contact\u2019s Edit window.</div>';
+    const del = ` &middot; <a href="#" style="color:var(--danger);" title="Delete this intake" onclick="deleteIntakeSession('${x.id}','${x.form_type}','${x.status}','${deal.contact_id}'); return false;">&#128465;</a>`;
+    return `<div style="padding:2px 0;">${escWeb(lbl)} &middot; ${d} &middot; ${badge}${view}${del}</div>`;
+  }).join('');
 }
 
 async function loadQuotesStatus_(deal) {
