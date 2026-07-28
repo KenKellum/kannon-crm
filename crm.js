@@ -11683,43 +11683,182 @@ function qbAcaAddedSlot_(planId) {
 function qbAcaRenderBrowser_() {
   const box = document.getElementById('qb-aca-browser');
   if (!box) return;
-  let plans = (window._qbAcaPlans || []).slice();
+  const plans = window._qbAcaPlans || [];
   if (!plans.length) { box.style.display = 'none'; return; }
-  if (_qbAcaMetalFilter !== 'All') plans = plans.filter(p => p.metal === _qbAcaMetalFilter);
-  if (_qbAcaSort === 'net') plans.sort((a, b) => (a.net || 0) - (b.net || 0));
-  else if (_qbAcaSort === 'deductible') plans.sort((a, b) => (a.deductible ?? 9e9) - (b.deductible ?? 9e9));
-  else if (_qbAcaSort === 'rating') plans.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-
+  const added = [];
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const sel = document.getElementById('qb-aca-' + i);
+    if (sel && sel.value) { const p = plans.find(x => x.id === sel.value); if (p) added.push({ i, p }); }
+  }
   box.style.display = 'block';
-  box.innerHTML = qbAcaBrowserControls_() + `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;max-height:440px;overflow-y:auto;padding:2px;">
-      ${plans.map(p => {
-        const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
-        const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
-        const slot = qbAcaAddedSlot_(p.id);
-        return `<div style="border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:12px 12px 10px;background:var(--surface-1);display:flex;flex-direction:column;">
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
-            <span style="background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
-            ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
-            ${p.hsa ? '<span style="font-size:10px;color:#0d9488;border:1px solid #0d9488;border-radius:6px;padding:2px 6px;">HSA</span>' : ''}
-            ${p.rating ? `<span style="font-size:11px;color:#b3903a;margin-left:auto;">\u2b50 ${p.rating}</span>` : ''}
-          </div>
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.issuer || '')}</div>
-          <div style="font-size:13px;font-weight:600;line-height:1.35;margin:2px 0 8px;">${escWeb(p.name)}</div>
-          <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}<span style="font-size:11px;font-weight:500;color:var(--text-muted);"> /mo to client</span></div>
-          ${credit ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Full $${Number(p.premium).toFixed(2)} \u2212 <span style="color:var(--success);font-weight:600;">$${credit.toFixed(2)} credit</span></div>` : ''}
-          <div style="display:flex;gap:10px;font-size:11px;color:var(--text-secondary);margin:8px 0 6px;flex-wrap:wrap;">
-            ${p.deductible != null ? `<span>Deductible <strong>$${Number(p.deductible).toLocaleString()}</strong></span>` : ''}
-            ${p.moop != null ? `<span>Max OOP <strong>$${Number(p.moop).toLocaleString()}</strong></span>` : ''}
-          </div>
-          ${qbAcaCovLines_(p)}
-          <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:auto;width:100%;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
-            onclick="qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 On the quote (Option ' + (slot + 1) + ') \u2014 remove' : '\uff0b Add to quote'}</button>
-        </div>`;
-      }).join('')}
-    </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">${plans.length} plan${plans.length === 1 ? '' : 's'} shown \u00b7 pick up to ${QB_MAX_OPTIONS} \u00b7 they land in the option slots below, ready to send.</div>`;
+  box.innerHTML = `
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button type="button" class="btn btn-primary" onclick="openAcaPicker_()">\u{1F5D6} Open Plan Picker \u2014 browse all ${plans.length} plans</button>
+      <span style="font-size:12px;color:var(--text-muted);">${added.length ? added.length + ' on the quote: ' + added.map(a => escWeb(a.p.name.slice(0, 26))).join(' \u00b7 ') : 'None picked yet.'}</span>
+    </div>`;
+  if (document.getElementById('qb-aca-picker')) renderPickerBody_();
 }
+
+const _qbPk = { carriers: new Set(), metals: new Set(), types: new Set(), hsa: false, docsAll: false, medsAll: false, maxNet: null, sort: 'net' };
+
+function openAcaPicker_() {
+  _qbPk.carriers.clear(); _qbPk.metals.clear(); _qbPk.types.clear();
+  _qbPk.hsa = false; _qbPk.docsAll = false; _qbPk.medsAll = false; _qbPk.maxNet = null; _qbPk.sort = 'net';
+  let ov = document.getElementById('qb-aca-picker');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'qb-aca-picker';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:var(--bg-main,#f1f5f9);display:flex;flex-direction:column;';
+    document.body.appendChild(ov);
+  }
+  ov.style.display = 'flex';
+  renderPickerBody_();
+}
+
+function closeAcaPicker_() {
+  const ov = document.getElementById('qb-aca-picker');
+  if (ov) ov.remove();
+  qbAcaRenderBrowser_();
+}
+
+function pkToggle_(set, val) { if (_qbPk[set].has(val)) _qbPk[set].delete(val); else _qbPk[set].add(val); renderPickerBody_(); }
+
+function pkCovAll_(p, kind) {
+  const chips = kind === 'doc' ? (window._qbAcaDocs || []) : (window._qbAcaMeds || []);
+  const cov = kind === 'doc' ? p._docCov : p._medCov;
+  if (!chips.length || !cov) return false;
+  return chips.every(c => cov[kind === 'doc' ? c.npi : c.rxcui]);
+}
+
+function pkFiltered_() {
+  let plans = (window._qbAcaPlans || []).slice();
+  if (_qbPk.carriers.size) plans = plans.filter(p => _qbPk.carriers.has(p.issuer || ''));
+  if (_qbPk.metals.size) plans = plans.filter(p => _qbPk.metals.has(p.metal || ''));
+  if (_qbPk.types.size) plans = plans.filter(p => _qbPk.types.has(p.type || ''));
+  if (_qbPk.hsa) plans = plans.filter(p => p.hsa);
+  if (_qbPk.docsAll) plans = plans.filter(p => pkCovAll_(p, 'doc'));
+  if (_qbPk.medsAll) plans = plans.filter(p => pkCovAll_(p, 'med'));
+  if (_qbPk.maxNet != null) plans = plans.filter(p => (p.net || 0) <= _qbPk.maxNet);
+  if (_qbPk.sort === 'net') plans.sort((a, b) => (a.net || 0) - (b.net || 0));
+  else if (_qbPk.sort === 'premium') plans.sort((a, b) => (a.premium || 0) - (b.premium || 0));
+  else if (_qbPk.sort === 'deductible') plans.sort((a, b) => (a.deductible ?? 9e9) - (b.deductible ?? 9e9));
+  else if (_qbPk.sort === 'moop') plans.sort((a, b) => (a.moop ?? 9e9) - (b.moop ?? 9e9));
+  else if (_qbPk.sort === 'rating') plans.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  return plans;
+}
+
+function pkFacet_(title, set, values) {
+  const all = window._qbAcaPlans || [];
+  return `<div style="margin-bottom:14px;">
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">${title}</div>
+    ${values.map(v => {
+      const n = all.filter(p => (set === 'carriers' ? p.issuer : set === 'metals' ? p.metal : p.type) === v).length;
+      return `<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer;">
+        <input type="checkbox" ${_qbPk[set].has(v) ? 'checked' : ''} onchange="pkToggle_('${set}','${escWeb(v)}')" style="width:14px;height:14px;" />
+        <span style="flex:1;">${escWeb(v)}</span><span style="color:var(--text-muted);font-size:11px;">${n}</span>
+      </label>`;
+    }).join('')}
+  </div>`;
+}
+
+function renderPickerBody_() {
+  const ov = document.getElementById('qb-aca-picker');
+  if (!ov) return;
+  const all = window._qbAcaPlans || [];
+  const plans = pkFiltered_();
+  const c = window._qbContact || {};
+  const carriers = [...new Set(all.map(p => p.issuer).filter(Boolean))].sort();
+  const metals = [...new Set(all.map(p => p.metal).filter(Boolean))];
+  const types = [...new Set(all.map(p => p.type).filter(Boolean))].sort();
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  const added = [];
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const sel = document.getElementById('qb-aca-' + i);
+    if (sel && sel.value) { const p = all.find(x => x.id === sel.value); if (p) added.push({ i, p }); }
+  }
+
+  ov.innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;background:var(--surface-1);border-bottom:1px solid var(--border);">
+      <div style="font-size:17px;font-weight:800;">\u{1F5D6} Plan Picker</div>
+      <div style="font-size:13px;color:var(--text-muted);">${escWeb(c.name || '')} \u00b7 ${plans.length} of ${all.length} plans</div>
+      <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Done \u2014 back to quote</button>
+    </div>
+    <div style="flex:1;display:flex;min-height:0;">
+      <div style="width:230px;flex-shrink:0;overflow-y:auto;padding:16px;border-right:1px solid var(--border);background:var(--surface-1);">
+        ${pkFacet_('Insurance company', 'carriers', carriers)}
+        ${pkFacet_('Plan level', 'metals', metals)}
+        ${pkFacet_('Network type', 'types', types)}
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">More</div>
+          <label style="display:flex;gap:7px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer;">
+            <input type="checkbox" ${_qbPk.hsa ? 'checked' : ''} onchange="_qbPk.hsa=this.checked;renderPickerBody_()" style="width:14px;height:14px;" /> HSA-eligible only</label>
+          ${docs.length ? `<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer;">
+            <input type="checkbox" ${_qbPk.docsAll ? 'checked' : ''} onchange="_qbPk.docsAll=this.checked;renderPickerBody_()" style="width:14px;height:14px;" /> Covers ALL their doctors</label>` : ''}
+          ${meds.length ? `<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer;">
+            <input type="checkbox" ${_qbPk.medsAll ? 'checked' : ''} onchange="_qbPk.medsAll=this.checked;renderPickerBody_()" style="width:14px;height:14px;" /> Covers ALL their medications</label>` : ''}
+          <div style="font-size:12.5px;margin-top:6px;">Client cost under
+            $<input type="number" value="${_qbPk.maxNet != null ? _qbPk.maxNet : ''}" style="width:70px;font-size:12px;"
+              onchange="_qbPk.maxNet=this.value===''?null:parseFloat(this.value);renderPickerBody_()" />/mo</div>
+        </div>
+        <button class="btn btn-outline btn-sm" style="width:100%;" onclick="openAcaPicker_()">Reset filters</button>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border);font-size:12.5px;">
+          Sort by
+          <select onchange="_qbPk.sort=this.value;renderPickerBody_()" style="width:auto;font-size:12.5px;">
+            <option value="net"${_qbPk.sort === 'net' ? ' selected' : ''}>Lowest cost to client</option>
+            <option value="premium"${_qbPk.sort === 'premium' ? ' selected' : ''}>Lowest full premium</option>
+            <option value="deductible"${_qbPk.sort === 'deductible' ? ' selected' : ''}>Lowest deductible</option>
+            <option value="moop"${_qbPk.sort === 'moop' ? ' selected' : ''}>Lowest max out-of-pocket</option>
+            <option value="rating"${_qbPk.sort === 'rating' ? ' selected' : ''}>Highest star rating</option>
+          </select>
+          <span style="color:var(--text-muted);margin-left:auto;">${added.length}/${QB_MAX_OPTIONS} on the quote</span>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:14px 20px;display:flex;flex-direction:column;gap:10px;">
+          ${plans.length ? plans.map(p => pkCard_(p)).join('') : '<div style="color:var(--text-muted);padding:30px;text-align:center;">No plans match these filters \u2014 loosen something.</div>'}
+        </div>
+        <div style="padding:10px 20px;border-top:1px solid var(--border);background:var(--surface-1);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">ON THE QUOTE:</span>
+          ${added.length ? added.map(a => `<span style="display:inline-flex;gap:6px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;">
+            <strong>${a.i + 1}.</strong> ${escWeb(a.p.name.slice(0, 30))} \u00b7 $${Number(a.p.net).toFixed(0)}/mo
+            <button onclick="qbAcaAddPlan_('${escWeb(a.p.id)}')" style="background:none;border:none;color:var(--danger);cursor:pointer;">\u2715</button></span>`).join('')
+          : '<span style="font-size:12px;color:var(--text-muted);">nothing yet \u2014 click \u201cAdd\u201d on the plans that fit.</span>'}
+          <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Done</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function pkCard_(p) {
+  const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
+  const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
+  const slot = qbAcaAddedSlot_(p.id);
+  return `<div style="display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);">
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <span style="background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
+        ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+        ${p.hsa ? '<span style="font-size:10px;color:#0d9488;border:1px solid #0d9488;border-radius:6px;padding:2px 6px;">HSA</span>' : ''}
+        ${p.rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${p.rating}</span>` : ''}
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
+      </div>
+      <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${escWeb(p.name)}</div>
+      <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;">
+        ${p.deductible != null ? `<span>Deductible <strong>$${Number(p.deductible).toLocaleString()}</strong></span>` : ''}
+        ${p.moop != null ? `<span>Max out-of-pocket <strong>$${Number(p.moop).toLocaleString()}</strong></span>` : ''}
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">${qbAcaCovLines_(p)}</div>
+    </div>
+    <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;border-left:1px solid var(--border);padding-left:16px;">
+      <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}</div>
+      <div style="font-size:10.5px;color:var(--text-muted);">/mo to client</div>
+      ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);text-align:right;">full $${Number(p.premium).toFixed(0)} \u2212 <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
+      <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:4px;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
+        onclick="qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
+    </div>
+  </div>`;
+}
+
 
 function qbAcaAddPlan_(planId) {
   const existing = qbAcaAddedSlot_(planId);
@@ -11733,6 +11872,7 @@ function qbAcaAddPlan_(planId) {
     });
     const rec = document.getElementById('qb-rec-' + existing); if (rec) rec.checked = false;
     qbAcaRenderBrowser_();
+    if (document.getElementById('qb-aca-picker')) renderPickerBody_();
     return;
   }
   let slot = -1;
@@ -11747,6 +11887,7 @@ function qbAcaAddPlan_(planId) {
   if (sel) { sel.value = planId; qbApplyAcaPlan_(slot); }
   showToast('Added as Option ' + (slot + 1) + '.');
   qbAcaRenderBrowser_();
+  if (document.getElementById('qb-aca-picker')) renderPickerBody_();
 }
 
 async function qbAcaGetPlans_() {
