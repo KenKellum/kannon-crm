@@ -307,7 +307,12 @@ function hhRead_() {
 function hhAdd_() { _hh.push({ relationship: 'Child', age: '', gender: '', tobacco: false, covered: true }); hhPaint_(); }
 
 // ---- Conditional questions: only ask what applies ----
-function _fv(id) { const el = document.getElementById('f_' + id); return el ? el.value : ''; }
+function _fv(id) {
+  const el = document.getElementById('f_' + id);
+  if (el) return el.value;
+  const r = document.querySelector('input[name="' + id + '"]:checked'); // radio groups
+  return r ? r.value : '';
+}
 function _sepNeeded_() {
   const now = new Date(), y = now.getFullYear();
   const inOEP = (now >= new Date(y, 10, 1)) || (now <= new Date(y, 0, 15, 23, 59, 59));
