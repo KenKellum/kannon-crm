@@ -11043,7 +11043,8 @@ async function qbAcaSearch_(kind) {
           : (o.name || o.provider_name || '');
         return { key: o.npi || o.id, name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (o.city ? ' \u00b7 ' + o.city : '') , cleanName: nm };
       }
-      return { key: o.rxcui || o.id, name: o.name || o.full_name || '', cleanName: o.name || o.full_name || '' };
+      const medNm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
+      return { key: o.rxcui || o.id, name: medNm + (o.route ? ' · ' + o.route : ''), cleanName: medNm };
     }).filter(x => x.key && x.name);
     if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
     out.innerHTML = items.slice(0, 6).map((x, i) =>
