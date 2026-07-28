@@ -8367,7 +8367,9 @@ async function loadNeedsAttention() {
       .limit(10);
 
     // 3. ALL pending/rescheduled bookings — fetched here so the dashboard never
-    // depends on the Appointments page having loaded calAppointments first
+    // depends on the Appointments page having loaded calAppointments first.
+    // Merged INTO calAppointments (one shared list) so schedule/cancel actions
+    // keep working against the same rows the cards were built from.
     const { data: pend } = await supabaseClient
       .from('booking_intents')
       .select('*')
@@ -8375,7 +8377,15 @@ async function loadNeedsAttention() {
       .or('status.is.null,status.eq.pending,status.eq.rescheduled')
       .order('created_at', { ascending: false })
       .limit(30);
-    window._naPendingBookings = pend || [];
+    const freshIds = {};
+    (pend || []).forEach(p => freshIds[p.id] = true);
+    // drop stale pending rows that resolved elsewhere, then upsert the fresh ones
+    calAppointments = (calAppointments || []).filter(a =>
+      !((!a.status || a.status === 'pending' || a.status === 'rescheduled') && !freshIds[a.id]));
+    (pend || []).forEach(p => {
+      const i = calAppointments.findIndex(a => a.id === p.id);
+      if (i >= 0) Object.assign(calAppointments[i], p); else calAppointments.push(p);
+    });
 
     naItems = [
       ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, censusId: (a.metadata && a.metadata.census_id) || null, dealId: (a.metadata && a.metadata.deal_id) || null, quoteId: (a.metadata && a.metadata.quote_id) || null, createdAt: a.created_at })),
@@ -8648,7 +8658,7 @@ async function naReengage(activityId, contactId) {
 function _buildNeedsAttentionHTML(appointmentsOnly) {
   // Combine: pending booking_intents (from calAppointments) + naItems
   // When appointmentsOnly=true (Appointments page), skip naItems — only show pending/rescheduled bookings
-  const pending = (window._naPendingBookings || calAppointments || []).filter(a => !a.status || a.status === 'pending' || a.status === 'rescheduled');
+  const pending = (calAppointments || []).filter(a => !a.status || a.status === 'pending' || a.status === 'rescheduled');
   const activeNaItems = appointmentsOnly ? [] : naItems;
   const total = pending.length + activeNaItems.length;
   if (total === 0) return '';
@@ -9380,6 +9390,7 @@ function apptDetail(id) {
     }
     const idx = calAppointments.findIndex(x=>x.id===id);
     if (idx >= 0) Object.assign(calAppointments[idx], updates);
+    _refreshNeedsAttentionUI();
     calDate = new Date(scheduled_at);
     _calRenderView();
   }, 'Save Changes');
@@ -9472,6 +9483,7 @@ async function apptSchedule(id) {
     showToast(isPropose ? '📧 Reschedule proposal sent!' : '📋 Appointment confirmed!');
     const idx = calAppointments.findIndex(a => a.id === id);
     if (idx >= 0) Object.assign(calAppointments[idx], updates);
+    _refreshNeedsAttentionUI();
     await _sendCohostInvites(id, inv, {contactName: name, appointmentType: appt&&appt.appointment_label||appt&&appt.appointment_type||'', dateIso: parsed.toISOString(), notes: notes||''});
     calDate = parsed;
     _calRenderView();
@@ -9485,6 +9497,7 @@ async function apptComplete(id) {
   showToast('✓ Complete!');
   const idx = calAppointments.findIndex(a=>a.id===id);
   if (idx>=0) { calAppointments[idx].status='completed'; calAppointments[idx].agent_notes=notes; }
+  _refreshNeedsAttentionUI();
   _calRenderView();
 }
 
@@ -9549,6 +9562,7 @@ async function apptReschedule(id) {
         calAppointments[idx].rescheduled_by='agent';
         calAppointments[idx].agent_notes=notesVal;
         if (dtVal) calAppointments[idx].scheduled_at=new Date(dtVal).toISOString();
+        _refreshNeedsAttentionUI();
       }
       _calRenderView();
     },
@@ -9569,6 +9583,7 @@ async function apptCancel(id) {
     showToast('Request dismissed');
     const idx = calAppointments.findIndex(a=>a.id===id);
     if (idx>=0) calAppointments.splice(idx, 1);
+    _refreshNeedsAttentionUI();
     _calRenderView();
   });
 }
