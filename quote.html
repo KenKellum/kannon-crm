@@ -50,6 +50,26 @@
   .opt .plan { font-size: 16px; font-weight: 700; letter-spacing: -.2px; margin: 4px 0 12px; color: var(--ink); line-height: 1.35; }
   .opt .prem { font-size: 34px; font-weight: 800; letter-spacing: -1px; color: var(--brand); line-height: 1; }
   .opt .prem small { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+  .subline { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .subline b { color: #15803d; font-weight: 700; }
+  .pm-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 0; }
+  .pm-chip { font-size: 10px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+             border-radius: 6px; padding: 2px 8px; background: #f1f5f9; color: #475569; }
+  .pm-chip.m-Bronze { background: #f6e3d0; color: #b06a2a; }
+  .pm-chip.m-Silver { background: #e8eaee; color: #6b7280; }
+  .pm-chip.m-Gold { background: #f7ecc9; color: #a8862c; }
+  .pm-chip.m-Platinum { background: #e2e6ea; color: #4b5563; }
+  .pm-chip.m-Catastrophic { background: #e4e9ef; color: #64748b; }
+  .pm-chip.hsa { background: #d9f2ef; color: #0d9488; }
+  .pm-facts { margin: 10px 0 0; border-top: 1px dashed #e2e8f0; padding-top: 9px; display: grid; gap: 5px; }
+  .pm-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: #334155; }
+  .pm-row .lbl { color: var(--muted); }
+  .pm-row .val { text-align: right; font-weight: 700; }
+  .pm-row .val small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
+  .doc-links { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+  .doc-links a { font-size: 11px; font-weight: 600; text-decoration: none; border: 1px solid #e2e8f0;
+                 border-radius: 999px; padding: 4px 10px; color: var(--brand); transition: border-color .15s ease; }
+  .doc-links a:hover { border-color: var(--brand); }
   .opt ul { list-style: none; margin: 14px 0 14px; flex: 1; }
   .opt li { font-size: 12.5px; line-height: 1.55; color: #334155; padding: 3px 0 3px 20px; position: relative; }
   .opt li::before { content: "\2713"; position: absolute; left: 0; color: #16a34a; font-weight: 800; }
@@ -187,14 +207,46 @@ function setBrand(brand) {
 }
 
 function optCardHtml(o, inCompare) {
-  const bullets = (o.benefit_bullets || []).map(b => '<li>' + esc(b) + '</li>').join('');
+  const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
+  let bl = o.benefit_bullets || [];
+  if (pm) bl = bl.filter(b =>
+    !/^(Deductible: |Yearly max out-of-pocket: |Full price \$|HSA-eligible$|(Bronze|Silver|Gold|Platinum|Catastrophic) plan)/.test(b));
+  const bullets = bl.map(b => '<li>' + esc(b) + '</li>').join('');
+  const money = v => '$' + Number(v).toLocaleString();
+  let pmHtml = '', creditHtml = '', chipsHtml = '';
+  if (pm) {
+    const credit = (pm.full_premium != null && pm.net_premium != null && pm.full_premium > pm.net_premium)
+      ? pm.full_premium - pm.net_premium : 0;
+    if (credit) creditHtml = `<div class="subline">Full price $${Number(pm.full_premium).toFixed(2)}/mo — <b>your tax credit covers $${credit.toFixed(2)}</b></div>`;
+    chipsHtml = `<div class="pm-chips">
+      ${pm.metal ? `<span class="pm-chip m-${esc(pm.metal)}">${esc(pm.metal)}</span>` : ''}
+      ${pm.plan_type ? `<span class="pm-chip">${esc(pm.plan_type)}</span>` : ''}
+      ${pm.hsa ? '<span class="pm-chip hsa">HSA-eligible</span>' : ''}
+      ${pm.rating ? `<span class="pm-chip">&#11088; ${esc(String(pm.rating))} / 5</span>` : ''}
+    </div>`;
+    const fam = pm.family_quote;
+    const factRow = (lbl, ind, famVal) => ind == null ? '' :
+      `<div class="pm-row"><span class="lbl">${lbl}</span><span class="val">${money(ind)}${fam && famVal != null ? ' <small>per person</small>' : ''}${fam && famVal != null ? `<small>${money(famVal)} family</small>` : ''}</span></div>`;
+    const facts = factRow('Deductible', pm.deductible, pm.deductible_family)
+      + factRow('Max out-of-pocket', pm.moop, pm.moop_family);
+    if (facts) pmHtml = `<div class="pm-facts">${facts}</div>`;
+  }
+  const L = pm && pm.links ? pm.links : null;
+  const linksHtml = L && (L.sbc || L.brochure || L.formulary || L.network) ? `<div class="doc-links">
+    ${L.sbc ? `<a href="${esc(L.sbc)}" target="_blank" rel="noopener">&#128196; Benefits summary (SBC)</a>` : ''}
+    ${L.brochure ? `<a href="${esc(L.brochure)}" target="_blank" rel="noopener">&#128216; Plan brochure</a>` : ''}
+    ${L.formulary ? `<a href="${esc(L.formulary)}" target="_blank" rel="noopener">&#128138; Drug list</a>` : ''}
+    ${L.network ? `<a href="${esc(L.network)}" target="_blank" rel="noopener">&#129658; Find a doctor</a>` : ''}
+  </div>` : '';
   return `
     ${o.is_recommended ? '<div class="rec-badge">&#11088; AGENT’S RECOMMENDATION</div>' : ''}
     ${!inCompare && allOpts.length > 1 ? `<label class="cmp-toggle"><input type="checkbox" ${compareSet.has(o.id) ? 'checked' : ''} onchange="toggleCompare('${o.id}', this)"/> Compare</label>` : ''}
     <div class="carrier">${esc(o.carrier_name)}</div>
     <div class="plan">${esc(o.display_name)}</div>
     <div class="prem">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<small> /month</small></div>
+    ${creditHtml}${chipsHtml}${pmHtml}
     <ul>${bullets}</ul>
+    ${linksHtml}
     ${o.agent_note ? '<div class="note">' + esc(o.agent_note) + '</div>' : ''}
     <button class="pick ${discussSet.has(o.id) ? 'on' : ''}" onclick="toggleDiscuss('${o.id}', this)">
       ${discussSet.has(o.id) ? '✓ On my discuss list' : '💬 I’d like to discuss this one'}

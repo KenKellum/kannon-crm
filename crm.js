@@ -10557,16 +10557,40 @@ async function openQuoteBuilder(dealId) {
           bullets = (prod && (prod.metadata || {}).bullets) || [];
         }
       }
+      let planMeta = null;
+      if (acaSel) {
+        planMeta = {
+          src: 'aca', plan_id: acaSel.id, year: window._qbAcaYear || null,
+          metal: acaSel.metal || null, plan_type: acaSel.type || null,
+          full_premium: acaSel.premium, net_premium: acaSel.net,
+          deductible: acaSel.deductible, deductible_family: acaSel.deductible_family,
+          moop: acaSel.moop, moop_family: acaSel.moop_family,
+          hsa: !!acaSel.hsa, rating: acaSel.rating || null,
+          family_quote: !!window._qbAcaFamilyQuote, links: null,
+        };
+      }
       options.push({
         carrier_id: carId, product_id: prodId,
         carrier_name: car ? car.name : (cmsSel ? (cmsSel.org_name || 'Medicare Plan') : (acaSel.issuer || 'Marketplace Plan')),
         display_name: name, monthly_premium: prem, benefit_bullets: bullets,
         agent_note: document.getElementById('qb-note-' + i).value.trim() || null,
         is_recommended: document.getElementById('qb-rec-' + i).checked,
-        sort_order: i,
+        sort_order: i, plan_meta: planMeta,
       });
     }
     if (!options.length) { showToast('Add at least one option.'); return false; }
+    // Snapshot the official document links for ACA options (best-effort — quote still saves without them)
+    for (const o of options) {
+      if (o.plan_meta && o.plan_meta.src === 'aca' && !o.plan_meta.links) {
+        try {
+          const d = await qbAcaDetail_(o.plan_meta.plan_id);
+          o.plan_meta.links = {
+            sbc: d.benefits_url || null, brochure: d.brochure_url || null,
+            formulary: d.formulary_url || null, network: d.network_url || null,
+          };
+        } catch (e) {}
+      }
+    }
     // Remember rating inputs on the contact (silent, best-effort)
     try {
       const rg = document.getElementById('qb-rt-gender');
@@ -11710,10 +11734,10 @@ function qbAcaRenderBrowser_() {
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
 }
 
-const _qbPk = { carriers: new Set(), metals: new Set(), types: new Set(), hsa: false, docsAll: false, medsAll: false, maxNet: null, sort: 'net' };
+const _qbPk = { carriers: new Set(), metals: new Set(), types: new Set(), hsa: false, docsAll: false, medsAll: false, maxNet: null, sort: 'net', cmp: new Set() };
 
 function openAcaPicker_() {
-  _qbPk.carriers.clear(); _qbPk.metals.clear(); _qbPk.types.clear();
+  _qbPk.carriers.clear(); _qbPk.metals.clear(); _qbPk.types.clear(); _qbPk.cmp.clear();
   _qbPk.hsa = false; _qbPk.docsAll = false; _qbPk.medsAll = false; _qbPk.maxNet = null; _qbPk.sort = 'net';
   let ov = document.getElementById('qb-aca-picker');
   if (!ov) {
@@ -11731,6 +11755,8 @@ function closeAcaPicker_() {
   if (ov) ov.remove();
   const dr = document.getElementById('qb-plan-detail');
   if (dr) dr.remove();
+  const cm = document.getElementById('qb-aca-compare');
+  if (cm) cm.remove();
   qbAcaRenderBrowser_();
 }
 
@@ -11825,6 +11851,7 @@ function renderPickerBody_() {
             <option value="moop"${_qbPk.sort === 'moop' ? ' selected' : ''}>Lowest max out-of-pocket</option>
             <option value="rating"${_qbPk.sort === 'rating' ? ' selected' : ''}>Highest star rating</option>
           </select>
+          ${_qbPk.cmp.size ? `<button class="btn ${_qbPk.cmp.size >= 2 ? 'btn-primary' : 'btn-outline'} btn-sm" ${_qbPk.cmp.size >= 2 ? '' : 'disabled'} onclick="openAcaCompare_()">⚖️ Compare (${_qbPk.cmp.size})</button>` : ''}
           <span style="color:var(--text-muted);margin-left:auto;">${added.length}/${QB_MAX_OPTIONS} on the quote</span>
         </div>
         <div style="flex:1;overflow-y:auto;padding:14px 20px;display:flex;flex-direction:column;gap:10px;">
@@ -11839,6 +11866,134 @@ function renderPickerBody_() {
           <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Done</button>
         </div>
       </div>
+    </div>`;
+}
+
+function pkCmpToggle_(id, cb) {
+  if (cb.checked) {
+    if (_qbPk.cmp.size >= 5) { cb.checked = false; showToast('Compare up to 5 plans at a time.'); return; }
+    _qbPk.cmp.add(id);
+  } else _qbPk.cmp.delete(id);
+  renderPickerBody_();
+}
+
+async function qbAcaDetail_(planId) {
+  window._qbAcaDetailCache = window._qbAcaDetailCache || {};
+  if (window._qbAcaDetailCache[planId]) return window._qbAcaDetailCache[planId];
+  const resp = await acaProxy_('aca_plan_detail', { id: planId, year: window._qbAcaYear || new Date().getFullYear() });
+  if (resp.status !== 'ok') throw new Error(resp.message || 'detail fetch failed');
+  const d = (resp.data && (resp.data.plan || resp.data)) || {};
+  window._qbAcaDetailCache[planId] = d;
+  return d;
+}
+
+function acaCsText_(b) {
+  const cs = (b.cost_sharings || [])[0] || {};
+  if (cs.display_string) return cs.display_string;
+  const bits = [];
+  if (cs.copay_amount != null && cs.copay_amount > 0) bits.push('$' + cs.copay_amount + ' copay');
+  if (cs.coinsurance_rate != null && cs.coinsurance_rate > 0) bits.push(Math.round(cs.coinsurance_rate * 100) + '% coinsurance');
+  if (cs.copay_amount === 0 && !cs.coinsurance_rate) bits.push('No charge');
+  return bits.join(' + ') || '';
+}
+
+function closeAcaCompare_() {
+  const el = document.getElementById('qb-aca-compare');
+  if (el) el.remove();
+  if (document.getElementById('qb-aca-picker')) renderPickerBody_();
+}
+
+async function openAcaCompare_() {
+  const plans = [..._qbPk.cmp].map(id => (window._qbAcaPlans || []).find(p => p.id === id)).filter(Boolean);
+  if (plans.length < 2) { showToast('Tick ⚖️ Compare on at least 2 plans first.'); return; }
+  let ov = document.getElementById('qb-aca-compare');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'qb-aca-compare';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--bg-main,#f1f5f9);display:flex;flex-direction:column;';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted);">Pulling the official records for ${plans.length} plans…</div>`;
+  const details = {};
+  await Promise.all(plans.map(async p => { try { details[p.id] = await qbAcaDetail_(p.id); } catch (e) { details[p.id] = null; } }));
+  window._qbCmpPlans = plans; window._qbCmpDetails = details;
+  renderAcaCompare_();
+}
+
+function renderAcaCompare_() {
+  const ov = document.getElementById('qb-aca-compare');
+  const plans = window._qbCmpPlans || [], details = window._qbCmpDetails || {};
+  if (!ov || !plans.length) return;
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  const famQ = !!window._qbAcaFamilyQuote;
+  const LBL = { benefits_url: '\u{1F4C4} SBC', brochure_url: '\u{1F4D8} Brochure', formulary_url: '\u{1F48A} Drug list', network_url: '\u{1FA7A} Directory' };
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '—';
+  const thL = 'position:sticky;left:0;background:var(--surface-1);z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:7px 12px;border-bottom:0.5px solid var(--border);min-width:170px;max-width:190px;';
+  const td = 'padding:7px 12px;border-bottom:0.5px solid var(--border);font-size:12.5px;vertical-align:top;min-width:190px;';
+  const row = (label, cellFn) => `<tr><th style="${thL}">${label}</th>${plans.map(p => `<td style="${td}">${cellFn(p)}</td>`).join('')}</tr>`;
+
+  // union of benefit names, in first-plan order then extras
+  const benefitNames = [];
+  plans.forEach(p => ((details[p.id] || {}).benefits || []).forEach(b => { if (b.name && !benefitNames.includes(b.name)) benefitNames.push(b.name); }));
+  const benefitOf = (p, name) => (((details[p.id] || {}).benefits) || []).find(b => b.name === name);
+
+  ov.innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;background:var(--surface-1);border-bottom:1px solid var(--border);">
+      <div style="font-size:17px;font-weight:800;">⚖️ Side-by-side — ${plans.length} plans</div>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="closeAcaCompare_()">← Back to all plans</button>
+      <button class="btn btn-primary btn-sm" onclick="closeAcaCompare_();closeAcaPicker_()">✓ Done — back to quote</button>
+    </div>
+    <div style="flex:1;overflow:auto;">
+      <table style="border-collapse:collapse;min-width:100%;">
+        <thead><tr>
+          <th style="${thL}border-bottom:1px solid var(--border);"></th>
+          ${plans.map(p => {
+            const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
+            const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
+            const slot = qbAcaAddedSlot_(p.id);
+            return `<td style="${td}border-bottom:1px solid var(--border);background:var(--surface-1);">
+              <span style="background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
+              ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:5px;">${escWeb(p.issuer || '')}</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0 6px;">${escWeb(p.name)}</div>
+              <div style="font-size:21px;font-weight:800;color:var(--accent,#1d3557);">$${Number(p.net).toFixed(2)}<span style="font-size:10px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
+              ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);">full $${Number(p.premium).toFixed(0)} − <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
+              <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:6px;width:100%;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
+                onclick="qbAcaAddPlan_('${escWeb(p.id)}');renderAcaCompare_()">${slot >= 0 ? '✓ Option ' + (slot + 1) + ' — remove' : '＋ Add to quote'}</button>
+            </td>`;
+          }).join('')}
+        </tr></thead>
+        <tbody>
+          ${row('Deductible' + (famQ ? ' (per person)' : ''), p => `<strong>${money(p.deductible)}</strong>`)}
+          ${famQ ? row('Deductible (family)', p => money(p.deductible_family)) : ''}
+          ${row('Max out-of-pocket' + (famQ ? ' (per person)' : ''), p => `<strong>${money(p.moop)}</strong>`)}
+          ${famQ ? row('Max out-of-pocket (family)', p => money(p.moop_family)) : ''}
+          ${row('HSA-eligible', p => p.hsa ? '<span style="color:#0d9488;font-weight:700;">✓ Yes</span>' : '—')}
+          ${row('Star rating', p => p.rating ? '⭐ ' + p.rating + ' of 5' : '—')}
+          ${docs.map(d => row('\u{1FA7A} ' + escWeb(d.name.split(' · ')[0]), p => {
+            const known = p._docCov && d.npi in p._docCov;
+            return known ? (p._docCov[d.npi] ? '<span style="color:var(--success);font-weight:700;">✓ In network</span>' : '<span style="color:var(--danger);">✗ Not found</span>') : '<span style="color:var(--text-muted);">?</span>';
+          })).join('')}
+          ${meds.map(m => row('\u{1F48A} ' + escWeb(m.name), p => {
+            const known = p._medCov && m.rxcui in p._medCov;
+            return known ? (p._medCov[m.rxcui] ? '<span style="color:var(--success);font-weight:700;">✓ Covered</span>' : '<span style="color:var(--danger);">✗ Not covered</span>') : '<span style="color:var(--text-muted);">?</span>';
+          })).join('')}
+          ${row('Official documents', p => {
+            const d = details[p.id];
+            if (!d) return '<span style="color:var(--text-muted);">unavailable</span>';
+            const links = Object.keys(LBL).filter(k => d[k]).map(k =>
+              `<a href="${escWeb(d[k])}" target="_blank" rel="noopener" style="font-size:11px;display:inline-block;border:1px solid var(--border);border-radius:999px;padding:2px 8px;text-decoration:none;margin:1px 2px 1px 0;">${LBL[k]} ↗</a>`).join('');
+            return links || '<span style="color:var(--text-muted);">none published</span>';
+          })}
+          ${benefitNames.map(name => row(escWeb(name), p => {
+            const b = benefitOf(p, name);
+            if (!b) return '<span style="color:var(--text-muted);">—</span>';
+            return b.covered
+              ? '<span style="color:var(--success);font-weight:700;">✓</span> <span style="color:var(--text-secondary);font-size:12px;">' + escWeb(acaCsText_(b)) + '</span>'
+              : '<span style="color:var(--danger);">✗ Not covered</span>';
+          })).join('')}
+        </tbody>
+      </table>
     </div>`;
 }
 
@@ -11858,9 +12013,7 @@ async function openPlanDetail_(planId) {
     </div>
     <div style="padding:24px;color:var(--text-muted);font-size:13px;">Loading the official plan record\u2026</div>`;
   try {
-    const resp = await acaProxy_('aca_plan_detail', { id: planId, year: window._qbAcaYear || new Date().getFullYear() });
-    if (resp.status !== 'ok') throw new Error(resp.message || 'detail fetch failed');
-    const d = (resp.data && (resp.data.plan || resp.data)) || {};
+    const d = await qbAcaDetail_(planId);
     const LINK_LABELS = {
       benefits_url: '\u{1F4C4} Summary of Benefits & Coverage (SBC)',
       brochure_url: '\u{1F4D8} Plan brochure',
@@ -11940,6 +12093,8 @@ function pkCard_(p) {
       <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}</div>
       <div style="font-size:10.5px;color:var(--text-muted);">/mo to client</div>
       ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);text-align:right;">full $${Number(p.premium).toFixed(0)} \u2212 <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
+      <label style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-muted);cursor:pointer;margin-top:4px;">
+        <input type="checkbox" ${_qbPk.cmp.has(p.id) ? 'checked' : ''} onchange="pkCmpToggle_('${escWeb(p.id)}', this)" style="width:13px;height:13px;" /> \u2696\ufe0f Compare</label>
       <div style="display:flex;gap:6px;margin-top:4px;">
         <button type="button" class="btn btn-outline btn-sm" onclick="openPlanDetail_('${escWeb(p.id)}')">Details</button>
         <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
