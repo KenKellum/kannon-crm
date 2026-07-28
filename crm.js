@@ -10004,6 +10004,7 @@ async function openMyCarriers() {
 // Agent assembles 1-4 options -> client gets a branded page at
 // quote.html?q=<uuid> -> "I'm interested" advances the follow-up.
 // ============================================================
+const QB_MAX_OPTIONS = 10; // agents sometimes compare 10+ carriers
 const QUOTE_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Other'];
 const MEDICARE_QUOTE_LINES = ['Medicare Advantage','Medicare Supplement','Part D (PDP)'];
 
@@ -10126,7 +10127,7 @@ async function openQuoteBuilder(dealId) {
       <option value="kfg">Kannon Financial</option>
     </select>
     <label>Valid until</label><input type="date" id="qb-valid" value="${defValid}" />
-    ${[0,1,2,3].map(optBlock).join('')}
+    ${Array.from({ length: QB_MAX_OPTIONS }, (_, oi) => oi).map(optBlock).join('')}
     <button type="button" id="qb-add-opt" class="btn btn-outline btn-sm" style="margin-top:12px;" onclick="qbRevealOption_()">+ Add another option</button>
     <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Client: <strong>${escWeb(contact.name || '')}</strong>${contact.email ? ' &middot; ' + escWeb(contact.email) : ' &middot; <span style="color:#f59e0b;">no email on file — you can still copy the link</span>'}</p>
   `, async () => {
@@ -10135,7 +10136,7 @@ async function openQuoteBuilder(dealId) {
       showToast('Medicare quoting requires Insured America + health license.'); return false;
     }
     const options = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < QB_MAX_OPTIONS; i++) {
       const name = document.getElementById('qb-name-' + i).value.trim();
       const prem = parseFloat(document.getElementById('qb-prem-' + i).value);
       if (!name && !document.getElementById('qb-prem-' + i).value) continue;
@@ -10208,7 +10209,7 @@ function qbLineChanged_() {
   if (acaStrip) {
     const isAca = line === 'Health — Individual';
     acaStrip.style.display = isAca ? 'block' : 'none';
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < QB_MAX_OPTIONS; k++) {
       const w = document.getElementById('qb-aca-wrap-' + k);
       if (w) w.style.display = isAca ? 'block' : 'none';
     }
@@ -10219,7 +10220,7 @@ function qbLineChanged_() {
   if (cmsStrip) {
     const isCms = line === 'Medicare Advantage' || line === 'Part D (PDP)';
     cmsStrip.style.display = isCms ? 'block' : 'none';
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < QB_MAX_OPTIONS; k++) {
       const w = document.getElementById('qb-cms-wrap-' + k);
       const o = document.getElementById('qb-car-opt-' + k);
       if (w) w.style.display = isCms ? 'block' : 'none';
@@ -10230,7 +10231,7 @@ function qbLineChanged_() {
   }
   const brand = document.getElementById('qb-brand');
   if (isMed) { brand.value = 'ia'; brand.disabled = true; } else { brand.disabled = false; }
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
     const bul = document.getElementById('qb-bul-' + i);
     bul.readOnly = isMed;
     bul.placeholder = isMed ? 'Locked — filled from the product record' : 'e.g. $0 deductible';
@@ -10318,7 +10319,7 @@ async function qbAutoRateOption_(i) {
 }
 
 function qbReRate_() {
-  for (let i = 0; i < 4; i++) qbAutoRateOption_(i);
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) qbAutoRateOption_(i);
 }
 
 function openQuoteReady_(q, contact) {
@@ -10755,11 +10756,11 @@ function openNppVersionModal() {
 // government-calculated subsidy (via the Apps Script relay).
 // ============================================================
 function qbRevealOption_() {
-  for (let i = 1; i < 4; i++) {
+  for (let i = 1; i < QB_MAX_OPTIONS; i++) {
     const w = document.getElementById('qb-opt-wrap-' + i);
     if (w && w.style.display === 'none') {
       w.style.display = 'block';
-      if (i === 3) document.getElementById('qb-add-opt').style.display = 'none';
+      if (i === QB_MAX_OPTIONS - 1) document.getElementById('qb-add-opt').style.display = 'none';
       return;
     }
   }
@@ -10863,7 +10864,7 @@ async function qbAcaGetPlans_() {
     const opts = '<option value="">&mdash; pick a plan &mdash;</option>'
       + window._qbAcaPlans.map(p =>
         `<option value="${escWeb(p.id)}">${escWeb(p.metal)}: ${escWeb((p.issuer ? p.issuer + ' — ' : '') + p.name)} ($${Number(p.net).toFixed(2)}/mo)</option>`).join('');
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < QB_MAX_OPTIONS; i++) {
       const sel = document.getElementById('qb-aca-' + i);
       if (sel) sel.innerHTML = opts;
     }
@@ -10947,7 +10948,7 @@ async function qbCmsFetch_(state, year, county) {
       const prem = line === 'Part D (PDP)' ? p.part_d_premium : (p.consolidated_premium != null ? p.consolidated_premium : p.part_c_premium);
       return `<option value="${p.id}">${escWeb((p.org_name ? p.org_name + ' — ' : '') + p.plan_name)}${p.snp_type ? ' [SNP]' : ''} ($${prem != null ? Number(prem).toFixed(2) : '?'}/mo)</option>`;
     }).join('');
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
     const sel = document.getElementById('qb-cms-' + i);
     if (sel) sel.innerHTML = opts;
   }
