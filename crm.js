@@ -10485,6 +10485,7 @@ async function openQuoteBuilder(dealId) {
       </div>
       <div id="qb-aca-sep" style="font-size:12px;margin-top:8px;"></div>
       <div id="qb-aca-intake-note" style="display:none;font-size:12px;color:#b45309;margin-top:6px;"></div>
+      <div id="qb-aca-browser" style="display:none;margin-top:12px;"></div>
       <div style="margin-top:10px;border-top:0.5px dashed var(--border);padding-top:8px;">
         <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Optional: check their doctors &amp; medications against each plan</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center;">
@@ -11578,6 +11579,7 @@ async function qbAcaCheckCoverage_() {
   } catch (e) { console.error('coverage check:', e); }
   res.innerHTML = prev;
   qbAcaRefreshOptionLabels_();
+  qbAcaRenderBrowser_();
 }
 
 function qbAcaRefreshOptionLabels_() {
@@ -11625,6 +11627,126 @@ async function qbAcaIchraVerdict_(income, county, people, hraMonthly) {
         : '&#9989; Official verdict: the ICHRA offer is NOT affordable \u2014 they may decline it and keep the tax credit.')
       + '</span><br>' + res.innerHTML;
   } catch (e) { console.error('ichra verdict:', e); }
+}
+
+const METAL_STYLE = {
+  Bronze:       { bg: 'rgba(205,127,50,0.14)',  fg: '#b06a2a' },
+  Silver:       { bg: 'rgba(148,155,164,0.18)', fg: '#6b7280' },
+  Gold:         { bg: 'rgba(212,175,55,0.16)',  fg: '#a8862c' },
+  Platinum:     { bg: 'rgba(120,130,140,0.18)', fg: '#4b5563' },
+  Catastrophic: { bg: 'rgba(100,116,139,0.14)', fg: '#64748b' },
+};
+
+let _qbAcaMetalFilter = 'All';
+let _qbAcaSort = 'net';
+
+function qbAcaBrowserControls_() {
+  const metals = ['All', ...new Set((window._qbAcaPlans || []).map(p => p.metal).filter(Boolean))];
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+    ${metals.map(m => `<button type="button" onclick="_qbAcaMetalFilter='${m}';qbAcaRenderBrowser_()"
+      style="border:1px solid ${_qbAcaMetalFilter === m ? 'var(--accent,#1d3557)' : 'var(--border)'};background:${_qbAcaMetalFilter === m ? 'var(--accent,#1d3557)' : 'var(--surface-1)'};color:${_qbAcaMetalFilter === m ? '#fff' : 'var(--text-primary)'};border-radius:999px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;">${m}</button>`).join('')}
+    <span style="margin-left:auto;font-size:12px;color:var(--text-muted);">Sort:
+      <select onchange="_qbAcaSort=this.value;qbAcaRenderBrowser_()" style="width:auto;display:inline-block;font-size:12px;">
+        <option value="net"${_qbAcaSort === 'net' ? ' selected' : ''}>Lowest cost to client</option>
+        <option value="deductible"${_qbAcaSort === 'deductible' ? ' selected' : ''}>Lowest deductible</option>
+        <option value="rating"${_qbAcaSort === 'rating' ? ' selected' : ''}>Highest rated</option>
+      </select></span>
+  </div>`;
+}
+
+function qbAcaCovLines_(p) {
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  let html = '';
+  docs.forEach(d => {
+    if (p._docCov && d.npi in p._docCov) {
+      const ok = p._docCov[d.npi];
+      html += `<div style="font-size:11px;color:${ok ? 'var(--success)' : 'var(--danger)'};">${ok ? '\u2713' : '\u2717'} ${escWeb(d.name.split(' \u00b7 ')[0])}</div>`;
+    }
+  });
+  meds.forEach(m => {
+    if (p._medCov && m.rxcui in p._medCov) {
+      const ok = p._medCov[m.rxcui];
+      html += `<div style="font-size:11px;color:${ok ? 'var(--success)' : 'var(--danger)'};">${ok ? '\u2713' : '\u2717'} ${escWeb(m.name)}</div>`;
+    }
+  });
+  return html;
+}
+
+function qbAcaAddedSlot_(planId) {
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const sel = document.getElementById('qb-aca-' + i);
+    if (sel && sel.value === planId) return i;
+  }
+  return -1;
+}
+
+function qbAcaRenderBrowser_() {
+  const box = document.getElementById('qb-aca-browser');
+  if (!box) return;
+  let plans = (window._qbAcaPlans || []).slice();
+  if (!plans.length) { box.style.display = 'none'; return; }
+  if (_qbAcaMetalFilter !== 'All') plans = plans.filter(p => p.metal === _qbAcaMetalFilter);
+  if (_qbAcaSort === 'net') plans.sort((a, b) => (a.net || 0) - (b.net || 0));
+  else if (_qbAcaSort === 'deductible') plans.sort((a, b) => (a.deductible ?? 9e9) - (b.deductible ?? 9e9));
+  else if (_qbAcaSort === 'rating') plans.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+
+  box.style.display = 'block';
+  box.innerHTML = qbAcaBrowserControls_() + `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;max-height:440px;overflow-y:auto;padding:2px;">
+      ${plans.map(p => {
+        const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
+        const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
+        const slot = qbAcaAddedSlot_(p.id);
+        return `<div style="border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:12px 12px 10px;background:var(--surface-1);display:flex;flex-direction:column;">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+            <span style="background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
+            ${p.type ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+            ${p.hsa ? '<span style="font-size:10px;color:#0d9488;border:1px solid #0d9488;border-radius:6px;padding:2px 6px;">HSA</span>' : ''}
+            ${p.rating ? `<span style="font-size:11px;color:#b3903a;margin-left:auto;">\u2b50 ${p.rating}</span>` : ''}
+          </div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.issuer || '')}</div>
+          <div style="font-size:13px;font-weight:600;line-height:1.35;margin:2px 0 8px;">${escWeb(p.name)}</div>
+          <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}<span style="font-size:11px;font-weight:500;color:var(--text-muted);"> /mo to client</span></div>
+          ${credit ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Full $${Number(p.premium).toFixed(2)} \u2212 <span style="color:var(--success);font-weight:600;">$${credit.toFixed(2)} credit</span></div>` : ''}
+          <div style="display:flex;gap:10px;font-size:11px;color:var(--text-secondary);margin:8px 0 6px;flex-wrap:wrap;">
+            ${p.deductible != null ? `<span>Deductible <strong>$${Number(p.deductible).toLocaleString()}</strong></span>` : ''}
+            ${p.moop != null ? `<span>Max OOP <strong>$${Number(p.moop).toLocaleString()}</strong></span>` : ''}
+          </div>
+          ${qbAcaCovLines_(p)}
+          <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:auto;width:100%;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
+            onclick="qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 On the quote (Option ' + (slot + 1) + ') \u2014 remove' : '\uff0b Add to quote'}</button>
+        </div>`;
+      }).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">${plans.length} plan${plans.length === 1 ? '' : 's'} shown \u00b7 pick up to ${QB_MAX_OPTIONS} \u00b7 they land in the option slots below, ready to send.</div>`;
+}
+
+function qbAcaAddPlan_(planId) {
+  const existing = qbAcaAddedSlot_(planId);
+  if (existing >= 0) {
+    // remove from the quote
+    const sel = document.getElementById('qb-aca-' + existing);
+    sel.value = '';
+    qbApplyAcaPlan_(existing);
+    ['qb-name-', 'qb-prem-', 'qb-bul-', 'qb-note-'].forEach(pref => {
+      const el = document.getElementById(pref + existing); if (el) el.value = '';
+    });
+    const rec = document.getElementById('qb-rec-' + existing); if (rec) rec.checked = false;
+    qbAcaRenderBrowser_();
+    return;
+  }
+  let slot = -1;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const nameEl = document.getElementById('qb-name-' + i);
+    if (nameEl && !nameEl.value.trim()) { slot = i; break; }
+  }
+  if (slot === -1) { showToast('All ' + QB_MAX_OPTIONS + ' option slots are full \u2014 remove one first.'); return; }
+  const wrap = document.getElementById('qb-opt-wrap-' + slot);
+  while (wrap && wrap.style.display === 'none') qbRevealOption_();
+  const sel = document.getElementById('qb-aca-' + slot);
+  if (sel) { sel.value = planId; qbApplyAcaPlan_(slot); }
+  showToast('Added as Option ' + (slot + 1) + '.');
+  qbAcaRenderBrowser_();
 }
 
 async function qbAcaGetPlans_() {
@@ -11676,6 +11798,8 @@ async function qbAcaGetPlans_() {
       const sel = document.getElementById('qb-aca-' + i);
       if (sel) sel.innerHTML = opts;
     }
+    _qbAcaMetalFilter = 'All';
+    qbAcaRenderBrowser_();
     qbAcaCheckCoverage_();
   } catch (e) {
     res.innerHTML = '<span style="color:var(--danger);">Marketplace relay unreachable — is the API key set up?</span>';
