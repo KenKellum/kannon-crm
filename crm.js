@@ -11289,7 +11289,7 @@ async function qbAcaInit_() {
     if (data.status !== 'ok') { countySel.innerHTML = '<option value="">unavailable</option>'; res.innerHTML = '<span style="color:#f59e0b;">' + escWeb(data.message || 'Marketplace lookup failed.') + '</span>'; return; }
     countySel.innerHTML = data.counties.map(x =>
       `<option value="${escWeb(x.fips)}|${escWeb(x.state)}">${escWeb(x.name)}, ${escWeb(x.state)}</option>`).join('');
-    res.textContent = 'Enter the yearly household income, adjust the household, then "Get plans & subsidy".';
+    res.textContent = '';
     window._qbAcaDocs = []; window._qbAcaMeds = [];
     qbAcaRenderChips_();
     qbAcaSepStatus_(null, null);
@@ -11471,7 +11471,7 @@ async function qbAcaPrefillFromIntake_() {
     if (pulled.length) {
       qbAcaRenderChips_();
       document.getElementById('qb-aca-matches').innerHTML =
-        '<span style="color:#0d9488;">\u26a1 Pulled from their intake: ' + pulled.join(' \u00b7 ') + '. Remove anything that doesn\u2019t fit, then \u201cGet plans &amp; subsidy\u201d.</span>';
+        '<span style="color:#0d9488;">\u26a1 Pulled from their intake: ' + pulled.join(' \u00b7 ') + '. Remove anything that doesn\u2019t fit.</span>';
     }
   } catch (e) { console.error('qbAcaPrefillFromIntake_:', e); }
 }
@@ -12022,7 +12022,7 @@ async function qbAcaGetPlans_() {
     }
     res.innerHTML = subsidy
       + (data.csr && !/none/i.test(String(data.csr)) ? ' &middot; extra Silver savings (CSR: ' + escWeb(String(data.csr)) + ')' : '')
-      + ' &middot; ' + window._qbAcaPlans.length + ' plans (' + data.year + ') — pick inside each option below. Prices shown are AFTER the credit.';
+      + ' &middot; ' + window._qbAcaPlans.length + ' plans (' + data.year + '). Prices shown are AFTER the credit.';
     const opts = '<option value="">&mdash; pick a plan &mdash;</option>'
       + window._qbAcaPlans.map(p =>
         `<option value="${escWeb(p.id)}">${escWeb(p.metal)}: ${escWeb((p.issuer ? p.issuer + ' — ' : '') + p.name)} ($${Number(p.net).toFixed(2)}/mo)</option>`).join('');
