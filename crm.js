@@ -10226,6 +10226,15 @@ async function openQuoteBuilder(dealId) {
       </div>
       <div id="qb-aca-members" style="margin-top:8px;"></div>
       <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="qbAcaAddMember_()">+ Add household member</button>
+      <div style="margin-top:10px;border-top:0.5px dashed var(--border);padding-top:8px;">
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Optional: check their doctors &amp; medications against each plan</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center;">
+          <span><input type="text" id="qb-aca-doc-q" placeholder="Doctor name" style="width:150px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Dr</button></span>
+          <span><input type="text" id="qb-aca-med-q" placeholder="Medication" style="width:150px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Rx</button></span>
+        </div>
+        <div id="qb-aca-matches" style="font-size:12px;margin-top:5px;"></div>
+        <div id="qb-aca-chips" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;"></div>
+      </div>
       <div id="qb-aca-result" style="font-size:12px;margin-top:8px;color:var(--text-muted);"></div>
     </div>
     <div id="qb-cms-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
@@ -10995,6 +11004,137 @@ async function qbAcaInit_() {
   }
 }
 
+function qbAcaRenderChips_() {
+  const wrap = document.getElementById('qb-aca-chips');
+  if (!wrap) return;
+  const chip = (label, kind, key) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;">${kind === 'doc' ? '\u{1FA7A}' : '\u{1F48A}'} ${escWeb(label)}
+      <button type="button" onclick="qbAcaRemoveChip_('${kind}','${escWeb(String(key))}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;">&#10005;</button></span>`;
+  wrap.innerHTML = (window._qbAcaDocs || []).map(d => chip(d.name, 'doc', d.npi)).join('')
+    + (window._qbAcaMeds || []).map(m => chip(m.name, 'med', m.rxcui)).join('');
+}
+
+function qbAcaRemoveChip_(kind, key) {
+  if (kind === 'doc') window._qbAcaDocs = (window._qbAcaDocs || []).filter(d => String(d.npi) !== key);
+  else window._qbAcaMeds = (window._qbAcaMeds || []).filter(m => String(m.rxcui) !== key);
+  qbAcaRenderChips_();
+  qbAcaCheckCoverage_();
+}
+
+async function qbAcaSearch_(kind) {
+  const inp = document.getElementById(kind === 'doc' ? 'qb-aca-doc-q' : 'qb-aca-med-q');
+  const q = inp.value.trim();
+  const out = document.getElementById('qb-aca-matches');
+  if (q.length < 3) { out.textContent = 'Type at least 3 letters first.'; return; }
+  out.textContent = 'Searching\u2026';
+  try {
+    const c = window._qbContact || {};
+    const resp = kind === 'doc'
+      ? await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '' })
+      : await acaProxy_('aca_drug_search', { q: q });
+    if (resp.status !== 'ok') { out.innerHTML = '<span style="color:var(--danger);">' + escWeb(resp.message || 'Search failed') + '</span>'; return; }
+    const raw = resp.data || {};
+    let items = raw.providers || raw.drugs || raw.suggestions || (Array.isArray(raw) ? raw : []);
+    items = (items || []).map(x => {
+      const o = x.provider || x;
+      if (kind === 'doc') {
+        const nm = typeof o.name === 'object' && o.name
+          ? [o.name.first, o.name.last].filter(Boolean).join(' ')
+          : (o.name || o.provider_name || '');
+        return { key: o.npi || o.id, name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (o.city ? ' \u00b7 ' + o.city : '') , cleanName: nm };
+      }
+      return { key: o.rxcui || o.id, name: o.name || o.full_name || '', cleanName: o.name || o.full_name || '' };
+    }).filter(x => x.key && x.name);
+    if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
+    out.innerHTML = items.slice(0, 6).map((x, i) =>
+      `<a href="#" onclick="qbAcaPick_('${kind}', ${i}); return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}</a>`).join('');
+    window._qbAcaMatches = items.slice(0, 6);
+    window._qbAcaMatchKind = kind;
+  } catch (e) { out.innerHTML = '<span style="color:var(--danger);">Search unreachable.</span>'; }
+}
+
+function qbAcaPick_(kind, i) {
+  const x = (window._qbAcaMatches || [])[i];
+  if (!x) return;
+  if (kind === 'doc') {
+    window._qbAcaDocs = window._qbAcaDocs || [];
+    if (!window._qbAcaDocs.some(d => String(d.npi) === String(x.key))) window._qbAcaDocs.push({ npi: x.key, name: x.cleanName });
+    document.getElementById('qb-aca-doc-q').value = '';
+  } else {
+    window._qbAcaMeds = window._qbAcaMeds || [];
+    if (!window._qbAcaMeds.some(m => String(m.rxcui) === String(x.key))) window._qbAcaMeds.push({ rxcui: x.key, name: x.cleanName });
+    document.getElementById('qb-aca-med-q').value = '';
+  }
+  document.getElementById('qb-aca-matches').innerHTML = '';
+  qbAcaRenderChips_();
+  qbAcaCheckCoverage_();
+}
+
+function _covIsYes_(v) {
+  if (v === true) return true;
+  const s = String(v || '').toLowerCase();
+  return s === 'covered' || s === 'true' || s === 'yes' || s === 'in network' || s === 'innetwork';
+}
+
+async function qbAcaCheckCoverage_() {
+  const plans = window._qbAcaPlans || [];
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  if (!plans.length || (!docs.length && !meds.length)) { qbAcaRefreshOptionLabels_(); return; }
+  const res = document.getElementById('qb-aca-result');
+  const prev = res.innerHTML;
+  res.innerHTML = prev + ' <em style="color:var(--text-muted);">checking coverage\u2026</em>';
+  const year = window._qbAcaYear || new Date().getFullYear();
+  plans.forEach(p => { p._docCov = {}; p._medCov = {}; });
+  const byId = {}; plans.forEach(p => byId[p.id] = p);
+  try {
+    for (let i = 0; i < plans.length; i += 15) {
+      const ids = plans.slice(i, i + 15).map(p => p.id).join(',');
+      if (docs.length) {
+        const r = await acaProxy_('aca_provider_coverage', { planids: ids, providers: docs.map(d => d.npi).join(','), year: year });
+        const rows = (r.data && (r.data.coverage || r.data.plans || r.data)) || [];
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+          const p = byId[row.plan_id || row.planid || row.id];
+          if (p) p._docCov[row.npi || row.provider_npi] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
+        });
+      }
+      if (meds.length) {
+        const r = await acaProxy_('aca_drug_coverage', { planids: ids, drugs: meds.map(m => m.rxcui).join(','), year: year });
+        const rows = (r.data && (r.data.coverage || r.data)) || [];
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+          const p = byId[row.plan_id || row.planid || row.id];
+          if (p) p._medCov[row.rxcui] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
+        });
+      }
+    }
+  } catch (e) { console.error('coverage check:', e); }
+  res.innerHTML = prev;
+  qbAcaRefreshOptionLabels_();
+}
+
+function qbAcaRefreshOptionLabels_() {
+  const plans = window._qbAcaPlans || [];
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  const line = document.getElementById('qb-line') ? document.getElementById('qb-line').value : '';
+  if (line !== 'Health — Individual') return;
+  const opts = '<option value="">&mdash; pick a plan &mdash;</option>'
+    + plans.map(p => {
+      let marks = '';
+      if (docs.length) {
+        const n = docs.filter(d => p._docCov && p._docCov[d.npi]).length;
+        marks += ' [' + (n === docs.length ? '\u2713' : n + '/' + docs.length) + ' drs]';
+      }
+      if (meds.length) {
+        const n = meds.filter(m => p._medCov && p._medCov[m.rxcui]).length;
+        marks += ' [' + (n === meds.length ? '\u2713' : n + '/' + meds.length) + ' meds]';
+      }
+      return `<option value="${escWeb(p.id)}">${escWeb(p.metal)}: ${escWeb((p.issuer ? p.issuer + ' \u2014 ' : '') + p.name)} ($${Number(p.net).toFixed(2)}/mo)${marks}</option>`;
+    }).join('');
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const sel = document.getElementById('qb-aca-' + i);
+    if (sel) { const cur = sel.value; sel.innerHTML = opts; sel.value = cur; }
+  }
+}
+
 async function qbAcaGetPlans_() {
   const c = window._qbContact;
   const res = document.getElementById('qb-aca-result');
@@ -11018,6 +11158,7 @@ async function qbAcaGetPlans_() {
     });
     if (data.status !== 'ok') { res.innerHTML = '<span style="color:var(--danger);">' + escWeb(data.message || 'Marketplace error.') + '</span>'; return; }
     window._qbAcaPlans = data.plans || [];
+    window._qbAcaYear = data.year;
     const subsidy = data.aptc != null && data.aptc > 0
       ? '<span style="color:var(--success);font-weight:700;">Estimated tax credit: $' + Number(data.aptc).toFixed(0) + '/mo</span>'
       : 'No tax credit at this income';
@@ -11031,6 +11172,7 @@ async function qbAcaGetPlans_() {
       const sel = document.getElementById('qb-aca-' + i);
       if (sel) sel.innerHTML = opts;
     }
+    qbAcaCheckCoverage_();
   } catch (e) {
     res.innerHTML = '<span style="color:var(--danger);">Marketplace relay unreachable — is the API key set up?</span>';
   }
@@ -11051,6 +11193,14 @@ function qbApplyAcaPlan_(i) {
   if (plan.moop != null) bullets.push('Yearly max out-of-pocket: $' + Number(plan.moop).toLocaleString());
   if (plan.hsa) bullets.push('HSA-eligible');
   if (plan.rating) bullets.push('Quality rating: ' + plan.rating + ' of 5');
+  (window._qbAcaDocs || []).forEach(d => {
+    if (plan._docCov && d.npi in plan._docCov)
+      bullets.push((plan._docCov[d.npi] ? 'In-network: ' : 'NOT in-network: ') + d.name.split(' \u00b7 ')[0] + (plan._docCov[d.npi] ? ' \u2713' : ' \u2717'));
+  });
+  (window._qbAcaMeds || []).forEach(m => {
+    if (plan._medCov && m.rxcui in plan._medCov)
+      bullets.push((plan._medCov[m.rxcui] ? 'Covers ' : 'Does NOT cover ') + m.name + (plan._medCov[m.rxcui] ? ' \u2713' : ' \u2717'));
+  });
   document.getElementById('qb-bul-' + i).value = bullets.join('\n');
 }
 
