@@ -565,6 +565,7 @@ function renderDashboardOwner() {
       <div class="stat-card" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.05);"><div class="stat-num">${delivPct}%</div><div class="stat-label">Deliverability</div><div class="${bounced > 0 ? 'stat-delta-warn' : 'stat-delta'}">${bounced > 0 ? bounced+' bounces' : 'Clean list'}</div></div>
       <div class="stat-card" style="border-left-color:${bounced > 0 ? '#f87171' : '#34d399'};background:${bounced > 0 ? 'rgba(248,113,113,0.05)' : 'rgba(52,211,153,0.05)'};"><div class="stat-num">${bounced}</div><div class="stat-label">Bounces</div><div class="${bounced > 0 ? 'stat-delta-warn' : 'stat-delta'}">${bounced > 0 ? 'Needs review' : 'None flagged'}</div></div>
     </div>
+    <div id="dash-needs-attention"></div>
     <div class="dash-grid">
       <div style="display:flex;flex-direction:column;gap:10px;">
         <div class="dash-card">
@@ -613,6 +614,7 @@ function renderDashboardOwner() {
     </div>
   `;
   renderDashAICard();
+  loadNeedsAttention();
 }
 
 function renderDashboardAgency() {
@@ -682,6 +684,7 @@ function renderDashboardAgency() {
         + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Stalled pipeline deals</div></div>'
         + '</div>';
     })()}
+    <div id="dash-needs-attention"></div>
     <div id="dash-lead-sources" style="margin-bottom:10px;"></div>
 
     <div class="dash-grid">
@@ -744,6 +747,7 @@ function renderDashboardAgency() {
   `;
 
   loadLeadSourceWidget();
+  loadNeedsAttention();
 }
 
 
