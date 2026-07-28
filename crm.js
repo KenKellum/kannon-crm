@@ -10472,7 +10472,7 @@ async function openQuoteBuilder(dealId) {
           <input type="number" id="qb-aca-income" placeholder="e.g. 48000" style="width:120px;" /></div>
         <div><label style="font-size:10px;margin:0 0 2px;">County</label>
           <select id="qb-aca-county" style="width:auto;"></select></div>
-        <button type="button" class="btn btn-primary btn-sm" onclick="qbAcaGetPlans_()">Get plans &amp; subsidy</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="qbAcaGetPlans_()">\u{1F5D6} Find plans &amp; subsidy</button>
       </div>
       <div id="qb-aca-members" style="margin-top:8px;"></div>
       <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="qbAcaAddMember_()">+ Add household member</button>
@@ -11557,8 +11557,8 @@ async function qbAcaCheckCoverage_() {
   plans.forEach(p => { p._docCov = {}; p._medCov = {}; });
   const byId = {}; plans.forEach(p => byId[p.id] = p);
   try {
-    for (let i = 0; i < plans.length; i += 15) {
-      const ids = plans.slice(i, i + 15).map(p => p.id).join(',');
+    for (let i = 0; i < plans.length; i += 10) {  // API cap: 10 plan IDs per request
+      const ids = plans.slice(i, i + 10).map(p => p.id).join(',');
       if (docs.length) {
         const r = await acaProxy_('aca_provider_coverage', { planids: ids, providers: docs.map(d => d.npi).join(','), year: year });
         const rows = (r.data && (r.data.coverage || r.data.plans || r.data)) || [];
@@ -11657,17 +11657,16 @@ function qbAcaBrowserControls_() {
 function qbAcaCovLines_(p) {
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
   let html = '';
+  const line = (known, ok, label) => known
+    ? `<div style="font-size:11px;color:${ok ? 'var(--success)' : 'var(--danger)'};">${ok ? '\u2713' : '\u2717'} ${label}</div>`
+    : `<div style="font-size:11px;color:var(--text-muted);">? ${label} <span style="opacity:.7;">(not reported)</span></div>`;
   docs.forEach(d => {
-    if (p._docCov && d.npi in p._docCov) {
-      const ok = p._docCov[d.npi];
-      html += `<div style="font-size:11px;color:${ok ? 'var(--success)' : 'var(--danger)'};">${ok ? '\u2713' : '\u2717'} ${escWeb(d.name.split(' \u00b7 ')[0])}</div>`;
-    }
+    const known = p._docCov && d.npi in p._docCov;
+    html += line(known, known && p._docCov[d.npi], escWeb(d.name.split(' \u00b7 ')[0]));
   });
   meds.forEach(m => {
-    if (p._medCov && m.rxcui in p._medCov) {
-      const ok = p._medCov[m.rxcui];
-      html += `<div style="font-size:11px;color:${ok ? 'var(--success)' : 'var(--danger)'};">${ok ? '\u2713' : '\u2717'} ${escWeb(m.name)}</div>`;
-    }
+    const known = p._medCov && m.rxcui in p._medCov;
+    html += line(known, known && p._medCov[m.rxcui], escWeb(m.name));
   });
   return html;
 }
@@ -11693,7 +11692,7 @@ function qbAcaRenderBrowser_() {
   box.style.display = 'block';
   box.innerHTML = `
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <button type="button" class="btn btn-primary" onclick="openAcaPicker_()">\u{1F5D6} Open Plan Picker \u2014 browse all ${plans.length} plans</button>
+      <button type="button" class="btn btn-primary" onclick="openAcaPicker_()">\u{1F5D6} Reopen Plan Picker (${plans.length} plans)</button>
       <span style="font-size:12px;color:var(--text-muted);">${added.length ? added.length + ' on the quote: ' + added.map(a => escWeb(a.p.name.slice(0, 26))).join(' \u00b7 ') : 'None picked yet.'}</span>
     </div>`;
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
@@ -12020,7 +12019,8 @@ async function qbAcaGetPlans_() {
     }
     _qbAcaMetalFilter = 'All';
     qbAcaRenderBrowser_();
-    qbAcaCheckCoverage_();
+    openAcaPicker_();          // straight into the picker — no second click
+    qbAcaCheckCoverage_();     // marks stream in as the checks land
   } catch (e) {
     res.innerHTML = '<span style="color:var(--danger);">Marketplace relay unreachable — is the API key set up?</span>';
   }
