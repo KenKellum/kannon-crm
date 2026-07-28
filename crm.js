@@ -11656,6 +11656,16 @@ function qbAcaBrowserControls_() {
   </div>`;
 }
 
+function qbAcaCostFact_(label, ind, fam) {
+  if (ind == null && fam == null) return '';
+  const famQuote = !!window._qbAcaFamilyQuote;
+  const main = ind != null ? ind : fam;
+  return `<span style="display:inline-block;">${label} <strong>$${Number(main).toLocaleString()}</strong>` +
+    (famQuote && ind != null ? '<span style="font-size:10px;color:var(--text-muted);"> individual</span>' : '') +
+    (famQuote && fam != null && ind != null ? `<br><span style="font-size:10.5px;color:var(--text-muted);">$${Number(fam).toLocaleString()} family</span>` : '') +
+    '</span>';
+}
+
 function qbAcaCovLines_(p) {
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
   let html = '';
@@ -11884,8 +11894,8 @@ async function openPlanDetail_(planId) {
         <span style="margin-left:auto;font-size:18px;font-weight:800;color:var(--accent,#1d3557);">$${Number(p.net).toFixed(2)}/mo</span>
       </div>
       <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;margin-bottom:10px;">
-        ${p.deductible != null ? `<span>Deductible <strong>$${Number(p.deductible).toLocaleString()}</strong></span>` : ''}
-        ${p.moop != null ? `<span>Max OOP <strong>$${Number(p.moop).toLocaleString()}</strong></span>` : ''}
+        ${qbAcaCostFact_('Deductible', p.deductible, p.deductible_family)}
+        ${qbAcaCostFact_('Max OOP', p.moop, p.moop_family)}
         ${p.rating ? `<span>\u2b50 ${p.rating} of 5</span>` : ''}
       </div>` : '';
     dr.querySelector('div:last-child').outerHTML = `
@@ -11921,8 +11931,8 @@ function pkCard_(p) {
       </div>
       <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${escWeb(p.name)}</div>
       <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;">
-        ${p.deductible != null ? `<span>Deductible <strong>$${Number(p.deductible).toLocaleString()}</strong></span>` : ''}
-        ${p.moop != null ? `<span>Max out-of-pocket <strong>$${Number(p.moop).toLocaleString()}</strong></span>` : ''}
+        ${qbAcaCostFact_('Deductible', p.deductible, p.deductible_family)}
+        ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">${qbAcaCovLines_(p)}</div>
     </div>
@@ -11997,6 +12007,7 @@ async function qbAcaGetPlans_() {
     if (data.status !== 'ok') { res.innerHTML = '<span style="color:var(--danger);">' + escWeb(data.message || 'Marketplace error.') + '</span>'; return; }
     window._qbAcaPlans = data.plans || [];
     window._qbAcaYear = data.year;
+    window._qbAcaFamilyQuote = (data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length) > 1;
     let subsidy = data.aptc != null && data.aptc > 0
       ? '<span style="color:var(--success);font-weight:700;">Estimated tax credit: $' + Number(data.aptc).toFixed(0) + '/mo</span>'
       : 'No tax credit at this income';
@@ -12039,8 +12050,11 @@ function qbApplyAcaPlan_(i) {
   if (plan.metal) bullets.push(plan.metal + ' plan' + (plan.type ? ' · ' + plan.type : ''));
   if (plan.premium != null && plan.net != null && plan.premium > plan.net)
     bullets.push('Full price $' + Number(plan.premium).toFixed(2) + '/mo — your estimated tax credit covers $' + Number(plan.premium - plan.net).toFixed(2));
-  if (plan.deductible != null) bullets.push('Deductible: $' + Number(plan.deductible).toLocaleString());
-  if (plan.moop != null) bullets.push('Yearly max out-of-pocket: $' + Number(plan.moop).toLocaleString());
+  const famQ = !!window._qbAcaFamilyQuote;
+  if (plan.deductible != null) bullets.push('Deductible: $' + Number(plan.deductible).toLocaleString()
+    + (famQ && plan.deductible_family != null ? ' per person / $' + Number(plan.deductible_family).toLocaleString() + ' family' : ''));
+  if (plan.moop != null) bullets.push('Yearly max out-of-pocket: $' + Number(plan.moop).toLocaleString()
+    + (famQ && plan.moop_family != null ? ' per person / $' + Number(plan.moop_family).toLocaleString() + ' family' : ''));
   if (plan.hsa) bullets.push('HSA-eligible');
   if (plan.rating) bullets.push('Quality rating: ' + plan.rating + ' of 5');
   (window._qbAcaDocs || []).forEach(d => {
