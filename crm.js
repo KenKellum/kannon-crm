@@ -6369,56 +6369,92 @@ function editContact(id, onSave) {
     : c.email && !c.email_status
     ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;"><strong>&#9888; Not verified &#8212; will NOT receive emails until verified.</strong><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify via SMTP</button>${_markBtn}</div>`
     : ''
+  const initials = (c.name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const sec = (ico, title, inner) => `<div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:800;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px;">${ico} ${title}</div>${inner}</div>`;
+  const fld = (label, input) => `<div><label style="font-size:11px;margin:0 0 3px;display:block;">${label}</label>${input}</div>`;
+  const iw = 'style="width:100%;box-sizing:border-box;"';
+
   showModal('Edit Contact', `
-    ${emailStatusNote}
-    <label>Full Name *</label><input type="text" id="con-name" value="${c.name||''}" />
-    <label>Email</label><input type="email" id="con-email" value="${c.email||''}" />
-    <label>Phone</label><input type="tel" id="con-phone" value="${c.phone||''}" />
-    <label>Company</label><input type="text" id="con-company" value="${c.company||''}" />
-    <label>Date of Birth</label><input type="date" id="con-dob" value="${c.date_of_birth||''}" />
-    <label>Gender</label><select id="con-gender"><option value=""></option><option value="M" ${c.gender==='M'?'selected':''}>Male</option><option value="F" ${c.gender==='F'?'selected':''}>Female</option></select>
-    <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:10px;"><input type="checkbox" id="con-tobacco" style="width:auto;" ${c.tobacco_use?'checked':''}/> Tobacco user <span style="font-size:11px;color:var(--muted);">(affects insurance rates)</span></label><label>Street Address</label><input type="text" id="con-street" value="${(c.street_address||'').replace(/"/g,'&quot;')}" /><label>ZIP Code</label><input type="text" id="con-zip" value="${c.zip||''}" /><label>City</label><input type="text" id="con-city" value="${c.city||''}" placeholder="e.g. Bozeman" />
-    <label>State</label><input type="text" id="con-state" value="${c.state||''}" placeholder="e.g. MT" maxlength="2" style="width:80px;" />
-    <label>Type</label><select id="con-type"><option value="">— Select type —</option>${typeOptions}</select>
-    ${canAssign ? `<label>Assign To</label><select id="con-agent">${agentOptions}</select>` : ''}
-    <label>Notes</label><textarea id="con-notes">${c.notes||''}</textarea>
-    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Social Media</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div><label style="font-size:12px;margin-top:0;">&#128279; LinkedIn</label><input type="text" id="con-linkedin" value="${c.linkedin_url||''}" placeholder="linkedin.com/in/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;margin-top:0;">&#128101; Facebook</label><input type="text" id="con-facebook" value="${c.facebook_url||''}" placeholder="facebook.com/username" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;margin-top:0;">&#128247; Instagram</label><input type="text" id="con-instagram" value="${c.instagram_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;margin-top:0;">X / Twitter</label><input type="text" id="con-twitter" value="${c.twitter_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;margin-top:0;">&#128172; WhatsApp</label><input type="tel" id="con-whatsapp" value="${c.whatsapp_number||''}" placeholder="+1 406 555 0000" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;margin-top:0;">&#127925; TikTok</label><input type="text" id="con-tiktok" value="${c.tiktok_handle||''}" placeholder="@handle" style="width:100%;box-sizing:border-box;" /></div>
-        <div><label style="font-size:12px;margin-top:0;">&#9992; Telegram</label><input type="text" id="con-telegram" value="${c.telegram_handle||''}" placeholder="@username" style="width:100%;box-sizing:border-box;" /></div>
+    <div style="background:linear-gradient(125deg,var(--accent,#1d3557),#2a4a7f);border-radius:12px;padding:14px 18px;color:#fff;display:flex;align-items:center;gap:12px;margin-bottom:12px;border-bottom:3px solid #c8a84b;">
+      <div style="width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid #c8a84b;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;">${initials}</div>
+      <div style="min-width:0;"><div style="font-weight:800;font-size:16px;">${c.name || 'Contact'}</div><div style="font-size:11.5px;opacity:.85;">Editing this contact record</div></div>
+    </div>
+
+    ${sec('\u{1F464}', 'Identity', `
+      ${fld('Full Name *', `<input type="text" id="con-name" value="${c.name||''}" ${iw} />`)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        ${fld('Type', `<select id="con-type" ${iw}><option value="">&mdash; Select type &mdash;</option>${typeOptions}</select>`)}
+        ${fld('Company', `<input type="text" id="con-company" value="${c.company||''}" ${iw} />`)}
       </div>
-    </div>
-    <label>Status <span style="font-size:11px;color:var(--muted);">(sequence stage)</span></label>
-    <select id="con-seqstatus">${seqOptions}</select>
-    <label>Email Track <span style="font-size:11px;color:var(--muted);">(which sequence content they receive)</span></label>
-    <select id="con-track">
-      <option value="standard" ${(c.sequence_track||'standard')!=='medicare'?'selected':''}>Standard</option>
-      <option value="medicare" ${c.sequence_track==='medicare'?'selected':''}>Medicare</option>
-    </select>
-    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Compliance</div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-        <input type="checkbox" id="con-optout" ${c.opt_out_email?'checked':''} style="width:16px;height:16px;">
-        <span>⛔ Opted Out of Emails</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px;">
-        <input type="checkbox" id="con-dnc" ${c.do_not_call?'checked':''} style="width:16px;height:16px;">
-        <span>📵 Do Not Call</span>
-      </label>
-    </div>
-    <div style="border-top:1px solid #e2e8f0;margin-top:14px;padding-top:14px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Intake History</div>
-        <button type="button" onclick="closeModal();setTimeout(()=>showIntakeForm('${id}'),150);" style="background:#0f4c8a;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;">&#129309; New Intake</button>
+      ${canAssign ? `<div style="margin-top:10px;">${fld('Assigned Agent', `<select id="con-agent" ${iw}>${agentOptions}</select>`)}</div>` : ''}
+    `)}
+
+    ${sec('\u2709\uFE0F', 'Reaching them', `
+      ${emailStatusNote}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${fld('Email', `<input type="email" id="con-email" value="${c.email||''}" ${iw} />`)}
+        ${fld('Phone', `<input type="tel" id="con-phone" value="${c.phone||''}" ${iw} />`)}
+      </div>
+    `)}
+
+    ${sec('\u{1F4CD}', 'Address', `
+      ${fld('Street Address', `<input type="text" id="con-street" value="${(c.street_address||'').replace(/"/g,'&quot;')}" ${iw} />`)}
+      <div style="display:grid;grid-template-columns:2fr 70px 1fr;gap:10px;margin-top:10px;">
+        ${fld('City', `<input type="text" id="con-city" value="${c.city||''}" placeholder="Bozeman" ${iw} />`)}
+        ${fld('State', `<input type="text" id="con-state" value="${c.state||''}" placeholder="MT" maxlength="2" ${iw} />`)}
+        ${fld('ZIP', `<input type="text" id="con-zip" value="${c.zip||''}" ${iw} />`)}
+      </div>
+    `)}
+
+    ${sec('\u{1F382}', 'Rating factors', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${fld('Date of Birth', `<input type="date" id="con-dob" value="${c.date_of_birth||''}" ${iw} />`)}
+        ${fld('Gender', `<select id="con-gender" ${iw}><option value=""></option><option value="M" ${c.gender==='M'?'selected':''}>Male</option><option value="F" ${c.gender==='F'?'selected':''}>Female</option></select>`)}
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:10px;background:var(--surface-2);border-radius:8px;padding:9px 12px;cursor:pointer;">
+        <input type="checkbox" id="con-tobacco" style="width:16px;height:16px;" ${c.tobacco_use?'checked':''}/> \u{1F6AC} Tobacco user
+        <span style="font-size:11px;color:var(--muted);">(affects insurance rates)</span></label>
+    `)}
+
+    ${sec('\u{1F517}', 'Social', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${fld('\u{1F517} LinkedIn', `<input type="text" id="con-linkedin" value="${c.linkedin_url||''}" placeholder="linkedin.com/in/username" ${iw} />`)}
+        ${fld('\u{1F465} Facebook', `<input type="text" id="con-facebook" value="${c.facebook_url||''}" placeholder="facebook.com/username" ${iw} />`)}
+        ${fld('\u{1F4F7} Instagram', `<input type="text" id="con-instagram" value="${c.instagram_handle||''}" placeholder="@handle" ${iw} />`)}
+        ${fld('X / Twitter', `<input type="text" id="con-twitter" value="${c.twitter_handle||''}" placeholder="@handle" ${iw} />`)}
+        ${fld('\u{1F4AC} WhatsApp', `<input type="tel" id="con-whatsapp" value="${c.whatsapp_number||''}" placeholder="+1 406 555 0000" ${iw} />`)}
+        ${fld('\u{1F3B5} TikTok', `<input type="text" id="con-tiktok" value="${c.tiktok_handle||''}" placeholder="@handle" ${iw} />`)}
+        ${fld('\u2708 Telegram', `<input type="text" id="con-telegram" value="${c.telegram_handle||''}" placeholder="@username" ${iw} />`)}
+      </div>
+    `)}
+
+    ${sec('\u{1F4E7}', 'Outreach', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${fld('Status <span style="font-weight:400;text-transform:none;">(sequence stage)</span>', `<select id="con-seqstatus" ${iw}>${seqOptions}</select>`)}
+        ${fld('Email Track', `<select id="con-track" ${iw}>
+          <option value="standard" ${(c.sequence_track||'standard')!=='medicare'?'selected':''}>Standard</option>
+          <option value="medicare" ${c.sequence_track==='medicare'?'selected':''}>Medicare</option></select>`)}
+      </div>
+    `)}
+
+    ${sec('\u{1F6E1}\uFE0F', 'Compliance', `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;background:var(--surface-2);border-radius:8px;padding:9px 12px;">
+          <input type="checkbox" id="con-optout" ${c.opt_out_email?'checked':''} style="width:16px;height:16px;"> \u26D4 Opted Out of Emails</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;background:var(--surface-2);border-radius:8px;padding:9px 12px;">
+          <input type="checkbox" id="con-dnc" ${c.do_not_call?'checked':''} style="width:16px;height:16px;"> \u{1F4F5} Do Not Call</label>
+      </div>
+    `)}
+
+    ${sec('\u{1F91D}', 'Intake History', `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+        <button type="button" class="btn btn-accent btn-sm" onclick="closeModal();setTimeout(()=>showIntakeForm('${id}'),150);">\u{1F91D} New Intake</button>
       </div>
       <div id="intake-history-panel"><em style="color:#94a3b8;font-size:12px;">Loading...</em></div>
-    </div>
+    `)}
+
+    ${sec('\u{1F4DD}', 'Notes', `<textarea id="con-notes" ${iw} rows="3">${c.notes||''}</textarea>`)}
   `, async () => {
     const name = document.getElementById('con-name').value.trim();
     if (!name) { showToast('Name is required'); return false; }
