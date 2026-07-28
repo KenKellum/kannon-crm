@@ -4443,7 +4443,7 @@ async function addContactNote(contactId) {
 // ============================================================
 // NOTIFICATION BELL (Phase 3D)
 // ============================================================
-const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested'];
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested','quote_refresh_requested'];
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
@@ -4521,6 +4521,7 @@ function _renderNotificationDropdown() {
     meeting_canceled: { icon: '❌', label: 'Meeting canceled',    color: '#fbbf24' },
     census_received:  { icon: '📋', label: 'Census received',     color: '#0d9488' },
     quote_interested: { icon: '⭐', label: 'Quote interest — HOT', color: '#c8a84b' },
+    quote_refresh_requested: { icon: '✨', label: 'Fresh quotes requested', color: '#d97706' },
   };
   const _relTime = ts => {
     const diff = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -7920,7 +7921,7 @@ async function loadNeedsAttention() {
     const { data: acts } = await supabaseClient
       .from('activities')
       .select('id,contact_id,activity_type,subject,body_snippet,metadata,created_at,contacts(name,company)')
-      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested'])
+      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested', 'quote_refresh_requested'])
       .is('read_at', null)
       .eq('agent_id', currentAgent.id)
       .gte('created_at', thirtyDaysAgo)
@@ -8311,6 +8312,23 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="${rescheduleOnclick}">📅 Reschedule</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.kind === 'quote_refresh_requested') {
+      const requote = (item.quoteId && item.dealId)
+        ? `naDismissActivity('${item.activityId}');showPage('pipelines');setTimeout(()=>requoteFromQuote_('${item.quoteId}','${item.dealId}'),500)`
+        : `naDismissActivity('${item.activityId}');viewContact('${item.contactId}')`;
+      return `<div style="flex-shrink:0;width:230px;display:flex;flex-direction:column;background:var(--surface-1);border:1.5px solid #f59e0b;border-left:4px solid #f59e0b;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:#d97706;margin-bottom:4px;">&#10024; Fresh Quotes Requested</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.subject || name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
+        <div style="font-size:11px;color:#b45309;">Their old quote expired — they want new numbers.</div>
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#d97706;border-color:#d97706;" onclick="${requote}">&#8635; Re-quote now</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}')">&#128100;</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
     }

@@ -349,6 +349,24 @@ function showErr() {
   document.getElementById('error-screen').style.display = 'block';
 }
 
+async function requestRefresh() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  const ok = await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&refresh_requested_at=is.null', {
+    method: 'PATCH', body: JSON.stringify({ refresh_requested_at: new Date().toISOString() })
+  });
+  const done = document.getElementById('refresh-done');
+  done.style.display = 'block';
+  done.innerHTML = '<strong>&#10003; Request sent!</strong> ' + esc(agentFirst())
+    + ' has been notified and will send you updated quotes shortly.';
+  btn.textContent = '✓ Requested';
+  if (!ok) {
+    // Already requested before (or a hiccup) — either way, reassure
+    done.innerHTML = '<strong>&#10003; You’re on the list!</strong> ' + esc(agentFirst())
+      + ' has your request for updated quotes.';
+  }
+}
+
 function showExpired() {
   setBrand(quote.brand);
   document.title = 'Quote Expired — ' + (quote.brand === 'ia' ? 'The Insured America Agency' : 'Kannon Financial Group');
@@ -368,10 +386,11 @@ function showExpired() {
       so the numbers you saw here are no longer guaranteed &mdash; but fresh ones take just a few minutes.
       Let's get you <strong>current pricing</strong> before you decide anything.</p>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px;">
-        ${quote.agent_booking_url ? `<a class="btn btn-gold" style="text-decoration:none;" href="${esc(quote.agent_booking_url)}" target="_blank">&#128197; Book a time for fresh quotes</a>` : ''}
+        <button class="btn btn-gold" id="refresh-btn" onclick="requestRefresh()">&#10024; Send me fresh quotes</button>
+        ${quote.agent_booking_url ? `<a class="btn btn-ghost" style="text-decoration:none;" href="${esc(quote.agent_booking_url)}" target="_blank">&#128197; Book a time instead</a>` : ''}
         ${tel ? `<a class="btn btn-ghost" style="text-decoration:none;" href="tel:${esc(tel)}">&#128222; Call ${esc(quote.agent_phone)}</a>` : ''}
-        ${quote.agent_email ? `<a class="btn btn-ghost" style="text-decoration:none;" href="mailto:${esc(quote.agent_email)}?subject=${encodeURIComponent('Please update my quotes')}">&#9993; Ask for updated quotes</a>` : ''}
       </div>
+      <div id="refresh-done" style="display:none;margin:18px auto 0;max-width:420px;background:linear-gradient(120deg,#f0fdf4,#ecfdf5);border:1.5px solid #16a34a;border-radius:12px;padding:14px 18px;font-size:14px;color:#14532d;animation:rise .4s ease-out;"></div>
       <p class="fine" style="border:none;margin-top:26px;">Your original quote details are safely on file with your agent.</p>
     </div>`;
 }
