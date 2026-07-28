@@ -8,10 +8,11 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root { --brand: #1d3557; --brand-deep: #14263e; --gold: #c8a84b; --ink: #0f172a; --muted: #64748b; }
   .kfg-theme { --brand: #1e293b; --brand-deep: #10161f; }
+  html { scroll-behavior: smooth; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
          background: linear-gradient(180deg, #eef2f7 0%, #f8fafc 60%); color: var(--ink);
-         min-height: 100vh; padding: 28px 16px 48px; -webkit-font-smoothing: antialiased; }
-  .card { max-width: 880px; margin: 0 auto; background: #fff; border-radius: 18px; overflow: hidden;
+         min-height: 100vh; padding: 28px 16px 110px; -webkit-font-smoothing: antialiased; }
+  .card { max-width: 920px; margin: 0 auto; background: #fff; border-radius: 18px; overflow: hidden;
           box-shadow: 0 10px 40px rgba(15,23,42,.10), 0 2px 8px rgba(15,23,42,.05);
           animation: rise .5s ease-out; }
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -27,21 +28,25 @@
   .avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--brand), var(--brand-deep));
             color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center;
             flex-shrink: 0; border: 2px solid var(--gold); }
-  .valid { font-size: 12px; color: var(--muted); margin: 4px 0 22px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 16px; margin: 20px 0 8px; justify-content: center; }
-  .grid.few { grid-template-columns: repeat(auto-fit, minmax(235px, 320px)); }
-  .opt { border: 1.5px solid #e2e8f0; border-radius: 16px; padding: 22px 18px 18px; position: relative;
+  .valid { font-size: 12px; color: var(--muted); margin: 4px 0 18px; }
+  .howto { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin: 6px 0 18px;
+           font-size: 13px; color: #334155; line-height: 1.7; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 8px 0; }
+  .grid.few { grid-template-columns: repeat(auto-fit, minmax(240px, 330px)); }
+  .opt { border: 1.5px solid #e2e8f0; border-radius: 16px; padding: 22px 18px 16px; position: relative;
          display: flex; flex-direction: column; background: #fff;
          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
   .opt:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(15,23,42,.10); border-color: #cbd5e1; }
   .opt.rec { border: 2px solid var(--gold); background: linear-gradient(180deg, #fffdf5 0%, #fff 40%);
              box-shadow: 0 8px 26px rgba(200,168,75,.22); }
-  .opt.rec:hover { transform: translateY(-4px); }
   .rec-badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
                background: linear-gradient(120deg, #b3903a, var(--gold)); color: #fff; font-size: 10px;
                font-weight: 800; letter-spacing: 1px; padding: 4px 14px; border-radius: 999px; white-space: nowrap;
                box-shadow: 0 3px 8px rgba(200,168,75,.4); }
-  .opt .carrier { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); }
+  .cmp-toggle { position: absolute; top: 10px; right: 12px; display: flex; align-items: center; gap: 5px;
+                font-size: 11px; color: var(--muted); cursor: pointer; user-select: none; }
+  .cmp-toggle input { width: 15px; height: 15px; accent-color: var(--brand); cursor: pointer; }
+  .opt .carrier { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); padding-right: 84px; }
   .opt .plan { font-size: 16px; font-weight: 700; letter-spacing: -.2px; margin: 4px 0 12px; color: var(--ink); line-height: 1.35; }
   .opt .prem { font-size: 34px; font-weight: 800; letter-spacing: -1px; color: var(--brand); line-height: 1; }
   .opt .prem small { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
@@ -50,20 +55,40 @@
   .opt li::before { content: "\2713"; position: absolute; left: 0; color: #16a34a; font-weight: 800; }
   .opt .note { font-size: 11.5px; color: #8a6d1f; font-style: italic; margin-bottom: 10px;
                background: #fdf8ea; border-radius: 8px; padding: 6px 10px; }
-  .pick { width: 100%; background: linear-gradient(120deg, var(--brand-deep), var(--brand)); color: #fff; border: none;
-          border-radius: 10px; padding: 13px; font-size: 13.5px; font-weight: 700; cursor: pointer;
-          transition: filter .15s ease, transform .1s ease; }
-  .pick:hover { filter: brightness(1.18); }
-  .pick:active { transform: scale(.98); }
-  .pick:disabled { opacity: .55; cursor: default; }
-  .picked { background: linear-gradient(120deg, #15803d, #16a34a) !important; }
+  .pick { width: 100%; background: #fff; color: var(--brand); border: 1.5px solid var(--brand);
+          border-radius: 10px; padding: 12px; font-size: 13.5px; font-weight: 700; cursor: pointer;
+          transition: all .15s ease; }
+  .pick:hover { background: var(--brand); color: #fff; }
+  .pick.on { background: linear-gradient(120deg, #15803d, #16a34a); border-color: #16a34a; color: #fff; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: none;
+         background: rgba(255,255,255,.96); backdrop-filter: blur(8px);
+         border-top: 1px solid #e2e8f0; box-shadow: 0 -8px 30px rgba(15,23,42,.12);
+         padding: 12px 16px; }
+  .bar-inner { max-width: 920px; margin: 0 auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .bar .count { font-size: 13px; color: #334155; font-weight: 600; flex: 1; min-width: 140px; }
+  .btn { border: none; border-radius: 10px; padding: 12px 18px; font-size: 13.5px; font-weight: 700; cursor: pointer;
+         transition: filter .15s ease, transform .1s ease; }
+  .btn:active { transform: scale(.98); }
+  .btn-gold { background: linear-gradient(120deg, #b3903a, var(--gold)); color: #fff; }
+  .btn-gold:hover { filter: brightness(1.1); }
+  .btn-brand { background: linear-gradient(120deg, var(--brand-deep), var(--brand)); color: #fff; }
+  .btn-brand:hover { filter: brightness(1.18); }
+  .btn-ghost { background: #fff; color: var(--brand); border: 1.5px solid #cbd5e1; }
+  .btn-ghost:hover { border-color: var(--brand); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  /* Compare view */
+  #compare-view { display: none; }
+  .cmp-scroll { overflow-x: auto; padding-bottom: 8px; }
+  .cmp-row { display: flex; gap: 14px; min-width: min-content; }
+  .cmp-col { width: 230px; flex-shrink: 0; border: 1.5px solid #e2e8f0; border-radius: 16px; padding: 20px 16px 16px;
+             position: relative; background: #fff; display: flex; flex-direction: column; }
+  .cmp-col.rec { border: 2px solid var(--gold); background: linear-gradient(180deg, #fffdf5 0%, #fff 40%); }
   .ask { display: block; text-align: center; margin: 26px auto 0; font-size: 13.5px; font-weight: 600;
          color: var(--brand); text-decoration: none; }
   .ask:hover { text-decoration: underline; }
   .fine { font-size: 10.5px; color: #94a3b8; line-height: 1.65; margin-top: 24px; border-top: 1px solid #eef2f7; padding-top: 14px; }
-  #done-msg { display: none; background: linear-gradient(120deg, #f0fdf4, #ecfdf5); border: 1.5px solid #16a34a;
-              border-radius: 12px; padding: 16px 20px; margin-top: 20px; font-size: 14px; color: #14532d;
-              animation: rise .4s ease-out; }
+  #done-panel { display: none; text-align: center; padding: 26px 14px; animation: rise .4s ease-out; }
+  #done-panel .big { font-size: 52px; margin-bottom: 8px; }
   #loader { text-align: center; padding: 60px 0; color: var(--muted); font-size: 14px; }
   #error-screen { display: none; text-align: center; padding: 34px 10px; }
   @media (max-width: 560px) { .body { padding: 24px 16px; } .grid, .grid.few { grid-template-columns: 1fr; } h1 { font-size: 21px; } }
@@ -79,21 +104,48 @@
   </div>
   <div class="body">
     <div id="loader">Loading your quote&hellip;</div>
+
     <div id="quote-view" style="display:none;">
       <h1 id="q-title">Your Coverage Options</h1>
       <div class="agent-line" id="q-agent"></div>
       <div class="valid" id="q-valid"></div>
-      <p style="font-size:13.5px;">Here are the options I've put together for you. Tap <strong>&ldquo;I'm interested&rdquo;</strong> on any option and I'll follow up personally &mdash; nothing is purchased or changed until we talk.</p>
+      <div class="howto" id="q-howto"></div>
       <div class="grid" id="opts"></div>
-      <div id="done-msg"></div>
       <a class="ask" id="q-ask" href="#">Questions? Contact me directly &rarr;</a>
       <div class="fine" id="q-fine"></div>
     </div>
+
+    <div id="compare-view">
+      <button class="btn btn-ghost" style="margin-bottom:16px;" onclick="exitCompare()">&larr; Back to all plans</button>
+      <h1 style="font-size:20px;">Side-by-side comparison</h1>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Scroll sideways on smaller screens.</p>
+      <div class="cmp-scroll"><div class="cmp-row" id="cmp-row"></div></div>
+    </div>
+
+    <div id="done-panel">
+      <div class="big">&#127881;</div>
+      <h1 id="done-title">Got it!</h1>
+      <p id="done-text" style="max-width:480px;margin:8px auto 18px;"></p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <a id="done-book" class="btn btn-gold" style="display:none;text-decoration:none;">&#128197; Lock in a time with me now</a>
+        <button class="btn btn-ghost" onclick="location.reload()">Back to my quotes</button>
+      </div>
+    </div>
+
     <div id="error-screen">
       <div style="font-size:46px;">&#9888;&#65039;</div>
       <h1>We couldn't load this quote</h1>
       <p>The link may be incomplete or the quote may have expired. Please use the exact link from your email, or contact your agent.</p>
     </div>
+  </div>
+</div>
+
+<div class="bar" id="bar">
+  <div class="bar-inner">
+    <div class="count" id="bar-count"></div>
+    <button class="btn btn-ghost" id="bar-compare" onclick="enterCompare()" style="display:none;">&#9878;&#65039; Compare side by side</button>
+    <a class="btn btn-ghost" id="bar-book" style="display:none;text-decoration:none;">&#128197; Book a call</a>
+    <button class="btn btn-gold" id="bar-send" onclick="sendPicks()" style="display:none;"></button>
   </div>
 </div>
 
@@ -104,7 +156,8 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnN
 const MEDICARE_LINES = ['Medicare Advantage', 'Medicare Supplement', 'Part D (PDP)'];
 const TPMO = 'We do not offer every plan available in your area. Any information we provide is limited to those plans we do offer in your area. Please contact Medicare.gov, 1-800-MEDICARE, or your local State Health Insurance Assistance Program (SHIP) to get information on all of your options.';
 const NOT_GOV = 'Not connected with or endorsed by the United States government or the federal Medicare program.';
-let qid = null, quote = null;
+let qid = null, quote = null, allOpts = [];
+const compareSet = new Set(), discussSet = new Set();
 
 async function supa(path, opts) {
   opts = opts || {};
@@ -116,8 +169,8 @@ async function supa(path, opts) {
   if (opts.method === 'PATCH') return res.ok;
   return res.ok ? res.json() : null;
 }
-
 function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+function agentFirst() { return (quote.agent_name || 'your agent').split(' ')[0]; }
 
 function setBrand(brand) {
   const head = document.getElementById('head');
@@ -133,17 +186,128 @@ function setBrand(brand) {
   }
 }
 
+function optCardHtml(o, inCompare) {
+  const bullets = (o.benefit_bullets || []).map(b => '<li>' + esc(b) + '</li>').join('');
+  return `
+    ${o.is_recommended ? '<div class="rec-badge">&#11088; AGENT’S RECOMMENDATION</div>' : ''}
+    ${!inCompare && allOpts.length > 1 ? `<label class="cmp-toggle"><input type="checkbox" ${compareSet.has(o.id) ? 'checked' : ''} onchange="toggleCompare('${o.id}', this)"/> Compare</label>` : ''}
+    <div class="carrier">${esc(o.carrier_name)}</div>
+    <div class="plan">${esc(o.display_name)}</div>
+    <div class="prem">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<small> /month</small></div>
+    <ul>${bullets}</ul>
+    ${o.agent_note ? '<div class="note">' + esc(o.agent_note) + '</div>' : ''}
+    <button class="pick ${discussSet.has(o.id) ? 'on' : ''}" onclick="toggleDiscuss('${o.id}', this)">
+      ${discussSet.has(o.id) ? '✓ On my discuss list' : '💬 I’d like to discuss this one'}
+    </button>`;
+}
+
+function renderCards() {
+  const grid = document.getElementById('opts');
+  grid.classList.toggle('few', allOpts.length <= 2);
+  grid.innerHTML = allOpts.map(o =>
+    `<div class="opt${o.is_recommended ? ' rec' : ''}" id="card-${o.id}">${optCardHtml(o, false)}</div>`).join('');
+  refreshBar();
+}
+
+function toggleCompare(id, cb) {
+  if (cb.checked) {
+    if (compareSet.size >= 4) { cb.checked = false; alert('You can compare up to 4 plans at a time.'); return; }
+    compareSet.add(id);
+  } else compareSet.delete(id);
+  refreshBar();
+}
+
+function toggleDiscuss(id, btn) {
+  if (discussSet.has(id)) discussSet.delete(id); else discussSet.add(id);
+  const o = allOpts.find(x => x.id === id);
+  const card = document.getElementById('card-' + id);
+  if (card) card.innerHTML = optCardHtml(o, false);
+  const col = document.getElementById('cmp-' + id);
+  if (col) col.innerHTML = optCardHtml(o, true);
+  refreshBar();
+}
+
+function refreshBar() {
+  const bar = document.getElementById('bar');
+  const cmpBtn = document.getElementById('bar-compare');
+  const sendBtn = document.getElementById('bar-send');
+  const bookBtn = document.getElementById('bar-book');
+  const count = document.getElementById('bar-count');
+  const show = compareSet.size >= 2 || discussSet.size >= 1;
+  bar.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  const bits = [];
+  if (discussSet.size) bits.push(discussSet.size + ' on your discuss list');
+  if (compareSet.size >= 2) bits.push(compareSet.size + ' to compare');
+  count.textContent = bits.join(' · ');
+  cmpBtn.style.display = compareSet.size >= 2 ? 'inline-block' : 'none';
+  sendBtn.style.display = discussSet.size ? 'inline-block' : 'none';
+  sendBtn.textContent = 'Send my list to ' + agentFirst() + ' (' + discussSet.size + ')';
+  if (quote.agent_booking_url) {
+    bookBtn.style.display = 'inline-block';
+    bookBtn.href = quote.agent_booking_url;
+    bookBtn.target = '_blank';
+  }
+}
+
+function enterCompare() {
+  const row = document.getElementById('cmp-row');
+  row.innerHTML = allOpts.filter(o => compareSet.has(o.id)).map(o =>
+    `<div class="cmp-col${o.is_recommended ? ' rec' : ''}" id="cmp-${o.id}">${optCardHtml(o, true)}</div>`).join('');
+  document.getElementById('quote-view').style.display = 'none';
+  document.getElementById('compare-view').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function exitCompare() {
+  document.getElementById('compare-view').style.display = 'none';
+  document.getElementById('quote-view').style.display = 'block';
+  renderCards();
+}
+
+async function sendPicks() {
+  const btn = document.getElementById('bar-send');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  const ids = [...discussSet];
+  let ok = true;
+  for (const id of ids) {
+    const r = await supa('/rest/v1/quote_options?id=eq.' + encodeURIComponent(id), {
+      method: 'PATCH', body: JSON.stringify({ client_selected_at: new Date().toISOString() })
+    });
+    ok = ok && r;
+  }
+  await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&status=in.(sent,viewed)', {
+    method: 'PATCH', body: JSON.stringify({ status: 'interested' })
+  });
+  try {
+    fetch(APPS_SCRIPT_URL + '?action=quote_interested&quote_id=' + qid
+      + '&option_id=' + ids[0] + '&option_ids=' + ids.join(','), { mode: 'no-cors' });
+  } catch (e) {}
+  document.getElementById('bar').style.display = 'none';
+  document.getElementById('quote-view').style.display = 'none';
+  document.getElementById('compare-view').style.display = 'none';
+  const names = allOpts.filter(o => discussSet.has(o.id)).map(o => o.display_name);
+  document.getElementById('done-title').textContent = 'Sent to ' + agentFirst() + '!';
+  document.getElementById('done-text').innerHTML =
+    'You picked <strong>' + names.map(esc).join('</strong>, <strong>') + '</strong>. '
+    + esc(agentFirst()) + ' has been notified and will reach out shortly — nothing is purchased or changed until you talk.'
+    + (ok ? '' : ' <span style="color:#b45309;">(If you don’t hear back within one business day, please call directly.)</span>');
+  const book = document.getElementById('done-book');
+  if (quote.agent_booking_url) { book.style.display = 'inline-block'; book.href = quote.agent_booking_url; book.target = '_blank'; }
+  document.getElementById('done-panel').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 async function init() {
   qid = new URLSearchParams(location.search).get('q');
   if (!qid) { showErr(); return; }
   const rows = await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid)
-    + '&select=id,client_name,line,brand,status,valid_until,viewed_at,agent_name,agent_email,agent_phone', { method: 'GET' });
+    + '&select=id,client_name,line,brand,status,valid_until,viewed_at,agent_name,agent_email,agent_phone,agent_booking_url', { method: 'GET' });
   quote = rows && rows[0];
   if (!quote) { showErr(); return; }
   if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showErr(); return; }
-  const opts = await supa('/rest/v1/quote_options?quote_id=eq.' + encodeURIComponent(qid)
+  allOpts = await supa('/rest/v1/quote_options?quote_id=eq.' + encodeURIComponent(qid)
     + '&select=*&order=sort_order', { method: 'GET' }) || [];
-  if (!opts.length) { showErr(); return; }
+  if (!allOpts.length) { showErr(); return; }
 
   setBrand(quote.brand);
   document.title = 'Your Quote — ' + (quote.brand === 'ia' ? 'The Insured America Agency' : 'Kannon Financial Group');
@@ -154,21 +318,16 @@ async function init() {
     + (quote.agent_phone ? '<br><a href="tel:' + esc(quote.agent_phone.replace(/[^0-9+]/g, '')) + '" style="color:var(--brand);text-decoration:none;font-weight:600;">' + esc(quote.agent_phone) + '</a>' : '') + '</span>';
   if (quote.valid_until) document.getElementById('q-valid').textContent =
     'These quotes are valid through ' + new Date(quote.valid_until + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) + '.';
+  document.getElementById('q-howto').innerHTML = allOpts.length > 1
+    ? '<strong>How this works:</strong> tap <em>&ldquo;I’d like to discuss this one&rdquo;</em> on any plan that interests you (as many as you like)'
+      + (allOpts.length > 2 ? ', tick <em>Compare</em> on up to 4 to see them side by side' : '')
+      + ', then send me your list' + (quote.agent_booking_url ? ' or book a time that suits you' : '') + '. Nothing is purchased or changed until we talk.'
+    : 'Review the plan below and tap <em>&ldquo;I’d like to discuss this one&rdquo;</em> — nothing is purchased or changed until we talk.';
   const ask = document.getElementById('q-ask');
   if (quote.agent_email) ask.href = 'mailto:' + quote.agent_email + '?subject=' + encodeURIComponent('Question about my quote');
   else if (quote.agent_phone) ask.href = 'tel:' + quote.agent_phone.replace(/[^0-9+]/g, '');
 
-  if (opts.length <= 2) document.getElementById('opts').classList.add('few');
-  document.getElementById('opts').innerHTML = opts.map(o => `
-    <div class="opt${o.is_recommended ? ' rec' : ''}">
-      ${o.is_recommended ? '<div class="rec-badge">AGENT’S RECOMMENDATION</div>' : ''}
-      <div class="carrier">${esc(o.carrier_name)}</div>
-      <div class="plan">${esc(o.display_name)}</div>
-      <div class="prem">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<small> /month</small></div>
-      <ul>${(o.benefit_bullets || []).map(b => '<li>' + esc(b) + '</li>').join('')}</ul>
-      ${o.agent_note ? '<div class="note">' + esc(o.agent_note) + '</div>' : ''}
-      <button class="pick" id="pick-${o.id}" onclick="pick('${o.id}', this)">I’m interested in this one</button>
-    </div>`).join('');
+  renderCards();
 
   let fine = 'Premiums shown are quotes only and are subject to carrier verification, underwriting where applicable, and final approval. No coverage is bound, changed, or cancelled by viewing this page or expressing interest.';
   if (MEDICARE_LINES.includes(quote.line)) fine += '<br><br>' + TPMO + '<br>' + NOT_GOV;
@@ -177,31 +336,12 @@ async function init() {
   document.getElementById('loader').style.display = 'none';
   document.getElementById('quote-view').style.display = 'block';
 
-  // Stamp first view (sent -> viewed)
   if (!quote.viewed_at) {
     supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&status=eq.sent', {
       method: 'PATCH',
       body: JSON.stringify({ status: 'viewed', viewed_at: new Date().toISOString() })
     });
   }
-}
-
-async function pick(optId, btn) {
-  document.querySelectorAll('.pick').forEach(b => { b.disabled = true; });
-  btn.textContent = 'Got it — sending…';
-  const ok1 = await supa('/rest/v1/quote_options?id=eq.' + encodeURIComponent(optId), {
-    method: 'PATCH', body: JSON.stringify({ client_selected_at: new Date().toISOString() })
-  });
-  await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&status=in.(sent,viewed)', {
-    method: 'PATCH', body: JSON.stringify({ status: 'interested' })
-  });
-  try { fetch(APPS_SCRIPT_URL + '?action=quote_interested&quote_id=' + qid + '&option_id=' + optId, { mode: 'no-cors' }); } catch (e) {}
-  btn.textContent = '✓ Interest sent';
-  btn.classList.add('picked');
-  const dm = document.getElementById('done-msg');
-  dm.style.display = 'block';
-  dm.innerHTML = '<strong>Thank you!</strong> ' + esc((quote.agent_name || 'Your agent').split(' ')[0]) + ' has been notified and will reach out shortly. Nothing has been purchased or changed — this just starts the conversation.';
-  if (!ok1) dm.innerHTML += ' <span style="color:#b45309;">(If you don’t hear back within one business day, please call directly.)</span>';
 }
 
 function showErr() {

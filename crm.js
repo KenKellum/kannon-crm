@@ -10180,6 +10180,9 @@ async function openQuoteBuilder(dealId) {
       contact_id: contact.id, deal_id: deal.id, agent_id: currentAgent.id,
       agent_name: currentAgent.display_name || currentAgent.name,
       agent_email: currentAgent.email, agent_phone: currentAgent.phone || null,
+      agent_booking_url: currentAgent.booking_link
+        || (currentAgent.booking_types && currentAgent.booking_types.length
+            ? window.location.origin + '/book.html?agent=' + currentAgent.id : null),
       client_name: contact.name || 'Client', client_email: contact.email || null,
       line: line, brand: document.getElementById('qb-brand').value,
       valid_until: document.getElementById('qb-valid').value || null,
