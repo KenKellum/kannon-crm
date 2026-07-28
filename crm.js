@@ -7,6 +7,21 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 // GMAIL OAUTH CONFIG—fill these in after Google Cloud setup
 const GOOGLE_OAUTH_CLIENT_ID = '500395306800-26vlgl3b34p83t8ik3b4u0hcrk7qq0u8.apps.googleusercontent.com';
+// Never fail silently, anywhere: uncaught errors surface as a toast so
+// "nothing happens" always comes with a reason we can chase.
+let _lastErrToast = 0;
+window.addEventListener('error', function(e) {
+  if (Date.now() - _lastErrToast < 8000) return;
+  _lastErrToast = Date.now();
+  try { showToast('⚠️ Something broke: ' + (e.message || 'unknown error') + ' — tell Ken/support what you clicked.'); } catch (x) {}
+});
+window.addEventListener('unhandledrejection', function(e) {
+  if (Date.now() - _lastErrToast < 8000) return;
+  _lastErrToast = Date.now();
+  var m = (e.reason && (e.reason.message || e.reason)) || 'unknown error';
+  try { showToast('⚠️ Something broke: ' + String(m).slice(0, 120) + ' — tell Ken/support what you clicked.'); } catch (x) {}
+});
+
 const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
 const GMAIL_SCOPES = 'https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/contacts';
 const PIPELINES = {
