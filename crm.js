@@ -2507,6 +2507,8 @@ const INTAKE_FIELD_DEFS = {
   aca_qle:               { label: 'Qualifying life event in the last 60 days?', type: 'select', section: 'Household',
                            options: ['No \u2014 none of these','Lost other health coverage','Moved to a new area','Got married','Had or adopted a baby','Divorce or legal separation (lost coverage)','Lost Medicaid/CHIP eligibility','Left incarceration','Gained citizenship or lawful presence','Other qualifying life change'] },
   aca_qle_date:          { label: 'Date of that life event', type: 'date', section: 'Household' },
+  aca_tobacco:           { label: 'Does anyone applying use tobacco? (who)', type: 'text', section: 'Household' },
+  aca_lawful:            { label: 'Everyone applying is a U.S. citizen or lawfully present?', type: 'select', section: 'Household', options: ['Yes','No','Not sure'] },
   currently_insured:     { label: 'Currently Insured?',     type: 'select', section: 'Current Coverage',
                            options: ['Yes','No'] },
   current_carrier:       { label: 'Current Carrier',        type: 'text',   section: 'Current Coverage' },
@@ -2565,11 +2567,11 @@ const INTAKE_TYPE_DEFAULTS = {
                       'has_life_insurance','life_coverage_amount','has_investments',
                       'goal_debt','goal_protection','goal_retirement'],
   'medicare':['dob','zip','best_time','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier','med_medications','med_doctors','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental','notes'],
-  'health-individual':['dob','best_time','household_size','member_ages','aca_income',
+  'health-individual':['dob','zip','best_time','household_size','member_ages','aca_income',
                        'currently_insured','current_carrier','current_premium',
                        'employer_plan_available','coverage_start_date','health_priority',
                        'aca_not_applying','aca_ichra_offer','aca_ichra_amount',
-                       'aca_qle','aca_qle_date',
+                       'aca_qle','aca_qle_date','aca_tobacco','aca_lawful',
                        'med_medications','med_doctors'],
   'health-group':    ['business_name','best_time','employee_count','enrollment_count','avg_age_range',
                       'has_current_plan','current_group_carrier','group_start_date',
@@ -2599,7 +2601,7 @@ const INTAKE_ALL_FIELDS = [
   { section: 'Life Insurance',  ids: ['has_life_insurance','life_coverage_amount'] },
   { section: 'Goals',           ids: ['goal_debt','goal_protection','goal_retirement','goal_college','goal_business',
                                        'income_goal_12mo','why_interested'] },
-  { section: 'Household',       ids: ['household_size','member_ages','aca_income','aca_not_applying','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date'] },
+  { section: 'Household',       ids: ['household_size','member_ages','aca_income','aca_not_applying','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date','aca_tobacco','aca_lawful'] },
   { section: 'Business',        ids: ['business_name','employee_count','enrollment_count','avg_age_range'] },
   { section: 'Current Coverage',ids: ['currently_insured','current_carrier','current_premium',
                                        'employer_plan_available','has_current_plan','current_group_carrier'] },
@@ -2824,6 +2826,7 @@ function _intakeRenderForm() {
   // In edit mode, overlay saved responses onto prefill
   if (_intakeEditResponses && Object.keys(_intakeEditResponses).length) {
     Object.keys(_intakeEditResponses).forEach(function(k) { prefill[k] = _intakeEditResponses[k]; });
+  window._imPrefillAll = prefill;
   }
 
   const sections = {};
@@ -2872,7 +2875,86 @@ function _intakeRenderForm() {
   panel.innerHTML = html;
 }
 
+window._imPickers = window._imPickers || {};
+
+function _imPickerField_(id, def) {
+  const all = window._imPrefillAll || {};
+  try {
+    if (all[id + '_struct']) window._imPickers[id] = JSON.parse(all[id + '_struct']);
+    else if (all[id]) window._imPickers[id] = String(all[id]).split(/[\n,;]+/).map(x => x.trim()).filter(Boolean).map(n => ({ name: n }));
+    else window._imPickers[id] = [];
+  } catch (e) { window._imPickers[id] = []; }
+  setTimeout(() => { try { imPickerSync_(id); } catch (e) {} }, 80);
+  const isMed = id === 'med_medications';
+  return `<div>
+    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">${def.label} <span style="text-transform:none;font-weight:400;">— official registry lookup</span></label>
+    <div style="display:flex;gap:6px;">
+      <input type="text" id="imq_${id}" placeholder="${isMed ? 'Start typing a medication…' : 'Start typing a doctor’s name…'}"
+        style="flex:1;padding:9px 12px;border-radius:8px;border:1.5px solid #e2e8f0;font-size:13px;"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();imPickerSearch_('${id}');}" />
+      <button type="button" class="btn btn-outline btn-sm" onclick="imPickerSearch_('${id}')">Find</button>
+    </div>
+    <div id="imm_${id}" style="font-size:12px;margin-top:4px;"></div>
+    <div id="imc_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;"></div>
+  </div>`;
+}
+
+function imPickerSync_(id) {
+  const chips = document.getElementById('imc_' + id);
+  if (!chips) return;
+  chips.innerHTML = (window._imPickers[id] || []).map((x, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface-2,#eef2f7);border-radius:999px;padding:3px 10px;font-size:12px;">${escWeb(x.name)}
+      <button type="button" onclick="window._imPickers['${id}'].splice(${i},1);imPickerSync_('${id}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted,#64748b);">&#10005;</button></span>`).join('');
+}
+
+async function imPickerSearch_(id) {
+  const q = document.getElementById('imq_' + id).value.trim();
+  const out = document.getElementById('imm_' + id);
+  if (q.length < 3) { out.textContent = 'Type at least 3 letters.'; return; }
+  out.textContent = 'Searching…';
+  const isMed = id === 'med_medications';
+  try {
+    const c = contacts.find(x => x.id === _intakeContactId) || {};
+    const resp = isMed
+      ? await acaProxy_('aca_drug_search', { q: q })
+      : await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', mode: 'search' });
+    const raw = resp.data || [];
+    let items = Array.isArray(raw) ? raw : (raw.drugs || raw.providers || raw.suggestions || []);
+    items = items.map(x => {
+      const o = x.provider || x;
+      if (isMed) {
+        const nm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
+        return { key: o.rxcui, name: nm, extra: o.route || '' };
+      }
+      const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
+      const ad = (o.addresses && o.addresses[0]) || {};
+      const where = [ad.street_1 || ad.street1 || ad.street, ad.city, ad.state].filter(Boolean).join(', ');
+      return { key: o.npi, name: nm, extra: [o.taxonomy || (o.specialties || [])[0] || '', where].filter(Boolean).join(' · ') };
+    }).filter(x => x.key && x.name);
+    items.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    items = items.slice(0, 6);
+    if (!items.length) { out.textContent = 'No matches — try a different spelling.'; return; }
+    window['_imm_' + id] = items;
+    out.innerHTML = items.map((x, i) =>
+      `<a href="#" onclick="imPickerPick_('${id}',${i});return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}${x.extra ? ' <span style="color:var(--text-muted);font-size:11px;">· ' + escWeb(x.extra) + '</span>' : ''}</a>`).join('');
+  } catch (e) { out.textContent = 'Search unavailable — you can leave a note instead.'; }
+}
+
+function imPickerPick_(id, i) {
+  const x = (window['_imm_' + id] || [])[i];
+  if (!x) return;
+  const keyField = id === 'med_medications' ? 'rxcui' : 'npi';
+  const arr = window._imPickers[id];
+  if (!arr.some(a => String(a[keyField]) === String(x.key))) {
+    const item = { name: x.name }; item[keyField] = x.key; arr.push(item);
+  }
+  document.getElementById('imq_' + id).value = '';
+  document.getElementById('imm_' + id).innerHTML = '';
+  imPickerSync_(id);
+}
+
 function _intakeRenderField(id, def, prefillVal) {
+  if (id === 'med_medications' || id === 'med_doctors') return _imPickerField_(id, def);
   const val  = prefillVal ? ` value="${prefillVal.replace(/"/g, '&quot;')}"` : '';
   const ph   = def.placeholder ? ` placeholder="${def.placeholder}"` : '';
   const base = `id="ifield_${id}" name="${id}"`;
@@ -2915,6 +2997,11 @@ function _intakeRenderField(id, def, prefillVal) {
 function _intakeCollectResponses() {
   const responses = {};
   for (const id of _intakeChecked) {
+    if ((id === 'med_medications' || id === 'med_doctors') && window._imPickers && window._imPickers[id]) {
+      responses[id] = window._imPickers[id].map(x => x.name).join(', ');
+      responses[id + '_struct'] = JSON.stringify(window._imPickers[id]);
+      continue;
+    }
     const el = document.getElementById('ifield_' + id);
     if (!el) continue;
     if (el.type === 'checkbox') responses[id] = el.checked;

@@ -139,6 +139,8 @@ const FIELD_DEFS = {
   aca_qle:              { label: 'Outside Open Enrollment (Nov 1 \u2013 Jan 15), a recent life event is needed to enroll. Any of these happen in the last 60 days?', type: 'select',
                           options: ['No \u2014 none of these','Lost other health coverage','Moved to a new area','Got married','Had or adopted a baby','Divorce or legal separation (lost coverage)','Lost Medicaid/CHIP eligibility','Left incarceration','Gained citizenship or lawful presence','Other qualifying life change'] },
   aca_qle_date:         { label: 'If yes: when did it happen?', type: 'date' },
+  aca_tobacco:          { label: 'Does anyone applying for coverage use tobacco?', type: 'text', placeholder: 'e.g. No / Yes \u2014 John' },
+  aca_lawful:           { label: 'Is everyone applying a U.S. citizen or lawfully present?', type: 'select', options: ['Yes','No','Not sure'] },
   currently_insured:    { label: 'Currently have health insurance?', type: 'radio', options: ['Yes','No'] },
   current_carrier:      { label: 'Current insurance carrier', type: 'text', placeholder: 'e.g. Blue Cross, Cigna' },
   current_premium:      { label: 'Current monthly premium', type: 'text', placeholder: 'e.g. $450/month' },
