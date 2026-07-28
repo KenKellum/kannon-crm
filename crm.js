@@ -4480,87 +4480,220 @@ async function viewContact(contactId, email) {
   if (!c && email) c = contacts.find(x => x.email && x.email.toLowerCase() === email.toLowerCase());
   if (!c) { showToast('Contact not found'); return; }
 
-  const { data: opens } = await supabaseClient.from('email_opens').select('*').eq('contact_email', c.email).order('opened_at', { ascending: false });
-  const { data: cc } = await supabaseClient.from('contact_companies').select('companies(name,slug)').eq('contact_id', c.id);
-  const { data: activities } = await supabaseClient.rpc('get_contact_timeline', { p_contact_id: c.id, p_limit: 30 });
-  const contactCompanies = (cc || []).map(r => r.companies);
-
-  const typeClass = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
-  const badgeClass = typeClass[c.type] || 'badge-agent';
-  const initials = (c.name || '?').split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
-  const seqStatus = c.sequence_status || 'Not Started';
-  const seqStep = parseInt(c.sequence_step) || 0;
-  const seqStatusClass = seqStatus === 'Active' ? 'badge-active' : seqStatus === 'Replied' ? 'badge-replied' : seqStatus === 'Completed' ? 'badge-completed' : 'badge-agent';
-  const dots = [1,2,3].map(i => `<div class="seq-dot ${i < seqStep ? 'done' : i === seqStep && seqStatus === 'Active' ? 'active' : ''}"></div>`).join('');
-  const opensCount = (opens || []).length;
-  const ownerAgent = allAgents.find(a => a.id === c.agent_id);
-  const _canSend = c.email_status === 'valid';
-  const companyBadges = contactCompanies.map(co => `<span class="badge ${co.slug === 'primerica' ? 'badge-primerica' : 'badge-insured'}">${co.name}</span>`).join(' ');
-
-  document.getElementById('contact-panel').innerHTML = `
-    <div class="panel-header">
-      <div class="panel-header-info">
-        <div class="panel-avatar">${initials}</div>
-        <div>
-          <div class="panel-name">${c.name||'—'}</div>
-          ${c.type ? `<span class="badge ${badgeClass}" style="font-size:11px;">${c.type}</span>` : ''}
-          ${companyBadges ? `<div style="margin-top:4px;">${companyBadges}</div>` : ''}
-        </div>
-      </div>
-      <button class="panel-close-btn" onclick="closeContactPanel()">&times;</button>
-    </div>
-    <div class="panel-body">
-      <div class="panel-section">
-        <div class="panel-label">Contact Info</div>
-        ${c.email ? `<div class="panel-field"><span class="panel-field-icon">&#128140;</span><a href="mailto:${c.email}">${c.email}</a></div>` : ''}
-        ${c.phone ? `<div class="panel-field"><span class="panel-field-icon">&#128222;</span>${c.phone}</div>` : ''}
-        ${c.company ? `<div class="panel-field"><span class="panel-field-icon">&#127970;</span>${c.company}</div>` : ''}
-        ${!c.email && !c.phone && !c.company ? '<div style="font-size:13px;color:var(--muted);">No contact info on file.</div>' : ''}
-      </div>
-      ${(c.linkedin_url||c.facebook_url||c.instagram_handle||c.twitter_handle||c.whatsapp_number||c.tiktok_handle||c.telegram_handle) ? `<div class="panel-section"><div class="panel-label">&#128279; Social Media</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">${c.linkedin_url ? `<a href="${(c.linkedin_url.indexOf('http')===0?'':'https://')+c.linkedin_url}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#128279; LinkedIn</a>` : ''}${c.facebook_url ? `<a href="${(c.facebook_url.indexOf('http')===0?'':'https://')+c.facebook_url}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#128101; Facebook</a>` : ''}${c.instagram_handle ? `<a href="https://www.instagram.com/${c.instagram_handle}/" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#128247; Instagram</a>` : ''}${c.twitter_handle ? `<a href="https://x.com/${c.twitter_handle}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">X / Twitter</a>` : ''}${c.whatsapp_number ? `<a href="https://wa.me/${c.whatsapp_number.replace(/[^0-9]/g,'')}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;color:#25d366;border-color:#25d366;text-decoration:none;">&#128172; WhatsApp</a>` : ''}${c.tiktok_handle ? `<a href="https://www.tiktok.com/@${c.tiktok_handle}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#127925; TikTok</a>` : ''}${c.telegram_handle ? `<a href="https://t.me/${c.telegram_handle}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">&#9992; Telegram</a>` : ''}</div></div>` : ''}
-      ${ownerAgent ? `<div class="panel-section"><div class="panel-label">Owner</div><div class="panel-field"><span class="panel-field-icon">&#128100;</span>${ownerAgent.name} &mdash; <span style="color:var(--muted);font-size:12px;">${ownerAgent.agencies?.name||'No agency'}</span></div></div>` : ''}
-      <div class="panel-section">
-        <div class="panel-label">Outreach Sequence</div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <span class="badge ${seqStatusClass}">${seqStatus}</span>
-          ${seqStep > 0 ? `<span style="font-size:13px;color:var(--muted);">Step ${seqStep} of 3</span>` : ''}
-        </div>
-        <div class="seq-progress">${dots}</div>
-        ${c.last_email_sent_at ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;">Last sent: ${new Date(c.last_email_sent_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>` : ''}
-      </div>
-      <div class="panel-section">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div class="panel-label" style="margin-bottom:0;">Activity Timeline</div>
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;" onclick="addContactNote('${c.id}')">📝 Add Note</button>
-        </div>
-        <div style="max-height:320px;overflow-y:auto;padding-right:2px;">
-          ${_renderActivityTimeline(activities, c.id)}
-        </div>
-        ${c.notes ? `<details style="margin-top:10px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;user-select:none;">📁 Historical Notes (pre-upgrade)</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:8px 10px;background:var(--surface-3);border-radius:6px;max-height:180px;overflow-y:auto;line-height:1.5;">${c.notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></details>` : ''}
-      </div>
-      <div class="panel-section">
-        <div class="panel-label">Email Opens (${opensCount})</div>
-        ${opensCount > 0
-          ? (opens||[]).map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${o.sequence_track||'—'}</span><div class="panel-open-subject">${o.email_subject?o.email_subject.substring(0,55)+(o.email_subject.length>55?'…':''):'—'}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
-          : '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No email opens recorded yet.</div>'}
-      </div>
-    </div>
-    <div class="panel-footer">
-      <button class="btn btn-outline" onclick="closeContactPanel()">Close</button>
-      <button class="btn btn-outline btn-sm" onclick="logOutreach('${c.id}','','')" style="font-size:12px;" title="Log social or phone outreach">&#128221; Log Outreach</button>
-      ${(c.whatsapp_number||c.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${c.id}')" style="font-size:12px;color:#25d366;border-color:#25d366;" title="Send WhatsApp + auto-log">&#128172; WhatsApp</button>` : ''}
-      ${_canSend
-        ? `<button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')" title="Transfer this contact to another agent"><i class="ti ti-arrows-exchange"></i> Transfer</button>`
-        : `<button class="btn btn-outline btn-sm" disabled title="Email must be Verified before transferring" style="opacity:0.4;cursor:not-allowed;"><i class="ti ti-arrows-exchange"></i> Transfer</button>`}
-      ${_canSend
-        ? `<button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')" title="Recruit this contact as a Kannon agent">&#128101; Recruit</button>`
-        : `<button class="btn btn-accent btn-sm" disabled title="Email must be Verified before adding to sequence" style="opacity:0.4;cursor:not-allowed;">&#128101; Recruit</button>`}
-      <button class="btn btn-outline btn-sm" onclick="startSequence('${c.id}')" title="Enroll in outreach sequence">&#9654; Sequence</button>
-      <button class="btn btn-primary" onclick="closeContactPanel();editContact('${c.id}')">&#9999;&#65039; Edit</button>
-    </div>`;
-  document.getElementById('contact-panel').classList.add('open');
+  const panel = document.getElementById('contact-panel');
+  panel.innerHTML = '<div style="padding:70px 20px;text-align:center;color:var(--text-muted);">Pulling everything on ' + escWeb(c.name || 'this contact') + '\u2026</div>';
+  panel.classList.add('open');
   document.getElementById('panel-overlay').style.display = 'block';
   document.body.style.overflow = 'hidden';
+
+  const gv = q => q.then(r => r.data || []).catch(() => []);
+  const [opens, cc, tl, quotes, intakes, appts, soas, baas] = await Promise.all([
+    gv(supabaseClient.from('email_opens').select('*').eq('contact_email', c.email || '\u2205').order('opened_at', { ascending: false }).limit(15)),
+    gv(supabaseClient.from('contact_companies').select('companies(name,slug)').eq('contact_id', c.id)),
+    supabaseClient.rpc('get_contact_timeline', { p_contact_id: c.id, p_limit: 30 }).then(r => r.data || []).catch(() => []),
+    gv(supabaseClient.from('quotes').select('id,line,status,created_at').eq('contact_id', c.id).order('created_at', { ascending: false })),
+    gv(supabaseClient.from('intake_sessions').select('id,form_type,status,created_at').eq('contact_id', c.id).order('created_at', { ascending: false })),
+    gv(supabaseClient.from('booking_intents').select('*').eq('contact_id', c.id).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(12)),
+    gv(supabaseClient.from('soa_records').select('id,status,signed_at,created_at').eq('contact_id', c.id).order('created_at', { ascending: false })),
+    gv(supabaseClient.from('baa_records').select('*').eq('contact_id', c.id).order('created_at', { ascending: false })),
+  ]);
+  window._c360 = {
+    c, opens, tl, quotes, intakes, appts, soas, baas,
+    companies: (cc || []).map(r => r.companies).filter(Boolean),
+    deals: deals.filter(d => d.contact_id === c.id),
+    tab: 'overview',
+  };
+  renderC360_();
+}
+
+function c360Tab(t) { window._c360.tab = t; renderC360_(); }
+
+function c360OpenDeal_(id) {
+  closeContactPanel();
+  showPage('pipelines');
+  setTimeout(() => openDealPanel(id), 200);
+}
+
+function renderC360_() {
+  const D = window._c360; if (!D) return;
+  const c = D.c;
+  const initials = (c.name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const typeClass = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
+  const companyBadges = D.companies.map(co => `<span class="badge ${co.slug === 'primerica' ? 'badge-primerica' : 'badge-insured'}" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);">${escWeb(co.name)}</span>`).join(' ');
+  const compCount = D.soas.length + D.baas.length;
+  const TABS = [
+    ['overview', '\u{1F4C7}', 'Overview', null],
+    ['deals', '\u{1F680}', 'Pipelines', D.deals.length || null],
+    ['quotes', '\u{1F4BC}', 'Quotes', D.quotes.length || null],
+    ['intakes', '\u{1F91D}', 'Intakes', D.intakes.length || null],
+    ['appts', '\u{1F4C5}', 'Meetings', D.appts.length || null],
+    ['compliance', '\u{1F6E1}\uFE0F', 'Compliance', compCount || null],
+    ['activity', '\u{1F4DC}', 'Activity', D.tl.length || null],
+  ];
+  const tabBtn = ([id, ico, label, n]) => `
+    <button onclick="c360Tab('${id}')" style="border:none;cursor:pointer;border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:all .15s ease;
+      ${D.tab === id ? 'background:var(--accent,#1d3557);color:#fff;box-shadow:0 3px 10px rgba(29,53,87,.35);' : 'background:var(--surface-2);color:var(--text-secondary);'}">
+      ${ico} ${label}${n ? `<span style="background:${D.tab === id ? 'rgba(255,255,255,.25)' : 'var(--surface-3)'};border-radius:999px;padding:1px 7px;font-size:10.5px;">${n}</span>` : ''}</button>`;
+
+  const _canSend = c.email_status === 'valid';
+  document.getElementById('contact-panel').innerHTML = `
+    <div style="background:linear-gradient(125deg,var(--accent,#1d3557) 0%,#2a4a7f 60%,#33597f 100%);padding:22px 24px 16px;color:#fff;border-bottom:3px solid #c8a84b;">
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.12);border:2.5px solid #c8a84b;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:800;flex-shrink:0;">${initials}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:19px;font-weight:800;letter-spacing:-.2px;">${escWeb(c.name || '\u2014')}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;align-items:center;">
+            ${c.type ? `<span class="badge ${typeClass[c.type] || 'badge-agent'}" style="font-size:10.5px;">${escWeb(c.type)}</span>` : ''}
+            ${companyBadges}
+          </div>
+        </div>
+        <button class="panel-close-btn" style="color:#fff;" onclick="closeContactPanel()">&times;</button>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;opacity:.95;">
+        ${c.phone ? `<a href="tel:${escWeb(c.phone)}" style="color:#fff;text-decoration:none;">\u{1F4DE} ${escWeb(c.phone)}</a>` : ''}
+        ${c.email ? `<a href="mailto:${escWeb(c.email)}" style="color:#fff;text-decoration:none;">\u2709\uFE0F ${escWeb(c.email)}</a>` : ''}
+        ${c.zip || c.state ? `<span>\u{1F4CD} ${escWeb([c.zip, c.state].filter(Boolean).join(', '))}</span>` : ''}
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 18px;border-bottom:0.5px solid var(--border);background:var(--surface-1);">${TABS.map(tabBtn).join('')}</div>
+    <div class="panel-body" style="padding-top:14px;">${c360Body_(D)}</div>
+    <div class="panel-footer">
+      <button class="btn btn-outline" onclick="closeContactPanel()">Close</button>
+      <button class="btn btn-outline btn-sm" onclick="logOutreach('${c.id}','','')" style="font-size:12px;">\u{1F4DD} Log Outreach</button>
+      ${(c.whatsapp_number || c.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${c.id}')" style="font-size:12px;color:#25d366;border-color:#25d366;">\u{1F4AC} WhatsApp</button>` : ''}
+      ${_canSend
+        ? `<button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')"><i class="ti ti-arrows-exchange"></i> Transfer</button>`
+        : ''}
+      ${_canSend
+        ? `<button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')">\u{1F465} Recruit</button>`
+        : ''}
+      <button class="btn btn-outline btn-sm" onclick="startSequence('${c.id}')">\u25B6 Sequence</button>
+      <button class="btn btn-primary" onclick="closeContactPanel();editContact('${c.id}')">\u270F\uFE0F Edit</button>
+    </div>`;
+}
+
+function c360Empty_(msg, cta) {
+  return `<div style="text-align:center;padding:34px 16px;color:var(--text-muted);">
+    <div style="font-size:30px;margin-bottom:8px;opacity:.5;">\u{1F343}</div>
+    <div style="font-size:13px;">${msg}</div>${cta || ''}</div>`;
+}
+
+function c360Row_(inner) {
+  return `<div style="display:flex;align-items:center;gap:12px;border:0.5px solid var(--border);border-radius:10px;padding:11px 14px;margin-bottom:8px;background:var(--surface-1);">${inner}</div>`;
+}
+
+function c360Body_(D) {
+  const c = D.c;
+  const fmtD = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '\u2014';
+  const age = c.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth + 'T12:00:00')) / 31557600000) : null;
+
+  if (D.tab === 'overview') {
+    const fact = (label, val) => `<div style="background:var(--surface-2);border-radius:10px;padding:10px 12px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${label}</div><div style="font-size:13.5px;font-weight:600;margin-top:2px;">${val || '<span style="color:var(--text-muted);font-weight:400;">\u2014</span>'}</div></div>`;
+    const social = [
+      c.linkedin_url && `<a href="${escWeb((c.linkedin_url.indexOf('http') === 0 ? '' : 'https://') + c.linkedin_url)}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">\u{1F517} LinkedIn</a>`,
+      c.facebook_url && `<a href="${escWeb((c.facebook_url.indexOf('http') === 0 ? '' : 'https://') + c.facebook_url)}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">\u{1F465} Facebook</a>`,
+      c.instagram_handle && `<a href="https://www.instagram.com/${escWeb(c.instagram_handle)}/" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">\u{1F4F7} Instagram</a>`,
+      c.whatsapp_number && `<a href="https://wa.me/${escWeb(c.whatsapp_number.replace(/[^0-9]/g, ''))}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;color:#25d366;border-color:#25d366;text-decoration:none;">\u{1F4AC} WhatsApp</a>`,
+    ].filter(Boolean).join('');
+    const ownerAgent = allAgents.find(a => a.id === c.agent_id);
+    const seqStatus = c.sequence_status || 'Not Started';
+    return `
+      <div class="panel-section"><div class="panel-label">At a glance</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;">
+          ${fact('Date of birth', c.date_of_birth ? fmtD(c.date_of_birth) + (age !== null ? ' \u00b7 ' + age : '') : null)}
+          ${fact('Gender', c.gender)}
+          ${fact('Tobacco', c.tobacco_use === true ? 'Yes' : c.tobacco_use === false ? 'No' : null)}
+          ${fact('ZIP / State', [c.zip, c.state].filter(Boolean).join(', '))}
+          ${fact('Company', c.company)}
+          ${fact('Email status', c.email_status)}
+        </div></div>
+      ${social ? `<div class="panel-section"><div class="panel-label">Social</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${social}</div></div>` : ''}
+      <div class="panel-section"><div class="panel-label">Relationship</div>
+        ${ownerAgent ? `<div class="panel-field"><span class="panel-field-icon">\u{1F464}</span>${escWeb(ownerAgent.name)} <span style="color:var(--text-muted);font-size:12px;">\u2014 ${escWeb((ownerAgent.agencies && ownerAgent.agencies.name) || 'No agency')}</span></div>` : ''}
+        <div class="panel-field"><span class="panel-field-icon">\u{1F4E7}</span>Outreach: <span class="badge ${seqStatus === 'Active' ? 'badge-active' : seqStatus === 'Replied' ? 'badge-replied' : 'badge-agent'}" style="margin-left:6px;">${escWeb(seqStatus)}</span></div>
+      </div>`;
+  }
+
+  if (D.tab === 'deals') {
+    if (!D.deals.length) return c360Empty_('Not in any pipeline yet.');
+    return D.deals.map(d => {
+      const pl = (typeof PIPELINES !== 'undefined' && PIPELINES[d.pipeline]) ? PIPELINES[d.pipeline].name : d.pipeline;
+      return c360Row_(`
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:13.5px;">${escWeb(d.title || pl)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${escWeb(pl)} \u2192 <span style="color:var(--accent,#1d3557);font-weight:700;">${escWeb(d.stage || '\u2014')}</span>${d.value ? ' \u00b7 $' + Number(d.value).toLocaleString() : ''}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="c360OpenDeal_('${d.id}')">Open deal \u2192</button>`);
+    }).join('');
+  }
+
+  if (D.tab === 'quotes') {
+    if (!D.quotes.length) return c360Empty_('No quotes yet.', '<div style="font-size:12px;margin-top:6px;">Create quotes from a deal (Pipelines tab \u2192 Open deal \u2192 Create Quote).</div>');
+    const B = { interested: ['\u2B50 INTERESTED', 'var(--success)'], viewed: ['Viewed', '#3b82f6'], sent: ['Sent', 'var(--text-secondary)'], draft: ['Draft', '#f59e0b'] };
+    return D.quotes.map(q => {
+      const [lbl, col] = B[q.status] || [q.status, 'var(--text-muted)'];
+      return c360Row_(`
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:13.5px;">${escWeb(q.line)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${fmtD(q.created_at)} \u00b7 <span style="color:${col};font-weight:700;">${lbl}</span></div>
+        </div>
+        <a class="btn btn-outline btn-sm" style="text-decoration:none;" href="quote.html?q=${q.id}" target="_blank">view \u2197</a>`);
+    }).join('');
+  }
+
+  if (D.tab === 'intakes') {
+    const rows = D.intakes.length ? D.intakes.map(s => c360Row_(`
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13.5px;">${escWeb(s.form_type || 'intake')}</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${fmtD(s.created_at)} \u00b7 ${s.status === 'completed' ? '<span style="color:var(--success);font-weight:700;">Completed</span>' : '<span style="color:#f59e0b;">Pending</span>'}</div>
+      </div>`)).join('') : c360Empty_('No intakes yet.');
+    return rows + `<div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-outline btn-sm" onclick="closeContactPanel();setTimeout(function(){dialerViewIntake('${c.id}');},150)">\u{1F4C4} View / Manage</button>
+      <button class="btn btn-accent btn-sm" onclick="closeContactPanel();setTimeout(function(){showIntakeForm('${c.id}');},150)">\u{1F91D} New Intake</button>
+    </div>`;
+  }
+
+  if (D.tab === 'appts') {
+    if (!D.appts.length) return c360Empty_('No meetings on the books.');
+    const mIcon = { phone: '\u{1F4DE} Phone', web: '\u{1F4BB} Video', in_person: '\u{1F3E2} In person' };
+    return D.appts.map(a => c360Row_(`
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13.5px;">${escWeb(a.appointment_label || a.appointment_type || 'Appointment')}</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">
+          ${a.scheduled_at ? '\u{1F4C5} ' + new Date(a.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Awaiting scheduling'}
+          ${a.meeting_method ? ' \u00b7 ' + (mIcon[a.meeting_method] || a.meeting_method) : ''}
+          ${a.booker_phone ? ' \u00b7 ' + escWeb(a.booker_phone) : ''}
+        </div>
+      </div>
+      <span class="badge badge-agent" style="font-size:10.5px;">${escWeb(a.status || 'pending')}</span>`)).join('');
+  }
+
+  if (D.tab === 'compliance') {
+    let html = '';
+    if (D.soas.length) html += '<div class="panel-label">Scope of Appointment</div>' + D.soas.map(r => c360Row_(`
+      <div style="flex:1;">${r.status === 'signed' ? '<span style="color:var(--success);font-weight:700;">\u2713 Signed</span> ' + fmtD(r.signed_at) : '<span style="color:#f59e0b;">Pending signature</span> \u00b7 sent ' + fmtD(r.created_at)}</div>
+      ${r.status === 'signed' ? `<a class="btn btn-outline btn-sm" style="text-decoration:none;" href="soa.html?s=${r.id}&view=1" target="_blank">certificate \u2197</a>` : ''}`)).join('');
+    if (D.baas.length) html += '<div class="panel-label" style="margin-top:10px;">HIPAA Business Associate Agreement</div>' + D.baas.map(r => c360Row_(`
+      <div style="flex:1;">${r.status === 'signed' ? '<span style="color:var(--success);font-weight:700;">\u2713 Signed</span> ' + fmtD(r.signed_at) : '<span style="color:#f59e0b;">Pending</span> \u00b7 sent ' + fmtD(r.created_at)}</div>
+      ${r.status === 'signed' ? `<a class="btn btn-outline btn-sm" style="text-decoration:none;" href="baa.html?b=${r.id}" target="_blank">agreement \u2197</a>` : ''}`)).join('');
+    return html || c360Empty_('Nothing on file \u2014 SOA and BAA records will appear here when sent or signed.');
+  }
+
+  // activity
+  return `
+    <div class="panel-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="panel-label" style="margin-bottom:0;">Timeline</div>
+        <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;" onclick="addContactNote('${c.id}')">\u{1F4DD} Add Note</button>
+      </div>
+      <div style="max-height:340px;overflow-y:auto;padding-right:2px;">${_renderActivityTimeline(D.tl, c.id)}</div>
+      ${c.notes ? `<details style="margin-top:10px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;">\u{1F4C1} Historical Notes (pre-upgrade)</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:8px 10px;background:var(--surface-3);border-radius:6px;max-height:180px;overflow-y:auto;line-height:1.5;">${c.notes.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></details>` : ''}
+    </div>
+    <div class="panel-section"><div class="panel-label">Email Opens (${D.opens.length})</div>
+      ${D.opens.length
+        ? D.opens.map(o => `<div class="panel-open-item"><div><span class="badge badge-group" style="margin-bottom:4px;display:inline-block;">${escWeb(o.sequence_track || '\u2014')}</span><div class="panel-open-subject">${escWeb(o.email_subject ? o.email_subject.substring(0, 55) : '\u2014')}</div></div><div class="panel-open-meta">${formatTimeAgo(o.opened_at)}</div></div>`).join('')
+        : '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No email opens recorded yet.</div>'}
+    </div>`;
 }
 
 function closeContactPanel() {
@@ -5312,9 +5445,13 @@ function openDealPanel(dealId) {
   function dv(val, empty) { return val ? String(val) : '<span class="empty">' + (empty||'Not set') + '</span>'; }
 
   var contactHTML = contact
-    ? '<div class="panel-field"><span class="panel-field-icon">&#128100;</span><strong>' + contact.name + '</strong>' + (contact.company ? ' &mdash; ' + contact.company : '') + '</div>'
-      + (contact.phone ? '<div class="panel-field"><span class="panel-field-icon">&#128222;</span><a href="tel:' + contact.phone + '">' + contact.phone + '</a></div>' : '')
-      + (contact.email ? '<div class="panel-field"><span class="panel-field-icon">&#9993;</span><a href="mailto:' + contact.email + '">' + contact.email + '</a></div>' : '')
+    ? '<div style="display:flex;align-items:center;gap:10px;">'
+      + '<div class="panel-avatar" style="width:34px;height:34px;font-size:12px;flex-shrink:0;">' + (contact.name || '?').split(' ').map(function(n){return n[0];}).join('').substring(0,2).toUpperCase() + '</div>'
+      + '<div style="flex:1;min-width:0;"><strong>' + contact.name + '</strong>'
+      + ((contact.phone || contact.email) ? '<div style="font-size:11.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + [contact.phone, contact.email].filter(Boolean).join(' \u00b7 ') + '</div>' : '')
+      + '</div>'
+      + '<button class="btn btn-primary btn-sm" style="flex-shrink:0;" onclick="closeDealPanel();viewContact(\'' + contact.id + '\',\'\')">\u{1F4C7} Contact Card</button>'
+      + '</div>'
     : '<div class="panel-field" style="color:var(--text-muted);">No contact linked</div>';
 
   var healthHTML = '';
@@ -5373,9 +5510,7 @@ function openDealPanel(dealId) {
     ? '<div class="panel-section"><div class="panel-label">Notes</div><div class="panel-notes-box">' + deal.notes + '</div></div>'
     : '';
 
-  var footerContact = contact
-    ? '<button class="btn btn-outline btn-sm" onclick="closeDealPanel();viewContact(&#39;' + contact.id + '&#39;,&#39;&#39;)">&#128100; Contact</button>'
-    : '';
+  var footerContact = '';
   var footerIntake = contact
     ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="closeDealPanel();setTimeout(function(){dialerViewIntake(&#39;' + contact.id + '&#39;);},150)">&#128196; View Intakes</button>'
     : '';
