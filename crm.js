@@ -10127,6 +10127,37 @@ async function loadQuotesStatus_(deal) {
   }).join('');
 }
 
+// Pick the right Line of Business before the agent even looks:
+// pipeline decides the family, the client's intake refines it.
+async function qbSmartDefaultLine_(deal, contact) {
+  try {
+    if (deal.pipeline === 'medicare') {
+      const { data: sess } = await supabaseClient.from('intake_sessions')
+        .select('form_type,responses').eq('contact_id', contact.id)
+        .eq('status', 'completed').order('created_at', { ascending: false }).limit(5);
+      const med = (sess || []).find(x => x.form_type === 'medicare');
+      const r = (med && med.responses) || {};
+      if (r.mi_advantage) return 'Medicare Advantage';
+      if (r.mi_supplement) return 'Medicare Supplement';
+      if (r.mi_pdp) return 'Part D (PDP)';
+      if (r.mi_dental) return 'Dental/Vision/Hearing';
+      return 'Medicare Supplement'; // the confident Medicare fallback
+    }
+    if (deal.pipeline === 'group-employer') return 'Health — Group';
+    if (deal.pipeline === 'individual-family') {
+      const { data: sess } = await supabaseClient.from('intake_sessions')
+        .select('form_type').eq('contact_id', contact.id)
+        .eq('status', 'completed').order('created_at', { ascending: false }).limit(5);
+      const types = (sess || []).map(x => x.form_type);
+      if (types.includes('financial')) return 'Life';
+      if (types.includes('health-individual')) return 'Health — Individual';
+      if (contact.sequence_track === 'medicare') return 'Medicare Supplement';
+      return 'Health — Individual'; // the confident I&F fallback
+    }
+  } catch (e) { console.error('qbSmartDefaultLine_:', e); }
+  return 'Life';
+}
+
 async function openQuoteBuilder(dealId) {
   const deal = deals.find(d => d.id === dealId); if (!deal) return;
   const contact = contacts.find(c => c.id === deal.contact_id);
@@ -10294,6 +10325,9 @@ async function openQuoteBuilder(dealId) {
     loadQuotesStatus_(deal);
     return false;
   }, { confirmLabel: 'Save Quote' });
+  const smartLine = await qbSmartDefaultLine_(deal, contact);
+  const lineSel = document.getElementById('qb-line');
+  if (lineSel && [...lineSel.options].some(o => o.value === smartLine)) lineSel.value = smartLine;
   qbLineChanged_();
 }
 
