@@ -201,6 +201,7 @@ const CHECKBOX_GROUP_LABELS = {
 
 function renderField(id, def, prefillVal) {
   if (def.type === 'checkbox-field') return '';
+  if (id === 'med_medications' || id === 'med_doctors') return renderPickerField_(id, def, prefillVal);
   const val = prefillVal || '';
   const isPrefilled = !!val;
   let input = '';
@@ -218,6 +219,89 @@ function renderField(id, def, prefillVal) {
     input = `<textarea id="f_${id}" name="${id}" placeholder="${def.placeholder||''}">${val}</textarea>`;
   }
   return `<div class="field-group"><label for="f_${id}">${def.label}</label>${input}</div>`;
+}
+
+const PICKER_RELAY = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+const _pickers = { med_medications: [], med_doctors: [] };
+
+function renderPickerField_(id, def, prefillVal) {
+  const isMed = id === 'med_medications';
+  // Restore chips on review visits (structured first, plain text as display-only fallback)
+  try {
+    const all = window._prefillAll || {};
+    if (all[id + '_struct']) _pickers[id] = JSON.parse(all[id + '_struct']);
+    else if (prefillVal) _pickers[id] = String(prefillVal).split(/[\n,;]+/).map(x => x.trim()).filter(Boolean).map(n => ({ name: n }));
+  } catch (e) { _pickers[id] = []; }
+  setTimeout(() => { try { pickerSync_(id); } catch (e) {} }, 80); // paint restored chips once the DOM exists
+  return `<div class="field-group"><label>${def.label}</label>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="pk_q_${id}" placeholder="${isMed ? 'Start typing a medication\u2026' : 'Start typing a doctor\u2019s name\u2026'}" style="flex:1;"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();pickerSearch_('${id}');}">
+      <button type="button" class="btn-secondary" style="white-space:nowrap;padding:10px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;" onclick="pickerSearch_('${id}')">Find</button>
+    </div>
+    <div id="pk_m_${id}" style="font-size:13px;margin-top:5px;"></div>
+    <div id="pk_c_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+    <input type="hidden" name="${id}" id="f_${id}">
+    <input type="hidden" name="${id}_struct" id="f_${id}_struct">
+    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${isMed ? 'Pick from the official medication list \u2014 it lets us check drug coverage on every plan for you.' : 'Pick from the official provider registry \u2014 it lets us check which plans include your doctors.'}</div>
+  </div>`;
+}
+
+function pickerSync_(id) {
+  const chips = document.getElementById('pk_c_' + id);
+  chips.innerHTML = _pickers[id].map((x, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;background:#eef2f7;border-radius:999px;padding:4px 12px;font-size:13px;">${x.name.replace(/</g,'&lt;')}
+      <button type="button" onclick="_pickers['${id}'].splice(${i},1);pickerSync_('${id}')" style="background:none;border:none;cursor:pointer;color:#64748b;">&#10005;</button></span>`).join('');
+  document.getElementById('f_' + id).value = _pickers[id].map(x => x.name).join(', ');
+  document.getElementById('f_' + id + '_struct').value = JSON.stringify(_pickers[id]);
+}
+
+async function pickerSearch_(id) {
+  const q = document.getElementById('pk_q_' + id).value.trim();
+  const out = document.getElementById('pk_m_' + id);
+  if (q.length < 3) { out.textContent = 'Type at least 3 letters.'; return; }
+  out.textContent = 'Searching\u2026';
+  const isMed = id === 'med_medications';
+  try {
+    const zipEl = document.getElementById('f_zip');
+    const url = PICKER_RELAY + (isMed
+      ? '?action=aca_drug_search&q=' + encodeURIComponent(q)
+      : '?action=aca_provider_search&q=' + encodeURIComponent(q) + '&zip=' + encodeURIComponent(zipEl ? zipEl.value : ''));
+    const resp = await (await fetch(url)).json();
+    const raw = resp.data || [];
+    let items = Array.isArray(raw) ? raw : (raw.drugs || raw.providers || raw.suggestions || []);
+    items = items.map(x => {
+      const o = x.provider || x;
+      if (isMed) {
+        const nm = (o.name || o.full_name || '') + (o.strength ? ' ' + o.strength : '');
+        return { key: o.rxcui, name: nm, extra: o.route || '' };
+      }
+      const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
+      return { key: o.npi, name: nm, extra: o.taxonomy || (o.specialties || [])[0] || '' };
+    }).filter(x => x.key && x.name).slice(0, 6);
+    if (!items.length) {
+      out.innerHTML = 'No matches \u2014 <a href="#" onclick="_pickers[\'' + id + '\'].push({name:document.getElementById(\'pk_q_' + id + '\').value.trim()});document.getElementById(\'pk_q_' + id + '\').value=\'\';this.parentElement.innerHTML=\'\';pickerSync_(\'' + id + '\');return false;">add it as typed</a>.';
+      return;
+    }
+    window['_pkm_' + id] = items;
+    out.innerHTML = items.map((x, i) =>
+      `<a href="#" onclick="pickerPick_('${id}',${i});return false;" style="display:block;padding:3px 0;color:#1d3557;">${x.name.replace(/</g,'&lt;')}${x.extra ? ' <span style=\'color:#94a3b8;font-size:12px;\'>\u00b7 ' + String(x.extra).replace(/</g,'&lt;') + '</span>' : ''}</a>`).join('');
+  } catch (e) { out.textContent = 'Search unavailable right now \u2014 you can just type it and continue.'; }
+}
+
+function pickerPick_(id, i) {
+  const x = (window['_pkm_' + id] || [])[i];
+  if (!x) return;
+  const arr = _pickers[id];
+  const keyField = id === 'med_medications' ? 'rxcui' : 'npi';
+  if (!arr.some(a => String(a[keyField]) === String(x.key))) {
+    const item = { name: x.name };
+    item[keyField] = x.key;
+    arr.push(item);
+  }
+  document.getElementById('pk_q_' + id).value = '';
+  document.getElementById('pk_m_' + id).innerHTML = '';
+  pickerSync_(id);
 }
 
 function renderCheckboxGroup(groupKey, ids) {
@@ -308,7 +392,7 @@ function renderForm(session, contact) {
   const personalSelected = ['dob','marital_status','best_time'].filter(id => sf.has(id));
   if (personalSelected.length) {
     html += `<div class="section-label">Personal details</div>`;
-    personalSelected.forEach(id => { html += renderField(id, FIELD_DEFS[id], prefill[id]||''); });
+    window._prefillAll = prefill; personalSelected.forEach(id => { html += renderField(id, FIELD_DEFS[id], prefill[id]||''); });
   }
   html += '</div>';
 

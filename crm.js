@@ -11046,8 +11046,21 @@ async function qbAcaPrefillFromIntake_() {
       }
     }
 
-    // Medications -> resolved chips
-    if (r.med_medications) {
+    // Medications: structured picks from the gold-plated intake win outright
+    let structMeds = null, structDocs = null;
+    try { if (r.med_medications_struct) structMeds = JSON.parse(r.med_medications_struct); } catch (e) {}
+    try { if (r.med_doctors_struct) structDocs = JSON.parse(r.med_doctors_struct); } catch (e) {}
+    if (structMeds && structMeds.length) {
+      window._qbAcaMeds = structMeds.filter(m => m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+      if (window._qbAcaMeds.length) pulled.push('medications (' + window._qbAcaMeds.length + ', exact picks from intake)');
+    }
+    if (structDocs && structDocs.length) {
+      window._qbAcaDocs = structDocs.filter(d => d.npi).map(d => ({ npi: d.npi, name: d.name }));
+      if (window._qbAcaDocs.length) pulled.push('doctors (' + window._qbAcaDocs.length + ', exact picks from intake)');
+    }
+
+    // Medications -> resolved chips (free-text fallback)
+    if (!(structMeds && structMeds.length) && r.med_medications) {
       const terms = String(r.med_medications).split(/[\n,;]+/).map(x => x.trim()).filter(x => x.length > 2).slice(0, 4);
       for (const t of terms) {
         try {
@@ -11066,8 +11079,8 @@ async function qbAcaPrefillFromIntake_() {
       if ((window._qbAcaMeds || []).length) pulled.push('medications (' + window._qbAcaMeds.length + ')');
     }
 
-    // Doctors -> resolved chips (matched near their zip)
-    if (r.med_doctors) {
+    // Doctors -> resolved chips (free-text fallback, matched near their zip)
+    if (!(structDocs && structDocs.length) && r.med_doctors) {
       const terms = String(r.med_doctors).split(/[\n,;]+|\band\b/i).map(x => x.replace(/^dr\.?\s*/i, '').trim()).filter(x => x.length > 2).slice(0, 3);
       for (const t of terms) {
         try {
