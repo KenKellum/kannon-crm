@@ -11764,14 +11764,118 @@ async function qbAcaPrefillFromIntake_() {
   } catch (e) { console.error('qbAcaPrefillFromIntake_:', e); }
 }
 
+// The finder lives in two places (quote strip + plan picker). One set of
+// functions drives both: picker fields win whenever the picker is open.
+function _acaFld_(base) {
+  return document.getElementById('qbpk-' + base) || document.getElementById('qb-' + base);
+}
+
+function pkBasisToggle_() {
+  window._qbPkBasisOpen = !window._qbPkBasisOpen;
+  renderPickerBody_();
+}
+
+async function pkReprice_() {
+  const pk = document.getElementById('qbpk-aca-income');
+  const strip = document.getElementById('qb-aca-income');
+  if (pk && strip && pk.value) strip.value = pk.value;
+  window._qbPkBasisOpen = true;
+  await qbAcaGetPlans_();
+}
+
+function pkBasisPanel_() {
+  const open = !!window._qbPkBasisOpen;
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  const incEl = document.getElementById('qb-aca-income');
+  const income = incEl ? incEl.value : '';
+  const cSel = document.getElementById('qb-aca-county');
+  const county = (cSel && cSel.options[cSel.selectedIndex]) ? cSel.options[cSel.selectedIndex].text : '';
+  const rows = [...document.querySelectorAll('#qb-aca-members > div')];
+  const applying = rows.filter(d => { const a = d.querySelector('.aca-app'); return !a || a.checked; }).length;
+  const summary = [
+    income ? '$' + Number(income).toLocaleString() + '/yr' : 'no income set',
+    county,
+    rows.length ? applying + ' of ' + rows.length + ' applying' : '',
+    docs.length ? docs.length + ' doctor' + (docs.length > 1 ? 's' : '') : '',
+    meds.length ? meds.length + ' medication' + (meds.length > 1 ? 's' : '') : '',
+  ].filter(Boolean).join('  \u00b7  ');
+
+  const head = `<button type="button" onclick="pkBasisToggle_()" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:9px 20px;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--text-secondary);">
+      <span style="font-weight:800;color:var(--text-primary);">${open ? '\u25BE' : '\u25B8'} What these plans are based on</span>
+      <span style="color:var(--text-muted);">${escWeb(summary)}</span>
+      <span style="margin-left:auto;color:var(--accent,#1d3557);font-weight:700;">${open ? 'Hide' : 'Edit'}</span>
+    </button>`;
+  if (!open) return `<div style="background:var(--surface-1);border-bottom:0.5px solid var(--border);">${head}</div>`;
+  setTimeout(qbAcaRenderChips_, 0);   // paint chips once this HTML lands in the DOM
+
+  return `<div style="background:var(--surface-1);border-bottom:0.5px solid var(--border);">
+    ${head}
+    <div style="padding:0 20px 14px;display:grid;grid-template-columns:minmax(220px,1fr) minmax(280px,1.4fr);gap:18px;align-items:start;">
+      <div>
+        <label style="font-size:10px;margin:0 0 3px;display:block;">Yearly household income ($)</label>
+        <input type="number" id="qbpk-aca-income" value="${escWeb(income)}" style="width:150px;" />
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
+          ${escWeb(county || 'County not set')}${rows.length ? ' \u00b7 ' + applying + ' of ' + rows.length + ' household members applying' : ''}
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="pkReprice_()">\u21bb Re-price with these</button>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Household members, ICHRA and life-event answers live in the quote dialog \u2014 close the picker to change those.</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">Doctors &amp; medications \u2014 add or remove, plans re-check instantly</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span><input type="text" id="qbpk-aca-doc-q" placeholder="Doctor or facility" style="width:150px;" />
+            <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Dr</button></span>
+          <span><input type="text" id="qbpk-aca-med-q" placeholder="Medication" style="width:140px;" />
+            <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Rx</button></span>
+        </div>
+        <div id="qbpk-aca-matches" style="font-size:12px;margin-top:6px;"></div>
+        <div id="qbpk-aca-chips" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;"></div>
+        <div id="qbpk-sync-note" style="font-size:11px;color:#0d9488;margin-top:6px;"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Latest completed intake carrying any of these answer keys
+async function qbAcaIntakeRow_(keys) {
+  const c = window._qbContact; if (!c) return null;
+  const { data } = await supabaseClient.from('intake_sessions')
+    .select('id,responses,form_type').eq('contact_id', c.id).eq('status', 'completed')
+    .order('created_at', { ascending: false }).limit(5);
+  const rows = data || [];
+  return rows.find(r => r.responses && keys.some(k => k in r.responses))
+      || rows.find(r => r.form_type === 'health-individual')
+      || null;
+}
+
+// Doctor/med edits made anywhere flow back to the client's intake record
+async function qbAcaSyncPicksToIntake_() {
+  try {
+    const row = await qbAcaIntakeRow_(['med_doctors', 'med_medications', 'med_doctors_struct', 'med_medications_struct']);
+    if (!row) return;
+    const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+    const resp = Object.assign({}, row.responses, {
+      med_doctors_struct: JSON.stringify(docs.map(d => ({ npi: d.npi, name: d.name }))),
+      med_doctors: docs.map(d => d.name).join(', '),
+      med_medications_struct: JSON.stringify(meds.map(m => ({ rxcui: m.rxcui, name: m.name }))),
+      med_medications: meds.map(m => m.name).join(', '),
+    });
+    const { data: ok } = await supabaseClient.from('intake_sessions')
+      .update({ responses: resp }).eq('id', row.id).select('id');
+    const note = document.getElementById('qbpk-sync-note');
+    if (ok && ok.length && note) note.textContent = '\u2713 Saved to their intake record (' + docs.length + ' doctor' + (docs.length === 1 ? '' : 's') + ', ' + meds.length + ' medication' + (meds.length === 1 ? '' : 's') + ').';
+  } catch (e) { console.error('qbAcaSyncPicksToIntake_:', e); }
+}
+
 function qbAcaRenderChips_() {
-  const wrap = document.getElementById('qb-aca-chips');
-  if (!wrap) return;
+  const wraps = [document.getElementById('qb-aca-chips'), document.getElementById('qbpk-aca-chips')].filter(Boolean);
+  if (!wraps.length) return;
   const chip = (label, kind, key) =>
     `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;">${kind === 'doc' ? '\u{1FA7A}' : '\u{1F48A}'} ${escWeb(label)}
       <button type="button" onclick="qbAcaRemoveChip_('${kind}','${escWeb(String(key))}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;">&#10005;</button></span>`;
-  wrap.innerHTML = (window._qbAcaDocs || []).map(d => chip(d.name, 'doc', d.npi)).join('')
+  const html = (window._qbAcaDocs || []).map(d => chip(d.name, 'doc', d.npi)).join('')
     + (window._qbAcaMeds || []).map(m => chip(m.name, 'med', m.rxcui)).join('');
+  wraps.forEach(w => w.innerHTML = html);
 }
 
 function qbAcaRemoveChip_(kind, key) {
@@ -11779,12 +11883,13 @@ function qbAcaRemoveChip_(kind, key) {
   else window._qbAcaMeds = (window._qbAcaMeds || []).filter(m => String(m.rxcui) !== key);
   qbAcaRenderChips_();
   qbAcaCheckCoverage_();
+  qbAcaSyncPicksToIntake_();
 }
 
 async function qbAcaSearch_(kind) {
-  const inp = document.getElementById(kind === 'doc' ? 'qb-aca-doc-q' : 'qb-aca-med-q');
+  const inp = _acaFld_(kind === 'doc' ? 'aca-doc-q' : 'aca-med-q');
   const q = inp.value.trim();
-  const out = document.getElementById('qb-aca-matches');
+  const out = _acaFld_('aca-matches');
   if (q.length < 3) { out.textContent = 'Type at least 3 letters first.'; return; }
   out.textContent = 'Searching\u2026';
   try {
@@ -11819,15 +11924,16 @@ function qbAcaPick_(kind, i) {
   if (kind === 'doc') {
     window._qbAcaDocs = window._qbAcaDocs || [];
     if (!window._qbAcaDocs.some(d => String(d.npi) === String(x.key))) window._qbAcaDocs.push({ npi: x.key, name: x.cleanName });
-    document.getElementById('qb-aca-doc-q').value = '';
+    const dq = _acaFld_('aca-doc-q'); if (dq) dq.value = '';
   } else {
     window._qbAcaMeds = window._qbAcaMeds || [];
     if (!window._qbAcaMeds.some(m => String(m.rxcui) === String(x.key))) window._qbAcaMeds.push({ rxcui: x.key, name: x.cleanName });
-    document.getElementById('qb-aca-med-q').value = '';
+    const mq = _acaFld_('aca-med-q'); if (mq) mq.value = '';
   }
-  document.getElementById('qb-aca-matches').innerHTML = '';
+  const mt = _acaFld_('aca-matches'); if (mt) mt.innerHTML = '';
   qbAcaRenderChips_();
   qbAcaCheckCoverage_();
+  qbAcaSyncPicksToIntake_();
 }
 
 function _covIsYes_(v) {
@@ -12175,6 +12281,7 @@ function renderPickerBody_() {
       <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Done \u2014 back to quote</button>
     </div>
     ${acaCsrBanner_()}
+    ${pkBasisPanel_()}
     <div style="flex:1;display:flex;min-height:0;">
       <div style="width:230px;flex-shrink:0;overflow-y:auto;padding:16px;border-right:1px solid var(--border);background:var(--surface-1);">
         ${pkFacet_('Insurance company', 'carriers', carriers)}
@@ -12549,6 +12656,8 @@ async function qbAcaGetPlans_() {
       income: income, zip: c.zip || null,
       county: countySel2.options[countySel2.selectedIndex] ? countySel2.options[countySel2.selectedIndex].text : null,
       aptc: data.aptc != null ? data.aptc : null, csr: data.csr || null,
+      doctors: (window._qbAcaDocs || []).map(d => d.name),
+      medications: (window._qbAcaMeds || []).map(m => m.name),
       household: people.map(m => ({ relationship: m.relationship, age: m.age, applying: !!m.applying })),
       applicant_count: data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length,
       household_count: data.household_count != null ? data.household_count : people.length,

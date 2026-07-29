@@ -536,6 +536,8 @@ async function init() {
           ${notApplying.length ? `<span>&#10060; Not applying: ${notApplying.map(person).join(', ')}</span>` : ''}
           ${qi.aptc != null && qi.aptc > 0 ? `<span>&#127775; Estimated tax credit <strong style="color:#15803d;">$${Number(qi.aptc).toFixed(0)}/mo</strong></span>` : ''}
           ${csrPct(qi.csr) ? `<span>✨ <strong style="color:#15803d;">${esc(csrLabel(qi.csr))}</strong> applied to Silver</span>` : ''}
+          ${(qi.doctors || []).length ? `<span>\u{1FA7A} Checked for: ${esc((qi.doctors || []).join(', '))}</span>` : ''}
+          ${(qi.medications || []).length ? `<span>\u{1F48A} Checked for: ${esc((qi.medications || []).join(', '))}</span>` : ''}
         </div>
         <div style="font-size:11.5px;color:#94a3b8;margin-top:8px;">If any of this looks wrong or has changed, tell me — it changes the prices and the tax credit.</div>
       </div>`;
