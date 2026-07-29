@@ -10712,8 +10712,17 @@ async function openQuoteBuilder(dealId) {
     </div>`;
 
   showModal('Create Quote — ' + escWeb(contact.name || ''), `
-    <label>Line of business</label>
-    <select id="qb-line" onchange="qbLineChanged_()">${lineOpts}</select>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+      <div><label style="margin-top:0;">Line of business</label>
+        <select id="qb-line" onchange="qbLineChanged_()" style="width:auto;min-width:170px;">${lineOpts}</select></div>
+      <div><label style="margin-top:0;">Brand on the client's page</label>
+        <select id="qb-brand" style="width:auto;min-width:150px;">
+          <option value="ia" selected>Insured America</option>
+          <option value="kfg">Kannon Financial</option>
+        </select></div>
+      <div><label style="margin-top:0;">Valid until</label>
+        <input type="date" id="qb-valid" value="${defValid}" style="width:auto;" /></div>
+    </div>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
     <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; ACA Marketplace — household &amp; subsidy</div>
@@ -10775,12 +10784,8 @@ async function openQuoteBuilder(dealId) {
       </div>
       <div id="qb-rt-warn" style="font-size:11px;color:#f59e0b;margin-top:5px;"></div>
     </div>
-    <label>Brand on the client's page</label>
-    <select id="qb-brand">
-      <option value="ia" selected>Insured America</option>
-      <option value="kfg">Kannon Financial</option>
-    </select>
-    <label>Valid until</label><input type="date" id="qb-valid" value="${defValid}" />
+
+
     ${Array.from({ length: QB_MAX_OPTIONS }, (_, oi) => oi).map(optBlock).join('')}
     <button type="button" id="qb-add-opt" class="btn btn-outline btn-sm" style="margin-top:12px;" onclick="qbRevealOption_()">+ Add another option</button>
     <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Client: <strong>${escWeb(contact.name || '')}</strong>${contact.email ? ' &middot; ' + escWeb(contact.email) : ' &middot; <span style="color:#f59e0b;">no email on file — you can still copy the link</span>'}</p>
@@ -11887,7 +11892,7 @@ function pkBasisPanel_() {
         <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
           ${escWeb(county || 'County not set')}${rows.length ? ' \u00b7 ' + applying + ' of ' + rows.length + ' household members applying' : ''}
         </div>
-        <button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="pkReprice_()">\u21bb Re-price with these</button>
+        <button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="pkReprice_()">\u21bb Update plans list</button>
         <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Household members, ICHRA and life-event answers live in the quote dialog \u2014 close the picker to change those.</div>
       </div>
       <div>
@@ -12252,7 +12257,7 @@ function acaCsrMedal_(metal, csr) {
   const pct = acaCsrPct_(csr || acaCsrActive_());
   const big = (pct === 'ZERO' || pct === 'LIMITED') ? '$0' : pct + '%';
   const sub = (pct === 'ZERO') ? 'no cost' : (pct === 'LIMITED') ? 'limited' : 'covered';
-  return `<div title="${escWeb(ACA_CSR_TIP)}" style="align-self:flex-start;margin-bottom:3px;cursor:help;flex-shrink:0;
+  return `<div title="${escWeb(ACA_CSR_TIP)}" style="cursor:help;flex-shrink:0;
       width:46px;height:46px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
       background:radial-gradient(circle at 32% 28%, #34d399 0%, #15803d 72%);color:#fff;
       border:2.5px solid var(--surface-1);box-shadow:0 4px 12px rgba(21,128,61,.42);">
@@ -12768,12 +12773,15 @@ function pkCard_(p) {
       </div>
     </div>
     <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;border-left:1px solid var(--border);padding-left:16px;">
-      ${acaCsrMedal_(p.metal)}
+      <div style="display:flex;width:100%;align-items:center;gap:8px;margin-bottom:4px;">
+        ${acaCsrMedal_(p.metal)}
+        <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-left:auto;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
+          onclick="event.stopPropagation();qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
+      </div>
       <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}</div>
       <div style="font-size:10.5px;color:var(--text-muted);">/mo to client</div>
       ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);text-align:right;">full $${Number(p.premium).toFixed(0)} \u2212 <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
-      <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:6px;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
-        onclick="event.stopPropagation();qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
+
     </div>
   </div>`;
 }
