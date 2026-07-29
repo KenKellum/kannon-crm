@@ -12082,6 +12082,28 @@ function acaCsrBadge_(metal, csr) {
   if (!acaCsrAppliesTo_(metal, csr)) return '';
   return `<span title="${escWeb(ACA_CSR_TIP)}" style="cursor:help;background:rgba(21,128,61,.12);color:#15803d;font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;white-space:nowrap;">${escWeb(acaCsrLabel_(csr))}</span>`;
 }
+// Corner medal for cost-sharing plans: the % is the headline number
+function acaCsrMedal_(metal, csr) {
+  if (!acaCsrAppliesTo_(metal, csr)) return '';
+  const pct = acaCsrPct_(csr || acaCsrActive_());
+  const big = (pct === 'ZERO' || pct === 'LIMITED') ? '$0' : pct + '%';
+  const sub = (pct === 'ZERO') ? 'no cost' : (pct === 'LIMITED') ? 'limited' : 'covered';
+  return `<div title="${escWeb(ACA_CSR_TIP)}" style="position:absolute;top:-9px;right:-9px;z-index:2;cursor:help;
+      width:52px;height:52px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      background:radial-gradient(circle at 32% 28%, #34d399 0%, #15803d 72%);color:#fff;
+      border:2.5px solid var(--surface-1);box-shadow:0 4px 12px rgba(21,128,61,.42);">
+      <span style="font-size:14px;font-weight:900;line-height:1;letter-spacing:-.4px;">${big}</span>
+      <span style="font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;opacity:.92;">${sub}</span>
+    </div>`;
+}
+// Small flag beside the Silver filter so the tier is obvious before filtering
+function acaCsrFacetFlag_(metal) {
+  if (!acaCsrAppliesTo_(metal)) return '';
+  const pct = acaCsrPct_(acaCsrActive_());
+  const txt = (pct === 'ZERO' || pct === 'LIMITED') ? '\u2728' : '\u2728 ' + pct + '%';
+  return `<span title="${escWeb(ACA_CSR_TIP)}" style="cursor:help;background:linear-gradient(120deg,#15803d,#34d399);color:#fff;font-size:9px;font-weight:800;border-radius:999px;padding:1px 6px;white-space:nowrap;">${txt}</span>`;
+}
+
 function acaCsrBanner_() {
   const bars = [];
   const bar = (bg, bd, fg, html) =>
@@ -12252,7 +12274,7 @@ function pkFacet_(title, set, values) {
       const n = all.filter(p => (set === 'carriers' ? p.issuer : set === 'metals' ? p.metal : p.type) === v).length;
       return `<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer;">
         <input type="checkbox" ${_qbPk[set].has(v) ? 'checked' : ''} onchange="pkToggle_('${set}','${escWeb(v)}')" style="width:14px;height:14px;" />
-        <span style="flex:1;">${escWeb(v)}</span><span style="color:var(--text-muted);font-size:11px;">${n}</span>
+        <span style="flex:1;">${escWeb(v)}${set === 'metals' ? ' ' + acaCsrFacetFlag_(v) : ''}</span><span style="color:var(--text-muted);font-size:11px;">${n}</span>
       </label>`;
     }).join('')}
   </div>`;
@@ -12314,7 +12336,7 @@ function renderPickerBody_() {
           ${_qbPk.cmp.size ? `<button class="btn ${_qbPk.cmp.size >= 2 ? 'btn-primary' : 'btn-outline'} btn-sm" ${_qbPk.cmp.size >= 2 ? '' : 'disabled'} onclick="openAcaCompare_()">⚖️ Compare (${_qbPk.cmp.size})</button>` : ''}
           <span style="color:var(--text-muted);margin-left:auto;">${added.length}/${QB_MAX_OPTIONS} on the quote</span>
         </div>
-        <div style="flex:1;overflow-y:auto;padding:14px 20px;display:flex;flex-direction:column;gap:10px;">
+        <div style="flex:1;overflow-y:auto;padding:18px 26px 14px;display:flex;flex-direction:column;gap:14px;">
           ${plans.length ? plans.map(p => pkCard_(p)).join('') : '<div style="color:var(--text-muted);padding:30px;text-align:center;">No plans match these filters \u2014 loosen something.</div>'}
         </div>
         <div style="padding:10px 20px;border-top:1px solid var(--border);background:var(--surface-1);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -12555,7 +12577,8 @@ function pkCard_(p) {
   const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
   const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
   const slot = qbAcaAddedSlot_(p.id);
-  return `<div style="display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);">
+  return `<div style="position:relative;display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);">
+    ${acaCsrMedal_(p.metal)}
     <div style="flex:1;min-width:0;">
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
