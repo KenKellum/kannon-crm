@@ -676,13 +676,16 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
       if (md && md.length) prof.medications = md.filter(m => m && m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
       if (Object.keys(prof).length) {
         prof.profile_updated_at = now;
-        // return=minimal: an anon visitor may write these columns but not read
-        // the row back, and the default representation would 401 the whole call
-        const okProf = await supa('/rest/v1/contacts?id=eq.' + encodeURIComponent(contactId), {
-          method: 'PATCH', body: JSON.stringify(prof),
-          headers: { Prefer: 'return=minimal' }
+        // Direct fetch, not supa(): an anon visitor may WRITE these columns but
+        // not read the row back, so we must send return=minimal — and supa()
+        // reports an empty 204 body as failure, which would look like an error.
+        const pr = await fetch(SUPABASE_URL + '/rest/v1/contacts?id=eq.' + encodeURIComponent(contactId), {
+          method: 'PATCH',
+          headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + SUPABASE_ANON,
+                     'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(prof)
         });
-        if (!okProf) console.error('client profile not saved', prof);
+        if (!pr.ok) console.error('client profile not saved', pr.status);
       }
     }
   } catch (e) { /* never block the client's submit on this */ }
