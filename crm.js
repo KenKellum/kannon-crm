@@ -11484,11 +11484,13 @@ function acaShapeProviders_(raw, clientZip) {
     if (o.ptype) {
       const where = [o.street, o.city, o.state].filter(Boolean).join(', ');
       const isFac = o.ptype === 'Facility';
-      return { key: o.npi, zip: o.zip || '', cleanName: o.name,
+      return { key: o.npi, zip: o.zip || '', cleanName: o.name, isFac: isFac,
+        city: o.city || '', state: o.state || '', street: o.street || '', taxonomy: o.taxonomy || '',
         name: (isFac ? '\u{1F3E5} ' : '') + o.name + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') + (where ? ' \u00b7 ' + where : '') };
     }
     const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
-    return { key: o.npi, zip: '', cleanName: nm, name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') };
+    return { key: o.npi, zip: '', cleanName: nm, isFac: false, city: '', state: '', street: '', taxonomy: o.taxonomy || '',
+      name: nm + (o.taxonomy ? ' \u00b7 ' + o.taxonomy : '') };
   }).filter(x => x.key && x.cleanName);
   const z3 = String(clientZip || '').slice(0, 3);
   items.sort((a, b) =>
@@ -11911,15 +11913,70 @@ async function qbAcaSearch_(kind) {
         return { key: o.rxcui || o.id, name: medNm + (o.route ? ' \u00b7 ' + o.route : ''), cleanName: medNm };
       }).filter(x => x.key && x.name);
     }
-    if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
-    out.style.maxHeight = '190px'; out.style.overflowY = 'auto';
-    out.innerHTML = items.slice(0, 30).map((x, i) =>
-      `<a href="#" onclick="qbAcaPick_('${kind}', ${i}); return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}</a>`).join('');
-    window._qbAcaMatches = items.slice(0, 30);
+    window._qbAcaMatches = items.slice(0, 60);
     window._qbAcaMatchKind = kind;
+    window._qbAcaShowFar = false;
+    qbAcaRenderMatches_();
   } catch (e) { out.innerHTML = '<span style="color:var(--danger);">Search unreachable.</span>'; }
 }
 
+
+function qbAcaToggleFar_() {
+  window._qbAcaShowFar = !window._qbAcaShowFar;
+  qbAcaRenderMatches_();
+}
+
+// Providers come back name-matched nationwide. An agent only ever wants the
+// ones near THIS client, so group by distance-from-home and hide the rest.
+function qbAcaRenderMatches_() {
+  const out = _acaFld_('aca-matches');
+  if (!out) return;
+  const items = window._qbAcaMatches || [];
+  const kind = window._qbAcaMatchKind;
+  if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
+
+  const row = (x, i) => `<a href="#" onclick="qbAcaPick_('${kind}', ${i}); return false;"
+      style="display:block;padding:7px 9px;border-radius:8px;text-decoration:none;color:inherit;border-bottom:0.5px solid var(--border);"
+      onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='transparent'">
+      <div style="font-size:12.5px;font-weight:700;color:var(--text-primary);">${x.isFac ? '\u{1F3E5} ' : ''}${escWeb(x.cleanName)}</div>
+      ${x.taxonomy ? `<div style="font-size:11px;color:var(--accent,#1d3557);">${escWeb(x.taxonomy)}</div>` : ''}
+      ${(x.street || x.city) ? `<div style="font-size:11px;color:var(--text-muted);">${escWeb([x.street, x.city, x.state].filter(Boolean).join(', '))} ${escWeb(x.zip || '')}</div>` : ''}
+    </a>`;
+
+  if (kind !== 'doc') {
+    out.style.maxHeight = '230px'; out.style.overflowY = 'auto';
+    out.innerHTML = items.map((x, i) =>
+      `<a href="#" onclick="qbAcaPick_('med', ${i}); return false;" style="display:block;padding:6px 9px;border-radius:8px;text-decoration:none;color:var(--text-primary);font-size:12.5px;border-bottom:0.5px solid var(--border);"
+        onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='transparent'">${escWeb(x.name)}</a>`).join('');
+    return;
+  }
+
+  const c = window._qbContact || {};
+  const st = String(c.state || '').toUpperCase();
+  const z3 = String(c.zip || '').slice(0, 3);
+  const near = [], inState = [], far = [];
+  items.forEach((x, i) => {
+    const xs = String(x.state || '').toUpperCase();
+    const entry = { x, i };
+    if (z3 && String(x.zip || '').slice(0, 3) === z3) near.push(entry);
+    else if (st && xs === st) inState.push(entry);
+    else far.push(entry);
+  });
+
+  const group = (label, list, tone) => list.length ? `
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${tone};padding:7px 2px 3px;">${label} (${list.length})</div>
+    ${list.map(e => row(e.x, e.i)).join('')}` : '';
+
+  const showFar = !!window._qbAcaShowFar;
+  out.style.maxHeight = '300px'; out.style.overflowY = 'auto';
+  out.innerHTML =
+    group(z3 ? 'Near ' + escWeb(c.zip) : 'Nearby', near, '#15803d')
+    + group(st ? 'Elsewhere in ' + escWeb(st) : 'Same state', inState, 'var(--accent,#1d3557)')
+    + (showFar ? group('Other states', far, 'var(--text-muted)') : '')
+    + (!near.length && !inState.length && !showFar && far.length
+        ? `<div style="font-size:12px;color:#b45309;padding:8px 2px;">No matches in ${escWeb(st || 'their state')} \u2014 ${far.length} found elsewhere.</div>` : '')
+    + (far.length ? `<div style="padding:7px 2px;"><a href="#" onclick="qbAcaToggleFar_(); return false;" style="font-size:11.5px;font-weight:700;color:var(--accent,#1d3557);text-decoration:none;">${showFar ? '\u2191 Hide the ' + far.length + ' out-of-state matches' : '\u2193 Show ' + far.length + ' match' + (far.length === 1 ? '' : 'es') + ' in other states'}</a></div>` : '');
+}
 
 function qbAcaPick_(kind, i) {
   const x = (window._qbAcaMatches || [])[i];
@@ -12091,8 +12148,8 @@ function acaCsrMedal_(metal, csr) {
   const pct = acaCsrPct_(csr || acaCsrActive_());
   const big = (pct === 'ZERO' || pct === 'LIMITED') ? '$0' : pct + '%';
   const sub = (pct === 'ZERO') ? 'no cost' : (pct === 'LIMITED') ? 'limited' : 'covered';
-  return `<div title="${escWeb(ACA_CSR_TIP)}" style="position:absolute;top:-9px;right:-9px;z-index:2;cursor:help;
-      width:52px;height:52px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  return `<div title="${escWeb(ACA_CSR_TIP)}" style="align-self:flex-start;margin-bottom:3px;cursor:help;flex-shrink:0;
+      width:46px;height:46px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
       background:radial-gradient(circle at 32% 28%, #34d399 0%, #15803d 72%);color:#fff;
       border:2.5px solid var(--surface-1);box-shadow:0 4px 12px rgba(21,128,61,.42);">
       <span style="font-size:14px;font-weight:900;line-height:1;letter-spacing:-.4px;">${big}</span>
@@ -12580,8 +12637,7 @@ function pkCard_(p) {
   const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
   const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
   const slot = qbAcaAddedSlot_(p.id);
-  return `<div style="position:relative;display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);">
-    ${acaCsrMedal_(p.metal)}
+  return `<div style="display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);">
     <div style="flex:1;min-width:0;">
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
@@ -12599,6 +12655,7 @@ function pkCard_(p) {
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">${qbAcaCovLines_(p)}</div>
     </div>
     <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;border-left:1px solid var(--border);padding-left:16px;">
+      ${acaCsrMedal_(p.metal)}
       <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}</div>
       <div style="font-size:10.5px;color:var(--text-muted);">/mo to client</div>
       ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);text-align:right;">full $${Number(p.premium).toFixed(0)} \u2212 <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
