@@ -12296,18 +12296,17 @@ function acaCsrFacetFlag_(metal) {
 
 function acaCsrBanner_() {
   const bars = [];
-  const bar = (bg, bd, fg, html) =>
-    `<div style="padding:9px 20px;background:${bg};border-bottom:1px solid ${bd};font-size:12.5px;color:${fg};">${html}</div>`;
+  const bar = (tone, html) => `<div class="pk-bar ${tone}">${html}</div>`;
 
   // Medicaid/CHIP outranks everything — no credit, no CSR, different door
   if (window._qbAcaMedicaid) {
-    bars.push(bar('rgba(180,83,9,.10)', 'rgba(180,83,9,.30)', '#b45309',
+    bars.push(bar('warn',
       '&#9888;&#65039; <strong>This household may qualify for Medicaid/CHIP.</strong> Their income is below the Marketplace subsidy floor, so <strong>no tax credit and no cost-sharing help apply</strong> to the plans below \u2014 check the Medicaid door before quoting these prices.'));
   } else if (window._qbAcaAptc != null && window._qbAcaAptc > 0) {
-    bars.push(bar('rgba(21,128,61,.09)', 'rgba(21,128,61,.25)', '#15803d',
+    bars.push(bar('ok',
       '\u{1F31F} <strong>Estimated tax credit $' + Number(window._qbAcaAptc).toFixed(0) + '/mo</strong> \u2014 already taken off every price below.'));
   } else if (window._qbAcaAptc != null) {
-    bars.push(bar('var(--surface-2)', 'var(--border)', 'var(--text-secondary)',
+    bars.push(bar('muted',
       'No premium tax credit at this income \u2014 prices below are full price.'));
   }
 
@@ -12315,7 +12314,7 @@ function acaCsrBanner_() {
   if (csr) {
     const pct = acaCsrPct_(csr);
     const silverOnly = !(pct === 'ZERO' || pct === 'LIMITED');
-    bars.push(bar('rgba(21,128,61,.09)', 'rgba(21,128,61,.25)', '#15803d',
+    bars.push(bar('ok',
       '<strong>' + escWeb(acaCsrLabel_(csr)) + '</strong> \u2014 this household qualifies for cost-sharing help'
       + (silverOnly
         ? ', which only applies to <strong>Silver</strong> plans. Silver deductibles and out-of-pocket maximums below are already reduced; leaving Silver gives that up.'
@@ -12366,13 +12365,10 @@ function qbAcaCovLines_(p) {
   window._qbCovExp = window._qbCovExp || {};
 
   const pill = (known, ok, label) => {
-    const style = known
-      ? (ok ? 'color:var(--success);border-color:rgba(21,128,61,.35);background:rgba(21,128,61,.07);'
-            : 'color:var(--danger);border-color:rgba(185,28,28,.35);background:rgba(185,28,28,.06);')
-      : 'color:var(--text-muted);border-color:var(--border);';
+    const tone = known ? (ok ? 'ok' : 'bad') : 'unk';
     const mark = known ? (ok ? '\u2713' : '\u2717') : (busy ? '\u23f3' : '?');
     const suffix = known ? '' : (busy ? ' <span style="opacity:.7;">checking\u2026</span>' : ' <span style="opacity:.7;">(not reported)</span>');
-    return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;border:1px solid;border-radius:999px;padding:1px 8px;${style}">${mark} ${label}${suffix}</span>`;
+    return `<span class="pk-pill ${tone}">${mark} ${label}${suffix}</span>`;
   };
 
   const row = (icon, kind, list, cover, keyOf, labelOf) => {
@@ -12792,9 +12788,10 @@ function pkCard_(p) {
   const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
   const slot = qbAcaAddedSlot_(p.id);
   return `<div onclick="openPlanDetail_('${escWeb(p.id)}')" title="Click for full plan details"
-    style="cursor:pointer;display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);transition:box-shadow .15s ease,border-color .15s ease;"
-    onmouseover="this.style.boxShadow='0 6px 18px rgba(15,23,42,.10)';this.style.borderColor='var(--accent,#1d3557)';"
-    onmouseout="this.style.boxShadow='none';this.style.borderColor='${slot >= 0 ? 'var(--success)' : 'var(--border)'}';">
+    class="pk-card${slot >= 0 ? ' is-selected' : ''}"
+    style="cursor:pointer;display:flex;gap:16px;align-items:stretch;border-radius:12px;padding:14px 16px;transition:box-shadow .15s ease;"
+    onmouseover="this.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';"
+    onmouseout="this.style.boxShadow='none';">
     <div style="flex:1;min-width:0;">
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
@@ -12804,9 +12801,7 @@ function pkCard_(p) {
         ${p.rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${p.rating}</span>` : ''}
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
       </div>
-      <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${slot >= 0
-        ? `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(37,99,235,.12);color:#1d4ed8;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;margin-right:6px;vertical-align:middle;">\u2713 Selected \u00b7 Option ${slot + 1}</span>`
-        : ''}${escWeb(p.name)}</div>
+      <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${slot >= 0 ? `<span class="pk-sel-badge">\u2713 Selected \u00b7 Option ${slot + 1}</span>` : ''}${escWeb(p.name)}</div>
       <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;">
         ${qbAcaCostFact_('Deductible', p.deductible, p.deductible_family)}
         ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
@@ -12991,10 +12986,10 @@ function qbAcaApptWarn_(i, plan) {
   const agencyOk = agentOk || qbCarrierMatch_(plan.issuer, window._qbAgencyCarrierNames || []);
   if (!agentOk) {
     notes.push(agencyOk
-      ? { bg: '#fef9e7', bd: '#f0d47a', fg: '#8a6d1f',
+      ? { tone: 'warn',
           html: '&#9888;&#65039; You\u2019re not contracted with <strong>' + escWeb(plan.issuer || 'this carrier')
             + '</strong>. Your agency offers it \u2014 check your appointment before enrolling the client (Settings \u2192 My Carrier Appointments).' }
-      : { bg: '#fdeaea', bd: '#e8a1a1', fg: '#9b2c2c',
+      : { tone: 'bad',
           html: '&#9888;&#65039; <strong>' + escWeb(plan.issuer || 'This carrier')
             + '</strong> isn\u2019t on your agency\u2019s carrier list \u2014 you likely can\u2019t enroll the client in this plan. Confirm with your agency before presenting it.' });
   }
@@ -13003,10 +12998,10 @@ function qbAcaApptWarn_(i, plan) {
   const csr = acaCsrActive_();
   if (csr) {
     if (acaCsrAppliesTo_(plan.metal, csr)) {
-      notes.push({ bg: 'rgba(21,128,61,.09)', bd: 'rgba(21,128,61,.35)', fg: '#15803d',
+      notes.push({ tone: 'ok',
         html: '\u2728 <strong>' + escWeb(acaCsrLabel_(csr).replace('\u2728 ', '')) + '</strong> \u2014 this plan\u2019s deductible and out-of-pocket maximum are already reduced for this household.' });
     } else {
-      notes.push({ bg: '#fef9e7', bd: '#f0d47a', fg: '#8a6d1f',
+      notes.push({ tone: 'warn',
         html: '&#9888;&#65039; This household qualifies for <strong>' + escWeb(acaCsrLabel_(csr).replace('\u2728 ', ''))
           + '</strong>, which only applies to <strong>Silver</strong> plans. Choosing ' + escWeb(plan.metal || 'this plan')
           + ' gives up that reduced deductible and out-of-pocket maximum \u2014 make sure the client is choosing it on purpose.' });
@@ -13016,8 +13011,7 @@ function qbAcaApptWarn_(i, plan) {
   if (!notes.length) { warn.style.display = 'none'; warn.innerHTML = ''; return; }
   warn.style.display = 'block';
   warn.style.background = 'transparent'; warn.style.border = 'none'; warn.style.padding = '0';
-  warn.innerHTML = notes.map(n =>
-    `<div style="background:${n.bg};border:1px solid ${n.bd};color:${n.fg};border-radius:8px;padding:8px 10px;margin-bottom:6px;">${n.html}</div>`).join('');
+  warn.innerHTML = notes.map(n => `<div class="pk-note ${n.tone}">${n.html}</div>`).join('');
 }
 
 function qbApplyAcaPlan_(i) {

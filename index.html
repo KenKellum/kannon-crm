@@ -52,6 +52,13 @@
       --muted: var(--text-muted);
       --success: var(--fill-success);
       --danger: var(--fill-danger);
+      /* Links + selection (dark) */
+      --link: #93c5fd;
+      --link-hover: #bfdbfe;
+      --bg-selected: rgba(96,165,250,0.20);
+      --bg-selected-card: rgba(96,165,250,0.13);
+      --border-selected: #60a5fa;
+      --text-selected: #bfdbfe;
       --shadow: 0 2px 8px rgba(0,0,0,0.4);
       --radius: 8px;
     }
@@ -361,6 +368,13 @@
       --bg-success: rgba(16,185,129,0.1);
       --bg-warning: rgba(245,158,11,0.1);
       --bg-danger: rgba(239,68,68,0.1);
+      /* Links + selection (light) */
+      --link: #1d4ed8;
+      --link-hover: #1e40af;
+      --bg-selected: rgba(59,130,246,0.16);
+      --bg-selected-card: #e9f1fe;
+      --border-selected: #3b82f6;
+      --text-selected: #1d4ed8;
     }
     html.light-theme .sidebar-nav button { background: rgba(0,0,0,0.03); }
     html.light-theme .sidebar-nav button:hover { background: rgba(0,0,0,0.06); }
@@ -368,6 +382,30 @@
     html.light-theme .sidebar-signout-btn { background: rgba(0,0,0,0.04); }
     html.light-theme .sidebar-signout-btn:hover { background: rgba(0,0,0,0.08); }
     html.light-theme #theme-toggle-btn:hover { background: rgba(0,0,0,0.06); }
+
+    /* Links inside side panels — browser-default blue is unreadable on dark */
+    .panel-body a, .panel-section a, .deal-field-value a { color: var(--link); }
+    .panel-body a:hover, .panel-section a:hover { color: var(--link-hover); text-decoration: underline; }
+
+    /* Plan picker — theme-aware states (never hardcode these inline) */
+    .pk-card { background: var(--surface-1); border: 1.5px solid var(--border); }
+    .pk-card.is-selected { background: var(--bg-selected-card); border-color: var(--border-selected);
+                           box-shadow: inset 4px 0 0 var(--border-selected); }
+    .pk-sel-badge { display:inline-flex; align-items:center; gap:4px; background: var(--bg-selected);
+                    color: var(--text-selected); font-size:10.5px; font-weight:800; border-radius:6px;
+                    padding:2px 8px; margin-right:6px; vertical-align:middle; }
+    .pk-bar { padding:9px 20px; border-bottom:1px solid; font-size:12.5px; line-height:1.55; }
+    .pk-bar.ok    { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); }
+    .pk-bar.warn  { background: var(--bg-warning); border-color: var(--border-warning); color: var(--text-warning); }
+    .pk-bar.muted { background: var(--surface-2);  border-color: var(--border);         color: var(--text-secondary); }
+    .pk-note { border-radius:8px; padding:8px 10px; margin-bottom:6px; border:1px solid; font-size:11.5px; line-height:1.5; }
+    .pk-note.ok   { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); }
+    .pk-note.warn { background: var(--bg-warning); border-color: var(--border-warning); color: var(--text-warning); }
+    .pk-note.bad  { background: var(--bg-danger);  border-color: var(--border-danger);  color: var(--text-danger); }
+    .pk-pill { display:inline-flex; align-items:center; gap:4px; font-size:11px; border:1px solid; border-radius:999px; padding:1px 8px; }
+    .pk-pill.ok  { color: var(--text-success); border-color: var(--border-success); background: var(--bg-success); }
+    .pk-pill.bad { color: var(--text-danger);  border-color: var(--border-danger);  background: var(--bg-danger); }
+    .pk-pill.unk { color: var(--text-muted);   border-color: var(--border); }
 
     @media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } .admin-grid { grid-template-columns: 1fr; } }
     @media (max-width: 768px) {
@@ -533,6 +571,6 @@
     }
   });
 </script>
-<script src="./crm.js?v=20260727-88"></script>
+<script src="./crm.js?v=20260727-89"></script>
 </body>
 </html>
