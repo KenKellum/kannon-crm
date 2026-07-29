@@ -10685,8 +10685,8 @@ async function openQuoteBuilder(dealId) {
   const optBlock = i => `
     <div id="qb-opt-wrap-${i}" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-top:14px;${i > 0 ? 'display:none;' : ''}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent,#1d3557);color:#fff;font-size:11px;font-weight:800;">${i + 1}</span>
-        <span style="font-weight:700;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Option ${i + 1}</span>
+        <span id="qb-opt-no-${i}" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent,#1d3557);color:#fff;font-size:11px;font-weight:800;">${i + 1}</span>
+        <span id="qb-opt-label-${i}" style="font-weight:700;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Option ${i + 1}</span>
         ${i > 0 ? `<button type="button" onclick="qbHideOption_(${i})" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;" title="Remove this option">&#10005;</button>` : ''}
       </div>
       <div id="qb-cms-wrap-${i}" style="display:none;">
@@ -10847,21 +10847,26 @@ async function openQuoteBuilder(dealId) {
         display_name: name, monthly_premium: prem, benefit_bullets: bullets,
         agent_note: document.getElementById('qb-note-' + i).value.trim() || null,
         is_recommended: document.getElementById('qb-rec-' + i).checked,
-        sort_order: i, plan_meta: planMeta,
+        sort_order: options.length, plan_meta: planMeta,
       });
     }
     if (!options.length) { showToast('Add at least one option.'); return false; }
-    // Snapshot the official document links for ACA options (best-effort — quote still saves without them)
-    for (const o of options) {
-      if (o.plan_meta && o.plan_meta.src === 'aca' && !o.plan_meta.links) {
-        try {
-          const d = await qbAcaDetail_(o.plan_meta.plan_id);
-          o.plan_meta.links = {
-            sbc: d.benefits_url || null, brochure: d.brochure_url || null,
-            formulary: d.formulary_url || null, network: d.network_url || null,
-          };
-        } catch (e) {}
-      }
+    // Snapshot the official document links for ACA options. Best-effort: run
+    // them together and give up after a few seconds — a slow relay must never
+    // make "Save Quote" look like it did nothing.
+    const needLinks = options.filter(o => o.plan_meta && o.plan_meta.src === 'aca' && !o.plan_meta.links);
+    if (needLinks.length) {
+      showToast('Saving quote\u2026');
+      const grab = o => qbAcaDetail_(o.plan_meta.plan_id).then(d => {
+        o.plan_meta.links = {
+          sbc: d.benefits_url || null, brochure: d.brochure_url || null,
+          formulary: d.formulary_url || null, network: d.network_url || null,
+        };
+      }).catch(() => {});
+      await Promise.race([
+        Promise.all(needLinks.map(grab)),
+        new Promise(r => setTimeout(r, 8000)),
+      ]);
     }
     // Remember rating inputs on the contact (silent, best-effort)
     try {
@@ -11489,12 +11494,38 @@ function openNppVersionModal() {
 // ACA MARKETPLACE — household panel + official plans with the
 // government-calculated subsidy (via the Apps Script relay).
 // ============================================================
+// Slots are fixed (0..9) but the agent sees "Option 1, 2, 3..." — after a
+// delete in the middle those must renumber, or Option 4 stays "Option 4"
+// while sitting third.
+function qbOptionNo_(slot) {
+  let n = 0;
+  for (let i = 0; i <= slot; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (w && w.style.display !== 'none') n++;
+  }
+  return n;
+}
+
+function qbRenumberOptions_() {
+  let n = 0;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (!w || w.style.display === 'none') continue;
+    n++;
+    const chip = document.getElementById('qb-opt-no-' + i);
+    const lbl = document.getElementById('qb-opt-label-' + i);
+    if (chip) chip.textContent = n;
+    if (lbl) lbl.textContent = 'Option ' + n;
+  }
+}
+
 function qbRevealOption_() {
   for (let i = 1; i < QB_MAX_OPTIONS; i++) {
     const w = document.getElementById('qb-opt-wrap-' + i);
     if (w && w.style.display === 'none') {
       w.style.display = 'block';
       if (i === QB_MAX_OPTIONS - 1) document.getElementById('qb-add-opt').style.display = 'none';
+      qbRenumberOptions_();
       return;
     }
   }
@@ -11510,6 +11541,12 @@ function qbHideOption_(i) {
   });
   const rec = document.getElementById('qb-rec-' + i); if (rec) rec.checked = false;
   const addBtn = document.getElementById('qb-add-opt'); if (addBtn) addBtn.style.display = '';
+  // a hidden slot must also drop its picker link, or the plan still reads as chosen
+  const sel = document.getElementById('qb-aca-' + i); if (sel) sel.value = '';
+  if (window._qbAcaSel) delete window._qbAcaSel[i];
+  qbRenumberOptions_();
+  qbAcaRenderBrowser_();
+  if (document.getElementById('qb-aca-picker')) renderPickerBody_();
 }
 
 // Shared shaper for finder results (NPPES uniform shape, legacy-tolerant).
@@ -12610,7 +12647,7 @@ function renderPickerBody_() {
         <div class="pk-tray" style="padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <span class="pk-tray-label">On the quote${added.length ? ' \u00b7 ' + added.length : ''}</span>
           ${added.length ? added.map(a => `<div class="pk-tray-item">
-            <span class="num">${a.i + 1}</span>
+            <span class="num">${qbOptionNo_(a.i)}</span>
             <div class="who">
               <div class="carrier">${escWeb(a.p.issuer || '')}</div>
               <div class="pname" title="${escWeb(a.p.name)}">${escWeb(a.p.name)}</div>
@@ -12865,7 +12902,7 @@ function pkCard_(p) {
         ${p.rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${p.rating}</span>` : ''}
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
       </div>
-      <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${slot >= 0 ? `<span class="pk-sel-badge">\u2713 Selected \u00b7 Option ${slot + 1}</span>` : ''}${escWeb(p.name)}</div>
+      <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${slot >= 0 ? `<span class="pk-sel-badge">\u2713 Selected \u00b7 Option ${qbOptionNo_(slot)}</span>` : ''}${escWeb(p.name)}</div>
       <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;">
         ${qbAcaCostFact_('Deductible', p.deductible, p.deductible_family)}
         ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
@@ -12882,7 +12919,7 @@ function pkCard_(p) {
       <div style="display:flex;width:100%;align-items:center;gap:8px;margin-bottom:4px;">
         ${acaCsrMedal_(p.metal)}
         <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-left:auto;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
-          onclick="event.stopPropagation();qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
+          onclick="event.stopPropagation();qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + qbOptionNo_(slot) : '\uff0b Add'}</button>
       </div>
       <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}</div>
       <div style="font-size:10.5px;color:var(--text-muted);">/mo to client</div>
@@ -12918,7 +12955,8 @@ function qbAcaAddPlan_(planId) {
   while (wrap && wrap.style.display === 'none') qbRevealOption_();
   const sel = document.getElementById('qb-aca-' + slot);
   if (sel) { sel.value = planId; qbApplyAcaPlan_(slot); }
-  showToast('Added as Option ' + (slot + 1) + '.');
+  qbRenumberOptions_();
+  showToast('Added as Option ' + qbOptionNo_(slot) + '.');
   qbAcaRenderBrowser_();
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
 }
