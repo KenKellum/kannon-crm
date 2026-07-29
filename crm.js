@@ -12077,9 +12077,11 @@ function qbAcaRenderBrowser_() {
   }
   box.style.display = 'block';
   box.innerHTML = `
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <button type="button" class="btn btn-primary" onclick="openAcaPicker_()">\u{1F5D6} Reopen Plan Picker (${plans.length} plans)</button>
-      <span style="font-size:12px;color:var(--text-muted);">${added.length ? added.length + ' on the quote: ' + added.map(a => escWeb(a.p.name.slice(0, 26))).join(' \u00b7 ') : 'None picked yet.'}</span>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-muted);">
+      <span><strong style="color:var(--text-primary);">${plans.length} plans</strong> loaded \u00b7 ${added.length
+        ? added.length + ' on the quote: ' + added.map(a => escWeb(a.p.name.slice(0, 26))).join(' \u00b7 ')
+        : 'none picked yet'}</span>
+      <a href="#" onclick="openAcaPicker_();return false;" style="color:var(--accent,#1d3557);font-weight:700;text-decoration:none;">\u{1F5D6} Reopen picker</a>
     </div>`;
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
 }
