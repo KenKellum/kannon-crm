@@ -2918,6 +2918,27 @@ function imPickerSync_(id) {
       <button type="button" onclick="window._imPickers['${id}'].splice(${i},1);imPickerSync_('${id}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted,#64748b);">&#10005;</button></span>`).join('');
 }
 
+function imToggleFar_(id) {
+  window['_imfar_' + id] = !window['_imfar_' + id];
+  imRenderMatches_(id, id === 'med_medications');
+}
+
+function imRenderMatches_(id, isMed) {
+  const out = document.getElementById('imm_' + id);
+  const items = window['_imm_' + id] || [];
+  if (!out) return;
+  out.style.maxHeight = '260px'; out.style.overflowY = 'auto';
+  if (isMed) {
+    out.innerHTML = items.map((x, i) =>
+      `<a href="#" onclick="imPickerPick_('${id}',${i});return false;" style="display:block;padding:6px 9px;border-radius:8px;text-decoration:none;color:var(--text-primary);font-size:12.5px;border-bottom:0.5px solid var(--border);"
+        onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='transparent'">${escWeb(x.name)}</a>`).join('');
+    return;
+  }
+  const c = contacts.find(x => x.id === _intakeContactId) || {};
+  out.innerHTML = acaProviderGroupsHtml_(items, c.zip, (c.state || zipToState_(c.zip)),
+    "imPickerPick_('" + id + "',{i})", !!window['_imfar_' + id], "imToggleFar_('" + id + "')");
+}
+
 async function imPickerSearch_(id) {
   const q = document.getElementById('imq_' + id).value.trim();
   const out = document.getElementById('imm_' + id);
@@ -2928,7 +2949,7 @@ async function imPickerSearch_(id) {
     const c = contacts.find(x => x.id === _intakeContactId) || {};
     const resp = isMed
       ? await acaProxy_('aca_drug_search', { q: q })
-      : await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', state: c.state || '' });
+      : await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', state: (c.state || zipToState_(c.zip)) });
     const raw = resp.data || [];
     let items;
     if (isMed) {
@@ -2939,12 +2960,11 @@ async function imPickerSearch_(id) {
     } else {
       items = acaShapeProviders_(raw, c.zip);
     }
-    items = items.slice(0, 30);
+    items = items.slice(0, 60);
     if (!items.length) { out.textContent = 'No matches \u2014 try a different spelling.'; return; }
     window['_imm_' + id] = items;
-    out.style.maxHeight = '190px'; out.style.overflowY = 'auto';
-    out.innerHTML = items.map((x, i) =>
-      `<a href="#" onclick="imPickerPick_('${id}',${i});return false;" style="display:block;padding:2px 0;">${escWeb(x.name)}</a>`).join('');
+    window['_imfar_' + id] = false;
+    imRenderMatches_(id, isMed);
   } catch (e) { out.textContent = 'Search unavailable \u2014 you can leave a note instead.'; }
 }
 
@@ -10701,6 +10721,9 @@ async function openQuoteBuilder(dealId) {
         <div><label style="font-size:10px;margin:0 0 2px;">Yearly household income ($)</label>
           <input type="number" id="qb-aca-income" placeholder="e.g. 48000" style="width:120px;"
             oninput="window._qbAcaIncomeDirty = true;" /></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">ZIP code</label>
+          <input type="text" id="qb-aca-zip" maxlength="5" placeholder="59718" style="width:90px;"
+            onchange="qbAcaZipChanged_()" /></div>
         <div><label style="font-size:10px;margin:0 0 2px;">County</label>
           <select id="qb-aca-county" style="width:auto;"></select></div>
       </div>
@@ -11540,32 +11563,79 @@ document.addEventListener('change', function(e) {
 async function qbAcaInit_() {
   window._qbAcaIncomeDirty = false;   // fresh strip — prefills may fill it again
   const c = window._qbContact;
-  const res = document.getElementById('qb-aca-result');
   document.getElementById('qb-aca-members').innerHTML = '';
   const age = c && c.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth + 'T12:00:00')) / 31557600000) : null;
   qbAcaMemberRow_({ relationship: 'Self', age: age, gender: c && c.gender, uses_tobacco: c && c.tobacco_use });
+  const zipEl = document.getElementById('qb-aca-zip');
+  if (zipEl) zipEl.value = (c && c.zip) || '';
+  if (!(await qbAcaLoadCounties_())) return;
+  window._qbAcaDocs = []; window._qbAcaMeds = [];
+  qbAcaRenderChips_();
+  qbAcaSepStatus_(null, null);
+  qbAcaPrefillFromIntake_();
+}
+
+async function qbAcaLoadCounties_() {
+  const c = window._qbContact;
   const countySel = document.getElementById('qb-aca-county');
-  countySel.innerHTML = '<option value="">loading…</option>';
+  const res = document.getElementById('qb-aca-result');
+  if (!countySel) return false;
+  countySel.innerHTML = '<option value="">loading\u2026</option>';
   if (!c || !c.zip) {
-    countySel.innerHTML = '<option value="">no zip on contact</option>';
-    res.innerHTML = '<span style="color:#f59e0b;">Add a ZIP code to the contact for marketplace lookups.</span>';
-    return;
+    countySel.innerHTML = '<option value="">need a ZIP</option>';
+    if (res) res.innerHTML = '<span style="color:#f59e0b;">Enter a ZIP code above for marketplace lookups.</span>';
+    return false;
   }
   try {
     const data = await acaProxy_('aca_counties', { zip: c.zip });
-    if (data.status !== 'ok') { countySel.innerHTML = '<option value="">unavailable</option>'; res.innerHTML = '<span style="color:#f59e0b;">' + escWeb(data.message || 'Marketplace lookup failed.') + '</span>'; return; }
+    if (data.status !== 'ok') {
+      countySel.innerHTML = '<option value="">unavailable</option>';
+      if (res) res.innerHTML = '<span style="color:#f59e0b;">' + escWeb(data.message || 'Marketplace lookup failed.') + '</span>';
+      return false;
+    }
     countySel.innerHTML = data.counties.map(x =>
       `<option value="${escWeb(x.fips)}|${escWeb(x.state)}">${escWeb(x.name)}, ${escWeb(x.state)}</option>`).join('');
-    res.textContent = '';
-    window._qbAcaDocs = []; window._qbAcaMeds = [];
-    qbAcaRenderChips_();
-    qbAcaSepStatus_(null, null);
-    qbAcaPrefillFromIntake_();
+    if (res) res.textContent = '';
+    return true;
   } catch (e) {
     countySel.innerHTML = '<option value="">unavailable</option>';
-    res.innerHTML = '<span style="color:#f59e0b;">Marketplace relay unreachable — is the API key set up?</span>';
+    if (res) res.innerHTML = '<span style="color:#f59e0b;">Marketplace relay unreachable \u2014 is the API key set up?</span>';
+    return false;
   }
 }
+
+// ZIP is the agent's real handle on a client: it decides state, county and
+// pricing. Editing it here updates the contact card and the intake too.
+async function qbAcaZipChanged_() {
+  const el = document.getElementById('qb-aca-zip');
+  const c = window._qbContact;
+  const zip = String((el && el.value) || '').trim();
+  if (!c) return;
+  if (!/^\d{5}$/.test(zip)) { showToast('Enter a 5-digit ZIP code.'); if (el) el.value = c.zip || ''; return; }
+  if (zip === c.zip) return;
+  const st = zipToState_(zip);
+  c.zip = zip; if (st) c.state = st;
+  const patch = st ? { zip: zip, state: st } : { zip: zip };
+  try {
+    await supabaseClient.from('contacts').update(patch).eq('id', c.id);
+    const cc = contacts.find(x => x.id === c.id); if (cc) Object.assign(cc, patch);
+  } catch (e) { console.error('zip->contact:', e); }
+  try {
+    const row = await qbAcaIntakeRow_(['zip']);
+    if (row) {
+      const resp = Object.assign({}, row.responses, { zip: zip });
+      await supabaseClient.from('intake_sessions').update({ responses: resp }).eq('id', row.id).select('id');
+    }
+  } catch (e) { console.error('zip->intake:', e); }
+  await qbAcaLoadCounties_();
+  const note = document.getElementById('qb-aca-intake-note');
+  if (note) {
+    note.style.display = 'block'; note.style.color = '#0d9488';
+    note.innerHTML = '\u2713 ZIP set to ' + escWeb(zip) + (st ? ' (' + escWeb(st) + ')' : '')
+      + ' \u2014 saved to their contact card and intake. Re-price to refresh the plans.';
+  }
+}
+
 
 const ACA_INCOME_MIDPOINTS = {
   'Under $25,000': 20000, '$25,000\u2013$50,000': 37500, '$50,000\u2013$75,000': 62500,
@@ -11622,17 +11692,12 @@ async function qbAcaPrefillFromLastQuote_() {
       .order('created_at', { ascending: false }).limit(1);
     const qi = data && data[0] && data[0].quote_inputs;
     if (!qi) return;
+    // Income deliberately NOT restored here: qbAcaSyncIncomeToIntake_ keeps the
+    // intake current on every re-price, so the intake prefill is the fresher
+    // source. Restoring an older quote's figure re-introduced stale income.
     const inc = document.getElementById('qb-aca-income');
-    if (window._qbAcaIncomeDirty) return;   // the agent is typing — their figure wins
-    if (inc && qi.income != null) inc.value = qi.income;
-    const note = document.getElementById('qb-aca-intake-note');
-    if (note && qi.income != null) {
-      note.style.display = 'block';
-      note.style.color = '#0d9488';
-      note.innerHTML = '\u21bb Restored from this client\u2019s last quote: income $'
-        + Number(qi.income).toLocaleString() + (qi.county ? ' \u00b7 ' + escWeb(qi.county) : '')
-        + '. Change anything that\u2019s out of date before pricing.';
-    }
+    if (window._qbAcaIncomeDirty || !inc || inc.value) return;
+    if (qi.income != null) inc.value = qi.income;
   } catch (e) { console.error('qbAcaPrefillFromLastQuote_:', e); }
 }
 
@@ -11951,6 +12016,36 @@ function _acaClientState_() {
   return zipToState_(c.zip);        // their ZIP alone tells us the state
 }
 
+// Shared by every provider list in the CRM so they can't drift apart.
+// pickJs is a JS snippet with {i} standing in for the item index.
+function acaProviderGroupsHtml_(items, zip, state, pickJs, showFar, toggleJs) {
+  const z3 = String(zip || '').slice(0, 3);
+  const st = String(state || '').toUpperCase();
+  const near = [], inState = [], far = [];
+  items.forEach((x, i) => {
+    const xs = String(x.state || '').toUpperCase();
+    if (z3 && String(x.zip || '').slice(0, 3) === z3) near.push({ x, i });
+    else if (st && xs === st) inState.push({ x, i });
+    else far.push({ x, i });
+  });
+  const row = (x, i) => `<a href="#" onclick="${pickJs.replace('{i}', i)}; return false;"
+      style="display:block;padding:7px 9px;border-radius:8px;text-decoration:none;color:inherit;border-bottom:0.5px solid var(--border);"
+      onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='transparent'">
+      <div style="font-size:12.5px;font-weight:700;color:var(--text-primary);">${x.isFac ? '\u{1F3E5} ' : ''}${escWeb(x.cleanName)}</div>
+      ${x.taxonomy ? `<div style="font-size:11px;color:var(--accent,#1d3557);">${escWeb(x.taxonomy)}</div>` : ''}
+      ${(x.street || x.city) ? `<div style="font-size:11px;color:var(--text-muted);">${escWeb([x.street, x.city, x.state].filter(Boolean).join(', '))} ${escWeb(x.zip || '')}</div>` : ''}
+    </a>`;
+  const group = (label, list, tone) => list.length ? `
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${tone};padding:7px 2px 3px;">${label} (${list.length})</div>
+    ${list.map(e => row(e.x, e.i)).join('')}` : '';
+  return group(z3 ? 'Near ' + escWeb(zip) : 'Nearby', near, '#15803d')
+    + group(st ? 'Elsewhere in ' + escWeb(st) : 'Same state', inState, 'var(--accent,#1d3557)')
+    + (showFar ? group('Other states', far, 'var(--text-muted)') : '')
+    + (!near.length && !inState.length && !showFar && far.length
+        ? `<div style="font-size:12px;color:#b45309;padding:8px 2px;">No matches in ${escWeb(st || 'their state')} \u2014 ${far.length} found elsewhere.</div>` : '')
+    + (far.length ? `<div style="padding:7px 2px;"><a href="#" onclick="${toggleJs}; return false;" style="font-size:11.5px;font-weight:700;color:var(--accent,#1d3557);text-decoration:none;">${showFar ? '\u2191 Hide the ' + far.length + ' out-of-state matches' : '\u2193 Show ' + far.length + ' match' + (far.length === 1 ? '' : 'es') + ' in other states'}</a></div>` : '');
+}
+
 function qbAcaToggleFar_() {
   window._qbAcaShowFar = !window._qbAcaShowFar;
   qbAcaRenderMatches_();
@@ -11982,30 +12077,9 @@ function qbAcaRenderMatches_() {
   }
 
   const c = window._qbContact || {};
-  const st = _acaClientState_();
-  const z3 = String(c.zip || '').slice(0, 3);
-  const near = [], inState = [], far = [];
-  items.forEach((x, i) => {
-    const xs = String(x.state || '').toUpperCase();
-    const entry = { x, i };
-    if (z3 && String(x.zip || '').slice(0, 3) === z3) near.push(entry);
-    else if (st && xs === st) inState.push(entry);
-    else far.push(entry);
-  });
-
-  const group = (label, list, tone) => list.length ? `
-    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${tone};padding:7px 2px 3px;">${label} (${list.length})</div>
-    ${list.map(e => row(e.x, e.i)).join('')}` : '';
-
-  const showFar = !!window._qbAcaShowFar;
   out.style.maxHeight = '300px'; out.style.overflowY = 'auto';
-  out.innerHTML =
-    group(z3 ? 'Near ' + escWeb(c.zip) : 'Nearby', near, '#15803d')
-    + group(st ? 'Elsewhere in ' + escWeb(st) : 'Same state', inState, 'var(--accent,#1d3557)')
-    + (showFar ? group('Other states', far, 'var(--text-muted)') : '')
-    + (!near.length && !inState.length && !showFar && far.length
-        ? `<div style="font-size:12px;color:#b45309;padding:8px 2px;">No matches in ${escWeb(st || 'their state')} \u2014 ${far.length} found elsewhere.</div>` : '')
-    + (far.length ? `<div style="padding:7px 2px;"><a href="#" onclick="qbAcaToggleFar_(); return false;" style="font-size:11.5px;font-weight:700;color:var(--accent,#1d3557);text-decoration:none;">${showFar ? '\u2191 Hide the ' + far.length + ' out-of-state matches' : '\u2193 Show ' + far.length + ' match' + (far.length === 1 ? '' : 'es') + ' in other states'}</a></div>` : '');
+  out.innerHTML = acaProviderGroupsHtml_(items, c.zip, _acaClientState_(),
+    "qbAcaPick_('doc', {i})", !!window._qbAcaShowFar, 'qbAcaToggleFar_()');
 }
 
 function qbAcaPick_(kind, i) {
@@ -12667,7 +12741,10 @@ function pkCard_(p) {
   const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
   const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
   const slot = qbAcaAddedSlot_(p.id);
-  return `<div style="display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);">
+  return `<div onclick="openPlanDetail_('${escWeb(p.id)}')" title="Click for full plan details"
+    style="cursor:pointer;display:flex;gap:16px;align-items:stretch;border:1.5px solid ${slot >= 0 ? 'var(--success)' : 'var(--border)'};border-radius:12px;padding:14px 16px;background:var(--surface-1);transition:box-shadow .15s ease,border-color .15s ease;"
+    onmouseover="this.style.boxShadow='0 6px 18px rgba(15,23,42,.10)';this.style.borderColor='var(--accent,#1d3557)';"
+    onmouseout="this.style.boxShadow='none';this.style.borderColor='${slot >= 0 ? 'var(--success)' : 'var(--border)'}';">
     <div style="flex:1;min-width:0;">
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
@@ -12683,19 +12760,20 @@ function pkCard_(p) {
         ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">${qbAcaCovLines_(p)}</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+        <label onclick="event.stopPropagation();" style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-muted);cursor:pointer;">
+          <input type="checkbox" ${_qbPk.cmp.has(p.id) ? 'checked' : ''} onclick="event.stopPropagation();"
+            onchange="pkCmpToggle_('${escWeb(p.id)}', this)" style="width:13px;height:13px;" /> \u2696\ufe0f Compare</label>
+        <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPlanDetail_('${escWeb(p.id)}')">Details</button>
+      </div>
     </div>
     <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;border-left:1px solid var(--border);padding-left:16px;">
       ${acaCsrMedal_(p.metal)}
       <div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}</div>
       <div style="font-size:10.5px;color:var(--text-muted);">/mo to client</div>
       ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);text-align:right;">full $${Number(p.premium).toFixed(0)} \u2212 <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
-      <label style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-muted);cursor:pointer;margin-top:4px;">
-        <input type="checkbox" ${_qbPk.cmp.has(p.id) ? 'checked' : ''} onchange="pkCmpToggle_('${escWeb(p.id)}', this)" style="width:13px;height:13px;" /> \u2696\ufe0f Compare</label>
-      <div style="display:flex;gap:6px;margin-top:4px;">
-        <button type="button" class="btn btn-outline btn-sm" onclick="openPlanDetail_('${escWeb(p.id)}')">Details</button>
-        <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
-          onclick="qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
-      </div>
+      <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:6px;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
+        onclick="event.stopPropagation();qbAcaAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Option ' + (slot + 1) : '\uff0b Add'}</button>
     </div>
   </div>`;
 }

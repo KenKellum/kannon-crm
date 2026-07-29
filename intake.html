@@ -344,11 +344,13 @@ function acaShapeProviders_(raw, clientZip) {
     if (o.ptype) {
       const where = [o.street, o.city, o.state].filter(Boolean).join(', ');
       const isFac = o.ptype === 'Facility';
-      return { key: o.npi, zip: o.zip || '', cleanName: o.name,
+      return { key: o.npi, zip: o.zip || '', cleanName: o.name, isFac: isFac,
+        city: o.city || '', state: o.state || '', street: o.street || '', taxonomy: o.taxonomy || '',
         name: (isFac ? '\u{1F3E5} ' : '') + o.name, extra: [o.taxonomy, where].filter(Boolean).join(' \u00b7 ') };
     }
     const nm = typeof o.name === 'object' && o.name ? [o.name.first, o.name.last].filter(Boolean).join(' ') : (o.name || '');
-    return { key: o.npi, zip: '', cleanName: nm, name: nm, extra: o.taxonomy || '' };
+    return { key: o.npi, zip: '', cleanName: nm, name: nm, extra: o.taxonomy || '',
+      isFac: false, city: '', state: '', street: '', taxonomy: o.taxonomy || '' };
   }).filter(x => x.key && x.cleanName);
   const z3 = String(clientZip || '').slice(0, 3);
   items.sort((a, b) =>
@@ -392,6 +394,80 @@ function pickerSync_(id) {
   document.getElementById('f_' + id + '_struct').value = JSON.stringify(_pickers[id]);
 }
 
+const ZIP3_STATE = [
+  [5,9,'PR'],[10,27,'MA'],[28,29,'RI'],[30,38,'NH'],[39,49,'ME'],[50,59,'VT'],
+  [60,69,'CT'],[70,89,'NJ'],[100,149,'NY'],[150,196,'PA'],[197,199,'DE'],
+  [200,205,'DC'],[206,219,'MD'],[220,246,'VA'],[247,268,'WV'],[270,289,'NC'],
+  [290,299,'SC'],[300,319,'GA'],[320,349,'FL'],[350,369,'AL'],[370,385,'TN'],
+  [386,397,'MS'],[400,427,'KY'],[430,459,'OH'],[460,479,'IN'],[480,499,'MI'],
+  [500,528,'IA'],[530,549,'WI'],[550,567,'MN'],[570,577,'SD'],[580,588,'ND'],
+  [590,599,'MT'],[600,629,'IL'],[630,658,'MO'],[660,679,'KS'],[680,693,'NE'],
+  [700,714,'LA'],[716,729,'AR'],[730,749,'OK'],[750,799,'TX'],[800,816,'CO'],
+  [820,831,'WY'],[832,838,'ID'],[840,847,'UT'],[850,865,'AZ'],[870,884,'NM'],
+  [885,885,'TX'],[889,898,'NV'],[900,961,'CA'],[967,968,'HI'],[970,979,'OR'],
+  [980,994,'WA'],[995,999,'AK'],
+];
+function zipToState_(zip) {
+  const n = parseInt(String(zip || '').slice(0, 3), 10);
+  if (isNaN(n)) return '';
+  const hit = ZIP3_STATE.find(r => n >= r[0] && n <= r[1]);
+  return hit ? hit[2] : '';
+}
+function pickerZip_() {
+  const el = document.getElementById('f_zip');
+  return (el && el.value) ? el.value : ((window._prefillAll || {}).zip || '');
+}
+function pickerState_() {
+  const cp = window._prefillAll || {};
+  return String(cp.state || zipToState_(pickerZip_()) || '').toUpperCase();
+}
+
+function pickerToggleFar_(id) {
+  window['_pkfar_' + id] = !window['_pkfar_' + id];
+  pickerRender_(id, id === 'med_medications');
+}
+
+// Results grouped by how close they are to this person's ZIP, so the list is
+// scannable and out-of-state look-alikes stay out of the way.
+function pickerRender_(id, isMed) {
+  const out = document.getElementById('pk_m_' + id);
+  const items = window['_pkm_' + id] || [];
+  if (!out) return;
+  const esc2 = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  out.style.maxHeight = '260px'; out.style.overflowY = 'auto';
+  if (isMed) {
+    out.innerHTML = items.map((x, i) =>
+      `<a href="#" onclick="pickerPick_('${id}',${i});return false;" style="display:block;padding:6px 8px;border-radius:8px;color:#1d3557;text-decoration:none;font-size:14px;border-bottom:1px solid #eef2f7;">${esc2(x.name)}</a>`).join('');
+    return;
+  }
+  const zip = pickerZip_(), st = pickerState_();
+  const z3 = String(zip || '').slice(0, 3);
+  const near = [], inState = [], far = [];
+  items.forEach((x, i) => {
+    const xs = String(x.state || '').toUpperCase();
+    if (z3 && String(x.zip || '').slice(0, 3) === z3) near.push({ x, i });
+    else if (st && xs === st) inState.push({ x, i });
+    else far.push({ x, i });
+  });
+  const row = (x, i) => `<a href="#" onclick="pickerPick_('${id}',${i});return false;"
+      style="display:block;padding:8px;border-radius:8px;text-decoration:none;color:#0f172a;border-bottom:1px solid #eef2f7;">
+      <div style="font-size:14px;font-weight:700;">${x.isFac ? '\u{1F3E5} ' : ''}${esc2(x.cleanName)}</div>
+      ${x.taxonomy ? `<div style="font-size:12px;color:#1d3557;">${esc2(x.taxonomy)}</div>` : ''}
+      ${(x.street || x.city) ? `<div style="font-size:12px;color:#64748b;">${esc2([x.street, x.city, x.state].filter(Boolean).join(', '))} ${esc2(x.zip || '')}</div>` : ''}
+    </a>`;
+  const group = (label, list, tone) => list.length ? `
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${tone};padding:8px 2px 4px;">${label} (${list.length})</div>
+    ${list.map(e => row(e.x, e.i)).join('')}` : '';
+  const showFar = !!window['_pkfar_' + id];
+  out.innerHTML =
+    group(z3 ? 'Near ' + esc2(zip) : 'Nearby', near, '#15803d')
+    + group(st ? 'Elsewhere in ' + esc2(st) : 'Same state', inState, '#1d3557')
+    + (showFar ? group('Other states', far, '#64748b') : '')
+    + (!near.length && !inState.length && !showFar && far.length
+        ? `<div style="font-size:13px;color:#b45309;padding:8px 2px;">No matches in ${esc2(st || 'your state')} \u2014 ${far.length} found elsewhere.</div>` : '')
+    + (far.length ? `<div style="padding:8px 2px;"><a href="#" onclick="pickerToggleFar_('${id}');return false;" style="font-size:13px;font-weight:700;color:#1d3557;text-decoration:none;">${showFar ? '\u2191 Hide the ' + far.length + ' from other states' : '\u2193 Show ' + far.length + ' match' + (far.length === 1 ? '' : 'es') + ' in other states'}</a></div>` : '');
+}
+
 async function pickerSearch_(id) {
   const q = document.getElementById('pk_q_' + id).value.trim();
   const out = document.getElementById('pk_m_' + id);
@@ -405,7 +481,7 @@ async function pickerSearch_(id) {
       ? '?action=aca_drug_search&q=' + encodeURIComponent(q)
       : '?action=aca_provider_search&q=' + encodeURIComponent(q)
         + '&zip=' + encodeURIComponent(zipEl && zipEl.value ? zipEl.value : (cp.zip || ''))
-        + '&state=' + encodeURIComponent(cp.state || ''));
+        + '&state=' + encodeURIComponent(pickerState_()));
     const resp = await (await fetch(url)).json();
     const raw = resp.data || [];
     let items;
@@ -417,14 +493,14 @@ async function pickerSearch_(id) {
     } else {
       items = acaShapeProviders_(raw, zipEl && zipEl.value ? zipEl.value : (cp.zip || ''));
     }
-    items = items.slice(0, 30);
+    items = items.slice(0, 60);
     if (!items.length) {
       out.innerHTML = 'No matches \u2014 <a href="#" onclick="_pickers[\'' + id + '\'].push({name:document.getElementById(\'pk_q_' + id + '\').value.trim()});document.getElementById(\'pk_q_' + id + '\').value=\'\';this.parentElement.innerHTML=\'\';pickerSync_(\'' + id + '\');return false;">add it as typed</a>.';
       return;
     }
     window['_pkm_' + id] = items;
-    out.innerHTML = items.map((x, i) =>
-      `<a href="#" onclick="pickerPick_('${id}',${i});return false;" style="display:block;padding:3px 0;color:#1d3557;">${x.name.replace(/</g,'&lt;')}${x.extra ? ' <span style=\'color:#94a3b8;font-size:12px;\'>\u00b7 ' + String(x.extra).replace(/</g,'&lt;') + '</span>' : ''}</a>`).join('');
+    window['_pkfar_' + id] = false;
+    pickerRender_(id, isMed);
   } catch (e) { out.textContent = 'Search unavailable right now \u2014 you can just type it and continue.'; }
 }
 
