@@ -12619,7 +12619,7 @@ function renderPickerBody_() {
             <button class="rm" title="Remove from the quote" onclick="qbAcaAddPlan_('${escWeb(a.p.id)}')">\u2715</button>
           </div>`).join('')
           : '<span style="font-size:12px;color:var(--text-muted);">nothing yet \u2014 click \u201cAdd\u201d on the plans that fit.</span>'}
-          <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Done</button>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Create Quote</button>
         </div>
       </div>
     </div>`;
