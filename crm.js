@@ -12796,7 +12796,7 @@ function pkCard_(p) {
         <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPlanDetail_('${escWeb(p.id)}')">Details</button>
       </div>
     </div>
-    <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;border-left:1px solid var(--border);padding-left:16px;">
+    <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-start;gap:4px;border-left:1px solid var(--border);padding-left:16px;">
       <div style="display:flex;width:100%;align-items:center;gap:8px;margin-bottom:4px;">
         ${acaCsrMedal_(p.metal)}
         <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-left:auto;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
