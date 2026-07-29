@@ -12804,7 +12804,9 @@ function pkCard_(p) {
         ${p.rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${p.rating}</span>` : ''}
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
       </div>
-      <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${escWeb(p.name)}</div>
+      <div style="font-size:14px;font-weight:600;margin:4px 0 6px;">${slot >= 0
+        ? `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(37,99,235,.12);color:#1d4ed8;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;margin-right:6px;vertical-align:middle;">\u2713 Selected \u00b7 Option ${slot + 1}</span>`
+        : ''}${escWeb(p.name)}</div>
       <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;">
         ${qbAcaCostFact_('Deductible', p.deductible, p.deductible_family)}
         ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
@@ -12860,6 +12862,30 @@ function qbAcaAddPlan_(planId) {
   showToast('Added as Option ' + (slot + 1) + '.');
   qbAcaRenderBrowser_();
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
+}
+
+function qbAcaRelinkOptions_() {
+  const plans = window._qbAcaPlans || [];
+  if (!plans.length) return 0;
+  const rq = window._qbRequoteOpt || {};
+  window._qbAcaSel = window._qbAcaSel || {};
+  let linked = 0;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const sel = document.getElementById('qb-aca-' + i);
+    const nameEl = document.getElementById('qb-name-' + i);
+    if (!sel || !nameEl || sel.value) continue;        // already linked
+    const nm = (nameEl.value || '').trim();
+    if (!nm) continue;
+    let hit = null;
+    const meta = rq[i] && rq[i].plan_meta;
+    if (meta && meta.plan_id) hit = plans.find(p => p.id === meta.plan_id);
+    if (!hit) {
+      const bare = nm.replace(/\s*\((Bronze|Silver|Gold|Platinum|Catastrophic)\)\s*$/i, '').trim().toLowerCase();
+      hit = plans.find(p => String(p.name || '').trim().toLowerCase() === bare);
+    }
+    if (hit) { sel.value = hit.id; window._qbAcaSel[i] = hit; linked++; }
+  }
+  return linked;
 }
 
 async function qbAcaGetPlans_() {
@@ -12933,6 +12959,7 @@ async function qbAcaGetPlans_() {
       const sel = document.getElementById('qb-aca-' + i);
       if (sel) sel.innerHTML = opts;
     }
+    qbAcaRelinkOptions_();     // plans already on the quote show as chosen
     _qbAcaMetalFilter = 'All';
     qbAcaRenderBrowser_();
     openAcaPicker_();          // straight into the picker — no second click
