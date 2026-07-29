@@ -1551,7 +1551,7 @@ function startDialerSession(filterType) {
     }
     function bLbl(ready, cooling) {
       return cooling > 0
-        ? `${ready} ready &nbsp;&middot;&nbsp; <span style="color:#94a3b8;font-weight:400;">${cooling} cooling &#10052;</span>`
+        ? `${ready} ready &nbsp;&middot;&nbsp; <span style="color:var(--text-muted);font-weight:400;">${cooling} cooling &#10052;</span>`
         : `${ready}`;
     }
     const interested = contacts.filter(c => c.sequence_status === 'Interested');
@@ -1571,7 +1571,7 @@ function startDialerSession(filterType) {
       const ready = arr.filter(c => dialerCooldownReady(c, dialerSmartCooldown(c))).length;
       const cooling = arr.length - ready;
       return `<button class="btn btn-outline btn-sm" onclick="closeModal();startDialerSession('type:${t}')" ${!ready ? 'disabled style="opacity:0.45;"' : ''}>
-        ${t} <span style="font-size:11px;color:#94a3b8;">(${ready}${cooling ? '/'+arr.length : ''})</span>
+        ${t} <span style="font-size:11px;color:var(--text-muted);">(${ready}${cooling ? '/'+arr.length : ''})</span>
       </button>`;
     }).join('');
     showModal('&#9889; Start a Lead Session', `
@@ -1893,7 +1893,7 @@ function _dialerActionRow(contact, isLast) {
       + '<div style="display:flex;gap:8px;margin-bottom:8px;">' + callBtn + schedBtn + sendLinkBtn + '</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
       + '<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm(\'' + contact.id + '\')">&#129309; Interested</button>'
-      + '<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested(\'' + contact.id + '\')">&#10006; Not Interested</button>'
+      + '<button class="btn btn-outline btn-sm" style="border-color:var(--text-danger);color:var(--text-danger);" onclick="showNotInterested(\'' + contact.id + '\')">&#10006; Not Interested</button>'
       + '<button class="btn btn-outline btn-sm" onclick="viewContact(\'' + contact.id + '\',\'\')">&#128140; View / Deal</button>'
       + '<button class="btn btn-outline btn-sm" onclick="dialerViewIntake(\'' + contact.id + '\')">&#128196; Intake</button>'
       + skipBtn + nextBtn
@@ -1905,7 +1905,7 @@ function _dialerActionRow(contact, isLast) {
     + '<div style="display:flex;gap:8px;margin-bottom:8px;">' + callBtn + schedBtn + sendLinkBtn + '</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
     + '<button class="btn btn-outline btn-sm" style="border-color:#10b981;color:#10b981;" onclick="showIntakeForm(\'' + contact.id + '\')">&#129309; Interested</button>'
-    + '<button class="btn btn-outline btn-sm" style="border-color:#dc2626;color:#dc2626;" onclick="showNotInterested(\'' + contact.id + '\')">&#10006; Not Interested</button>'
+    + '<button class="btn btn-outline btn-sm" style="border-color:var(--text-danger);color:var(--text-danger);" onclick="showNotInterested(\'' + contact.id + '\')">&#10006; Not Interested</button>'
     + '<button class="btn btn-outline btn-sm" onclick="viewContact(\'' + contact.id + '\',\'\')">&#128140; View</button>'
     + '<button class="btn btn-outline btn-sm" onclick="dialerViewIntake(\'' + contact.id + '\')">&#128196; Intake</button>'
     + '<button class="btn btn-outline btn-sm" style="color:var(--text-muted);border-color:var(--border);" onclick="showResetStatus(\'' + contact.id + '\')">&#8635; Reset</button>'
@@ -2710,14 +2710,14 @@ async function showIntakeForm(contactId, opts) {
                 display:flex;align-items:center;gap:10px;justify-content:flex-end;
                 flex-shrink:0;background:#f8fafc;">
       <button onclick="closeIntakeForm()"
-        style="padding:8px 18px;border-radius:8px;border:1px solid #d1d5db;
-               background:#fff;color:#6b7280;font-size:13px;font-weight:500;cursor:pointer;"
+        style="padding:8px 18px;border-radius:8px;border:1px solid var(--border);
+               background:#fff;color:var(--text-muted);font-size:13px;font-weight:500;cursor:pointer;"
         onmouseover="this.style.background='#f3f4f6'"
         onmouseout="this.style.background='#fff'">Cancel</button>
 
       <button id="intakeSendBtn" onclick="sendIntakeLink()"
         style="padding:8px 18px;border-radius:8px;border:1px solid #2563eb;
-               background:#fff;color:#2563eb;font-size:13px;font-weight:500;
+               background:#fff;color:var(--text-info);font-size:13px;font-weight:500;
                cursor:pointer;display:flex;align-items:center;gap:7px;${opts.editMode ? 'display:none;' : ''}"
         onmouseover="this.style.background='#eff6ff'"
         onmouseout="this.style.background='#fff'">&#9993; Send Link via Gmail</button>
@@ -2782,7 +2782,7 @@ function _intakeRenderFieldList() {
     const checkedCount = visibleIds.filter(id => _intakeChecked.has(id)).length;
     html += `
       <div style="padding:10px 14px 4px;font-size:10px;font-weight:700;
-                  text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;
+                  text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);
                   display:flex;align-items:center;justify-content:space-between;">
         <span>${grp.section}</span>
         ${checkedCount ? `<span style="background:#1a3a5c;color:#fff;border-radius:10px;padding:1px 7px;font-size:9px;">${checkedCount}</span>` : ''}
@@ -2856,7 +2856,7 @@ function _intakeRenderForm() {
                   justify-content:center;min-height:200px;padding-top:40px;text-align:center;">
         <div style="font-size:32px;margin-bottom:12px;opacity:.3;">&#9776;</div>
         <div style="font-size:14px;font-weight:500;color:#64748b;">Select fields from the left panel</div>
-        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Check the fields you want to capture.</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Check the fields you want to capture.</div>
       </div>`;
     return;
   }
@@ -2898,7 +2898,7 @@ function _imPickerField_(id, def) {
   setTimeout(() => { try { imPickerSync_(id); } catch (e) {} }, 80);
   const isMed = id === 'med_medications';
   return `<div>
-    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">${def.label} <span style="text-transform:none;font-weight:400;">— official registry lookup</span></label>
+    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${def.label} <span style="text-transform:none;font-weight:400;">— official registry lookup</span></label>
     <div style="display:flex;gap:6px;">
       <input type="text" id="imq_${id}" placeholder="${isMed ? 'Start typing a medication…' : 'Start typing a doctor’s name…'}"
         style="flex:1;padding:9px 12px;border-radius:8px;border:1.5px solid #e2e8f0;font-size:13px;"
@@ -3000,7 +3000,7 @@ function _imHHTable_(id, def) {
   }
   setTimeout(() => { try { imHHPaint_(); } catch (e) {} }, 80);
   return `<div id="iwrap_${id}">
-    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">${def.label}</label>
+    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${def.label}</label>
     <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
       <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">
         <th>Who</th><th>Age</th><th>Gender</th><th>Tob.</th><th>Cover</th><th></th></tr></thead>
@@ -3101,7 +3101,7 @@ function _intakeRenderField(id, def, prefillVal) {
   return `<div id="iwrap_${id}">
     <label for="ifield_${id}"
       style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;
-             letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">${def.label}</label>
+             letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${def.label}</label>
     ${control}
   </div>`;
 }
@@ -3359,7 +3359,7 @@ function _renderDealMergedTimeline(dealId, sysActs) {
            + ' ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     var badge = item.source === 'system'
       ? '<span style="font-size:10px;background:#f1f5f9;color:#64748b;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">auto</span>'
-      : '<span style="font-size:10px;background:#eff6ff;color:#3b82f6;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">manual</span>';
+      : '<span style="font-size:10px;background:var(--bg-info);color:#3b82f6;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">manual</span>';
     var dotStyle = item.color
       ? 'background:' + item.color + '22;color:' + item.color + ';border:1px solid ' + item.color + '44;font-size:14px;'
       : 'font-size:14px;';
@@ -3561,7 +3561,7 @@ function renderDialer() {
               ${contact.lead_source && LEAD_SOURCES[contact.lead_source] ? `<span class="badge" style="background:#f0f9ff;color:#0369a1;border:0.5px solid #bae6fd;font-size:10px;">${LEAD_SOURCES[contact.lead_source].label}</span>` : ''}
               ${contact.sequence_step > 0 ? `<span class="badge badge-insured">Email ${contact.sequence_step} sent</span>` : ''}
               ${_lcl ? `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px;">&#9990; ${_lcl} &middot; ${contact.call_count||1}x</span>` : ''}
-              ${_li ? `<span class="badge" style="background:#f0fdf4;color:#16a34a;font-size:10px;">&#8635; ${_li.label} &middot; ${_li.sub}</span>` : ''}
+              ${_li ? `<span class="badge" style="background:#f0fdf4;color:var(--text-success);font-size:10px;">&#8635; ${_li.label} &middot; ${_li.sub}</span>` : ''}
               ${(contact.lead_score || 0) !== 0 ? `<span class="badge" style="background:${contact.lead_score >= 20 ? 'rgba(52,211,153,0.15)' : contact.lead_score >= 5 ? 'rgba(251,191,36,0.15)' : 'rgba(148,163,184,0.15)'};color:${contact.lead_score >= 20 ? '#34d399' : contact.lead_score >= 5 ? '#fbbf24' : '#94a3b8'};font-size:10px;font-weight:700;">&#9889; Score: ${contact.lead_score}</span>` : ''}
             </div>
           </div>
@@ -4019,12 +4019,12 @@ function showGmailSetup(isManual) {
     '<div style="font-size:52px;margin-bottom:14px;">📧</div>' +
     '<h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">' + (isManual ? 'Connect Your Gmail' : 'One last step, ' + fn + '!') + '</h2>' +
     '<p style="font-size:14px;color:#64748b;line-height:1.65;margin-bottom:6px;">Connect your Gmail so outreach emails come <strong>from your address</strong> and replies land <strong>in your inbox</strong>.</p>' +
-    '<p style="font-size:13px;color:#94a3b8;margin-bottom:24px;">The CRM auto-marks contacts as "Replied" when they write back.</p>' +
+    '<p style="font-size:13px;color:var(--text-muted);margin-bottom:24px;">The CRM auto-marks contacts as "Replied" when they write back.</p>' +
     '<div id="gmail-setup-status" style="display:none;padding:12px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:8px;margin-bottom:16px;font-size:14px;color:#065f46;font-weight:600;">✓ Gmail connected! Refreshing...</div>' +
     '<button onclick="connectGmail()" id="gmail-connect-btn" style="width:100%;padding:14px;background:#4285F4;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">Connect Gmail</button>' +
     '<div id="gmail-waiting-indicator" style="display:none;width:100%;padding:14px;background:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;margin-bottom:12px;">⚠ Waiting for authorization...</div>' +
-    (isManual ? '<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();window.removeEventListener(\'message\',handleGmailMessage);" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Close</button>'
-              : '<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:#94a3b8;cursor:pointer;">Skip for now</button>') +
+    (isManual ? '<button onclick="document.getElementById(\'gmail-setup-overlay\').remove();window.removeEventListener(\'message\',handleGmailMessage);" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:var(--text-muted);cursor:pointer;">Close</button>'
+              : '<button onclick="dismissGmailSetup()" style="width:100%;padding:10px;background:none;border:none;font-size:13px;color:var(--text-muted);cursor:pointer;">Skip for now</button>') +
     '</div>';
   document.body.appendChild(ov);
   window.addEventListener('message', handleGmailMessage);
@@ -4164,7 +4164,7 @@ async function renderCampaigns() {
     if (!items.length) return '';
     const rows = items.map(item => {
       const stateBadge = item.state
-        ? `<span class="badge" style="background:#eff6ff;color:#1d4ed8;font-size:10px;padding:2px 6px;">${item.state}</span>`
+        ? `<span class="badge" style="background:var(--bg-info);color:var(--text-info);font-size:10px;padding:2px 6px;">${item.state}</span>`
         : `<span style="color:var(--muted);font-size:12px;">All states</span>`;
       const activeColor = item.is_active ? '#16a34a' : '#dc2626';
       const activeLabel = item.is_active ? 'Active' : 'Inactive';
@@ -4204,7 +4204,7 @@ async function renderCampaigns() {
       <div class="opens-stats" style="margin-bottom:28px;">
         <div class="opens-stat"><div class="num">${drip.length}</div><div class="lbl">In Drip</div></div>
         <div class="opens-stat" style="border-left-color:#1a3a5c;"><div class="num">${dripB2b}</div><div class="lbl">B2B</div></div>
-        <div class="opens-stat" style="border-left-color:#16a34a;"><div class="num">${dripB2c}</div><div class="lbl">B2C</div></div>
+        <div class="opens-stat" style="border-left-color:var(--text-success);"><div class="num">${dripB2c}</div><div class="lbl">B2C</div></div>
         <div class="opens-stat" style="border-left-color:#8b5cf6;"><div class="num">${allSends.length}</div><div class="lbl">Sent</div></div>
       </div>
       <div style="background:#fff8e7;border:1px solid #c8a84b;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#92400e;line-height:1.6;">
@@ -4214,7 +4214,7 @@ async function renderCampaigns() {
     </div>
 
     <div id="camp-seq" style="display:${!tabDrip?'block':'none'};">
-      <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#1e40af;line-height:1.6;">
+      <div style="background:var(--bg-info);border:1px solid #93c5fd;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#1e40af;line-height:1.6;">
         <strong>3-email outreach sequence</strong> — runs via Apps Script. Routes by contact type: B2B (Group/Employer) or B2C (Individual/Family). Add state-specific rows (e.g. MT, AZ) to override generic templates.
       </div>
       ${seqSections}
@@ -4386,7 +4386,7 @@ function openAiReviewModal(table, segment, result) {
 
   const safeSubject = (result.subject||'').replace(/"/g,'&quot;');
   const body = `
-    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#166534;">
+    <div style="background:#f0fdf4;border:1px solid var(--border-success);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#166534;">
       ✨ AI draft for <strong>${segment}</strong>. Review and edit, then click <strong>Save &amp; Activate</strong>.
     </div>
     <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Subject Line</label>
@@ -4443,16 +4443,16 @@ async function renderOpens() {
     const contactId = contact ? contact.id : '';
     const emailSt = contact ? (contact.email_status || null) : null;
     const _stBadge = emailSt === 'valid'
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#16a34a;">&#10003; Valid</span>'
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:var(--bg-success);color:var(--text-success);">&#10003; Valid</span>'
       : (emailSt === 'invalid' || emailSt === 'bounced' || emailSt === 'bad-domain' || emailSt === 'bad-syntax')
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#fee2e2;color:#dc2626;">&#9888; Invalid</span>'
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:var(--bg-danger);color:var(--text-danger);">&#9888; Invalid</span>'
       : emailSt === 'risky'
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#f3f4f6;color:#6b7280;">? Risky</span>'
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:var(--surface-2);color:var(--text-muted);">? Risky</span>'
       : emailSt === 'catch-all'
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#fef9c3;color:#854d0e;">~ Catch-All</span>'
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:var(--bg-warning);color:var(--text-warning);">~ Catch-All</span>'
       : emailSt
-      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:#f3f4f6;color:#6b7280;">' + emailSt + '</span>'
-      : '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:#f3f4f6;color:#9ca3af;">Unverified</span>';
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:var(--surface-2);color:var(--text-muted);">' + emailSt + '</span>'
+      : '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;background:var(--surface-2);color:var(--text-muted);">Unverified</span>';
     const initials = oName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
     return `<tr class="opens-row" onclick="viewContact('${contactId}','${oEmail.replace(/'/g,"\\'")}')">
       <td style="white-space:nowrap;"><span class="contact-avatar" style="width:30px;height:30px;font-size:11px;">${initials}</span><strong>${oName}</strong></td>
@@ -5943,18 +5943,18 @@ async function renderCompliance() {
     </div>
 
     <div class="opens-stats" style="margin-bottom:28px;">
-      <div class="opens-stat" style="border-left-color:#dc2626;"><div class="num" style="color:#dc2626;">${bounced.length}</div><div class="lbl">⚠ Bounced</div></div>
+      <div class="opens-stat" style="border-left-color:var(--text-danger);"><div class="num" style="color:var(--text-danger);">${bounced.length}</div><div class="lbl">⚠ Bounced</div></div>
       <div class="opens-stat" style="border-left-color:#d97706;"><div class="num" style="color:#d97706;">${optedOut.length}</div><div class="lbl">⛔ Opted Out</div></div>
       <div class="opens-stat" style="border-left-color:#9d174d;"><div class="num" style="color:#9d174d;">${dnc.length}</div><div class="lbl">📵 Do Not Call</div></div>
       <div class="opens-stat"><div class="num">${list.length}</div><div class="lbl">Total Issues</div></div>
     </div>
 
-    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#991b1b;line-height:1.6;">
+    <div style="background:#fef2f2;border:1px solid var(--border-danger);border-radius:8px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:#991b1b;line-height:1.6;">
       <strong>⚠ Bounced Emails (${bounced.length})</strong> — These addresses were rejected by the mail server. Fix the email or delete the contact.
     </div>
     ${tableHtml(bouncedRows, '✓ No bounced email addresses.')}
 
-    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#92400e;line-height:1.6;">
+    <div style="background:var(--bg-warning);border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin:24px 0 16px;font-size:13px;color:#92400e;line-height:1.6;">
       <strong>⛔ Opted Out (${optedOut.length})</strong> — These contacts replied asking to unsubscribe. Do not re-enroll without their explicit permission.
     </div>
     ${tableHtml(optOutRows, '✓ No opted-out contacts.')}
@@ -6019,7 +6019,7 @@ async function cleanupContacts() {
     var rStr = reasons.join(' - ');
     var nm = (c.name || '(no name)').replace(/"/g, '&quot;');
     return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:0.5px solid var(--border);cursor:pointer;">'
-      + '<input type="checkbox" class="cleanup-chk" data-id="' + c.id + '" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#dc2626;" />'
+      + '<input type="checkbox" class="cleanup-chk" data-id="' + c.id + '" checked style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:var(--text-danger);" />'
       + '<span style="line-height:1.4;"><strong style="font-size:13px;color:var(--text-primary);">' + nm + '</strong>'
       + '<span style="font-size:11px;color:var(--text-muted);display:block;">' + rStr + '</span></span></label>';
   }).join('');
@@ -6085,7 +6085,7 @@ async function renderContacts() {
       </select>
       <button class="btn btn-accent" onclick="openAddContact()">+ Add Contact</button>
       <button class="btn btn-outline" onclick="verifyAllEmails()" style="font-size:13px;" title="SMTP-verify unverified emails">&#128269; Verify All Emails</button>
-      <button class="btn btn-outline" onclick="cleanupContacts()" style="font-size:13px;color:#dc2626;border-color:#dc2626;" title="Find and delete unreachable contacts">&#129529; Clean Up</button>
+      <button class="btn btn-outline" onclick="cleanupContacts()" style="font-size:13px;color:var(--text-danger);border-color:var(--text-danger);" title="Find and delete unreachable contacts">&#129529; Clean Up</button>
       <span style="font-size:13px;color:var(--muted);margin-left:auto;" id="contacts-count">Loading...</span>
     </div>
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
@@ -6168,17 +6168,17 @@ async function renderContacts() {
     const seqStatus  = c.sequence_status || 'Not Started';
     const ownerAgent = showOwnerCol ? allAgents.find(a => a.id === c.agent_id) : null;
     const emailBadge = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
-      ? `<span title="${(c.email_verify_reason||'Bad email').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#fee2e2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#9888; INVALID</span>`
+      ? `<span title="${(c.email_verify_reason||'Bad email').replace(/"/g,'&quot;')}" style="margin-left:5px;background:var(--bg-danger);color:var(--text-danger);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#9888; INVALID</span>`
       : (c.email_status === 'opted_out' || c.opt_out_email)
-      ? `<span title="Opted out of emails" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#128683; OPT-OUT</span>`
+      ? `<span title="Opted out of emails" style="margin-left:5px;background:var(--bg-warning);color:var(--text-warning);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#128683; OPT-OUT</span>`
       : c.email_status === 'valid'
-      ? `<span title="Email verified" style="margin-left:5px;background:#dcfce7;color:#16a34a;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#10003; VALID</span>`
+      ? `<span title="Email verified" style="margin-left:5px;background:var(--bg-success);color:var(--text-success);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#10003; VALID</span>`
       : c.email_status === 'catch-all'
-      ? `<span title="Catch-all domain" style="margin-left:5px;background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">~ CATCH-ALL</span>`
+      ? `<span title="Catch-all domain" style="margin-left:5px;background:var(--bg-warning);color:var(--text-warning);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">~ CATCH-ALL</span>`
       : c.email_status === 'risky'
-      ? `<span title="${(c.email_verify_reason||'Unverified').replace(/"/g,'&quot;')}" style="margin-left:5px;background:#f3f4f6;color:#6b7280;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">? RISKY</span>`
+      ? `<span title="${(c.email_verify_reason||'Unverified').replace(/"/g,'&quot;')}" style="margin-left:5px;background:var(--surface-2);color:var(--text-muted);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">? RISKY</span>`
       : c.email_status === 'pending'
-      ? `<span title="Verifying..." style="margin-left:5px;background:#eff6ff;color:#2563eb;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">... CHECKING</span>`
+      ? `<span title="Verifying..." style="margin-left:5px;background:var(--bg-info);color:var(--text-info);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">... CHECKING</span>`
       : ''
     const dncBadge = c.do_not_call
       ? `<span title="Do Not Call" style="margin-left:4px;background:#fce7f3;color:#9d174d;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">&#128245; DNC</span>`
@@ -6373,21 +6373,21 @@ function editContact(id, onSave) {
   const SEQ_STATUSES = ['Not Started','Active','Drip','Replied','Interested','Not Interested','Closed'];
   const seqOptions = SEQ_STATUSES.map(s => `<option value="${s}" ${(c.sequence_status||'Not Started')===s?'selected':''}>${s}</option>`).join('');
   const _verifiedAt = c.email_verified_at ? ` (verified ${new Date(c.email_verified_at).toLocaleDateString()})` : '';
-  const _markBtn = `<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;margin-left:6px;font-size:11px;color:#16a34a;border-color:#16a34a;" onclick="markEmailVerified('${c.id}')">&#10003; Mark as Verified</button>`;
+  const _markBtn = `<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;margin-left:6px;font-size:11px;color:var(--text-success);border-color:var(--text-success);" onclick="markEmailVerified('${c.id}')">&#10003; Mark as Verified</button>`;
   const emailStatusNote = (c.email_status === 'bounced' || c.email_status === 'invalid' || c.email_status === 'bad-domain' || c.email_status === 'bad-syntax')
-    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;">&#9888; <strong>Invalid Email</strong>${_verifiedAt} &#8212; ${c.email_verify_reason||'rejected'}. Correct it below, or mark valid if you know it works.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
+    ? `<div style="background:var(--bg-danger);border:1px solid var(--border-danger);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text-danger);">&#9888; <strong>Invalid Email</strong>${_verifiedAt} &#8212; ${c.email_verify_reason||'rejected'}. Correct it below, or mark valid if you know it works.<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
     : c.email_status === 'opted_out'
-    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">&#128683; <strong>Opted Out</strong> &#8212; uncheck below to restore.</div>`
+    ? `<div style="background:var(--bg-warning);border:1px solid var(--border-warning);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text-warning);">&#128683; <strong>Opted Out</strong> &#8212; uncheck below to restore.</div>`
     : c.email_status === 'valid'
-    ? `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#16a34a;">&#10003; <strong>Email Verified</strong>${_verifiedAt}${c.email_verify_reason === 'Manually verified by agent' ? ' <em style="font-size:10px;opacity:0.8;">(manual)</em>' : ''}</div>`
+    ? `<div style="background:var(--bg-success);border:1px solid var(--border-success);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text-success);">&#10003; <strong>Email Verified</strong>${_verifiedAt}${c.email_verify_reason === 'Manually verified by agent' ? ' <em style="font-size:10px;opacity:0.8;">(manual)</em>' : ''}</div>`
     : c.email_status === 'risky'
-    ? `<div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#6b7280;">? <strong>Risky / Unconfirmed</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}.<br><small style="display:block;margin-top:4px;color:#9ca3af;">Common for Microsoft, Google, State Farm &#8212; SMTP probing is blocked. If you know this email works, mark it verified.</small><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
+    ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text-muted);">? <strong>Risky / Unconfirmed</strong>${_verifiedAt}${c.email_verify_reason ? ' &#8212; '+c.email_verify_reason : ''}.<br><small style="display:block;margin-top:4px;color:var(--text-muted);">Common for Microsoft, Google, State Farm &#8212; SMTP probing is blocked. If you know this email works, mark it verified.</small><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Re-verify</button>${_markBtn}</div>`
     : c.email_status === 'catch-all'
-    ? `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#854d0e;">~ <strong>Catch-All Domain</strong>${_verifiedAt} &#8212; mailbox unconfirmed. If you know this person's inbox is real, mark it verified.<br>${_markBtn}</div>`
+    ? `<div style="background:var(--bg-warning);border:1px solid var(--border-warning);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text-warning);">~ <strong>Catch-All Domain</strong>${_verifiedAt} &#8212; mailbox unconfirmed. If you know this person's inbox is real, mark it verified.<br>${_markBtn}</div>`
     : c.email_status === 'pending'
-    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#2563eb;">... <strong>Verifying...</strong> Refresh in a moment, or mark verified if you know it's good.<br>${_markBtn}</div>`
+    ? `<div style="background:var(--bg-info);border:1px solid var(--border-info);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text-info);">... <strong>Verifying...</strong> Refresh in a moment, or mark verified if you know it's good.<br>${_markBtn}</div>`
     : c.email && !c.email_status
-    ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#dc2626;"><strong>&#9888; Not verified &#8212; will NOT receive emails until verified.</strong><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify via SMTP</button>${_markBtn}</div>`
+    ? `<div style="background:var(--bg-danger);border:1px solid var(--border-danger);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text-danger);"><strong>&#9888; Not verified &#8212; will NOT receive emails until verified.</strong><br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;font-size:11px;" onclick="verifyContactEmail('${c.id}')">&#128269; Verify via SMTP</button>${_markBtn}</div>`
     : ''
   const initials = (c.name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   const sec = (ico, title, inner) => `<div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;">
@@ -6471,7 +6471,7 @@ function editContact(id, onSave) {
       <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
         <button type="button" class="btn btn-accent btn-sm" onclick="closeModal();setTimeout(()=>showIntakeForm('${id}'),150);">\u{1F91D} New Intake</button>
       </div>
-      <div id="intake-history-panel"><em style="color:#94a3b8;font-size:12px;">Loading...</em></div>
+      <div id="intake-history-panel"><em style="color:var(--text-muted);font-size:12px;">Loading...</em></div>
     `)}
 
     ${sec('\u{1F4DD}', 'Notes', `<textarea id="con-notes" ${iw} rows="3">${c.notes||''}</textarea>`)}
@@ -6531,7 +6531,7 @@ async function loadIntakeHistoryPanel(contactId) {
     .eq('contact_id', contactId)
     .order('created_at', { ascending: false });
   if (error || !sessions || sessions.length === 0) {
-    panel.innerHTML = '<em style="color:#94a3b8;font-size:12px;">No intake sessions yet. Click New Intake to start one.</em>';
+    panel.innerHTML = '<em style="color:var(--text-muted);font-size:12px;">No intake sessions yet. Click New Intake to start one.</em>';
     return;
   }
   const LABELS = {
@@ -6544,8 +6544,8 @@ async function loadIntakeHistoryPanel(contactId) {
   };
   panel.innerHTML = sessions.map(function(s) {
     const badge = s.status === 'completed'
-      ? 'background:#dcfce7;color:#16a34a;border:1px solid #86efac;'
-      : 'background:#fef9c3;color:#854d0e;border:1px solid #fde047;';
+      ? 'background:var(--bg-success);color:var(--text-success);border:1px solid var(--border-success);'
+      : 'background:var(--bg-warning);color:var(--text-warning);border:1px solid var(--border-warning);';
     const dt = new Date(s.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
     const viewBtn = s.status === 'completed'
       ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 8px;margin-top:4px;" onclick="viewIntakeSession('${s.id}')">&#128065; View</button>`
@@ -6554,7 +6554,7 @@ async function loadIntakeHistoryPanel(contactId) {
     return `<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f1f5f9;gap:8px;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:600;color:var(--text);">${LABELS[s.form_type]||s.form_type}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${dt}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${dt}</div>
         ${viewBtn} ${delBtn}
       </div>
       <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;${badge}">${s.status.toUpperCase()}</span>
@@ -6794,8 +6794,8 @@ async function renderAdmin() {
     .select('*').eq('status', 'new').order('created_at', { ascending: true });
   const newApps = _newApps || [];
   const applicationsSection = newApps.length > 0 ? `
-    <div style="background:#eff6ff;border:1.5px solid #3b82f6;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-      <div style="font-weight:700;font-size:14px;color:#1d4ed8;margin-bottom:10px;">&#128221; ${newApps.length} New Enrollment Application${newApps.length>1?'s':''} — from thekannongroup.com/join</div>
+    <div style="background:var(--bg-info);border:1.5px solid #3b82f6;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="font-weight:700;font-size:14px;color:var(--text-info);margin-bottom:10px;">&#128221; ${newApps.length} New Enrollment Application${newApps.length>1?'s':''} — from thekannongroup.com/join</div>
       ${newApps.map(ap => {
         const lic = [ap.has_life_license && 'Life', ap.has_health_license && 'Health', ap.has_investment_license && 'Investments'].filter(Boolean).join(', ') || 'Not yet licensed';
         const trackLabel = { kfg: 'Kannon Financial', ia: 'Insured America', both: 'Both brands' }[ap.track] || ap.track;
@@ -6803,7 +6803,7 @@ async function renderAdmin() {
         const matchBadge = pendingMatch
           ? `<span style="color:var(--success);font-size:11px;">&#10003; matches ${pendingMatch.status} agent record</span>`
           : (contacts.find(c => c.email && c.email.toLowerCase() === ap.email.toLowerCase())
-              ? '<span style="color:#1d4ed8;font-size:11px;">&#9679; existing contact — use Recruit to create their agent record</span>'
+              ? '<span style="color:var(--text-info);font-size:11px;">&#9679; existing contact — use Recruit to create their agent record</span>'
               : '<span style="color:#f59e0b;font-size:11px;">&#9888; no matching contact yet</span>');
         return `<div style="padding:10px 0;border-bottom:1px solid #bfdbfe;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
@@ -6827,8 +6827,8 @@ async function renderAdmin() {
   const activeAgents  = allAgents.filter(a => a.status !== 'pending');
 
   const pendingAgentSection = pendingAgents.length > 0 ? `
-    <div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-      <div style="font-weight:700;font-size:14px;color:#b45309;margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} — Awaiting Approval</div>
+    <div style="background:var(--bg-warning);border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="font-weight:700;font-size:14px;color:var(--text-warning);margin-bottom:10px;">&#9203; ${pendingAgents.length} Pending Recruit${pendingAgents.length>1?'s':''} — Awaiting Approval</div>
       ${pendingAgents.map(a => {
         const recruiter = allAgents.find(x => x.id === a.recruited_by);
         const niprBadge = a.nipr_result
@@ -7199,7 +7199,7 @@ async function startSequence(contactId) {
       <option value="Recruit" ${cur === 'Recruit' ? 'selected' : ''}>Recruit — State Farm Agent</option>
       <option value="medicare">Medicare — Insured America</option>
     </select>
-    <p style="font-size:11px;color:#94a3b8;margin:0;">Changing the track also updates the contact type. Any previous sequence progress is reset.</p>
+    <p style="font-size:11px;color:var(--text-muted);margin:0;">Changing the track also updates the contact type. Any previous sequence progress is reset.</p>
   `, async () => {
     const track = document.getElementById('seq-track-select')?.value || cur;
     const updates = { type: track === 'medicare' ? 'Individual/Family' : track, sequence_status: null, sequence_step: 0, last_email_sent_at: null };
@@ -8469,7 +8469,7 @@ async function naHandleSpamComplaint(activityId, contactId, contactName, subject
 
 // View a completed intake form in a modal
 async function viewIntakeSession(sessionId) {
-  showModal('&#128196; Intake Form', '<div style="text-align:center;padding:20px;color:#94a3b8;">Loading&#8230;</div>', null, { hideConfirm: true });
+  showModal('&#128196; Intake Form', '<div style="text-align:center;padding:20px;color:var(--text-muted);">Loading&#8230;</div>', null, { hideConfirm: true });
   const { data: s, error } = await supabaseClient
     .from('intake_sessions')
     .select('id,contact_id,form_type,selected_fields,responses,status,created_at,completed_at,contacts(name,company)')
@@ -8485,8 +8485,8 @@ async function viewIntakeSession(sessionId) {
   const dtSrc    = s.completed_at || s.created_at;
   const dt = new Date(dtSrc).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
   const statusBadge = s.status === 'completed'
-    ? '<span style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">COMPLETED</span>'
-    : '<span style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">PENDING</span>';
+    ? '<span style="background:var(--bg-success);color:var(--text-success);border:1px solid var(--border-success);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">COMPLETED</span>'
+    : '<span style="background:var(--bg-warning);color:var(--text-warning);border:1px solid var(--border-warning);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">PENDING</span>';
   const responses = s.responses || {};
   const selectedFields = s.selected_fields || [];
   let fieldHtml = '';
@@ -8513,7 +8513,7 @@ async function viewIntakeSession(sessionId) {
       var sec  = entry[0];
       var rows = entry[1];
       fieldHtml += '<div style="margin-bottom:16px;">';
-      fieldHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:8px;">' + sec + '</div>';
+      fieldHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:8px;">' + sec + '</div>';
       rows.forEach(function(r) {
         const displayVal = Array.isArray(r.val) ? r.val.join(', ') : String(r.val);
         fieldHtml += '<div style="display:flex;gap:8px;margin-bottom:6px;font-size:13px;">'
@@ -8583,7 +8583,7 @@ async function editIntakeSession(sessionId) {
   Object.entries(sections).forEach(function(entry) {
     const sec = entry[0]; const fids = entry[1];
     formHtml += '<div style="margin-bottom:18px;">';
-    formHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:10px;">' + sec + '</div>';
+    formHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:10px;">' + sec + '</div>';
     fids.forEach(function(fid) {
       const def = INTAKE_FIELD_DEFS[fid];
       const val = responses[fid];
@@ -8697,7 +8697,7 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
     const received = new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     let badge = '', borderColor = '#d97706', btnLabel = '📋 Schedule';
     if (a.status === 'rescheduled' && a.rescheduled_by === 'agent') {
-      badge = `<div style="font-size:10px;background:rgba(234,179,8,0.15);color:#b45309;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">⚠ Awaiting prospect confirm</div>`;
+      badge = `<div style="font-size:10px;background:rgba(234,179,8,0.15);color:var(--text-warning);border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">⚠ Awaiting prospect confirm</div>`;
       borderColor = '#d97706'; btnLabel = '📋 Update';
     } else if (a.status === 'rescheduled' && a.rescheduled_by === 'prospect') {
       badge = `<div style="font-size:10px;background:rgba(139,92,246,0.15);color:#7c3aed;border-radius:4px;padding:2px 6px;margin-bottom:5px;font-weight:600;">🔄 Prospect requested reschedule</div>`;
@@ -8797,7 +8797,7 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:#d97706;margin-bottom:4px;">&#10024; Fresh Quotes Requested</div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.subject || name)}</div>
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
-        <div style="font-size:11px;color:#b45309;">Their old quote expired — they want new numbers.</div>
+        <div style="font-size:11px;color:var(--text-warning);">Their old quote expired — they want new numbers.</div>
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#d97706;border-color:#d97706;" onclick="${requote}">&#8635; Re-quote now</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}');viewContact('${item.contactId}')">&#128100;</button>
@@ -8814,7 +8814,7 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:#b3903a;margin-bottom:4px;">&#11088; Quote Interest <span style="background:#c8a84b;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:2px;">HOT</span></div>
         <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.subject || name)}</div>
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
-        ${item.snippet ? `<div style="font-size:11px;color:#8a6d1f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(item.snippet)}">${esc(item.snippet)}</div>` : ''}
+        ${item.snippet ? `<div style="font-size:11px;color:var(--text-warning);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(item.snippet)}">${esc(item.snippet)}</div>` : ''}
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#b3903a;border-color:#b3903a;" onclick="${openDeal}">&#127919; Open Deal</button>
           ${item.quoteId ? `<a class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;text-decoration:none;" href="quote.html?q=${item.quoteId}" target="_blank">Quote &#8599;</a>` : ''}
@@ -8862,7 +8862,7 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
   return `<div style="background:${headerBg};border:0.5px solid ${headerBord};border-radius:10px;padding:10px 14px;margin-bottom:10px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
       <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${headerColor};">⚠ Needs Attention</span>
-      <span style="background:${hasUrgent ? 'rgba(239,68,68,0.18)' : 'rgba(217,119,6,0.18)'};color:${hasUrgent ? '#ef4444' : '#b45309'};border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">${total}</span>
+      <span style="background:${hasUrgent ? 'rgba(239,68,68,0.18)' : 'rgba(217,119,6,0.18)'};color:${hasUrgent ? 'var(--text-danger)' : 'var(--text-warning)'};border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">${total}</span>
     </div>
     <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;">
       ${naCards}${pendingCards}
@@ -10406,7 +10406,7 @@ function openCarrierProductModal(crId, prodId) {
         ${MEDIGAP_PLANS.map(p => `<option value="${p[0]}">${p[1]}</option>`).join('')}
       </select>
     </div>
-    <div id="cp-cms-hint" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:#1d4ed8;">
+    <div id="cp-cms-hint" style="display:none;background:var(--bg-info);border:1px solid var(--border-info);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:var(--text-info);">
       Heads up: quoting for this line already uses the <strong>official CMS plan list</strong> automatically —
       you usually don't need to add products here at all.
     </div>
@@ -10745,8 +10745,16 @@ async function openQuoteBuilder(dealId) {
           </select></span>
         <span id="qb-aca-ichra-amt-wrap" style="display:none;">$<input type="number" id="qb-aca-ichra-amt" placeholder="mo. amount" style="width:90px;" />/mo</span>
       </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;font-size:13px;">
+        <div><label style="font-size:10px;margin:0 0 2px;">Coverage should start</label>
+          <input type="date" id="qb-aca-start" style="width:auto;" onchange="qbAcaTimingChanged_()" /></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">Qualifying life event</label>
+          <select id="qb-aca-qle" style="width:auto;max-width:230px;" onchange="qbAcaTimingChanged_()">${ACA_QLE_OPTIONS.map(o => `<option value="${escWeb(o)}">${escWeb(o)}</option>`).join('')}</select></div>
+        <div id="qb-aca-qled-wrap"><label style="font-size:10px;margin:0 0 2px;">Date of that event</label>
+          <input type="date" id="qb-aca-qle-date" style="width:auto;" onchange="qbAcaTimingChanged_()" /></div>
+      </div>
       <div id="qb-aca-sep" style="font-size:12px;margin-top:8px;"></div>
-      <div id="qb-aca-intake-note" style="display:none;font-size:12px;color:#b45309;margin-top:6px;"></div>
+      <div id="qb-aca-intake-note" style="display:none;font-size:12px;color:var(--text-warning);margin-top:6px;"></div>
       <div style="margin-top:10px;border-top:0.5px dashed var(--border);padding-top:8px;">
         <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Their doctors &amp; medications (optional — plans get ✓/✗ coverage marks)</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center;">
@@ -11405,7 +11413,7 @@ function openBaaVersionModal() {
   const nextVer = cur ? cur.version + 1 : 1;
   showModal('Publish BAA Version ' + nextVer, `
     <div style="padding:16px 20px;">
-      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;font-size:12px;color:#854d0e;margin-bottom:12px;">
+      <div style="background:var(--bg-warning);border:1px solid var(--border-warning);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-warning);margin-bottom:12px;">
         &#9888; Publishing replaces the active agreement. Every company that signed an older version will show
         <strong>"master agreement updated — request re-signature"</strong> on their deals, and all new census
         requests will carry version ${nextVer}. Have your attorney review changes before publishing.
@@ -11445,7 +11453,7 @@ function openNppVersionModal() {
   const nextVer = cur ? cur.version + 1 : 1;
   showModal('Publish Privacy Notice Version ' + nextVer, `
     <div style="padding:16px 20px;">
-      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;font-size:12px;color:#1d4ed8;margin-bottom:12px;">
+      <div style="background:var(--bg-info);border:1px solid var(--border-info);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text-info);margin-bottom:12px;">
         Publishing replaces the notice at notice.html immediately. The automated annual cycle
         delivers the new version to every client over the following year; no re-signature is
         needed (privacy notices are informational, not agreements). Have your attorney review first.
@@ -11651,34 +11659,80 @@ const ACA_INCOME_MIDPOINTS = {
 
 // Federal ACA enrollment windows: OEP Nov 1 \u2013 Jan 15; otherwise a
 // Qualifying Life Event opens a 60-day Special Enrollment Period.
+const ACA_QLE_OPTIONS = ['No \u2014 none of these', 'Lost other health coverage', 'Moved to a new area',
+  'Got married', 'Had or adopted a baby', 'Divorce or legal separation (lost coverage)',
+  'Lost Medicaid/CHIP eligibility', 'Left incarceration', 'Gained citizenship or lawful presence',
+  'Other qualifying life change'];
+
+// The agent can correct enrollment timing here instead of digging back into
+// the intake; edits flow back to the intake record that supplied them.
+async function qbAcaTimingChanged_() {
+  const start = (document.getElementById('qb-aca-start') || {}).value || '';
+  const qle = (document.getElementById('qb-aca-qle') || {}).value || '';
+  const qleDate = (document.getElementById('qb-aca-qle-date') || {}).value || '';
+  qbAcaSepStatus_(qle, qleDate, start);
+  try {
+    const row = await qbAcaIntakeRow_(['coverage_start_date', 'aca_qle', 'aca_qle_date']);
+    if (!row) return;
+    const resp = Object.assign({}, row.responses, {
+      coverage_start_date: start || null, aca_qle: qle || null, aca_qle_date: qleDate || null,
+    });
+    const { data: ok } = await supabaseClient.from('intake_sessions')
+      .update({ responses: resp }).eq('id', row.id).select('id');
+    const note = document.getElementById('qb-aca-intake-note');
+    if (ok && ok.length && note) {
+      note.style.display = 'block'; note.style.color = 'var(--text-success)';
+      note.textContent = '\u2713 Coverage timing saved back to their intake record.';
+    }
+  } catch (e) { console.error('qbAcaTimingChanged_:', e); }
+}
+
 function qbAcaSepStatus_(qle, qleDate, startDate) {
   const el = document.getElementById('qb-aca-sep');
   if (!el) return;
+  // keep the editable fields in step with whatever was passed in
+  const sEl = document.getElementById('qb-aca-start');
+  const qEl = document.getElementById('qb-aca-qle');
+  const qdEl = document.getElementById('qb-aca-qle-date');
+  if (sEl && startDate && !sEl.value) sEl.value = startDate;
+  if (qEl && qle && [...qEl.options].some(o => o.value === qle)) qEl.value = qle;
+  if (qdEl && qleDate && !qdEl.value) qdEl.value = qleDate;
+  startDate = (sEl && sEl.value) || startDate;
+  qle = (qEl && qEl.value) || qle;
+  qleDate = (qdEl && qdEl.value) || qleDate;
+
+  const hasEvent = qle && !/^no\b/i.test(qle);
+  const wrap = document.getElementById('qb-aca-qled-wrap');
+  if (wrap) wrap.style.display = hasEvent ? '' : 'none';
+
   const now = new Date();
   const y = now.getFullYear();
   const inOEP = (now >= new Date(y, 10, 1)) || (now <= new Date(y, 0, 15, 23, 59, 59));
+  const ok = t => '<span style="color:var(--text-success);font-weight:700;">' + t + '</span>';
+  const warn = t => '<span style="color:var(--text-warning);font-weight:700;">' + t + '</span>';
+
   if (!inOEP && startDate) {
     const nextJan1 = new Date(now < new Date(y, 0, 16) ? y : y + 1, 0, 1);
     if (new Date(startDate + 'T12:00:00') >= nextJan1) {
-      el.innerHTML = '<span style="color:var(--success);font-weight:700;">\u{1F7E2} They want coverage starting ' + new Date(startDate + 'T12:00:00').toLocaleDateString() + ' \u2014 Open Enrollment (opens Nov 1) covers that. No life event needed.</span>';
+      el.innerHTML = ok('\u{1F7E2} Coverage starting ' + new Date(startDate + 'T12:00:00').toLocaleDateString()
+        + ' \u2014 Open Enrollment (opens Nov 1) covers that. No life event needed.');
       return;
     }
   }
   if (inOEP) {
-    el.innerHTML = '<span style="color:var(--success);font-weight:700;">\u{1F7E2} Open Enrollment is ON (Nov 1 \u2013 Jan 15) \u2014 anyone can enroll.</span>';
+    el.innerHTML = ok('\u{1F7E2} Open Enrollment is ON (Nov 1 \u2013 Jan 15) \u2014 anyone can enroll.');
     return;
   }
-  let html = '<span style="color:#b45309;font-weight:700;">\u{1F7E0} Outside Open Enrollment \u2014 enrolling requires a Qualifying Life Event (Special Enrollment Period).</span>';
-  if (qle && !/^no\b/i.test(qle)) {
+  let html = warn('\u{1F7E0} Outside Open Enrollment \u2014 enrolling requires a Qualifying Life Event (Special Enrollment Period).');
+  if (hasEvent) {
     if (qleDate) {
       const d = new Date(qleDate + 'T12:00:00');
       const end = new Date(d.getTime() + 60 * 86400000);
-      const open = now <= end;
-      html += open
-        ? '<br><span style="color:var(--success);font-weight:600;">\u2713 SEP on file: ' + escWeb(qle) + ' (' + d.toLocaleDateString() + ') \u2014 their 60-day enrollment window runs through <strong>' + end.toLocaleDateString() + '</strong>.</span>'
-        : '<br><span style="color:var(--danger);font-weight:600;">\u2717 Reported event: ' + escWeb(qle) + ' (' + d.toLocaleDateString() + ') \u2014 the 60-day window CLOSED ' + end.toLocaleDateString() + '. A new event (or Open Enrollment) is needed.</span>';
+      html += now <= end
+        ? '<br><span style="color:var(--text-success);font-weight:600;">\u2713 SEP on file: ' + escWeb(qle) + ' (' + d.toLocaleDateString() + ') \u2014 their 60-day enrollment window runs through <strong>' + end.toLocaleDateString() + '</strong>.</span>'
+        : '<br><span style="color:var(--text-danger);font-weight:600;">\u2717 Reported event: ' + escWeb(qle) + ' (' + d.toLocaleDateString() + ') \u2014 the 60-day window CLOSED ' + end.toLocaleDateString() + '. A new event (or Open Enrollment) is needed.</span>';
     } else {
-      html += '<br><span style="color:#b45309;">Reported event: ' + escWeb(qle) + ' \u2014 get the event DATE to confirm the 60-day window.</span>';
+      html += '<br>' + warn('Reported event: ' + escWeb(qle) + ' \u2014 add the event DATE to confirm the 60-day window.');
     }
   } else {
     html += '<br><span style="color:var(--text-muted);">No qualifying event on file \u2014 ask about: lost coverage, a move, marriage, a new baby, loss of Medicaid, and similar life changes.</span>';
@@ -11821,6 +11875,10 @@ async function qbAcaPrefillFromIntake_() {
       pulled.push('ICHRA offer flagged');
     }
     if (r.aca_qle || r.coverage_start_date) {
+      const sEl = document.getElementById('qb-aca-start');
+      if (sEl && r.coverage_start_date) sEl.value = r.coverage_start_date;
+      const qdEl = document.getElementById('qb-aca-qle-date');
+      if (qdEl && r.aca_qle_date) qdEl.value = r.aca_qle_date;
       qbAcaSepStatus_(r.aca_qle || null, r.aca_qle_date || null, r.coverage_start_date || null);
       if (r.aca_qle && !/^no\b/i.test(r.aca_qle)) pulled.push('SEP life event');
     }
@@ -12047,7 +12105,7 @@ function acaProviderGroupsHtml_(items, zip, state, pickJs, showFar, toggleJs) {
     + group(st ? 'Elsewhere in ' + escWeb(st) : 'Same state', inState, 'var(--accent,#1d3557)')
     + (showFar ? group('Other states', far, 'var(--text-muted)') : '')
     + (!near.length && !inState.length && !showFar && far.length
-        ? `<div style="font-size:12px;color:#b45309;padding:8px 2px;">No matches in ${escWeb(st || 'their state')} \u2014 ${far.length} found elsewhere.</div>` : '')
+        ? `<div style="font-size:12px;color:var(--text-warning);padding:8px 2px;">No matches in ${escWeb(st || 'their state')} \u2014 ${far.length} found elsewhere.</div>` : '')
     + (far.length ? `<div style="padding:7px 2px;"><a href="#" onclick="${toggleJs}; return false;" style="font-size:11.5px;font-weight:700;color:var(--accent,#1d3557);text-decoration:none;">${showFar ? '\u2191 Hide the ' + far.length + ' out-of-state matches' : '\u2193 Show ' + far.length + ' match' + (far.length === 1 ? '' : 'es') + ' in other states'}</a></div>` : '');
 }
 
@@ -12926,6 +12984,7 @@ async function qbAcaGetPlans_() {
       income: income, zip: c.zip || null,
       county: countySel2.options[countySel2.selectedIndex] ? countySel2.options[countySel2.selectedIndex].text : null,
       aptc: data.aptc != null ? data.aptc : null, csr: data.csr || null,
+      coverage_start: (document.getElementById('qb-aca-start') || {}).value || null,
       doctors: (window._qbAcaDocs || []).map(d => d.name),
       medications: (window._qbAcaMeds || []).map(m => m.name),
       household: people.map(m => ({ relationship: m.relationship, age: m.age, applying: !!m.applying })),
@@ -12935,7 +12994,7 @@ async function qbAcaGetPlans_() {
     let subsidy = data.aptc != null && data.aptc > 0
       ? '<span style="color:var(--success);font-weight:700;">Estimated tax credit: $' + Number(data.aptc).toFixed(0) + '/mo</span>'
       : 'No tax credit at this income';
-    if (data.medicaid_chip) subsidy = '<span style="color:#b45309;font-weight:700;">&#9888; This household may qualify for Medicaid/CHIP \u2014 check that door before quoting marketplace plans.</span> ' + subsidy;
+    if (data.medicaid_chip) subsidy = '<span style="color:var(--text-warning);font-weight:700;">&#9888; This household may qualify for Medicaid/CHIP \u2014 check that door before quoting marketplace plans.</span> ' + subsidy;
     if (data.applicant_count != null && data.household_count != null && data.applicant_count < data.household_count)
       subsidy += ' <span style="color:var(--text-muted);">(pricing ' + data.applicant_count + ' of ' + data.household_count + ' household members)</span>';
     const ichraSel = document.getElementById('qb-aca-ichra');
