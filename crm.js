@@ -8574,11 +8574,15 @@ async function editIntakeSession(sessionId) {
 
   showModal('&#9998; Edit — ' + typeLabel, formHtml, async function() {
     const newResp = _collectIntakeEditResponses(allFids);
-    const { error: saveErr } = await supabaseClient
+    // .select() so a permission-blocked update reports 0 rows instead of
+    // silently succeeding (this exact trap hid an RLS gap for weeks)
+    const { data: saved, error: saveErr } = await supabaseClient
       .from('intake_sessions')
       .update({ responses: newResp, status: 'completed', completed_at: new Date().toISOString() })
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .select('id');
     if (saveErr) { showToast('Save failed: ' + saveErr.message); return false; }
+    if (!saved || !saved.length) { showToast('Save blocked \u2014 nothing was written. Tell Ken/support (intake permissions).'); return false; }
     showToast('&#10003; Intake saved');
     setTimeout(function() { viewIntakeSession(sessionId); }, 200);
   }, { confirmLabel: '&#128190; Save Changes' });
@@ -11603,6 +11607,30 @@ function qbAcaSepStatus_(qle, qleDate, startDate) {
   el.innerHTML = html;
 }
 
+// The intake is the client's original answers; the last quote is what the agent
+// actually priced. For a re-quote the latter is the truth worth restoring.
+async function qbAcaPrefillFromLastQuote_() {
+  const c = window._qbContact; if (!c) return;
+  try {
+    const { data } = await supabaseClient.from('quotes')
+      .select('quote_inputs,created_at').eq('contact_id', c.id)
+      .not('quote_inputs', 'is', null)
+      .order('created_at', { ascending: false }).limit(1);
+    const qi = data && data[0] && data[0].quote_inputs;
+    if (!qi) return;
+    const inc = document.getElementById('qb-aca-income');
+    if (inc && qi.income != null) inc.value = qi.income;
+    const note = document.getElementById('qb-aca-intake-note');
+    if (note && qi.income != null) {
+      note.style.display = 'block';
+      note.style.color = '#0d9488';
+      note.innerHTML = '\u21bb Restored from this client\u2019s last quote: income $'
+        + Number(qi.income).toLocaleString() + (qi.county ? ' \u00b7 ' + escWeb(qi.county) : '')
+        + '. Change anything that\u2019s out of date before pricing.';
+    }
+  } catch (e) { console.error('qbAcaPrefillFromLastQuote_:', e); }
+}
+
 async function qbAcaPrefillFromIntake_() {
   const c = window._qbContact;
   if (!c) return;
@@ -11732,6 +11760,7 @@ async function qbAcaPrefillFromIntake_() {
       document.getElementById('qb-aca-matches').innerHTML =
         '<span style="color:#0d9488;">\u26a1 Pulled from their intake: ' + pulled.join(' \u00b7 ') + '. Remove anything that doesn\u2019t fit.</span>';
     }
+    await qbAcaPrefillFromLastQuote_();
   } catch (e) { console.error('qbAcaPrefillFromIntake_:', e); }
 }
 
