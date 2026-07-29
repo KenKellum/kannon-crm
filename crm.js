@@ -3131,6 +3131,32 @@ function _intakeCollectResponses() {
   return responses;
 }
 
+// Lift the durable facts out of a set of intake answers so they land on the
+// client record. Ranges ("$50,000-$75,000") resolve through the midpoint map;
+// anything unparseable is simply left alone.
+function intakeProfilePatch_(responses) {
+  const patch = {};
+  const raw = responses.aca_income;
+  if (raw !== undefined && raw !== '') {
+    let n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
+    if (/[-\u2013]|to /i.test(String(raw)) && ACA_INCOME_MIDPOINTS[raw] != null) n = ACA_INCOME_MIDPOINTS[raw];
+    if (!isNaN(n) && n > 0 && n < 2000000) patch.household_income = n;
+  }
+  const jsonArr = v => {
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} }
+    return null;
+  };
+  const hh = jsonArr(responses.household_struct);
+  if (hh && hh.length) patch.household_members = hh;
+  const docs = jsonArr(responses.med_doctors_struct);
+  if (docs && docs.length) patch.providers = docs.filter(d => d && d.npi).map(d => ({ npi: d.npi, name: d.name }));
+  const meds = jsonArr(responses.med_medications_struct);
+  if (meds && meds.length) patch.medications = meds.filter(m => m && m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+  if (Object.keys(patch).length) patch.profile_updated_at = new Date().toISOString();
+  return patch;
+}
+
 async function saveIntakeToCRM() {
   const c = contacts.find(x => x.id === _intakeContactId);
   if (!c) { showToast('Could not save: contact not loaded — close this form and reopen it from the contact.'); return; }
@@ -3151,7 +3177,7 @@ async function saveIntakeToCRM() {
       if (_updErr) throw _updErr;
       // Sync key contact fields from updated responses
       const _efm = { dob:'date_of_birth', zip:'zip', email:'email', phone:'phone', business_name:'company', marital_status:'marital_status' };
-      const _ecu = {};
+      const _ecu = Object.assign({}, intakeProfilePatch_(responses));
       for (const [fid, col] of Object.entries(_efm)) {
         if (responses[fid] !== undefined && responses[fid] !== '') _ecu[col] = responses[fid];
       }
@@ -3190,7 +3216,7 @@ async function saveIntakeToCRM() {
     if (sessErr) throw sessErr;
 
     // 2. Update contact: sequence_status = 'Interested' + key fields from responses
-    const contactUpdates = { sequence_status: 'Interested' };
+    const contactUpdates = Object.assign({ sequence_status: 'Interested' }, intakeProfilePatch_(responses));
     const fieldMap = {
       dob: 'date_of_birth', zip: 'zip', email: 'email', phone: 'phone',
       business_name: 'company', marital_status: 'marital_status',
@@ -4626,7 +4652,25 @@ function c360Body_(D) {
           ${fact('ZIP / State', [c.zip, c.state].filter(Boolean).join(', '))}
           ${fact('Company', c.company)}
           ${fact('Email status', c.email_status)}
-        </div></div>
+        </div>
+        ${(() => {
+          const arr = v => { if (Array.isArray(v)) return v;
+            if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} } return []; };
+          const hh = arr(c.household_members), dc = arr(c.providers), md = arr(c.medications);
+          const applying = hh.filter(m => m.covered !== false).length;
+          if (c.household_income == null && !hh.length && !dc.length && !md.length) return '';
+          return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;">
+            ${fact('Household income', c.household_income != null ? '$' + Number(c.household_income).toLocaleString() + '/yr' : null)}
+            ${fact('Household', hh.length ? hh.length + ' member' + (hh.length === 1 ? '' : 's') + (applying ? ' \u00b7 ' + applying + ' applying' : '') : null)}
+            ${fact('Doctors on file', dc.length ? dc.length + '' : null)}
+            ${fact('Medications', md.length ? md.length + '' : null)}
+          </div>
+          ${dc.length || md.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.6;">
+            ${dc.length ? '\u{1FA7A} ' + escWeb(dc.map(d => d.name).slice(0, 3).join(', ')) + (dc.length > 3 ? ' +' + (dc.length - 3) + ' more' : '') + '<br>' : ''}
+            ${md.length ? '\u{1F48A} ' + escWeb(md.map(m => m.name).slice(0, 3).join(', ')) + (md.length > 3 ? ' +' + (md.length - 3) + ' more' : '') : ''}
+          </div>` : ''}`;
+        })()}
+      </div>
       ${social ? `<div class="panel-section"><div class="panel-label">Social</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${social}</div></div>` : ''}
       <div class="panel-section"><div class="panel-label">Relationship</div>
         ${ownerAgent ? `<div class="panel-field"><span class="panel-field-icon">\u{1F464}</span>${escWeb(ownerAgent.name)} <span style="color:var(--text-muted);font-size:12px;">\u2014 ${escWeb((ownerAgent.agencies && ownerAgent.agencies.name) || 'No agency')}</span></div>` : ''}
@@ -6432,6 +6476,9 @@ function editContact(id, onSave) {
         ${fld('Date of Birth', `<input type="date" id="con-dob" value="${c.date_of_birth||''}" ${iw} />`)}
         ${fld('Gender', `<select id="con-gender" ${iw}><option value=""></option><option value="M" ${c.gender==='M'?'selected':''}>Male</option><option value="F" ${c.gender==='F'?'selected':''}>Female</option></select>`)}
       </div>
+      <div style="margin-top:10px;">
+        ${fld('Yearly household income ($) <span style="font-weight:400;text-transform:none;">\u2014 used for ACA subsidy math</span>', `<input type="number" id="con-income" value="${c.household_income != null ? c.household_income : ''}" placeholder="e.g. 48000" ${iw} />`)}
+      </div>
       <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:10px;background:var(--surface-2);border-radius:8px;padding:9px 12px;cursor:pointer;">
         <input type="checkbox" id="con-tobacco" style="width:16px;height:16px;" ${c.tobacco_use?'checked':''}/> \u{1F6AC} Tobacco user
         <span style="font-size:11px;color:var(--muted);">(affects insurance rates)</span></label>
@@ -6490,7 +6537,7 @@ function editContact(id, onSave) {
       : newOptOut ? 'opted_out'
       : (c.email_status === 'opted_out' && !newOptOut) ? null
       : c.email_status || null;
-    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, date_of_birth: (document.getElementById('con-dob') ? document.getElementById('con-dob').value : '')||null, gender: (document.getElementById('con-gender') ? document.getElementById('con-gender').value : '')||null, tobacco_use: document.getElementById('con-tobacco') ? document.getElementById('con-tobacco').checked : null, street_address: (document.getElementById('con-street') ? document.getElementById('con-street').value.trim() : '')||null, zip: (document.getElementById('con-zip') ? document.getElementById('con-zip').value.trim() : '')||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: (document.getElementById('con-track') ? document.getElementById('con-track').value : c.sequence_track)||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
+    const updates = { name, email: newEmail, phone: document.getElementById('con-phone').value.trim()||null, company: document.getElementById('con-company').value.trim()||null, city: document.getElementById('con-city').value.trim()||null, date_of_birth: (document.getElementById('con-dob') ? document.getElementById('con-dob').value : '')||null, gender: (document.getElementById('con-gender') ? document.getElementById('con-gender').value : '')||null, tobacco_use: document.getElementById('con-tobacco') ? document.getElementById('con-tobacco').checked : null, household_income: (document.getElementById('con-income') && document.getElementById('con-income').value !== '') ? parseFloat(document.getElementById('con-income').value) : null, profile_updated_at: new Date().toISOString(), street_address: (document.getElementById('con-street') ? document.getElementById('con-street').value.trim() : '')||null, zip: (document.getElementById('con-zip') ? document.getElementById('con-zip').value.trim() : '')||null, state: (document.getElementById('con-state').value.trim().toUpperCase())||null, type: document.getElementById('con-type').value||null, sequence_track: (document.getElementById('con-track') ? document.getElementById('con-track').value : c.sequence_track)||'standard', sequence_status: newSeqStatus, notes: document.getElementById('con-notes').value.trim()||null, agent_id: assignedAgentId, agency_id: assignedAgent.agency_id||null, opt_out_email: newOptOut, do_not_call: newDnc, email_status: newEmailStatus, linkedin_url: document.getElementById('con-linkedin').value.trim()||null, facebook_url: document.getElementById('con-facebook').value.trim()||null, instagram_handle: (document.getElementById('con-instagram').value.trim().replace(/^@/,'')||null), twitter_handle: (document.getElementById('con-twitter').value.trim().replace(/^@/,'')||null), whatsapp_number: document.getElementById('con-whatsapp').value.trim()||null, tiktok_handle: (document.getElementById('con-tiktok').value.trim().replace(/^@/,'')||null), telegram_handle: (document.getElementById('con-telegram').value.trim().replace(/^@/,'')||null) };
     const { error } = await supabaseClient.from('contacts').update(updates).eq('id', id);
     if (error) { showToast('Error: ' + error.message); return false; }
 
@@ -11802,9 +11849,97 @@ async function qbAcaPrefillFromLastQuote_() {
   } catch (e) { console.error('qbAcaPrefillFromLastQuote_:', e); }
 }
 
+// ── Client profile ────────────────────────────────────────────────────────
+// Income, household, doctors and medications are facts about the CLIENT, so
+// they live on the contact row. The intake stays a point-in-time record of
+// what they answered; we read the contact first and only fall back to intake
+// answers for clients whose profile hasn't been filled in yet.
+function _cpArr_(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} }
+  return [];
+}
+
+async function qbSaveClientProfile_(patch) {
+  const c = window._qbContact;
+  if (!c || !patch || !Object.keys(patch).length) return false;
+  patch.profile_updated_at = new Date().toISOString();
+  try {
+    const { data, error } = await supabaseClient.from('contacts')
+      .update(patch).eq('id', c.id).select('id');
+    if (error || !data || !data.length) { console.error('profile save:', error); return false; }
+    Object.assign(c, patch);
+    const cached = contacts.find(x => x.id === c.id);
+    if (cached) Object.assign(cached, patch);
+    return true;
+  } catch (e) { console.error('profile save:', e); return false; }
+}
+
+// Everything the ACA strip needs, read from the client record
+function qbClientProfile_() {
+  const c = window._qbContact || {};
+  return {
+    income: (c.household_income != null && c.household_income !== '') ? Number(c.household_income) : null,
+    household: _cpArr_(c.household_members),
+    providers: _cpArr_(c.providers),
+    medications: _cpArr_(c.medications),
+  };
+}
+
+// Read the client profile into the strip. Returns what it managed to fill so
+// qbAcaPrefillFromIntake_ knows which gaps are left for the intake to cover.
+function qbApplyClientProfile_() {
+  const prof = qbClientProfile_();
+  const filled = { income: false, household: false, providers: false, medications: false };
+
+  const incEl = document.getElementById('qb-aca-income');
+  if (incEl && !incEl.value && !window._qbAcaIncomeDirty && prof.income != null) {
+    incEl.value = prof.income; filled.income = true;
+  }
+  if (prof.household.length) {
+    const wrap = document.getElementById('qb-aca-members');
+    if (wrap) {
+      const c = window._qbContact || {};
+      wrap.innerHTML = '';
+      prof.household.forEach((m, i) => qbAcaMemberRow_({
+        relationship: i === 0 ? 'Self' : (m.relationship === 'Spouse' ? 'Spouse' : (m.relationship || 'Child')),
+        age: m.age,
+        gender: m.gender === 'F' ? 'F' : (m.gender === 'M' ? 'M' : (c.gender || '')),
+        uses_tobacco: !!m.tobacco,
+        applying: m.covered !== false,
+        has_mec: !!m.has_mec,
+      }));
+      filled.household = true;
+    }
+  }
+  if (prof.providers.length) {
+    window._qbAcaDocs = prof.providers.filter(d => d.npi).map(d => ({ npi: d.npi, name: d.name }));
+    filled.providers = !!window._qbAcaDocs.length;
+  }
+  if (prof.medications.length) {
+    window._qbAcaMeds = prof.medications.filter(m => m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+    filled.medications = !!window._qbAcaMeds.length;
+  }
+  if (filled.providers || filled.medications) qbAcaRenderChips_();
+  return filled;
+}
+
+// Read the household rows back out of the strip in profile shape
+function qbReadHouseholdRows_() {
+  return [...document.querySelectorAll('#qb-aca-members > div')].map(d => ({
+    relationship: d.querySelector('.aca-rel') ? d.querySelector('.aca-rel').value : null,
+    age: d.querySelector('.aca-age') ? parseInt(d.querySelector('.aca-age').value) : null,
+    gender: d.querySelector('.aca-gen') ? d.querySelector('.aca-gen').value : null,
+    tobacco: d.querySelector('.aca-tob') ? d.querySelector('.aca-tob').checked : false,
+    covered: d.querySelector('.aca-app') ? d.querySelector('.aca-app').checked : true,
+    has_mec: d.querySelector('.aca-mec') ? d.querySelector('.aca-mec').checked : false,
+  })).filter(m => !isNaN(m.age) && m.age != null);
+}
+
 async function qbAcaPrefillFromIntake_() {
   const c = window._qbContact;
   if (!c) return;
+  const fromProfile = qbApplyClientProfile_();   // client record wins
   try {
     const { data: sess } = await supabaseClient.from('intake_sessions')
       .select('form_type,responses').eq('contact_id', c.id)
@@ -11817,7 +11952,7 @@ async function qbAcaPrefillFromIntake_() {
 
     // Income (range midpoint — an estimate the agent can refine)
     const incEl = document.getElementById('qb-aca-income');
-    if (incEl && !incEl.value && r.aca_income) {
+    if (incEl && !incEl.value && !fromProfile.income && r.aca_income) {
       const exact = parseFloat(String(r.aca_income).replace(/[^0-9.]/g, ''));
       if (!isNaN(exact) && exact >= 1000) {
         incEl.value = Math.round(exact);
@@ -11831,7 +11966,7 @@ async function qbAcaPrefillFromIntake_() {
     // Household members: structured table wins outright
     let hhStruct = null;
     try { if (r.household_struct) hhStruct = JSON.parse(r.household_struct); } catch (e) {}
-    if (hhStruct && hhStruct.length) {
+    if (hhStruct && hhStruct.length && !fromProfile.household) {
       const wrap = document.getElementById('qb-aca-members');
       wrap.innerHTML = '';
       hhStruct.forEach((m, i) => qbAcaMemberRow_({
@@ -11860,11 +11995,11 @@ async function qbAcaPrefillFromIntake_() {
     let structMeds = null, structDocs = null;
     try { if (r.med_medications_struct) structMeds = JSON.parse(r.med_medications_struct); } catch (e) {}
     try { if (r.med_doctors_struct) structDocs = JSON.parse(r.med_doctors_struct); } catch (e) {}
-    if (structMeds && structMeds.length) {
+    if (structMeds && structMeds.length && !fromProfile.medications) {
       window._qbAcaMeds = structMeds.filter(m => m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
       if (window._qbAcaMeds.length) pulled.push('medications (' + window._qbAcaMeds.length + ', exact picks from intake)');
     }
-    if (structDocs && structDocs.length) {
+    if (structDocs && structDocs.length && !fromProfile.providers) {
       window._qbAcaDocs = structDocs.filter(d => d.npi).map(d => ({ npi: d.npi, name: d.name }));
       if (window._qbAcaDocs.length) pulled.push('doctors (' + window._qbAcaDocs.length + ', exact picks from intake)');
     }
@@ -12025,6 +12160,10 @@ async function qbAcaIntakeRow_(keys) {
 
 // Doctor/med edits made anywhere flow back to the client's intake record
 async function qbAcaSyncPicksToIntake_() {
+  await qbSaveClientProfile_({
+    providers: (window._qbAcaDocs || []).map(d => ({ npi: d.npi, name: d.name })),
+    medications: (window._qbAcaMeds || []).map(m => ({ rxcui: m.rxcui, name: m.name })),
+  });
   try {
     const row = await qbAcaIntakeRow_(['med_doctors', 'med_medications', 'med_doctors_struct', 'med_medications_struct']);
     if (!row) return;
@@ -12038,7 +12177,7 @@ async function qbAcaSyncPicksToIntake_() {
     const { data: ok } = await supabaseClient.from('intake_sessions')
       .update({ responses: resp }).eq('id', row.id).select('id');
     const note = document.getElementById('qbpk-sync-note');
-    if (ok && ok.length && note) note.textContent = '\u2713 Saved to their intake record (' + docs.length + ' doctor' + (docs.length === 1 ? '' : 's') + ', ' + meds.length + ' medication' + (meds.length === 1 ? '' : 's') + ').';
+    if (note) note.textContent = '\u2713 Saved to this client\u2019s record: ' + docs.length + ' doctor' + (docs.length === 1 ? '' : 's') + ', ' + meds.length + ' medication' + (meds.length === 1 ? '' : 's') + '.';
   } catch (e) { console.error('qbAcaSyncPicksToIntake_:', e); }
 }
 
@@ -12427,6 +12566,8 @@ function acaCsrBanner_() {
 async function qbAcaSyncIncomeToIntake_(income) {
   const c = window._qbContact;
   if (!c || income == null || isNaN(income)) return;
+  // the client record is the source of truth; the intake keeps its own copy
+  await qbSaveClientProfile_({ household_income: income, household_members: qbReadHouseholdRows_() });
   try {
     const { data: sess } = await supabaseClient.from('intake_sessions')
       .select('id,responses').eq('contact_id', c.id).eq('status', 'completed')
@@ -12440,8 +12581,8 @@ async function qbAcaSyncIncomeToIntake_(income) {
     if (ok && ok.length && note) {
       note.style.display = 'block';
       note.style.color = '#0d9488';
-      note.innerHTML = '\u2713 Saved back to their intake record too \u2014 household income is now $'
-        + Number(income).toLocaleString() + '.';
+      note.innerHTML = '\u2713 Saved to this client\u2019s record \u2014 household income $'
+        + Number(income).toLocaleString() + ' (their intake was updated too).';
     }
   } catch (e) { console.error('qbAcaSyncIncomeToIntake_:', e); }
 }

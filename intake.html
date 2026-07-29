@@ -658,6 +658,31 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
   }
 
   const now = new Date().toISOString();
+  // Durable facts belong on the client record so the next intake starts filled in
+  try {
+    if (session && session.contact_id) {
+      const prof = {};
+      const rawInc = responses.aca_income;
+      if (rawInc !== undefined && rawInc !== '') {
+        const n = parseFloat(String(rawInc).replace(/[^0-9.]/g, ''));
+        if (!isNaN(n) && n > 0 && n < 2000000 && !/[-\u2013]|to /i.test(String(rawInc))) prof.household_income = n;
+      }
+      const arr = v => { if (Array.isArray(v)) return v;
+        if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} } return null; };
+      const hh = arr(responses.household_struct); if (hh && hh.length) prof.household_members = hh;
+      const dc = arr(responses.med_doctors_struct);
+      if (dc && dc.length) prof.providers = dc.filter(d => d && d.npi).map(d => ({ npi: d.npi, name: d.name }));
+      const md = arr(responses.med_medications_struct);
+      if (md && md.length) prof.medications = md.filter(m => m && m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+      if (Object.keys(prof).length) {
+        prof.profile_updated_at = now;
+        await supa('/rest/v1/contacts?id=eq.' + encodeURIComponent(session.contact_id), {
+          method: 'PATCH', body: JSON.stringify(prof)
+        });
+      }
+    }
+  } catch (e) { /* never block the client's submit on this */ }
+
   await supa('/rest/v1/intake_sessions?id=eq.' + sessionId, {
     method: 'PATCH',
     body: JSON.stringify({ responses, status: 'completed', completed_at: now })
