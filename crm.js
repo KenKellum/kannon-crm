@@ -10704,9 +10704,12 @@ async function openQuoteBuilder(dealId) {
         <label>Product (from carrier's catalog — optional)</label>
         <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
       </div>
-      <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
-      <label>Monthly premium ($) *</label><input type="number" step="0.01" id="qb-prem-${i}" placeholder="e.g. 128.50" />
-      <label>Benefit bullets (one per line)</label><textarea id="qb-bul-${i}" rows="3"></textarea>
+      <div id="qb-aca-card-${i}" style="display:none;"></div>
+      <div id="qb-manual-${i}">
+        <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
+        <label>Monthly premium ($) *</label><input type="number" step="0.01" id="qb-prem-${i}" placeholder="e.g. 128.50" />
+        <label>Benefit bullets (one per line)</label><textarea id="qb-bul-${i}" rows="3"></textarea>
+      </div>
       <label>Short note to client (optional)</label><input type="text" id="qb-note-${i}" placeholder="e.g. Best value if you travel often" />
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:400;"><input type="radio" name="qb-rec" id="qb-rec-${i}" style="width:auto;" /> Mark as my recommendation</label>
     </div>`;
@@ -10923,6 +10926,7 @@ function qbLineChanged_() {
       const cp = document.getElementById('qb-carprod-' + k);
       if (cp) cp.style.display = '';
       qbAcaApptWarn_(k, null);
+      qbAcaOptionView_(k);
     }
     window._qbAcaSel = {};
     if (isAca) qbAcaInit_();
@@ -11544,6 +11548,7 @@ function qbHideOption_(i) {
   // a hidden slot must also drop its picker link, or the plan still reads as chosen
   const sel = document.getElementById('qb-aca-' + i); if (sel) sel.value = '';
   if (window._qbAcaSel) delete window._qbAcaSel[i];
+  qbAcaOptionView_(i);
   qbRenumberOptions_();
   qbAcaRenderBrowser_();
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
@@ -12980,7 +12985,13 @@ function qbAcaRelinkOptions_() {
       const bare = nm.replace(/\s*\((Bronze|Silver|Gold|Platinum|Catastrophic)\)\s*$/i, '').trim().toLowerCase();
       hit = plans.find(p => String(p.name || '').trim().toLowerCase() === bare);
     }
-    if (hit) { sel.value = hit.id; window._qbAcaSel[i] = hit; linked++; }
+    if (hit) {
+      sel.value = hit.id;
+      window._qbAcaSel[i] = hit;
+      qbAcaApptWarn_(i, hit);
+      qbAcaOptionView_(i);      // rewrites name/premium from the plan
+      linked++;
+    }
   }
   return linked;
 }
@@ -13117,6 +13128,72 @@ function qbAcaApptWarn_(i, plan) {
   warn.innerHTML = notes.map(n => `<div class="pk-note ${n.tone}">${n.html}</div>`).join('');
 }
 
+// An ACA option is a record, not a form: everything but the agent's own note
+// comes from healthcare.gov, so we show it read-only. Two editable copies of
+// the same fact is how a quote ends up disagreeing with itself.
+function qbAcaOptionView_(i) {
+  const card = document.getElementById('qb-aca-card-' + i);
+  const manual = document.getElementById('qb-manual-' + i);
+  const carprod = document.getElementById('qb-carprod-' + i);
+  const acaWrap = document.getElementById('qb-aca-wrap-' + i);
+  const p = (window._qbAcaSel || {})[i];
+  if (!card) return;
+
+  if (!p) {                                    // manual entry as before
+    card.style.display = 'none'; card.innerHTML = '';
+    if (manual) manual.style.display = '';
+    if (carprod) carprod.style.display = '';
+    if (acaWrap) acaWrap.querySelectorAll('label,select').forEach(el => el.style.display = '');
+    return;
+  }
+
+  // the plan is the single source of truth — rewrite the hidden inputs from it
+  const nameEl = document.getElementById('qb-name-' + i);
+  const premEl = document.getElementById('qb-prem-' + i);
+  if (nameEl) nameEl.value = p.name + (p.metal ? ' (' + p.metal + ')' : '');
+  if (premEl) premEl.value = Number(p.net).toFixed(2);
+
+  if (manual) manual.style.display = 'none';
+  if (carprod) carprod.style.display = 'none';
+  if (acaWrap) acaWrap.querySelectorAll('label,select').forEach(el => el.style.display = 'none');
+
+  const ms = METAL_STYLE[p.metal] || { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
+  const credit = (p.premium != null && p.net != null && p.premium > p.net) ? p.premium - p.net : 0;
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const free = Number(p.net) === 0;
+
+  card.style.display = 'block';
+  card.innerHTML = `
+    <div class="pk-card is-selected" style="border-radius:12px;padding:12px 14px;">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
+        ${p.type ? `<span${acaTip_('type', p.type)}style="cursor:help;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
+        ${p.hsa ? `<span${acaTip_('hsa')}style="cursor:help;font-size:10px;color:#0d9488;border:1px solid #0d9488;border-radius:6px;padding:2px 6px;">HSA</span>` : ''}
+        ${acaCsrBadge_(p.metal)}
+        ${p.rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${p.rating}</span>` : ''}
+      </div>
+      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:6px;">${escWeb(p.issuer || '')}</div>
+      <div style="font-size:14.5px;font-weight:700;margin:1px 0 8px;">${escWeb(p.name)}</div>
+      <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${Number(p.net).toFixed(2)}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo to client</span></div>
+          ${credit ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">full $${Number(p.premium).toFixed(2)} \u2212 <span style="color:var(--text-success);font-weight:700;">$${credit.toFixed(2)} tax credit</span>${free ? ' \u2014 <strong>fully covered</strong>' : ''}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;margin-left:auto;">
+          ${qbAcaCostFact_('Deductible', p.deductible, p.deductible_family)}
+          ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
+        </div>
+      </div>
+      ${qbAcaCovLines_(p)}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="openPlanDetail_('${escWeb(p.id)}')">Plan details</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openAcaPicker_()">\u{1F5D6} Change plan</button>
+        <button type="button" class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);margin-left:auto;" onclick="qbAcaAddPlan_('${escWeb(p.id)}')">\u{1F5D1} Remove</button>
+      </div>
+      <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">Plan name, price and benefits come straight from healthcare.gov \u2014 add your own note below.</div>
+    </div>`;
+}
+
 function qbApplyAcaPlan_(i) {
   const plan = (window._qbAcaPlans || []).find(p => p.id === document.getElementById('qb-aca-' + i).value);
   window._qbAcaSel = window._qbAcaSel || {};
@@ -13125,6 +13202,7 @@ function qbApplyAcaPlan_(i) {
     delete window._qbAcaSel[i];
     if (cp) cp.style.display = '';
     qbAcaApptWarn_(i, null);
+    qbAcaOptionView_(i);
     return;
   }
   window._qbAcaSel[i] = plan;
@@ -13133,6 +13211,7 @@ function qbApplyAcaPlan_(i) {
   const carSel = document.getElementById('qb-car-' + i);
   if (carSel && carSel.value) { carSel.value = ''; qbFillProducts_(i); }
   qbAcaApptWarn_(i, plan);
+  qbAcaOptionView_(i);
   document.getElementById('qb-name-' + i).value = plan.name + (plan.metal ? ' (' + plan.metal + ')' : '');
   document.getElementById('qb-prem-' + i).value = Number(plan.net).toFixed(2);
   const bullets = [];
