@@ -12540,7 +12540,7 @@ function qbAcaApptWarn_(i, plan) {
   if (csr) {
     if (acaCsrAppliesTo_(plan.metal, csr)) {
       notes.push({ bg: 'rgba(21,128,61,.09)', bd: 'rgba(21,128,61,.35)', fg: '#15803d',
-        html: '\u2728 <strong>' + escWeb(acaCsrLabel_(csr)) + '</strong> \u2014 this plan\u2019s deductible and out-of-pocket maximum are already reduced for this household.' });
+        html: '\u2728 <strong>' + escWeb(acaCsrLabel_(csr).replace('\u2728 ', '')) + '</strong> \u2014 this plan\u2019s deductible and out-of-pocket maximum are already reduced for this household.' });
     } else {
       notes.push({ bg: '#fef9e7', bd: '#f0d47a', fg: '#8a6d1f',
         html: '&#9888;&#65039; This household qualifies for <strong>' + escWeb(acaCsrLabel_(csr).replace('\u2728 ', ''))
