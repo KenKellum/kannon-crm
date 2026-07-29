@@ -11977,13 +11977,58 @@ function acaCsrBadge_(metal, csr) {
   return `<span title="${escWeb(ACA_CSR_TIP)}" style="cursor:help;background:rgba(21,128,61,.12);color:#15803d;font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;white-space:nowrap;">${escWeb(acaCsrLabel_(csr))}</span>`;
 }
 function acaCsrBanner_() {
+  const bars = [];
+  const bar = (bg, bd, fg, html) =>
+    `<div style="padding:9px 20px;background:${bg};border-bottom:1px solid ${bd};font-size:12.5px;color:${fg};">${html}</div>`;
+
+  // Medicaid/CHIP outranks everything — no credit, no CSR, different door
+  if (window._qbAcaMedicaid) {
+    bars.push(bar('rgba(180,83,9,.10)', 'rgba(180,83,9,.30)', '#b45309',
+      '&#9888;&#65039; <strong>This household may qualify for Medicaid/CHIP.</strong> Their income is below the Marketplace subsidy floor, so <strong>no tax credit and no cost-sharing help apply</strong> to the plans below \u2014 check the Medicaid door before quoting these prices.'));
+  } else if (window._qbAcaAptc != null && window._qbAcaAptc > 0) {
+    bars.push(bar('rgba(21,128,61,.09)', 'rgba(21,128,61,.25)', '#15803d',
+      '\u{1F31F} <strong>Estimated tax credit $' + Number(window._qbAcaAptc).toFixed(0) + '/mo</strong> \u2014 already taken off every price below.'));
+  } else if (window._qbAcaAptc != null) {
+    bars.push(bar('var(--surface-2)', 'var(--border)', 'var(--text-secondary)',
+      'No premium tax credit at this income \u2014 prices below are full price.'));
+  }
+
   const csr = acaCsrActive_();
-  if (!csr) return '';
-  const pct = acaCsrPct_(csr);
-  const silverOnly = !(pct === 'ZERO' || pct === 'LIMITED');
-  return `<div style="padding:9px 20px;background:rgba(21,128,61,.09);border-bottom:1px solid rgba(21,128,61,.25);font-size:12.5px;color:#15803d;">
-    <strong>${escWeb(acaCsrLabel_(csr))}</strong> \u2014 this household qualifies for cost-sharing help${silverOnly ? ', which only applies to <strong>Silver</strong> plans. Silver deductibles and out-of-pocket maximums below are already reduced; leaving Silver gives that up.' : '. Deductibles and out-of-pocket costs below are already reduced.'}</div>`;
+  if (csr) {
+    const pct = acaCsrPct_(csr);
+    const silverOnly = !(pct === 'ZERO' || pct === 'LIMITED');
+    bars.push(bar('rgba(21,128,61,.09)', 'rgba(21,128,61,.25)', '#15803d',
+      '<strong>' + escWeb(acaCsrLabel_(csr)) + '</strong> \u2014 this household qualifies for cost-sharing help'
+      + (silverOnly
+        ? ', which only applies to <strong>Silver</strong> plans. Silver deductibles and out-of-pocket maximums below are already reduced; leaving Silver gives that up.'
+        : '. Deductibles and out-of-pocket costs below are already reduced.')));
+  }
+  return bars.join('');
 }
+
+// Agent corrects the income mid-quote \u2192 teach the intake record too
+async function qbAcaSyncIncomeToIntake_(income) {
+  const c = window._qbContact;
+  if (!c || income == null || isNaN(income)) return;
+  try {
+    const { data: sess } = await supabaseClient.from('intake_sessions')
+      .select('id,responses').eq('contact_id', c.id).eq('status', 'completed')
+      .order('created_at', { ascending: false }).limit(5);
+    const row = (sess || []).find(x => x.responses && ('aca_income' in x.responses));
+    if (!row || String(row.responses.aca_income) === String(income)) return;
+    const resp = Object.assign({}, row.responses, { aca_income: String(income) });
+    const { data: ok } = await supabaseClient.from('intake_sessions')
+      .update({ responses: resp }).eq('id', row.id).select('id');
+    const note = document.getElementById('qb-aca-intake-note');
+    if (ok && ok.length && note) {
+      note.style.display = 'block';
+      note.style.color = '#0d9488';
+      note.innerHTML = '\u2713 Saved back to their intake record too \u2014 household income is now $'
+        + Number(income).toLocaleString() + '.';
+    }
+  } catch (e) { console.error('qbAcaSyncIncomeToIntake_:', e); }
+}
+
 
 function qbAcaCostFact_(label, ind, fam) {
   if (ind == null && fam == null) return '';
@@ -12493,6 +12538,9 @@ async function qbAcaGetPlans_() {
     window._qbAcaYear = data.year;
     window._qbAcaFamilyQuote = (data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length) > 1;
     window._qbAcaCsr = data.csr || null;
+    window._qbAcaMedicaid = !!data.medicaid_chip;
+    window._qbAcaAptc = (data.aptc != null) ? data.aptc : null;
+    qbAcaSyncIncomeToIntake_(income);
     // Snapshot the inputs behind these numbers — saved onto the quote for the client's "based on" panel
     const countySel2 = document.getElementById('qb-aca-county');
     window._qbAcaInputs = {
