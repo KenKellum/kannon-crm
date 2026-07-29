@@ -11900,7 +11900,7 @@ async function qbAcaSearch_(kind) {
   try {
     const c = window._qbContact || {};
     const resp = kind === 'doc'
-      ? await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', state: c.state || '' })
+      ? await acaProxy_('aca_provider_search', { q: q, zip: c.zip || '', state: _acaClientState_() })
       : await acaProxy_('aca_drug_search', { q: q });
     if (resp.status !== 'ok') { out.innerHTML = '<span style="color:var(--danger);">' + escWeb(resp.message || 'Search failed') + '</span>'; return; }
     const raw = resp.data || {};
@@ -11920,6 +11920,14 @@ async function qbAcaSearch_(kind) {
   } catch (e) { out.innerHTML = '<span style="color:var(--danger);">Search unreachable.</span>'; }
 }
 
+
+function _acaClientState_() {
+  const c = window._qbContact || {};
+  if (c.state) return String(c.state).toUpperCase();
+  const cs = document.getElementById('qb-aca-county');
+  if (cs && cs.value && cs.value.indexOf('|') > -1) return cs.value.split('|')[1].toUpperCase();
+  return '';
+}
 
 function qbAcaToggleFar_() {
   window._qbAcaShowFar = !window._qbAcaShowFar;
@@ -11952,7 +11960,7 @@ function qbAcaRenderMatches_() {
   }
 
   const c = window._qbContact || {};
-  const st = String(c.state || '').toUpperCase();
+  const st = _acaClientState_();
   const z3 = String(c.zip || '').slice(0, 3);
   const near = [], inState = [], far = [];
   items.forEach((x, i) => {
@@ -12730,6 +12738,11 @@ async function qbAcaGetPlans_() {
     window._qbAcaYear = data.year;
     window._qbAcaFamilyQuote = (data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length) > 1;
     window._qbAcaCsr = data.csr || null;
+    if (!c.state && county.split('|')[1]) {
+      const st2 = county.split('|')[1];
+      supabaseClient.from('contacts').update({ state: st2 }).eq('id', c.id)
+        .then(() => { c.state = st2; }, () => {});
+    }
     window._qbAcaMedicaid = !!data.medicaid_chip;
     window._qbAcaAptc = (data.aptc != null) ? data.aptc : null;
     qbAcaSyncIncomeToIntake_(income);
