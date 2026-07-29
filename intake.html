@@ -375,7 +375,7 @@ function renderPickerField_(id, def, prefillVal) {
     <div style="display:flex;gap:8px;">
       <input type="text" id="pk_q_${id}" placeholder="${isMed ? 'Start typing a medication\u2026' : 'Start typing a doctor\u2019s name\u2026'}" style="flex:1;"
         onkeydown="if(event.key==='Enter'){event.preventDefault();pickerSearch_('${id}');}">
-      <button type="button" class="btn-secondary" style="white-space:nowrap;padding:10px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;" onclick="pickerSearch_('${id}')">Find</button>
+      <button type="button" class="btn-secondary" style="white-space:nowrap;padding:10px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;" onclick="pickerSearch_('${id}')">${id === 'med_medications' ? 'Find Medication' : 'Find Provider/Facility'}</button>
     </div>
     <div id="pk_m_${id}" style="font-size:13px;margin-top:5px;max-height:190px;overflow-y:auto;"></div>
     <div id="pk_c_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>

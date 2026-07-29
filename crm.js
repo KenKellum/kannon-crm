@@ -2903,7 +2903,7 @@ function _imPickerField_(id, def) {
       <input type="text" id="imq_${id}" placeholder="${isMed ? 'Start typing a medication…' : 'Start typing a doctor’s name…'}"
         style="flex:1;padding:9px 12px;border-radius:8px;border:1.5px solid #e2e8f0;font-size:13px;"
         onkeydown="if(event.key==='Enter'){event.preventDefault();imPickerSearch_('${id}');}" />
-      <button type="button" class="btn btn-outline btn-sm" onclick="imPickerSearch_('${id}')">Find</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="imPickerSearch_('${id}')">${id === 'med_medications' ? 'Find Medication' : 'Find Provider/Facility'}</button>
     </div>
     <div id="imm_${id}" style="font-size:12px;margin-top:4px;"></div>
     <div id="imc_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;"></div>
@@ -10750,8 +10750,8 @@ async function openQuoteBuilder(dealId) {
       <div style="margin-top:10px;border-top:0.5px dashed var(--border);padding-top:8px;">
         <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Their doctors &amp; medications (optional — plans get ✓/✗ coverage marks)</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center;">
-          <span><input type="text" id="qb-aca-doc-q" placeholder="Doctor name" style="width:150px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Dr</button></span>
-          <span><input type="text" id="qb-aca-med-q" placeholder="Medication" style="width:150px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Rx</button></span>
+          <span><input type="text" id="qb-aca-doc-q" placeholder="Doctor, clinic or hospital" style="width:180px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Provider/Facility</button></span>
+          <span><input type="text" id="qb-aca-med-q" placeholder="Medication" style="width:150px;" /> <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Medication</button></span>
         </div>
         <div id="qb-aca-matches" style="font-size:12px;margin-top:5px;"></div>
         <div id="qb-aca-chips" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -11898,10 +11898,10 @@ function pkBasisPanel_() {
       <div>
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">Doctors &amp; medications \u2014 add or remove, plans re-check instantly</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <span><input type="text" id="qbpk-aca-doc-q" placeholder="Doctor or facility" style="width:150px;" />
-            <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Dr</button></span>
+          <span><input type="text" id="qbpk-aca-doc-q" placeholder="Doctor, clinic or hospital" style="width:170px;" />
+            <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Provider/Facility</button></span>
           <span><input type="text" id="qbpk-aca-med-q" placeholder="Medication" style="width:140px;" />
-            <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Rx</button></span>
+            <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Medication</button></span>
         </div>
         <div id="qbpk-aca-matches" style="font-size:12px;margin-top:6px;"></div>
         <div id="qbpk-aca-chips" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -12360,22 +12360,43 @@ function qbAcaCostFact_(label, ind, fam) {
 
 function qbAcaCovLines_(p) {
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
-  let html = '';
+  if (!docs.length && !meds.length) return '';
   const busy = !!window._qbAcaCovBusy;
-  const line = (known, ok, label) => known
-    ? `<div style="font-size:11px;color:${ok ? 'var(--success)' : 'var(--danger)'};">${ok ? '\u2713' : '\u2717'} ${label}</div>`
-    : busy
-      ? `<div style="font-size:11px;color:var(--text-muted);">\u23f3 ${label} <span style="opacity:.7;">checking\u2026</span></div>`
-      : `<div style="font-size:11px;color:var(--text-muted);">? ${label} <span style="opacity:.7;">(not reported)</span></div>`;
-  docs.forEach(d => {
-    const known = p._docCov && d.npi in p._docCov;
-    html += line(known, known && p._docCov[d.npi], escWeb(d.name.split(' \u00b7 ')[0]));
-  });
-  meds.forEach(m => {
-    const known = p._medCov && m.rxcui in p._medCov;
-    html += line(known, known && p._medCov[m.rxcui], escWeb(m.name));
-  });
-  return html;
+  const SHOWN = 3;                       // before the row offers "+N more"
+  window._qbCovExp = window._qbCovExp || {};
+
+  const pill = (known, ok, label) => {
+    const style = known
+      ? (ok ? 'color:var(--success);border-color:rgba(21,128,61,.35);background:rgba(21,128,61,.07);'
+            : 'color:var(--danger);border-color:rgba(185,28,28,.35);background:rgba(185,28,28,.06);')
+      : 'color:var(--text-muted);border-color:var(--border);';
+    const mark = known ? (ok ? '\u2713' : '\u2717') : (busy ? '\u23f3' : '?');
+    const suffix = known ? '' : (busy ? ' <span style="opacity:.7;">checking\u2026</span>' : ' <span style="opacity:.7;">(not reported)</span>');
+    return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;border:1px solid;border-radius:999px;padding:1px 8px;${style}">${mark} ${label}${suffix}</span>`;
+  };
+
+  const row = (icon, kind, list, cover, keyOf, labelOf) => {
+    if (!list.length) return '';
+    const expKey = p.id + '|' + kind;
+    const open = !!window._qbCovExp[expKey];
+    const show = open ? list : list.slice(0, SHOWN);
+    const hidden = list.length - show.length;
+    return `<div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-top:4px;">
+      <span style="font-size:11px;line-height:18px;flex-shrink:0;" title="${kind === 'doc' ? 'Providers &amp; facilities' : 'Medications'}">${icon}</span>
+      ${show.map(x => {
+        const k = keyOf(x);
+        const known = cover(p) && k in cover(p);
+        return pill(known, known && cover(p)[k], escWeb(labelOf(x)));
+      }).join(' ')}
+      ${hidden > 0 ? `<a href="#" onclick="event.stopPropagation();window._qbCovExp['${escWeb(expKey)}']=true;renderPickerBody_();return false;"
+          style="font-size:11px;font-weight:700;color:var(--accent,#1d3557);text-decoration:none;line-height:18px;">+${hidden} more</a>` : ''}
+      ${open && list.length > SHOWN ? `<a href="#" onclick="event.stopPropagation();window._qbCovExp['${escWeb(expKey)}']=false;renderPickerBody_();return false;"
+          style="font-size:11px;color:var(--text-muted);text-decoration:none;line-height:18px;">less</a>` : ''}
+    </div>`;
+  };
+
+  return row('\u{1FA7A}', 'doc', docs, pp => pp._docCov, d => d.npi, d => d.name.split(' \u00b7 ')[0])
+       + row('\u{1F48A}', 'med', meds, pp => pp._medCov, m => m.rxcui, m => m.name);
 }
 
 function qbAcaAddedSlot_(planId) {
@@ -12788,7 +12809,7 @@ function pkCard_(p) {
         ${qbAcaCostFact_('Deductible', p.deductible, p.deductible_family)}
         ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
       </div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">${qbAcaCovLines_(p)}</div>
+      ${qbAcaCovLines_(p)}
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
         <label onclick="event.stopPropagation();" style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-muted);cursor:pointer;">
           <input type="checkbox" ${_qbPk.cmp.has(p.id) ? 'checked' : ''} onclick="event.stopPropagation();"
