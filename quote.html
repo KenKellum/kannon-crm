@@ -236,6 +236,27 @@ const METAL_TIPS = {
   Catastrophic: 'Catastrophic — a bare-bones safety net with a very high deductible. Only for people under 30 or with a hardship exemption; tax credits can’t be used on it.',
 };
 
+const CSR_TIP = 'Because of your household income, this plan\u2019s deductible, copays and out-of-pocket maximum are already lowered \u2014 at no extra premium. This is an estimate; the Marketplace confirms it when you enroll.';
+function csrPct(csr) {
+  const m = /(\d{2})\s*%/.exec(String(csr || ''));
+  if (m) return m[1];
+  if (/zero cost/i.test(csr || '')) return 'ZERO';
+  if (/limited cost/i.test(csr || '')) return 'LIMITED';
+  return null;
+}
+function csrApplies(pm) {
+  const pct = csrPct(pm && pm.csr);
+  if (!pct) return false;
+  return (pct === 'ZERO' || pct === 'LIMITED') ? true : pm.metal === 'Silver';
+}
+function csrLabel(csr) {
+  const pct = csrPct(csr);
+  if (!pct) return '';
+  if (pct === 'ZERO') return 'Zero cost sharing';
+  if (pct === 'LIMITED') return 'Limited cost sharing';
+  return 'Extra savings \u00b7 ' + pct + '% plan';
+}
+
 function optCardHtml(o, inCompare) {
   const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
   let bl = o.benefit_bullets || [];
@@ -253,6 +274,7 @@ function optCardHtml(o, inCompare) {
       ${pm.metal ? `<span class="pm-chip m-${esc(pm.metal)}"${metalTip ? ` data-tip="${esc(metalTip)}" tabindex="0"` : ''}>${esc(pm.metal)}</span>` : ''}
       ${pm.plan_type ? `<span class="pm-chip"${typeTip ? ` data-tip="${esc(typeTip)}" tabindex="0"` : ''}>${esc(pm.plan_type)}</span>` : ''}
       ${pm.hsa ? `<span class="pm-chip hsa" data-tip="${esc(HSA_TIP)}" tabindex="0">HSA-eligible</span>` : ''}
+      ${csrApplies(pm) ? `<span class="pm-chip" style="background:#dcfce7;color:#15803d;" data-tip="${esc(CSR_TIP)}" tabindex="0">✨ ${esc(csrLabel(pm.csr))}</span>` : ''}
       ${pm.rating ? `<span class="pm-chip" data-tip="The federal government’s quality rating for this plan, out of 5 stars." tabindex="0">&#11088; ${esc(String(pm.rating))} / 5</span>` : ''}
     </div>`;
     const fam = pm.family_quote;
@@ -260,7 +282,8 @@ function optCardHtml(o, inCompare) {
       `<div class="pm-row"><span class="lbl">${lbl}</span><span class="val">${money(ind)}${fam && famVal != null ? ' <small>per person</small>' : ''}${fam && famVal != null ? `<small>${money(famVal)} family</small>` : ''}</span></div>`;
     const facts = factRow('Deductible', pm.deductible, pm.deductible_family)
       + factRow('Max out-of-pocket', pm.moop, pm.moop_family);
-    if (facts) pmHtml = `<div class="pm-facts">${facts}</div>`;
+    if (facts) pmHtml = `<div class="pm-facts">${facts}</div>`
+      + (csrApplies(pm) ? `<div style="font-size:11.5px;color:#15803d;margin-top:7px;line-height:1.5;">✨ These amounts already include the extra savings you qualify for — same monthly price, lower costs when you use care.</div>` : '');
   }
   const L = pm && pm.links ? pm.links : null;
   const linksHtml = L && (L.sbc || L.brochure || L.formulary || L.network) ? `<div class="doc-links">
@@ -415,6 +438,7 @@ function cmpTableHtml(list) {
       ${famQ ? rowH('Deductible (family)', o => money(o.plan_meta.deductible_family)) : ''}
       ${rowH('Max out-of-pocket' + (famQ ? ' (per person)' : ''), o => `<strong>${money(o.plan_meta.moop)}</strong>`)}
       ${famQ ? rowH('Max out-of-pocket (family)', o => money(o.plan_meta.moop_family)) : ''}
+      ${list.some(o => csrApplies(o.plan_meta)) ? rowH('Extra savings applied', o => csrApplies(o.plan_meta) ? `<span style="color:#15803d;font-weight:700;">✨ ${esc(csrLabel(o.plan_meta.csr))}</span>` : '<span style="color:#94a3b8;">not on this plan</span>') : ''}
       ${rowH('HSA-eligible', o => o.plan_meta.hsa ? '<span style="color:#0d9488;font-weight:700;">✓ Yes</span>' : '—')}
       ${rowH('Star rating', o => o.plan_meta.rating ? '&#11088; ' + esc(String(o.plan_meta.rating)) + ' of 5' : '—')}
       ${rowH('Plan documents', o => {
@@ -511,6 +535,7 @@ async function init() {
           ${applying.length ? `<span>&#9989; Applying for coverage: <strong>${applying.map(person).join(', ')}</strong></span>` : ''}
           ${notApplying.length ? `<span>&#10060; Not applying: ${notApplying.map(person).join(', ')}</span>` : ''}
           ${qi.aptc != null && qi.aptc > 0 ? `<span>&#127775; Estimated tax credit <strong style="color:#15803d;">$${Number(qi.aptc).toFixed(0)}/mo</strong></span>` : ''}
+          ${csrPct(qi.csr) ? `<span>✨ Extra savings: <strong style="color:#15803d;">${esc(csrLabel(qi.csr))}</strong></span>` : ''}
         </div>
         <div style="font-size:11.5px;color:#94a3b8;margin-top:8px;">If any of this looks wrong or has changed, tell me — it changes the prices and the tax credit.</div>
       </div>`;

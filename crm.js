@@ -10793,6 +10793,7 @@ async function openQuoteBuilder(dealId) {
           moop: acaSel.moop, moop_family: acaSel.moop_family,
           hsa: !!acaSel.hsa, rating: acaSel.rating || null,
           family_quote: !!window._qbAcaFamilyQuote, links: null,
+          csr: window._qbAcaCsr || null, csr_applies: acaCsrAppliesTo_(acaSel.metal),
         };
       } else {
         // Re-quoted option left untouched: reuse the previous quote's snapshot
@@ -11914,6 +11915,47 @@ function qbAcaBrowserControls_() {
   </div>`;
 }
 
+// ── Cost-Sharing Reductions (CSR) ───────────────────────────────────────────
+// healthcare.gov already prices deductibles/MOOP for the household's CSR
+// variant. Our job: say so, and stop a client from silently forfeiting it.
+function acaCsrActive_() {
+  const c = window._qbAcaCsr;
+  return (c && !/none/i.test(String(c))) ? String(c) : null;
+}
+function acaCsrPct_(csr) {
+  const m = /(\d{2})\s*%/.exec(String(csr || ''));
+  if (m) return m[1];
+  if (/zero cost/i.test(csr || '')) return 'ZERO';
+  if (/limited cost/i.test(csr || '')) return 'LIMITED';
+  return null;
+}
+// Zero/Limited (AI/AN) variants ride any metal; the AV tiers are Silver-only.
+function acaCsrAppliesTo_(metal, csr) {
+  const pct = acaCsrPct_(csr || acaCsrActive_());
+  if (!pct) return false;
+  return (pct === 'ZERO' || pct === 'LIMITED') ? true : metal === 'Silver';
+}
+function acaCsrLabel_(csr) {
+  const pct = acaCsrPct_(csr || acaCsrActive_());
+  if (!pct) return '';
+  if (pct === 'ZERO') return 'Zero cost sharing';
+  if (pct === 'LIMITED') return 'Limited cost sharing';
+  return '\u2728 Extra savings \u00b7 ' + pct + '% plan';
+}
+const ACA_CSR_TIP = 'Cost-sharing reduction: because of this household\u2019s income, the plan\u2019s deductible, copays and out-of-pocket maximum are already lowered \u2014 at no extra premium. Estimate only; the Marketplace confirms it at enrollment.';
+function acaCsrBadge_(metal, csr) {
+  if (!acaCsrAppliesTo_(metal, csr)) return '';
+  return `<span title="${escWeb(ACA_CSR_TIP)}" style="cursor:help;background:rgba(21,128,61,.12);color:#15803d;font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;white-space:nowrap;">${escWeb(acaCsrLabel_(csr))}</span>`;
+}
+function acaCsrBanner_() {
+  const csr = acaCsrActive_();
+  if (!csr) return '';
+  const pct = acaCsrPct_(csr);
+  const silverOnly = !(pct === 'ZERO' || pct === 'LIMITED');
+  return `<div style="padding:9px 20px;background:rgba(21,128,61,.09);border-bottom:1px solid rgba(21,128,61,.25);font-size:12.5px;color:#15803d;">
+    <strong>${escWeb(acaCsrLabel_(csr))}</strong> \u2014 this household qualifies for cost-sharing help${silverOnly ? ', which only applies to <strong>Silver</strong> plans. Silver deductibles and out-of-pocket maximums below are already reduced; leaving Silver gives that up.' : '. Deductibles and out-of-pocket costs below are already reduced.'}</div>`;
+}
+
 function qbAcaCostFact_(label, ind, fam) {
   if (ind == null && fam == null) return '';
   const famQuote = !!window._qbAcaFamilyQuote;
@@ -12056,6 +12098,7 @@ function renderPickerBody_() {
       <div style="font-size:13px;color:var(--text-muted);">${escWeb(c.name || '')} \u00b7 ${plans.length} of ${all.length} plans</div>
       <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Done \u2014 back to quote</button>
     </div>
+    ${acaCsrBanner_()}
     <div style="flex:1;display:flex;min-height:0;">
       <div style="width:230px;flex-shrink:0;overflow-y:auto;padding:16px;border-right:1px solid var(--border);background:var(--surface-1);">
         ${pkFacet_('Insurance company', 'carriers', carriers)}
@@ -12207,6 +12250,7 @@ function renderAcaCompare_() {
             const slot = qbAcaAddedSlot_(p.id);
             return `<td style="${td}border-bottom:1px solid var(--border);background:var(--surface-1);">
               <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
+              ${acaCsrBadge_(p.metal)}
               ${p.type ? `<span${acaTip_('type', p.type)}style="cursor:help;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:5px;">${escWeb(p.issuer || '')}</div>
               <div style="font-size:13px;font-weight:600;margin:2px 0 6px;">${escWeb(p.name)}</div>
@@ -12296,6 +12340,7 @@ async function openPlanDetail_(planId) {
     const head = p ? `
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
         <span${acaTip_('metal', p.metal)}style="cursor:help;background:${(METAL_STYLE[p.metal] || {}).bg || 'var(--surface-2)'};color:${(METAL_STYLE[p.metal] || {}).fg || 'inherit'};font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || '')}</span>
+        ${acaCsrBadge_(p.metal)}
         ${p.type ? `<span${acaTip_('type', p.type)}style="cursor:help;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
         <span style="font-size:12px;color:var(--text-muted);">${escWeb(p.issuer || '')}</span>
         <span style="margin-left:auto;font-size:18px;font-weight:800;color:var(--accent,#1d3557);">$${Number(p.net).toFixed(2)}/mo</span>
@@ -12331,6 +12376,7 @@ function pkCard_(p) {
     <div style="flex:1;min-width:0;">
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         <span${acaTip_('metal', p.metal)}style="cursor:help;background:${ms.bg};color:${ms.fg};font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:6px;padding:2px 8px;text-transform:uppercase;">${escWeb(p.metal || 'Plan')}</span>
+        ${acaCsrBadge_(p.metal)}
         ${p.type ? `<span${acaTip_('type', p.type)}style="cursor:help;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">${escWeb(p.type)}</span>` : ''}
         ${p.hsa ? `<span${acaTip_('hsa')}style="cursor:help;font-size:10px;color:#0d9488;border:1px solid #0d9488;border-radius:6px;padding:2px 6px;">HSA</span>` : ''}
         ${p.rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${p.rating}</span>` : ''}
@@ -12417,12 +12463,13 @@ async function qbAcaGetPlans_() {
     window._qbAcaPlans = data.plans || [];
     window._qbAcaYear = data.year;
     window._qbAcaFamilyQuote = (data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length) > 1;
+    window._qbAcaCsr = data.csr || null;
     // Snapshot the inputs behind these numbers — saved onto the quote for the client's "based on" panel
     const countySel2 = document.getElementById('qb-aca-county');
     window._qbAcaInputs = {
       income: income, zip: c.zip || null,
       county: countySel2.options[countySel2.selectedIndex] ? countySel2.options[countySel2.selectedIndex].text : null,
-      aptc: data.aptc != null ? data.aptc : null,
+      aptc: data.aptc != null ? data.aptc : null, csr: data.csr || null,
       household: people.map(m => ({ relationship: m.relationship, age: m.age, applying: !!m.applying })),
       applicant_count: data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length,
       household_count: data.household_count != null ? data.household_count : people.length,
@@ -12473,19 +12520,40 @@ function qbAcaApptWarn_(i, plan) {
   const warn = document.getElementById('qb-aca-warn-' + i);
   if (!warn) return;
   if (!plan) { warn.style.display = 'none'; warn.innerHTML = ''; return; }
+  const notes = [];
+
+  // 1. Can we actually write this carrier?
   const agentOk = qbCarrierMatch_(plan.issuer, (window._qbCarriers || []).map(c => c.name));
   const agencyOk = agentOk || qbCarrierMatch_(plan.issuer, window._qbAgencyCarrierNames || []);
-  if (agentOk) { warn.style.display = 'none'; warn.innerHTML = ''; return; }
-  warn.style.display = 'block';
-  if (agencyOk) {
-    warn.style.background = '#fef9e7'; warn.style.border = '1px solid #f0d47a'; warn.style.color = '#8a6d1f';
-    warn.innerHTML = '&#9888;&#65039; You’re not contracted with <strong>' + escWeb(plan.issuer || 'this carrier')
-      + '</strong>. Your agency offers it — check your appointment before enrolling the client (Settings → My Carrier Appointments).';
-  } else {
-    warn.style.background = '#fdeaea'; warn.style.border = '1px solid #e8a1a1'; warn.style.color = '#9b2c2c';
-    warn.innerHTML = '&#9888;&#65039; <strong>' + escWeb(plan.issuer || 'This carrier')
-      + '</strong> isn’t on your agency’s carrier list — you likely can’t enroll the client in this plan. Confirm with your agency before presenting it.';
+  if (!agentOk) {
+    notes.push(agencyOk
+      ? { bg: '#fef9e7', bd: '#f0d47a', fg: '#8a6d1f',
+          html: '&#9888;&#65039; You\u2019re not contracted with <strong>' + escWeb(plan.issuer || 'this carrier')
+            + '</strong>. Your agency offers it \u2014 check your appointment before enrolling the client (Settings \u2192 My Carrier Appointments).' }
+      : { bg: '#fdeaea', bd: '#e8a1a1', fg: '#9b2c2c',
+          html: '&#9888;&#65039; <strong>' + escWeb(plan.issuer || 'This carrier')
+            + '</strong> isn\u2019t on your agency\u2019s carrier list \u2014 you likely can\u2019t enroll the client in this plan. Confirm with your agency before presenting it.' });
   }
+
+  // 2. Cost-sharing help left on the table
+  const csr = acaCsrActive_();
+  if (csr) {
+    if (acaCsrAppliesTo_(plan.metal, csr)) {
+      notes.push({ bg: 'rgba(21,128,61,.09)', bd: 'rgba(21,128,61,.35)', fg: '#15803d',
+        html: '\u2728 <strong>' + escWeb(acaCsrLabel_(csr)) + '</strong> \u2014 this plan\u2019s deductible and out-of-pocket maximum are already reduced for this household.' });
+    } else {
+      notes.push({ bg: '#fef9e7', bd: '#f0d47a', fg: '#8a6d1f',
+        html: '&#9888;&#65039; This household qualifies for <strong>' + escWeb(acaCsrLabel_(csr).replace('\u2728 ', ''))
+          + '</strong>, which only applies to <strong>Silver</strong> plans. Choosing ' + escWeb(plan.metal || 'this plan')
+          + ' gives up that reduced deductible and out-of-pocket maximum \u2014 make sure the client is choosing it on purpose.' });
+    }
+  }
+
+  if (!notes.length) { warn.style.display = 'none'; warn.innerHTML = ''; return; }
+  warn.style.display = 'block';
+  warn.style.background = 'transparent'; warn.style.border = 'none'; warn.style.padding = '0';
+  warn.innerHTML = notes.map(n =>
+    `<div style="background:${n.bg};border:1px solid ${n.bd};color:${n.fg};border-radius:8px;padding:8px 10px;margin-bottom:6px;">${n.html}</div>`).join('');
 }
 
 function qbApplyAcaPlan_(i) {
