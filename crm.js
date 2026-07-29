@@ -10699,7 +10699,8 @@ async function openQuoteBuilder(dealId) {
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; ACA Marketplace — household &amp; subsidy</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;font-size:13px;">
         <div><label style="font-size:10px;margin:0 0 2px;">Yearly household income ($)</label>
-          <input type="number" id="qb-aca-income" placeholder="e.g. 48000" style="width:120px;" /></div>
+          <input type="number" id="qb-aca-income" placeholder="e.g. 48000" style="width:120px;"
+            oninput="window._qbAcaIncomeDirty = true;" /></div>
         <div><label style="font-size:10px;margin:0 0 2px;">County</label>
           <select id="qb-aca-county" style="width:auto;"></select></div>
       </div>
@@ -11535,6 +11536,7 @@ document.addEventListener('change', function(e) {
 });
 
 async function qbAcaInit_() {
+  window._qbAcaIncomeDirty = false;   // fresh strip — prefills may fill it again
   const c = window._qbContact;
   const res = document.getElementById('qb-aca-result');
   document.getElementById('qb-aca-members').innerHTML = '';
@@ -11619,6 +11621,7 @@ async function qbAcaPrefillFromLastQuote_() {
     const qi = data && data[0] && data[0].quote_inputs;
     if (!qi) return;
     const inc = document.getElementById('qb-aca-income');
+    if (window._qbAcaIncomeDirty) return;   // the agent is typing — their figure wins
     if (inc && qi.income != null) inc.value = qi.income;
     const note = document.getElementById('qb-aca-intake-note');
     if (note && qi.income != null) {
