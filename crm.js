@@ -12491,7 +12491,7 @@ function openAcaPicker_() {
   if (!ov) {
     ov = document.createElement('div');
     ov.id = 'qb-aca-picker';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:var(--bg-main,#f1f5f9);display:flex;flex-direction:column;';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:var(--surface-0);display:flex;flex-direction:column;';
     document.body.appendChild(ov);
   }
   ov.style.display = 'flex';
@@ -12607,11 +12607,17 @@ function renderPickerBody_() {
         <div style="flex:1;overflow-y:auto;padding:18px 26px 14px;display:flex;flex-direction:column;gap:14px;">
           ${plans.length ? plans.map(p => pkCard_(p)).join('') : '<div style="color:var(--text-muted);padding:30px;text-align:center;">No plans match these filters \u2014 loosen something.</div>'}
         </div>
-        <div style="padding:10px 20px;border-top:1px solid var(--border);background:var(--surface-1);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">ON THE QUOTE:</span>
-          ${added.length ? added.map(a => `<span style="display:inline-flex;gap:6px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;">
-            <strong>${a.i + 1}.</strong> ${escWeb(a.p.name.slice(0, 30))} \u00b7 $${Number(a.p.net).toFixed(0)}/mo
-            <button onclick="qbAcaAddPlan_('${escWeb(a.p.id)}')" style="background:none;border:none;color:var(--danger);cursor:pointer;">\u2715</button></span>`).join('')
+        <div class="pk-tray" style="padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <span class="pk-tray-label">On the quote${added.length ? ' \u00b7 ' + added.length : ''}</span>
+          ${added.length ? added.map(a => `<div class="pk-tray-item">
+            <span class="num">${a.i + 1}</span>
+            <div class="who">
+              <div class="carrier">${escWeb(a.p.issuer || '')}</div>
+              <div class="pname" title="${escWeb(a.p.name)}">${escWeb(a.p.name)}</div>
+            </div>
+            <div class="price">$${Number(a.p.net).toFixed(0)}<span style="font-size:9.5px;font-weight:600;color:var(--text-muted);">/mo</span></div>
+            <button class="rm" title="Remove from the quote" onclick="qbAcaAddPlan_('${escWeb(a.p.id)}')">\u2715</button>
+          </div>`).join('')
           : '<span style="font-size:12px;color:var(--text-muted);">nothing yet \u2014 click \u201cAdd\u201d on the plans that fit.</span>'}
           <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeAcaPicker_()">\u2713 Done</button>
         </div>
@@ -12680,7 +12686,7 @@ async function openAcaCompare_() {
   if (!ov) {
     ov = document.createElement('div');
     ov.id = 'qb-aca-compare';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--bg-main,#f1f5f9);display:flex;flex-direction:column;';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--surface-0);display:flex;flex-direction:column;';
     document.body.appendChild(ov);
   }
   ov.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted);">Pulling the official records for ${plans.length} plans…</div>`;

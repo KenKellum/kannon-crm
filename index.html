@@ -59,10 +59,10 @@
       /* Links + selection (dark) */
       --link: #93c5fd;
       --link-hover: #bfdbfe;
-      --bg-selected: rgba(96,165,250,0.20);
-      --bg-selected-card: rgba(96,165,250,0.13);
+      --bg-selected: rgba(96,165,250,0.22);
+      --bg-selected-card: #17324f;
       --border-selected: #60a5fa;
-      --text-selected: #bfdbfe;
+      --text-selected: #dbeafe;
       --shadow: 0 2px 8px rgba(0,0,0,0.4);
       --radius: 8px;
     }
@@ -378,8 +378,8 @@
       --text-info: #1d4ed8;
       --bg-info: #eff6ff;
       --border-info: #bfdbfe;
-      --bg-selected: rgba(59,130,246,0.16);
-      --bg-selected-card: #e9f1fe;
+      --bg-selected: rgba(59,130,246,0.18);
+      --bg-selected-card: #e6eefc;
       --border-selected: #3b82f6;
       --text-selected: #1d4ed8;
     }
@@ -413,6 +413,28 @@
     .pk-pill.ok  { color: var(--text-success); border-color: var(--border-success); background: var(--bg-success); }
     .pk-pill.bad { color: var(--text-danger);  border-color: var(--border-danger);  background: var(--bg-danger); }
     .pk-pill.unk { color: var(--text-muted);   border-color: var(--border); }
+
+    /* Bottom "on the quote" tray — each pick gets its own readable box */
+    .pk-tray { border-top: 1px solid var(--border); background: var(--surface-2);
+               box-shadow: 0 -4px 14px rgba(0,0,0,.16); }
+    .pk-tray-label { font-size: 10.5px; font-weight: 800; letter-spacing: .6px;
+                     text-transform: uppercase; color: var(--text-secondary); }
+    .pk-tray-item { display: flex; align-items: center; gap: 9px; padding: 6px 10px;
+                    background: var(--bg-selected-card); border: 1.5px solid var(--border-selected);
+                    border-radius: 10px; max-width: 300px; }
+    .pk-tray-item .num { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+                         background: var(--border-selected); color: #06182b; font-size: 11px;
+                         font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .pk-tray-item .who { min-width: 0; }
+    .pk-tray-item .carrier { font-size: 9.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
+                             color: var(--text-muted); white-space: nowrap; overflow: hidden;
+                             text-overflow: ellipsis; max-width: 165px; }
+    .pk-tray-item .pname { font-size: 12.5px; font-weight: 700; color: var(--text-primary); white-space: nowrap;
+                           overflow: hidden; text-overflow: ellipsis; max-width: 165px; }
+    .pk-tray-item .price { font-size: 13.5px; font-weight: 800; color: var(--text-success); white-space: nowrap; }
+    .pk-tray-item .rm { background: none; border: none; color: var(--text-danger); cursor: pointer;
+                        font-size: 14px; line-height: 1; padding: 0 2px; }
+    .pk-tray-item .rm:hover { opacity: .7; }
 
     @media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } .admin-grid { grid-template-columns: 1fr; } }
     @media (max-width: 768px) {
@@ -578,6 +600,6 @@
     }
   });
 </script>
-<script src="./crm.js?v=20260727-90"></script>
+<script src="./crm.js?v=20260727-91"></script>
 </body>
 </html>
