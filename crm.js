@@ -12114,37 +12114,58 @@ function _covIsYes_(v) {
 async function qbAcaCheckCoverage_() {
   const plans = window._qbAcaPlans || [];
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
-  if (!plans.length || (!docs.length && !meds.length)) { qbAcaRefreshOptionLabels_(); return; }
+  if (!plans.length || (!docs.length && !meds.length)) { window._qbAcaCovBusy = false; qbAcaRefreshOptionLabels_(); return; }
   const res = document.getElementById('qb-aca-result');
-  const prev = res.innerHTML;
-  res.innerHTML = prev + ' <em style="color:var(--text-muted);">checking coverage\u2026</em>';
+  const prev = res ? res.innerHTML : '';
+  if (res) res.innerHTML = prev + ' <em style="color:var(--text-muted);">checking coverage\u2026</em>';
   const year = window._qbAcaYear || new Date().getFullYear();
   plans.forEach(p => { p._docCov = {}; p._medCov = {}; });
   const byId = {}; plans.forEach(p => byId[p.id] = p);
-  try {
-    for (let i = 0; i < plans.length; i += 10) {  // API cap: 10 plan IDs per request
-      const ids = plans.slice(i, i + 10).map(p => p.id).join(',');
-      if (docs.length) {
-        const r = await acaProxy_('aca_provider_coverage', { planids: ids, providers: docs.map(d => d.npi).join(','), year: year });
-        const rows = (r.data && (r.data.coverage || r.data.plans || r.data)) || [];
-        (Array.isArray(rows) ? rows : []).forEach(row => {
-          const p = byId[row.plan_id || row.planid || row.id];
-          if (p) p._docCov[row.npi || row.provider_npi] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
-        });
-      }
-      if (meds.length) {
-        const r = await acaProxy_('aca_drug_coverage', { planids: ids, drugs: meds.map(m => m.rxcui).join(','), year: year });
-        const rows = (r.data && (r.data.coverage || r.data)) || [];
-        (Array.isArray(rows) ? rows : []).forEach(row => {
-          const p = byId[row.plan_id || row.planid || row.id];
-          if (p) p._medCov[row.rxcui] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
-        });
-      }
-    }
-  } catch (e) { console.error('coverage check:', e); }
-  res.innerHTML = prev;
-  qbAcaRefreshOptionLabels_();
+
+  // Cards say "checking" (not "not reported") until the answers land
+  window._qbAcaCovBusy = true;
   qbAcaRenderBrowser_();
+
+  // Batches run in PARALLEL — sequential runs took ~19s for 37 plans, which
+  // read as "broken" long before it read as "loading".
+  let lastPaint = 0;
+  const paint = (force) => {
+    const now = Date.now();
+    if (!force && (now - lastPaint < 1200 || window._qbPkBasisOpen)) return;
+    lastPaint = now;
+    qbAcaRenderBrowser_();
+  };
+  const jobs = [];
+  for (let i = 0; i < plans.length; i += 10) {   // API cap: 10 plan IDs per request
+    const ids = plans.slice(i, i + 10).map(p => p.id).join(',');
+    if (docs.length) {
+      jobs.push(acaProxy_('aca_provider_coverage', { planids: ids, providers: docs.map(d => d.npi).join(','), year: year })
+        .then(r => {
+          const rows = (r.data && (r.data.coverage || r.data.plans || r.data)) || [];
+          (Array.isArray(rows) ? rows : []).forEach(row => {
+            const p = byId[row.plan_id || row.planid || row.id];
+            if (p) p._docCov[row.npi || row.provider_npi] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
+          });
+          paint(false);
+        }).catch(e => console.error('provider coverage:', e)));
+    }
+    if (meds.length) {
+      jobs.push(acaProxy_('aca_drug_coverage', { planids: ids, drugs: meds.map(m => m.rxcui).join(','), year: year })
+        .then(r => {
+          const rows = (r.data && (r.data.coverage || r.data)) || [];
+          (Array.isArray(rows) ? rows : []).forEach(row => {
+            const p = byId[row.plan_id || row.planid || row.id];
+            if (p) p._medCov[row.rxcui] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
+          });
+          paint(false);
+        }).catch(e => console.error('drug coverage:', e)));
+    }
+  }
+  try { await Promise.all(jobs); } catch (e) { console.error('coverage check:', e); }
+  window._qbAcaCovBusy = false;
+  if (res) res.innerHTML = prev;
+  qbAcaRefreshOptionLabels_();
+  paint(true);
 }
 
 function qbAcaRefreshOptionLabels_() {
@@ -12340,9 +12361,12 @@ function qbAcaCostFact_(label, ind, fam) {
 function qbAcaCovLines_(p) {
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
   let html = '';
+  const busy = !!window._qbAcaCovBusy;
   const line = (known, ok, label) => known
     ? `<div style="font-size:11px;color:${ok ? 'var(--success)' : 'var(--danger)'};">${ok ? '\u2713' : '\u2717'} ${label}</div>`
-    : `<div style="font-size:11px;color:var(--text-muted);">? ${label} <span style="opacity:.7;">(not reported)</span></div>`;
+    : busy
+      ? `<div style="font-size:11px;color:var(--text-muted);">\u23f3 ${label} <span style="opacity:.7;">checking\u2026</span></div>`
+      : `<div style="font-size:11px;color:var(--text-muted);">? ${label} <span style="opacity:.7;">(not reported)</span></div>`;
   docs.forEach(d => {
     const known = p._docCov && d.npi in p._docCov;
     html += line(known, known && p._docCov[d.npi], escWeb(d.name.split(' \u00b7 ')[0]));
