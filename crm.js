@@ -10498,6 +10498,7 @@ window._qbMgSel = window._qbMgSel || {};
 function openMedigapPicker_() {
   const prof = qbMgProfile_();
   if (!prof.state) { showToast('Enter their ZIP code first.'); return; }
+  qbWorkbenchOpen_(false);           // the picker IS the screen now
   let el = document.getElementById('qb-mg-picker');
   if (!el) {
     el = document.createElement('div');
@@ -10514,7 +10515,8 @@ function openMedigapPicker_() {
 function closeMedigapPicker_() {
   const el = document.getElementById('qb-mg-picker');
   if (el) el.style.display = 'none';
-  qbSyncWorkbench_();
+  qbAutoCardPaint_();
+  qbOptAutoFold_();
 }
 
 function mgToggleGrid_() { window._qbMgShowGrid = !window._qbMgShowGrid; renderMedigapPicker_(); }
@@ -11856,11 +11858,14 @@ async function openQuoteBuilder(dealId, opts) {
   const defValid = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const optBlock = i => `
     <div id="qb-opt-wrap-${i}" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-top:14px;${i > 0 ? 'display:none;' : ''}">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <span id="qb-opt-no-${i}" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent,#1d3557);color:#fff;font-size:11px;font-weight:800;">${i + 1}</span>
-        <span id="qb-opt-label-${i}" style="font-weight:700;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Option ${i + 1}</span>
-        ${i > 0 ? `<button type="button" onclick="qbHideOption_(${i})" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;" title="Remove this option">&#10005;</button>` : ''}
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;" onclick="qbOptToggle_(${i})" title="Show or hide this option">
+        <span id="qb-opt-chev-${i}" style="font-size:11px;color:var(--text-muted);width:10px;">&#9662;</span>
+        <span id="qb-opt-no-${i}" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent,#1d3557);color:#fff;font-size:11px;font-weight:800;flex-shrink:0;">${i + 1}</span>
+        <span id="qb-opt-label-${i}" style="font-weight:700;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;">Option ${i + 1}</span>
+        <span id="qb-opt-sum-${i}" style="flex:1;min-width:0;font-size:12.5px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        ${i > 0 ? `<button type="button" onclick="event.stopPropagation();qbHideOption_(${i})" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;flex-shrink:0;" title="Remove this option">&#10005;</button>` : ''}
       </div>
+      <div id="qb-opt-body-${i}">
       <label>Coverage type *</label>
       <select id="qb-optline-${i}" onchange="qbOptLineChanged_(${i})">
         <option value="">&mdash; choose coverage type &mdash;</option>${lineOpts}</select>
@@ -11891,6 +11896,7 @@ async function openQuoteBuilder(dealId, opts) {
       </div>
       <label>Short note to client (optional)</label><input type="text" id="qb-note-${i}" placeholder="e.g. Best value if you travel often" />
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:400;"><input type="radio" name="qb-rec" id="qb-rec-${i}" style="width:auto;" /> Mark as my recommendation</label>
+      </div>
     </div>`;
 
   showModal('Create Quote — ' + escWeb(contact.name || ''), `
@@ -13145,7 +13151,60 @@ function qbTidyOptions_() {
   }
   if (addBtn) addBtn.style.display = '';
   qbRenumberOptions_();
+  qbOptAutoFold_();
   qbSectionSummary_();
+}
+
+// A quote with eight options should not be eight screens of scrolling. Each
+// option folds down to one line that says what it is; the one being worked on
+// stays open. An agent's own choice always wins over the automatic behaviour.
+function qbOptToggle_(i, force) {
+  window._qbOptOpen = window._qbOptOpen || {};
+  const body = document.getElementById('qb-opt-body-' + i);
+  if (!body) return;
+  const open = force === undefined ? !(body.style.display !== 'none') : force;
+  body.style.display = open ? '' : 'none';
+  const chev = document.getElementById('qb-opt-chev-' + i);
+  if (chev) chev.innerHTML = open ? '&#9662;' : '&#9656;';
+  if (force === undefined) window._qbOptOpen[i] = open;   // they chose
+  qbOptHeaderPaint_(i);
+}
+
+// The one-line identity: what this option is quoting, and for how much.
+function qbOptHeaderPaint_(i) {
+  const sum = document.getElementById('qb-opt-sum-' + i);
+  if (!sum) return;
+  const nm = (document.getElementById('qb-name-' + i) || {}).value || '';
+  const prem = (document.getElementById('qb-prem-' + i) || {}).value || '';
+  const line = (document.getElementById('qb-optline-' + i) || {}).value || '';
+  const rec = (document.getElementById('qb-rec-' + i) || {}).checked;
+  if (!nm.trim()) {
+    sum.innerHTML = line
+      ? '<span style="color:var(--text-muted);">' + escWeb(line) + ' \u00b7 nothing chosen yet</span>'
+      : '<span style="color:var(--text-muted);">empty</span>';
+    return;
+  }
+  sum.innerHTML = (rec ? '<span style="color:#b3903a;">\u2b50 </span>' : '')
+    + '<strong>' + escWeb(nm) + '</strong>'
+    + (prem ? ' <span style="color:var(--text-success);font-weight:700;">$' + escWeb(prem) + '/mo</span>' : '')
+    + (line ? ' <span style="color:var(--text-muted);">\u00b7 ' + escWeb(line) + '</span>' : '');
+}
+
+// Once an option holds a plan it folds itself away, unless the agent has
+// opened it. The first option and any empty one stay open to be filled in.
+function qbOptAutoFold_() {
+  window._qbOptOpen = window._qbOptOpen || {};
+  let openCount = 0;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (!w || w.style.display === 'none') continue;
+    const filled = qbOptionFilled_(i);
+    const chosen = window._qbOptOpen[i];
+    const open = chosen !== undefined ? chosen : !filled;
+    qbOptToggle_(i, open);
+    if (open) openCount++;
+  }
+  return openCount;
 }
 
 function qbRenumberOptions_() {
@@ -13160,6 +13219,7 @@ function qbRenumberOptions_() {
     const lbl = document.getElementById('qb-opt-label-' + i);
     if (chip) chip.textContent = n;
     if (lbl) lbl.textContent = 'Option ' + n;
+    qbOptHeaderPaint_(i);
   }
 }
 
@@ -14457,6 +14517,7 @@ async function openAcaPicker_() {
     qbWorkbenchOpen_(true, 'aca');
     return;
   }
+  qbWorkbenchOpen_(false);           // the picker IS the screen now
   _qbPk.carriers.clear(); _qbPk.metals.clear(); _qbPk.types.clear(); _qbPk.cmp.clear();
   _qbPk.hsa = false; _qbPk.docsAll = false; _qbPk.medsAll = false; _qbPk.maxNet = null; _qbPk.sort = 'net';
   let ov = document.getElementById('qb-aca-picker');
@@ -14478,6 +14539,7 @@ function closeAcaPicker_() {
   const cm = document.getElementById('qb-aca-compare');
   if (cm) cm.remove();
   qbAcaRenderBrowser_();
+  qbOptAutoFold_();
 }
 
 function pkToggle_(set, val) { if (_qbPk[set].has(val)) _qbPk[set].delete(val); else _qbPk[set].add(val); renderPickerBody_(); }
@@ -15607,6 +15669,7 @@ function openCmsPicker_() {
     qbWorkbenchOpen_(true, 'cms');
     return;
   }
+  qbWorkbenchOpen_(false);           // the picker IS the screen now
   const pk = window._qbCmsPk;
   pk.carriers.clear(); pk.types.clear(); pk.zero = false; pk.stars = 0; pk.cmp.clear();
   let el = document.getElementById('qb-cms-picker');
@@ -15623,7 +15686,8 @@ function openCmsPicker_() {
 function closeCmsPicker_() {
   const el = document.getElementById('qb-cms-picker');
   if (el) el.style.display = 'none';
-  qbSyncWorkbench_();
+  qbAutoCardPaint_();            // the tool list stays current, the bench stays shut
+  qbOptAutoFold_();
 }
 
 // (the old one-per-filter toggles are gone — cmsPkChip_ handles them all)
