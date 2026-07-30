@@ -61,15 +61,16 @@
   .pm-chip.m-Platinum { background: #e2e6ea; color: #4b5563; }
   .pm-chip.m-Catastrophic { background: #e4e9ef; color: #64748b; }
   .pm-chip.hsa { background: #d9f2ef; color: #0d9488; }
-  .pm-chip[data-tip] { cursor: help; position: relative; outline: none; }
-  .pm-chip[data-tip]:hover::after, .pm-chip[data-tip]:focus::after {
-    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 7px); z-index: 40;
-    width: 230px; background: #1e293b; color: #fff; font-size: 11.5px; font-weight: 500;
-    text-transform: none; letter-spacing: 0; line-height: 1.55; padding: 9px 11px; border-radius: 9px;
-    box-shadow: 0 8px 24px rgba(15,23,42,.3); white-space: normal; }
-  .pm-chip[data-tip]:hover::before, .pm-chip[data-tip]:focus::before {
-    content: ""; position: absolute; left: 14px; bottom: calc(100% + 1px); z-index: 41;
-    border: 6px solid transparent; border-top-color: #1e293b; }
+  [data-tip] { cursor: help; outline: none; }
+  #tipbox { position: fixed; z-index: 9999; max-width: 260px; background: #1e293b; color: #fff;
+    font-size: 11.5px; font-weight: 500; text-transform: none; letter-spacing: 0; line-height: 1.55;
+    padding: 9px 11px; border-radius: 9px; box-shadow: 0 8px 24px rgba(15,23,42,.3);
+    white-space: normal; pointer-events: none; opacity: 0; transition: opacity .12s ease; }
+  #tipbox.on { opacity: 1; }
+  #tipbox::after { content: ""; position: absolute; left: var(--tip-arrow, 16px);
+    border: 6px solid transparent; }
+  #tipbox.above::after { top: 100%; border-top-color: #1e293b; }
+  #tipbox.below::after { bottom: 100%; border-bottom-color: #1e293b; }
   .pm-facts { margin: 10px 0 0; border-top: 1px dashed #e2e8f0; padding-top: 9px; display: grid; gap: 5px; }
   .pm-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: #334155; }
   .pm-row .lbl { color: var(--muted); }
@@ -307,6 +308,53 @@ function covBlockHtml(o) {
     <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;line-height:1.45;">Checked against this plan\u2019s published directory and drug list${c.checked_at ? ' on ' + new Date(c.checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}. Networks change \u2014 please confirm with the plan before you enroll.</div>
   </div>`;
 }
+
+// Tooltips live on the page body, not inside the chip, so nothing can clip
+// them. They sit above the chip when there's room and below when there isn't,
+// and they slide sideways to stay on screen.
+let _tipBox = null;
+function tipShow(el) {
+  const text = el.getAttribute('data-tip');
+  if (!text) return;
+  if (!_tipBox) {
+    _tipBox = document.createElement('div');
+    _tipBox.id = 'tipbox';
+    document.body.appendChild(_tipBox);
+  }
+  _tipBox.textContent = text;
+  _tipBox.className = 'on';
+  _tipBox.style.left = '0px';
+  _tipBox.style.top = '0px';
+  const r = el.getBoundingClientRect();
+  const GAP = 9, EDGE = 8;
+  const w = _tipBox.offsetWidth, h = _tipBox.offsetHeight;
+  const above = r.top - h - GAP >= EDGE;
+  _tipBox.classList.add(above ? 'above' : 'below');
+  let left = r.left + r.width / 2 - w / 2;
+  left = Math.max(EDGE, Math.min(left, window.innerWidth - w - EDGE));
+  _tipBox.style.left = left + 'px';
+  _tipBox.style.top = (above ? r.top - h - GAP : r.bottom + GAP) + 'px';
+  // keep the arrow pointing at the chip even after the box slides
+  const arrow = Math.max(10, Math.min(r.left + r.width / 2 - left, w - 10));
+  _tipBox.style.setProperty('--tip-arrow', (arrow - 6) + 'px');
+}
+function tipHide() { if (_tipBox) _tipBox.className = ''; }
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (el) tipShow(el); else if (!e.target.closest || !e.target.closest('#tipbox')) tipHide();
+});
+document.addEventListener('focusin', e => {
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (el) tipShow(el);
+});
+document.addEventListener('focusout', tipHide);
+window.addEventListener('scroll', tipHide, true);
+window.addEventListener('resize', tipHide);
+// touch: tap a chip to read it, tap anywhere else to dismiss
+document.addEventListener('click', e => {
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (el) { tipShow(el); setTimeout(tipHide, 4000); } else tipHide();
+});
 
 function optCardHtml(o, inCompare) {
   const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
