@@ -11169,6 +11169,8 @@ async function openQuoteBuilder(dealId, opts) {
           moop: cmsSel.moop, drug_deductible: cmsSel.drug_deductible,
           rating: cmsSel.star_rating || null,
           state: cmsSel.state || null, county: cmsSel.county || null,
+          formulary_id: cmsSel._formularyId || null,
+          coverage: qbCmsCoverageSnapshot_(cmsSel),
         };
       } else {
         // Re-quoted option left untouched: reuse the previous quote's snapshot
@@ -14422,6 +14424,92 @@ async function qbCmsGetPlans_() {
   if (!window._qbCmsPlans.length) { showToast('No plans of that kind in this county.'); return; }
   qbCmsRelinkOptions_();
   openCmsPicker_();
+  qbCmsDrugCheck_();
+}
+
+// Every Medicare plan points at a formulary; the client\u2019s prescriptions are
+// already on file. Two indexed queries answer \u201cis my drug covered, and on
+// what tier\u201d for every plan on screen \u2014 no API, no waiting.
+async function qbCmsDrugCheck_() {
+  const plans = window._qbCmsPlans || [];
+  if (!plans.length) return;
+  if (!(window._qbCmsMeds || []).length) {
+    const lists = await qbLoadClientLists_();
+    window._qbCmsMeds = (lists.medications || []).filter(m => m.rxcui)
+      .map(m => ({ rxcui: String(m.rxcui), name: m.name }));
+  }
+  const meds = window._qbCmsMeds || [];
+  if (!meds.length) return;
+
+  window._qbCmsDrugBusy = true;
+  qbCmsOptionCardsPaint_();
+  try {
+    const keys = plans.map(p => p.contract_id + '|' + p.plan_id + '|' + String(p.segment_id || '0').padStart(3, '0'));
+    const { data: links } = await supabaseClient.from('pdp_plan_formulary')
+      .select('contract_id,plan_id,segment_id,formulary_id')
+      .in('contract_id', [...new Set(plans.map(p => p.contract_id))]);
+    const byKey = {};
+    (links || []).forEach(l => { byKey[l.contract_id + '|' + l.plan_id + '|' + l.segment_id] = l.formulary_id; });
+
+    const fids = [...new Set(keys.map(k => byKey[k]).filter(Boolean))];
+    const rx = meds.map(m => m.rxcui);
+    const cover = {};
+    for (let i = 0; i < fids.length; i += 40) {
+      const { data: rows } = await supabaseClient.from('pdp_formulary')
+        .select('formulary_id,rxcui,tier,prior_auth,step_therapy,quantity_limit')
+        .in('formulary_id', fids.slice(i, i + 40)).in('rxcui', rx);
+      (rows || []).forEach(r => { cover[r.formulary_id + '|' + r.rxcui] = r; });
+    }
+
+    plans.forEach((p, i) => {
+      const fid = byKey[keys[i]];
+      p._formularyId = fid || null;
+      if (!fid) { p._drugCov = null; return; }
+      const out = {};
+      meds.forEach(m => { out[m.rxcui] = cover[fid + '|' + m.rxcui] || false; });
+      p._drugCov = out;
+    });
+  } catch (e) {
+    console.error('drug check:', e);
+  }
+  window._qbCmsDrugBusy = false;
+  if (document.getElementById('qb-cms-picker')) renderCmsPicker_();
+  qbCmsOptionCardsPaint_();
+}
+
+function qbCmsOptionCardsPaint_() {
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if ((window._qbCmsSel || {})[i]) qbCmsOptionView_(i);
+}
+
+// One line that says how their prescriptions fare on this plan.
+function qbCmsDrugLine_(p, expandKey) {
+  const meds = window._qbCmsMeds || [];
+  if (!meds.length) return '';
+  if (p.category === 'MA') {
+    return '<div style="margin-top:8px;font-size:11.5px;color:var(--text-warning);">\u{1F48A} No drug coverage on this plan \u2014 they would need a separate Part D plan.</div>';
+  }
+  if (window._qbCmsDrugBusy && !p._drugCov) {
+    return '<div style="margin-top:8px;font-size:11.5px;color:var(--text-muted);">\u{1F48A} checking their prescriptions\u2026</div>';
+  }
+  if (!p._drugCov) return '';
+  const cov = p._drugCov;
+  const ok = meds.filter(m => cov[m.rxcui]).length;
+  const tone = ok === meds.length ? 'var(--text-success)' : 'var(--text-warning)';
+  const pills = meds.map(m => {
+    const hit = cov[m.rxcui];
+    if (!hit) return '<span class="pk-pill bad">\u2717 ' + escWeb(m.name) + ' <span style="opacity:.75;">not on the list</span></span>';
+    const flags = [];
+    if (hit.prior_auth) flags.push('prior auth');
+    if (hit.step_therapy) flags.push('step therapy');
+    if (hit.quantity_limit) flags.push('qty limit');
+    const warn = flags.length ? ' <span style="opacity:.75;">' + flags.join(', ') + '</span>' : '';
+    return '<span class="pk-pill ' + (flags.length ? 'unk' : 'ok') + '">' + (flags.length ? '\u26a0' : '\u2713')
+      + ' ' + escWeb(m.name) + ' <strong>T' + (hit.tier || '?') + '</strong>' + warn + '</span>';
+  }).join(' ');
+  return `<div style="margin-top:8px;">
+    <div style="font-size:11.5px;font-weight:700;color:${tone};">\u{1F48A} ${ok} of ${meds.length} of their prescriptions covered</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${pills}</div>
+  </div>`;
 }
 
 // Re-quoted options carry a plan id; match them to this year\u2019s list so the
@@ -14541,6 +14629,7 @@ function cmsCardHtml_(p) {
           ${p.category !== 'MA' ? `<div><div style="font-size:10px;color:var(--text-muted);">Drug deductible</div><div style="font-weight:700;">${money(p.drug_deductible)}</div></div>` : ''}
         </div>
       </div>
+      ${qbCmsDrugLine_(p)}
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
           onclick="event.stopPropagation();qbCmsAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
@@ -14639,6 +14728,24 @@ function openCmsDetail_(planId) {
     </div>`;
 }
 
+// The drug answers travel with the plan, in the same shape the ACA options use,
+// so the client\u2019s page renders them without knowing which tool produced them.
+function qbCmsCoverageSnapshot_(p) {
+  const meds = window._qbCmsMeds || [];
+  if (!meds.length || !p._drugCov) return null;
+  const medications = meds.map(m => {
+    const hit = p._drugCov[m.rxcui];
+    return {
+      rxcui: String(m.rxcui), name: m.name, covered: !!hit,
+      tier: hit ? hit.tier : null,
+      prior_auth: hit ? !!hit.prior_auth : false,
+      step_therapy: hit ? !!hit.step_therapy : false,
+      quantity_limit: hit ? !!hit.quantity_limit : false,
+    };
+  });
+  return { checked_at: new Date().toISOString(), providers: [], medications: medications };
+}
+
 // A saved Medicare option is a complete plan record on its own \u2014 rebuild the
 // card from it so re-opening a quote looks like building one.
 function qbCmsHydrateOption_(i, o) {
@@ -14655,7 +14762,15 @@ function qbCmsHydrateOption_(i, o) {
     contract_id: m.contract_id, plan_id: m.plan_id, segment_id: m.segment_id,
     state: m.state, county: m.county, plan_year: m.year,
     _snapshot: true,
+    _formularyId: m.formulary_id || null,
+    _drugCov: (m.coverage && m.coverage.medications || []).reduce((a, x) => {
+      a[x.rxcui] = x.covered ? { tier: x.tier, prior_auth: x.prior_auth, step_therapy: x.step_therapy, quantity_limit: x.quantity_limit } : false;
+      return a;
+    }, {}),
   };
+  if (!(window._qbCmsMeds || []).length && m.coverage && (m.coverage.medications || []).length) {
+    window._qbCmsMeds = m.coverage.medications.map(x => ({ rxcui: String(x.rxcui), name: x.name }));
+  }
   qbCmsOptionView_(i);
 }
 
@@ -14755,6 +14870,7 @@ function qbCmsOptionView_(i) {
           ${p.category !== 'MA' ? `<div><div style="font-size:10px;color:var(--text-muted);">Drug deductible</div><div style="font-weight:700;">${money(p.drug_deductible)}</div></div>` : ''}
         </div>
       </div>
+      ${qbCmsDrugLine_(p)}
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <button type="button" class="btn btn-outline btn-sm" onclick="openCmsDetail_('${escWeb(p.id)}')">Plan details</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="openCmsPicker_()">\u{1F5D6} Change plan</button>

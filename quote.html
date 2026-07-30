@@ -282,7 +282,9 @@ function covOf(o) {
     const p = (c.providers || []).filter(x => x.covered !== null)
       .map(x => ({ id: x.npi, name: x.name, covered: x.covered }));
     const m = (c.medications || []).filter(x => x.covered !== null)
-      .map(x => ({ id: x.rxcui, name: x.name, covered: x.covered }));
+      .map(x => ({ id: x.rxcui, name: x.name, covered: x.covered, tier: x.tier,
+                   prior_auth: x.prior_auth, step_therapy: x.step_therapy,
+                   quantity_limit: x.quantity_limit }));
     return (p.length || m.length) ? { providers: p, medications: m, checked_at: c.checked_at } : null;
   }
   // older quote: the answers are still there, just written as sentences
@@ -322,7 +324,15 @@ function covBlockHtml(o) {
     <div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#64748b;">Your doctors &amp; prescriptions</div>
     <div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:${allGood ? '#15803d' : '#b45309'};">${sum.join(' \u00b7 ')}</div>
     ${c.providers.map(x => line('\u{1FA7A}', x.name, x.covered, 'In network', 'Not in network')).join('')}
-    ${c.medications.map(x => line('\u{1F48A}', x.name, x.covered, 'Covered', 'Not on drug list')).join('')}
+    ${c.medications.map(x => {
+      if (!x.covered) return line('\u{1F48A}', x.name, false, '', 'Not on drug list');
+      const notes = [];
+      if (x.prior_auth) notes.push('needs prior approval');
+      if (x.step_therapy) notes.push('step therapy');
+      if (x.quantity_limit) notes.push('quantity limit');
+      const label = (x.tier ? 'Tier ' + x.tier : 'Covered') + (notes.length ? ' \u00b7 ' + notes.join(', ') : '');
+      return line('\u{1F48A}', x.name, true, label, '');
+    }).join('')}
     <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;line-height:1.45;">Checked against this plan\u2019s published directory and drug list${c.checked_at ? ' on ' + new Date(c.checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ' when this quote was prepared'}. Networks change \u2014 please confirm with the plan before you enroll.</div>
   </div>`;
 }
