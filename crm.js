@@ -7359,7 +7359,8 @@ async function handleModalSave() {
   }
 }
 
-function closeModal() { document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
+function closeModal() {
+  qbCloseIntakeDrawer_(); document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
 
 // ============================================================
 // TOAST
@@ -8584,6 +8585,94 @@ async function naHandleSpamComplaint(activityId, contactId, contactName, subject
 }
 
 // View a completed intake form in a modal
+// Render a session's answers as grouped label/value rows. Shared by the full
+// viewer and the quote-dialog slide-out so the two can never disagree.
+function intakeAnswersHtml_(s) {
+  const responses = (s && s.responses) || {};
+  const selectedFields = (s && s.selected_fields) || [];
+  if (!Object.keys(responses).length) {
+    return '<p style="color:var(--text-muted);font-style:italic;font-size:13px;padding:8px 0;">Form not yet submitted by the client.</p>';
+  }
+  const sections = {};
+  const fieldOrder = selectedFields.length ? selectedFields.slice() : Object.keys(responses);
+  ['name', 'email', 'phone'].forEach(function(fid) {
+    if (responses[fid] && !fieldOrder.includes(fid)) fieldOrder.unshift(fid);
+  });
+  fieldOrder.forEach(function(fid) {
+    const def = INTAKE_FIELD_DEFS[fid];
+    const val = responses[fid];
+    if (val === undefined || val === null || val === '') return;
+    if (/_struct$/.test(fid)) return;                 // internal JSON mirrors
+    const section = (def && def.section) || 'Other';
+    const label = (def && def.label) || fid.replace(/_/g, ' ');
+    if (!sections[section]) sections[section] = [];
+    if (!sections[section].some(function(x) { return x.label === label; })) {
+      sections[section].push({ label: label, val: val });
+    }
+  });
+  let html = '';
+  Object.entries(sections).forEach(function(entry) {
+    html += '<div style="margin-bottom:16px;">'
+      + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:8px;">' + escWeb(entry[0]) + '</div>';
+    entry[1].forEach(function(r) {
+      const displayVal = Array.isArray(r.val) ? r.val.join(', ') : String(r.val);
+      html += '<div style="display:flex;gap:8px;margin-bottom:6px;font-size:13px;">'
+        + '<span style="color:var(--text-muted);min-width:150px;flex-shrink:0;">' + escWeb(r.label) + '</span>'
+        + '<span style="color:var(--text-primary);font-weight:500;">' + escWeb(displayVal) + '</span>'
+        + '</div>';
+    });
+    html += '</div>';
+  });
+  return html;
+}
+
+// Slide-out reference panel: what the client actually told us, without
+// leaving the quote you're building.
+function qbCloseIntakeDrawer_() {
+  const d = document.getElementById('qb-intake-drawer');
+  if (d) d.remove();
+}
+
+async function qbToggleIntakeDrawer_() {
+  if (document.getElementById('qb-intake-drawer')) { qbCloseIntakeDrawer_(); return; }
+  const sid = window._qbIntakeSessionId;
+  const dr = document.createElement('div');
+  dr.id = 'qb-intake-drawer';
+  dr.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:min(460px,94vw);z-index:99997;'
+    + 'background:var(--surface-1);border-left:1px solid var(--border);'
+    + 'box-shadow:-14px 0 44px rgba(0,0,0,.34);display:flex;flex-direction:column;';
+  dr.innerHTML = '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">'
+    + '<div style="font-weight:800;font-size:14px;flex:1;">\u{1F4C4} Their intake answers</div>'
+    + '<button class="btn btn-outline btn-sm" onclick="qbCloseIntakeDrawer_()">\u2715 Close</button></div>'
+    + '<div style="padding:22px;color:var(--text-muted);font-size:13px;">Loading\u2026</div>';
+  document.body.appendChild(dr);
+  if (!sid) {
+    dr.querySelector('div:last-child').innerHTML =
+      '<div style="color:var(--text-muted);font-size:13px;">This quote isn\u2019t tied to an intake, so there are no answers to show.</div>';
+    return;
+  }
+  try {
+    const { data: sess } = await supabaseClient.from('intake_sessions')
+      .select('id,form_type,selected_fields,responses,status,created_at,completed_at')
+      .eq('id', sid).single();
+    const typeLabel = (INTAKE_TYPE_LABELS[sess.form_type] || sess.form_type || 'Intake');
+    const when = new Date(sess.completed_at || sess.created_at)
+      .toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    dr.querySelector('div:last-child').outerHTML =
+      '<div style="flex:1;overflow-y:auto;padding:16px 18px;">'
+      + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">'
+      + escWeb(typeLabel) + ' \u00b7 ' + when
+      + (sess.status === 'completed' ? '' : ' \u00b7 <span style="color:var(--text-warning);">still pending</span>') + '</div>'
+      + intakeAnswersHtml_(sess)
+      + '<div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">'
+      + 'Read-only here \u2014 edit it from the deal\u2019s Intakes &amp; Quotes list.</div>'
+      + '</div>';
+  } catch (e) {
+    dr.querySelector('div:last-child').innerHTML =
+      '<div style="color:var(--text-danger);font-size:13px;">Could not load that intake.</div>';
+  }
+}
+
 async function viewIntakeSession(sessionId) {
   showModal('&#128196; Intake Form', '<div style="text-align:center;padding:20px;color:var(--text-muted);">Loading&#8230;</div>', null, { hideConfirm: true });
   const { data: s, error } = await supabaseClient
@@ -8603,43 +8692,7 @@ async function viewIntakeSession(sessionId) {
   const statusBadge = s.status === 'completed'
     ? '<span style="background:var(--bg-success);color:var(--text-success);border:1px solid var(--border-success);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">COMPLETED</span>'
     : '<span style="background:var(--bg-warning);color:var(--text-warning);border:1px solid var(--border-warning);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">PENDING</span>';
-  const responses = s.responses || {};
-  const selectedFields = s.selected_fields || [];
-  let fieldHtml = '';
-  if (Object.keys(responses).length === 0) {
-    fieldHtml = '<p style="color:var(--text-muted);font-style:italic;font-size:13px;padding:8px 0;">Form not yet submitted by prospect.</p>';
-  } else {
-    const sections = {};
-    const fieldOrder = selectedFields.length ? selectedFields.slice() : Object.keys(responses);
-    ['name','email','phone'].forEach(function(fid) {
-      if (responses[fid] && !fieldOrder.includes(fid)) fieldOrder.unshift(fid);
-    });
-    fieldOrder.forEach(function(fid) {
-      const def = INTAKE_FIELD_DEFS[fid];
-      const val = responses[fid];
-      if (val === undefined || val === null || val === '') return;
-      const section = (def && def.section) || 'Other';
-      const label   = (def && def.label)   || fid.replace(/_/g, ' ');
-      if (!sections[section]) sections[section] = [];
-      if (!sections[section].some(function(x) { return x.label === label; })) {
-        sections[section].push({ label: label, val: val });
-      }
-    });
-    Object.entries(sections).forEach(function(entry) {
-      var sec  = entry[0];
-      var rows = entry[1];
-      fieldHtml += '<div style="margin-bottom:16px;">';
-      fieldHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:8px;">' + sec + '</div>';
-      rows.forEach(function(r) {
-        const displayVal = Array.isArray(r.val) ? r.val.join(', ') : String(r.val);
-        fieldHtml += '<div style="display:flex;gap:8px;margin-bottom:6px;font-size:13px;">'
-          + '<span style="color:var(--text-muted);min-width:160px;flex-shrink:0;">' + r.label + '</span>'
-          + '<span style="color:var(--text-primary);font-weight:500;">' + displayVal + '</span>'
-          + '</div>';
-      });
-      fieldHtml += '</div>';
-    });
-  }
+  const fieldHtml = intakeAnswersHtml_(s);
   const escFn = function(v) { return String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
   const body = '<div style="margin-bottom:16px;padding:12px;background:var(--surface-2);border-radius:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'
     + '<div style="flex:1;min-width:0;">'
@@ -10900,7 +10953,11 @@ async function openQuoteBuilder(dealId, opts) {
       <div><label style="margin-top:0;">Valid until</label>
         <input type="date" id="qb-valid" value="${defValid}" style="width:auto;" /></div>
     </div>
-    <div id="qb-intake-note" style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">${intakeNote}</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+      <div id="qb-intake-note" style="font-size:11.5px;color:var(--text-muted);">${intakeNote}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
+        onclick="qbToggleIntakeDrawer_()">\u{1F4C4} Their answers</button>
+    </div>
     <div id="qb-sections" style="font-size:11.5px;margin-top:4px;line-height:1.5;"></div>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
     <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
