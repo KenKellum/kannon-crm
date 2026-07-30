@@ -14540,17 +14540,46 @@ function qbCmsRelinkOptions_() {
 // down, compare a few, add the ones you want to the quote.
 // ============================================================
 
-window._qbCmsPk = { carriers: new Set(), types: new Set(), zero: false, stars: 0, sort: 'premium' };
+window._qbCmsPk = { carriers: new Set(), types: new Set(), zero: false, stars: 0, sort: 'premium', cmp: new Set() };
 
 function cmsPremium_(p) {
   return p._premium != null ? p._premium
     : (p.consolidated_premium != null ? p.consolidated_premium : p.part_c_premium);
 }
 
-function cmsAddedSlot_(planId) {
+function cmsKey_(p) {
+  if (!p) return '';
+  return [p.contract_id || '', p.plan_id || '', String(p.segment_id || '0')].join('|');
+}
+
+function cmsFind_(idOrKey) {
+  const plans = window._qbCmsPlans || [];
+  return plans.find(p => p.id === idOrKey) || plans.find(p => cmsKey_(p) === idOrKey) || null;
+}
+
+function cmsAddedSlot_(idOrKey) {
   const sel = window._qbCmsSel || {};
-  for (let i = 0; i < QB_MAX_OPTIONS; i++) if (sel[i] && sel[i].id === planId) return i;
+  const p = cmsFind_(idOrKey);
+  const key = p ? cmsKey_(p) : idOrKey;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    if (!sel[i]) continue;
+    if (sel[i].id === idOrKey || cmsKey_(sel[i]) === key) return i;
+  }
   return -1;
+}
+
+// Take a plan off the quote by its slot \u2014 works whether it came from the
+// picker or was restored from a saved quote.
+function qbCmsRemoveSlot_(i) {
+  if (!(window._qbCmsSel || {})[i]) return;
+  delete window._qbCmsSel[i];
+  ['qb-name-' + i, 'qb-prem-' + i, 'qb-bul-' + i].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
+  });
+  qbCmsOptionView_(i);
+  if (document.getElementById('qb-cms-picker')) renderCmsPicker_();
+  qbSectionSummary_();
 }
 
 function openCmsPicker_() {
@@ -14560,7 +14589,7 @@ function openCmsPicker_() {
     return;
   }
   const pk = window._qbCmsPk;
-  pk.carriers.clear(); pk.types.clear(); pk.zero = false; pk.stars = 0;
+  pk.carriers.clear(); pk.types.clear(); pk.zero = false; pk.stars = 0; pk.cmp.clear();
   let el = document.getElementById('qb-cms-picker');
   if (!el) {
     el = document.createElement('div');
@@ -14616,6 +14645,9 @@ function cmsCardHtml_(p) {
         ${p.category === 'MA' ? '<span style="font-size:10px;color:var(--text-warning);border:1px solid var(--border-warning);border-radius:6px;padding:2px 6px;">no drug coverage</span>' : ''}
         ${p.snp_type ? `<span style="font-size:10px;color:#7c3aed;border:1px solid #7c3aed;border-radius:6px;padding:2px 6px;">SNP \u00b7 ${escWeb(p.snp_type)}</span>` : ''}
         ${stars ? `<span style="font-size:11px;color:#b3903a;">${stars}</span>` : ''}
+        <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="event.stopPropagation();">
+          <input type="checkbox" ${window._qbCmsPk.cmp.has(cmsKey_(p)) ? 'checked' : ''} onclick="event.stopPropagation();"
+            onchange="cmsCmpToggle_('${escWeb(cmsKey_(p))}', this)" style="width:13px;height:13px;" /> \u2696\ufe0f Compare</label>
       </div>
       <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:6px;">${escWeb(p.org_name || '')}</div>
       <div style="font-size:14.5px;font-weight:700;margin:1px 0 8px;">${escWeb(p.plan_name)}</div>
@@ -14655,7 +14687,9 @@ function renderCmsPicker_() {
     <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-weight:800;font-size:15px;">\u{1F3DB}\uFE0F ${escWeb(kind)}</div>
       <div style="font-size:12px;color:var(--text-muted);">${escWeb(where)} \u00b7 ${window._qbCmsYear || ''} \u00b7 showing ${list.length} of ${all.length}</div>
-      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="closeCmsPicker_()">\u2715 Done</button>
+      ${window._qbCmsPk.cmp.size ? `<button class="btn ${window._qbCmsPk.cmp.size >= 2 ? 'btn-primary' : 'btn-outline'} btn-sm"
+        style="margin-left:auto;" ${window._qbCmsPk.cmp.size >= 2 ? '' : 'disabled'} onclick="openCmsCompare_()">\u2696\ufe0f Compare (${window._qbCmsPk.cmp.size})</button>` : ''}
+      <button class="btn btn-outline btn-sm" style="${window._qbCmsPk.cmp.size ? '' : 'margin-left:auto;'}" onclick="closeCmsPicker_()">\u2715 Done</button>
     </div>
 
     <div style="padding:10px 18px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;">
@@ -14680,12 +14714,92 @@ function renderCmsPicker_() {
         : '<div style="color:var(--text-muted);font-size:13px;padding:20px 0;">Nothing matches those filters.</div>'}
     </div>
 
-    ${chosen.length ? `<div class="pk-tray">
-      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">On the quote</div>
-      ${chosen.map(x => `<span class="pk-tray-item">${qbOptionNo_(x.i)}. ${escWeb(x.p.plan_name)}
-        <button class="rm" onclick="qbCmsAddPlan_('${escWeb(x.p.id)}')" title="Remove">\u2715</button></span>`).join('')}
+    ${chosen.length ? `<div class="pk-tray" style="padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span class="pk-tray-label">On the quote \u00b7 ${chosen.length}</span>
+      ${chosen.map(x => `<div class="pk-tray-item">
+        <span class="num">${qbOptionNo_(x.i)}</span>
+        <span class="who">
+          <span class="carrier">${escWeb(x.p.org_name || '')}</span>
+          <span class="pname">${escWeb(x.p.plan_name)}</span>
+        </span>
+        <span class="price">$${cmsPremium_(x.p) != null ? Number(cmsPremium_(x.p)).toFixed(2) : '?'}</span>
+        <button class="rm" onclick="qbCmsRemoveSlot_(${x.i})" title="Take off the quote">\u2715</button>
+      </div>`).join('')}
       <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeCmsPicker_()">Done \u2014 back to the quote</button>
     </div>` : ''}`;
+}
+
+function cmsCmpToggle_(key, cb) {
+  const pk = window._qbCmsPk;
+  if (cb.checked) {
+    if (pk.cmp.size >= 4) { cb.checked = false; showToast('Compare up to 4 plans at a time.'); return; }
+    pk.cmp.add(key);
+  } else pk.cmp.delete(key);
+  renderCmsPicker_();
+}
+
+function cmsCmpClear_() { window._qbCmsPk.cmp.clear(); renderCmsPicker_(); }
+
+// Four plans, one screen, the rows an agent actually reads out loud.
+function openCmsCompare_() {
+  const plans = [...window._qbCmsPk.cmp].map(k => cmsFind_(k)).filter(Boolean);
+  if (plans.length < 2) { showToast('Tick \u2696\ufe0f Compare on at least 2 plans first.'); return; }
+  let ov = document.getElementById('qb-cms-compare');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'qb-cms-compare';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--surface-0);display:flex;flex-direction:column;';
+    document.body.appendChild(ov);
+  }
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const meds = window._qbCmsMeds || [];
+  const th = 'position:sticky;left:0;background:var(--surface-0);z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);min-width:150px;';
+  const td = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:190px;';
+  const row = (label, fn) => `<tr><th style="${th}">${label}</th>${plans.map(p => `<td style="${td}">${fn(p)}</td>`).join('')}</tr>`;
+  const drugCell = (p, m) => {
+    if (p.category === 'MA') return '<span style="color:var(--text-warning);">no drug coverage</span>';
+    if (!p._drugCov) return '<span style="color:var(--text-muted);">not checked</span>';
+    const hit = p._drugCov[m.rxcui];
+    if (!hit) return '<span style="color:var(--text-danger);font-weight:600;">\u2717 not on the list</span>';
+    const notes = [];
+    if (hit.prior_auth) notes.push('prior auth');
+    if (hit.step_therapy) notes.push('step therapy');
+    if (hit.quantity_limit) notes.push('qty limit');
+    return '<span style="color:var(--text-success);font-weight:700;">\u2713 Tier ' + (hit.tier || '?') + '</span>'
+      + (notes.length ? '<div style="font-size:11px;color:var(--text-warning);">' + escWeb(notes.join(', ')) + '</div>' : '');
+  };
+
+  ov.innerHTML = `
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div style="font-weight:800;font-size:15px;">\u2696\ufe0f Comparing ${plans.length} Medicare plans</div>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="cmsCmpClear_();document.getElementById('qb-cms-compare').style.display='none';">Clear picks</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('qb-cms-compare').style.display='none'">\u2715 Back</button>
+    </div>
+    <div style="flex:1;overflow:auto;padding:14px 18px;">
+      <table style="border-collapse:collapse;width:100%;">
+        <thead><tr><th style="${th}"></th>
+          ${plans.map(p => `<td style="${td}border-bottom:1.5px solid var(--border);">
+            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.org_name || '')}</div>
+            <div style="font-size:13px;font-weight:700;margin:2px 0 6px;">${escWeb(p.plan_name)}</div>
+            <div style="font-size:20px;font-weight:800;color:var(--accent,#1d3557);">$${cmsPremium_(p) != null ? Number(cmsPremium_(p)).toFixed(2) : '?'}<span style="font-size:10px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
+            <button class="btn ${cmsAddedSlot_(cmsKey_(p)) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="width:100%;margin-top:8px;"
+              onclick="qbCmsAddPlan_('${escWeb(cmsKey_(p))}');openCmsCompare_();">${cmsAddedSlot_(cmsKey_(p)) >= 0 ? '\u2713 On the quote' : '+ Add to quote'}</button>
+          </td>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${row('Plan type', p => escWeb(p.plan_type || p.category))}
+          ${row('Prescription coverage', p => p.category === 'MA'
+            ? '<span style="color:var(--text-warning);">not included</span>'
+            : '<span style="color:var(--text-success);font-weight:700;">included</span>')}
+          ${row('Max out-of-pocket', p => '<strong>' + money(p.moop) + '</strong>')}
+          ${row('Drug deductible', p => p.category === 'MA' ? '\u2014' : money(p.drug_deductible))}
+          ${row('Star rating', p => p.star_rating ? '\u2b50 ' + escWeb(p.star_rating) + ' of 5' : 'not rated yet')}
+          ${plans.some(p => p.snp_type) ? row('Special Needs Plan', p => p.snp_type ? escWeb(p.snp_type) : '\u2014') : ''}
+          ${meds.map(m => row('\u{1F48A} ' + escWeb(m.name), p => drugCell(p, m))).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  ov.style.display = 'flex';
 }
 
 // A read-only look at everything CMS publishes for one plan.
@@ -14723,7 +14837,7 @@ function openCmsDetail_(planId) {
         Doctor networks and drug lists aren\u2019t part of this data \u2014 check them on the carrier\u2019s own directory
         before enrolling.
       </div>
-      <button class="btn btn-primary btn-sm" style="width:100%;margin-top:14px;" onclick="qbCmsAddPlan_('${escWeb(p.id)}');document.getElementById('qb-cms-detail').style.display='none';">
+      <button class="btn btn-primary btn-sm" style="width:100%;margin-top:14px;" onclick="qbCmsAddPlan_('${escWeb(cmsKey_(p))}');document.getElementById('qb-cms-detail').style.display='none';">
         ${cmsAddedSlot_(p.id) >= 0 ? '\u2713 Added \u2014 remove from quote' : '+ Add this plan to the quote'}</button>
     </div>`;
 }
@@ -14776,21 +14890,11 @@ function qbCmsHydrateOption_(i, o) {
 
 // Add or remove a plan from the quote\u2019s options.
 function qbCmsAddPlan_(planId) {
-  const p = (window._qbCmsPlans || []).find(x => x.id === planId);
-  if (!p) return;
   window._qbCmsSel = window._qbCmsSel || {};
   const at = cmsAddedSlot_(planId);
-  if (at >= 0) {
-    delete window._qbCmsSel[at];
-    ['qb-name-' + at, 'qb-prem-' + at, 'qb-bul-' + at].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
-    });
-    qbCmsOptionView_(at);
-    renderCmsPicker_();
-    qbSectionSummary_();
-    return;
-  }
+  if (at >= 0) { qbCmsRemoveSlot_(at); return; }      // already on the quote
+  const p = cmsFind_(planId);
+  if (!p) return;
   // first free slot
   let slot = -1;
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {

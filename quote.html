@@ -190,6 +190,7 @@
   <div class="bar-inner">
     <div class="count" id="bar-count"></div>
     <button class="btn btn-ghost" id="bar-compare" onclick="enterCompare()" style="display:none;">&#9878;&#65039; Compare side by side</button>
+    <button class="btn btn-ghost" id="bar-clear" onclick="clearCompare()" style="display:none;">&#10005; Clear compare</button>
     <a class="btn btn-ghost" id="bar-book" style="display:none;text-decoration:none;">&#128197; Book a call</a>
     <button class="btn btn-gold" id="bar-send" onclick="sendPicks()" style="display:none;"></button>
   </div>
@@ -533,11 +534,21 @@ function toggleCompare(id, cb) {
     const other = allOpts.find(o => compareSet.has(o.id));
     if (other && (other.line || quote.line) !== (mine.line || quote.line)) {
       cb.checked = false;
-      alert('Compare works within one section at a time \u2014 these are different kinds of coverage.');
+      alert('Compare works within one section at a time \u2014 these are different kinds of coverage.\n\n'
+        + 'Use \u201cClear compare\u201d at the bottom of the screen to start a fresh comparison.');
       return;
     }
     compareSet.add(id);
   } else compareSet.delete(id);
+  refreshBar();
+}
+
+// Untick everything in one go — including the ones scrolled off the screen.
+function clearCompare() {
+  compareSet.clear();
+  document.querySelectorAll('.cmp-toggle input').forEach(cb => { cb.checked = false; });
+  const view = document.getElementById('compare-view');
+  if (view && view.style.display === 'block') exitCompare();
   refreshBar();
 }
 
@@ -560,14 +571,17 @@ function refreshBar() {
   const sendBtn = document.getElementById('bar-send');
   const bookBtn = document.getElementById('bar-book');
   const count = document.getElementById('bar-count');
-  const show = compareSet.size >= 2 || discussSet.size >= 1;
+  const show = compareSet.size >= 1 || discussSet.size >= 1;
   bar.style.display = show ? 'block' : 'none';
   if (!show) return;
   const bits = [];
   if (discussSet.size) bits.push(discussSet.size + ' on your discuss list');
-  if (compareSet.size >= 2) bits.push(compareSet.size + ' to compare');
+  if (compareSet.size === 1) bits.push('1 picked to compare — tick one more');
+  else if (compareSet.size >= 2) bits.push(compareSet.size + ' to compare');
   count.textContent = bits.join(' · ');
   cmpBtn.style.display = compareSet.size >= 2 ? 'inline-block' : 'none';
+  const clearBtn = document.getElementById('bar-clear');
+  if (clearBtn) clearBtn.style.display = compareSet.size ? 'inline-block' : 'none';
   sendBtn.style.display = discussSet.size ? 'inline-block' : 'none';
   sendBtn.textContent = 'Send my list to ' + agentFirst() + ' (' + discussSet.size + ')';
   if (quote.agent_booking_url) {
