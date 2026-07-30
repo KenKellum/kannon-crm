@@ -522,21 +522,30 @@ function cmpTableHtml(list) {
     + (o.is_recommended ? 'background:#fffdf5;' : '');
   const rowH = (label, fn) => `<tr><th style="${th}">${label}</th>${list.map(o => `<td style="${td(o)}">${fn(o)}</td>`).join('')}</tr>`;
   return `<table id="cmp-table" style="border-collapse:collapse;background:#fff;border:1px solid #eef2f7;border-radius:12px;">
-    <thead><tr>
+    <thead>
+    <tr>
       <th style="${th}"></th>
       ${list.map(o => {
         const pm = o.plan_meta;
-        const credit = (pm.full_premium != null && pm.net_premium != null && pm.full_premium > pm.net_premium) ? pm.full_premium - pm.net_premium : 0;
         const metalTip = METAL_TIPS[pm.metal], typeTip = TYPE_TIPS[String(pm.plan_type || '').toUpperCase()];
-        return `<td style="${td(o)}border-bottom:1.5px solid #e2e8f0;">
+        return `<td style="${td(o)}border-bottom:none;padding-bottom:0;">
           ${o.is_recommended ? '<div style="color:#b3903a;font-size:10px;font-weight:800;letter-spacing:.8px;">&#11088; RECOMMENDED</div>' : ''}
           <div class="pm-chips" style="margin:4px 0 6px;">
             ${pm.metal ? `<span class="pm-chip m-${esc(pm.metal)}"${metalTip ? ` data-tip="${esc(metalTip)}" tabindex="0"` : ''}>${esc(pm.metal)}</span>` : ''}
             ${pm.plan_type ? `<span class="pm-chip"${typeTip ? ` data-tip="${esc(typeTip)}" tabindex="0"` : ''}>${esc(pm.plan_type)}</span>` : ''}
           </div>
           <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#64748b;">${esc(o.carrier_name)}</div>
-          <div style="font-size:13px;font-weight:700;margin:2px 0 6px;color:var(--ink);">${esc(o.display_name)}</div>
-          <div style="font-size:22px;font-weight:800;color:var(--brand);">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<span style="font-size:10px;font-weight:500;color:#64748b;"> /mo</span></div>
+          <div style="font-size:13px;font-weight:700;margin:2px 0 0;color:var(--ink);">${esc(o.display_name)}</div>
+        </td>`;
+      }).join('')}
+    </tr>
+    <tr>
+      <th style="${th}border-bottom:1.5px solid #e2e8f0;"></th>
+      ${list.map(o => {
+        const pm = o.plan_meta;
+        const credit = (pm.full_premium != null && pm.net_premium != null && pm.full_premium > pm.net_premium) ? pm.full_premium - pm.net_premium : 0;
+        return `<td style="${td(o)}border-bottom:1.5px solid #e2e8f0;vertical-align:bottom;padding-top:6px;">
+          <div style="font-size:22px;font-weight:800;color:var(--brand);line-height:1.1;">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<span style="font-size:10px;font-weight:500;color:#64748b;"> /mo</span></div>
           ${credit ? `<div style="font-size:10.5px;color:#64748b;">full $${Number(pm.full_premium).toFixed(0)} − <span style="color:#15803d;font-weight:700;">$${credit.toFixed(0)} credit</span></div>` : ''}
         </td>`;
       }).join('')}
