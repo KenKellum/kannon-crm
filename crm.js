@@ -10743,6 +10743,7 @@ async function requoteFromQuote_(quoteId, dealId) {
       if (o.plan_meta && o.plan_meta.src === 'aca') qbAcaHydrateOption_(i, o);
     });
     showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
+    qbAcaCoverSelected_();
   }, 350);
 }
 
@@ -10880,6 +10881,7 @@ async function openQuoteBuilder(dealId, opts) {
   window._qbContact = contact;
   window._qbRequoteOpt = {};
   window._qbAutoOpen = false;   // automation group starts collapsed
+  window._qbCovGrpOpen = {};    // ...and so does each card's coverage detail
   // Phase 2: the quote is tied to an intake, and the agent can see/change which
   window._qbIntakeSessionId = opts.intakeSessionId || null;
   window._qbIntakeChoices = [];
@@ -12900,6 +12902,51 @@ function _covIsYes_(v) {
   return s === 'covered' || s === 'true' || s === 'yes' || s === 'in network' || s === 'innetwork';
 }
 
+// A re-quoted option has a plan id and the client has doctors and drugs on
+// file, so we can answer "is my doctor in network" the moment the dialog
+// opens \u2014 no tool run required. One or two calls, capped at 10 plan ids.
+async function qbAcaCoverSelected_() {
+  const sel = window._qbAcaSel || {};
+  const plans = Object.keys(sel).map(k => sel[k]).filter(p => p && p.id);
+  const ids = [...new Set(plans.map(p => p.id))].slice(0, 10);
+  if (!ids.length) return;
+  if (!(window._qbAcaDocs || []).length && !(window._qbAcaMeds || []).length) {
+    const lists = await qbLoadClientLists_();
+    window._qbAcaDocs = (lists.providers || []).filter(d => d.npi).map(d => ({ npi: d.npi, name: d.name }));
+    window._qbAcaMeds = (lists.medications || []).filter(m => m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+  }
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  if (!docs.length && !meds.length) return;
+  const year = plans[0]._year || window._qbAcaYear || new Date().getFullYear();
+  const byId = {}; plans.forEach(p => { p._docCov = p._docCov || {}; p._medCov = p._medCov || {}; byId[p.id] = p; });
+  window._qbAcaCovBusy = true;
+  qbAcaOptionCardsPaint_();
+  const jobs = [];
+  if (docs.length) {
+    jobs.push(acaProxy_('aca_provider_coverage', { planids: ids.join(','), providers: docs.map(d => d.npi).join(','), year: year })
+      .then(r => {
+        const rows = (r.data && (r.data.coverage || r.data.plans || r.data)) || [];
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+          const p = byId[row.plan_id || row.planid || row.id];
+          if (p) p._docCov[row.npi || row.provider_npi] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
+        });
+      }).catch(e => console.error('provider coverage (saved plans):', e)));
+  }
+  if (meds.length) {
+    jobs.push(acaProxy_('aca_drug_coverage', { planids: ids.join(','), drugs: meds.map(m => m.rxcui).join(','), year: year })
+      .then(r => {
+        const rows = (r.data && (r.data.coverage || r.data)) || [];
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+          const p = byId[row.plan_id || row.planid || row.id];
+          if (p) p._medCov[row.rxcui] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
+        });
+      }).catch(e => console.error('drug coverage (saved plans):', e)));
+  }
+  try { await Promise.all(jobs); } catch (e) { console.error('saved-plan coverage:', e); }
+  window._qbAcaCovBusy = false;
+  qbAcaOptionCardsPaint_();
+}
+
 async function qbAcaCheckCoverage_() {
   const plans = window._qbAcaPlans || [];
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
@@ -12923,6 +12970,7 @@ async function qbAcaCheckCoverage_() {
     if (!force && (now - lastPaint < 1200 || window._qbPkBasisOpen)) return;
     lastPaint = now;
     qbAcaRenderBrowser_();
+    qbAcaOptionCardsPaint_();
   };
   const jobs = [];
   for (let i = 0; i < plans.length; i += 10) {   // API cap: 10 plan IDs per request
@@ -12955,6 +13003,15 @@ async function qbAcaCheckCoverage_() {
   if (res) res.innerHTML = prev;
   qbAcaRefreshOptionLabels_();
   paint(true);
+  qbAcaOptionCardsPaint_();
+}
+
+// Coverage answers arrive after the card is already on screen; without this
+// the card keeps showing whatever it knew when it was drawn.
+function qbAcaOptionCardsPaint_() {
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    if ((window._qbAcaSel || {})[i]) qbAcaOptionView_(i);
+  }
 }
 
 function qbAcaRefreshOptionLabels_() {
@@ -13163,10 +13220,15 @@ function qbAcaCovLines_(p) {
   const SHOWN = 3;                       // before the row offers "+N more"
   window._qbCovExp = window._qbCovExp || {};
 
-  const pill = (known, ok, label) => {
+  // Three different states, three different words: the plan answered, the
+  // plan was asked and said nothing, or nobody has asked yet.
+  const pill = (known, ok, label, asked) => {
     const tone = known ? (ok ? 'ok' : 'bad') : 'unk';
     const mark = known ? (ok ? '\u2713' : '\u2717') : (busy ? '\u23f3' : '?');
-    const suffix = known ? '' : (busy ? ' <span style="opacity:.7;">checking\u2026</span>' : ' <span style="opacity:.7;">(not reported)</span>');
+    const suffix = known ? ''
+      : (busy ? ' <span style="opacity:.7;">checking\u2026</span>'
+             : (asked ? ' <span style="opacity:.7;">(not reported)</span>'
+                      : ' <span style="opacity:.7;">(not checked yet)</span>'));
     return `<span class="pk-pill ${tone}">${mark} ${label}${suffix}</span>`;
   };
 
@@ -13181,7 +13243,7 @@ function qbAcaCovLines_(p) {
       ${show.map(x => {
         const k = keyOf(x);
         const known = cover(p) && k in cover(p);
-        return pill(known, known && cover(p)[k], escWeb(labelOf(x)));
+        return pill(known, known && cover(p)[k], escWeb(labelOf(x)), !!cover(p));
       }).join(' ')}
       ${hidden > 0 ? `<a href="#" onclick="event.stopPropagation();window._qbCovExp['${escWeb(expKey)}']=true;renderPickerBody_();return false;"
           style="font-size:11px;font-weight:700;color:var(--accent,#1d3557);text-decoration:none;line-height:18px;">+${hidden} more</a>` : ''}
@@ -13192,6 +13254,51 @@ function qbAcaCovLines_(p) {
 
   return row('\u{1FA7A}', 'doc', docs, pp => pp._docCov, d => d.npi, d => d.name.split(' \u00b7 ')[0])
        + row('\u{1F48A}', 'med', meds, pp => pp._medCov, m => m.rxcui, m => m.name);
+}
+
+// On an option card this is supporting detail, not the headline \u2014 it opens
+// on request and, closed, still says how the plan did.
+function qbAcaCovGroupToggle_(i) {
+  window._qbCovGrpOpen = window._qbCovGrpOpen || {};
+  window._qbCovGrpOpen[i] = !window._qbCovGrpOpen[i];
+  qbAcaOptionView_(i);
+}
+
+function qbAcaCovSummary_(p) {
+  const busy = !!window._qbAcaCovBusy;
+  const bits = [];
+  let tone = 'var(--text-success)';
+  const part = (list, cov, keyOf, icon, okWord) => {
+    if (!list.length) return;
+    const known = cov ? list.filter(x => keyOf(x) in cov) : [];
+    if (!known.length) {
+      tone = 'var(--text-muted)';
+      bits.push(icon + ' ' + list.length + (busy ? ' \u00b7 checking\u2026' : (cov ? ' \u00b7 no answer' : ' \u00b7 not checked yet')));
+      return;
+    }
+    const ok = known.filter(x => cov[keyOf(x)]).length;
+    if (ok < list.length && tone === 'var(--text-success)') tone = 'var(--text-warning)';
+    bits.push(icon + ' ' + ok + ' of ' + list.length + ' ' + okWord);
+  };
+  part(window._qbAcaDocs || [], p._docCov, d => d.npi, '\u{1FA7A}', 'in network');
+  part(window._qbAcaMeds || [], p._medCov, m => m.rxcui, '\u{1F48A}', 'covered');
+  return { text: bits.join(' \u00b7 '), tone: tone };
+}
+
+function qbAcaCovGroup_(p, i) {
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  if (!docs.length && !meds.length) return '';
+  window._qbCovGrpOpen = window._qbCovGrpOpen || {};
+  const open = !!window._qbCovGrpOpen[i];
+  const sum = qbAcaCovSummary_(p);
+  return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
+    <button type="button" onclick="qbAcaCovGroupToggle_(${i})"
+      style="width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;font-weight:700;color:var(--text-muted);">${open ? '\u25BE' : '\u25B8'} Providers/Facilities and Medications</span>
+      <span style="flex:1;min-width:0;font-size:11px;color:${sum.tone};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sum.text}</span>
+    </button>
+    ${open ? qbAcaCovLines_(p) : ''}
+  </div>`;
 }
 
 function qbAcaAddedSlot_(planId) {
@@ -13901,7 +14008,7 @@ function qbAcaOptionView_(i) {
           ${qbAcaCostFact_('Max out-of-pocket', p.moop, p.moop_family)}
         </div>
       </div>
-      ${qbAcaCovLines_(p)}
+      ${qbAcaCovGroup_(p, i)}
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <button type="button" class="btn btn-outline btn-sm" onclick="openPlanDetail_('${escWeb(p.id)}')">Plan details</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="openAcaPicker_()">\u{1F5D6} Change plan</button>
