@@ -13906,6 +13906,7 @@ function qbAcaHydrateOption_(i, o) {
     _snapshot: true, _year: m.year || null, _links: m.links || null,
   };
   if (m.family_quote) window._qbAcaFamilyQuote = true;
+  if (m.csr && !window._qbAcaCsr) window._qbAcaCsr = m.csr;
   qbAcaApptWarn_(i, window._qbAcaSel[i]);
   qbAcaOptionView_(i);
 }
