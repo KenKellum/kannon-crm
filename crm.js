@@ -6890,11 +6890,12 @@ async function renderAdmin() {
 
   let _cmsLine = 'No CMS plan data loaded yet.';
   {
-    const { data: cs } = await supabaseClient.from('cms_plans').select('plan_year,state');
+    const { data: cs } = await supabaseClient.from('cms_plan_summary')
+      .select('plan_year,plans,states,counties').order('plan_year', { ascending: false });
     if (cs && cs.length) {
-      const agg = {};
-      cs.forEach(x => { const k = x.plan_year + ' ' + x.state; agg[k] = (agg[k] || 0) + 1; });
-      _cmsLine = Object.keys(agg).sort().map(k => '<strong>' + k + '</strong>: ' + agg[k] + ' plans').join(' &middot; ');
+      _cmsLine = cs.map(x => '<strong>' + x.plan_year + '</strong>: '
+        + Number(x.plans).toLocaleString() + ' plans across ' + x.states + ' state'
+        + (x.states === 1 ? '' : 's') + ' and ' + Number(x.counties).toLocaleString() + ' counties').join('<br>');
     }
   }
   const cmsSection = `
@@ -14383,6 +14384,30 @@ const CMS_COLS = {
   star: 'overall star rating',
 };
 
+function cmsRow_(cells, idx, st) {
+  const star = (cells[idx.star] || '').trim();
+  const snp = (cells[idx.snp] || '').trim();
+  return {
+    plan_year: parseInt(cells[idx.year]) || null,
+    category: (cells[idx.category] || '').trim(),
+    state: st,
+    county: (cells[idx.county] || '').trim(),
+    contract_id: (cells[idx.contract] || '').trim(),
+    plan_id: (cells[idx.plan] || '').trim(),
+    segment_id: (cells[idx.segment] || '0').trim() || '0',
+    org_name: (cells[idx.org] || '').trim() || null,
+    plan_name: (cells[idx.name] || '').trim(),
+    plan_type: (cells[idx.type] || '').trim() || null,
+    snp_type: /not applicable|^$/i.test(snp) ? null : snp,
+    part_c_premium: cmsMoney_(cells[idx.partc]),
+    part_d_premium: cmsMoney_(cells[idx.partd]),
+    consolidated_premium: cmsMoney_(cells[idx.consolidated]),
+    drug_deductible: cmsMoney_(cells[idx.deductible]),
+    moop: cmsMoney_(cells[idx.moop]),
+    star_rating: /not applicable|plan too new|^$/i.test(star) ? null : star,
+  };
+}
+
 function cmsMoney_(v) {
   v = String(v == null ? '' : v).replace(/[$,\s]/g, '');
   if (!v || /not applicable|n\/a/i.test(v)) return null;
@@ -14408,21 +14433,50 @@ function openCmsImportModal() {
   showModal('Import CMS Landscape File', `
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
       Download the current <strong>Landscape file</strong> (zip) from cms.gov &rarr; Prescription Drug Coverage,
-      unzip it, and choose the big CSV here. Only the states you list are imported.
+      unzip it, and choose the big CSV here.
     </p>
-    <label>States to import (2-letter, comma-separated)</label>
-    <input type="text" id="cms-states" value="MT" />
+    <label>States to import</label>
+    <input type="text" id="cms-states" value="ALL" placeholder="ALL, or e.g. MT, WY, ID" />
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">
+      <strong>ALL</strong> loads every state and territory &mdash; that is the whole country, so give it a few
+      minutes and leave this window open. Otherwise list 2-letter codes separated by commas.
+    </div>
     <label>Landscape CSV file</label>
     <input type="file" id="cms-file" accept=".csv" />
     <div id="cms-progress" style="font-size:12px;color:var(--text-muted);margin-top:10px;"></div>
   `, async () => {
     const file = document.getElementById('cms-file').files[0];
-    const states = document.getElementById('cms-states').value.split(',')
-      .map(x => x.trim().toUpperCase()).filter(x => /^[A-Z]{2}$/.test(x));
+    const raw = document.getElementById('cms-states').value.trim();
+    const allStates = /^all$/i.test(raw) || raw === '';
+    const states = raw.split(',').map(x => x.trim().toUpperCase()).filter(x => /^[A-Z]{2}$/.test(x));
     if (!file) { showToast('Choose the landscape CSV file.'); return false; }
-    if (!states.length) { showToast('List at least one state.'); return false; }
+    if (!allStates && !states.length) { showToast('List at least one state, or type ALL.'); return false; }
     const prog = document.getElementById('cms-progress');
-    prog.textContent = 'Reading file…';
+    const label = allStates ? 'every state' : states.join(', ');
+    const t0 = Date.now();
+    prog.textContent = 'Reading file\u2026';
+
+    // A national file is far too big to hold in memory and post at the end,
+    // so rows go to the database as they're parsed. The old year's rows are
+    // cleared once, on the first flush.
+    let wiped = false, loaded = 0, failed = null;
+    const flush = async (rows, year) => {
+      if (!rows.length || failed) return;
+      if (!wiped) {
+        let del = supabaseClient.from('cms_plans').delete().eq('plan_year', year);
+        if (!allStates) del = del.in('state', states);
+        const { error } = await del;
+        if (error) { failed = error.message; return; }
+        wiped = true;
+      }
+      for (let i = 0; i < rows.length; i += 1000) {
+        const { error } = await supabaseClient.from('cms_plans').insert(rows.slice(i, i + 1000));
+        if (error) { failed = error.message; return; }
+        loaded += Math.min(1000, rows.length - i);
+      }
+      const secs = Math.round((Date.now() - t0) / 1000);
+      prog.textContent = 'Loaded ' + loaded.toLocaleString() + ' plans so far \u2014 ' + secs + 's elapsed\u2026';
+    };
 
     // Stream the file in chunks; carry partial lines between chunks
     const CHUNK = 4 * 1024 * 1024;
@@ -14446,45 +14500,31 @@ function openCmsImportModal() {
         seen++;
         const cells = cmsSplitLine_(line);
         const st = (cells[idx.state] || '').trim();
-        if (!states.includes(st)) continue;
+        if (!allStates && !states.includes(st)) continue;
+        if (allStates && !/^[A-Z]{2}$/.test(st)) continue;
         if (idx.sanctioned !== -1 && (cells[idx.sanctioned] || '').trim() === 'Yes') continue;
         const star = (cells[idx.star] || '').trim();
         year = parseInt(cells[idx.year]) || year;
-        kept.push({
-          plan_year: parseInt(cells[idx.year]) || null,
-          category: (cells[idx.category] || '').trim(),
-          state: st,
-          county: (cells[idx.county] || '').trim(),
-          contract_id: (cells[idx.contract] || '').trim(),
-          plan_id: (cells[idx.plan] || '').trim(),
-          segment_id: (cells[idx.segment] || '0').trim() || '0',
-          org_name: (cells[idx.org] || '').trim() || null,
-          plan_name: (cells[idx.name] || '').trim(),
-          plan_type: (cells[idx.type] || '').trim() || null,
-          snp_type: /not applicable|^$/i.test((cells[idx.snp] || '').trim()) ? null : cells[idx.snp].trim(),
-          part_c_premium: cmsMoney_(cells[idx.partc]),
-          part_d_premium: cmsMoney_(cells[idx.partd]),
-          consolidated_premium: cmsMoney_(cells[idx.consolidated]),
-          drug_deductible: cmsMoney_(cells[idx.deductible]),
-          moop: cmsMoney_(cells[idx.moop]),
-          star_rating: /not applicable|plan too new|^$/i.test(star) ? null : star,
-        });
+        kept.push(cmsRow_(cells, idx, st));
       }
-      prog.textContent = 'Scanned ' + seen.toLocaleString() + ' plans — keeping ' + kept.length + ' for ' + states.join(', ') + '…';
+      await flush(kept.filter(k => k.plan_year && k.plan_name && k.contract_id), year);
+      kept = [];
+      if (failed) { prog.innerHTML = '<span style="color:var(--danger);">Import stopped: ' + escWeb(failed) + '</span>'; return false; }
+      prog.textContent = 'Scanned ' + seen.toLocaleString() + ' rows \u00b7 loaded ' + loaded.toLocaleString() + ' plans for ' + label + '\u2026';
     }
-    kept = kept.filter(k => k.plan_year && k.plan_name && k.contract_id);
-    if (!kept.length) { prog.innerHTML = '<span style="color:var(--danger);">No plans found for ' + states.join(', ') + '.</span>'; return false; }
+    // whatever the final partial chunk left behind
+    if (carry.trim() && header) {
+      const cells = cmsSplitLine_(carry);
+      const st = (cells[idx.state] || '').trim();
+      if ((allStates ? /^[A-Z]{2}$/.test(st) : states.includes(st)) && cells[idx.contract]) {
+        kept.push(cmsRow_(cells, idx, st));
+      }
+    }
+    await flush(kept.filter(k => k.plan_year && k.plan_name && k.contract_id), year);
+    if (failed) { prog.innerHTML = '<span style="color:var(--danger);">Import stopped: ' + escWeb(failed) + '</span>'; return false; }
+    if (!loaded) { prog.innerHTML = '<span style="color:var(--danger);">No plans found for ' + escWeb(label) + '.</span>'; return false; }
 
-    prog.textContent = 'Replacing existing data for ' + year + ' / ' + states.join(', ') + '…';
-    const { error: eDel } = await supabaseClient.from('cms_plans')
-      .delete().eq('plan_year', year).in('state', states);
-    if (eDel) { showToast('Error: ' + eDel.message); return false; }
-    for (let i = 0; i < kept.length; i += 200) {
-      const { error } = await supabaseClient.from('cms_plans').insert(kept.slice(i, i + 200));
-      if (error) { showToast('Error at row ' + i + ': ' + error.message); return false; }
-      prog.textContent = 'Loaded ' + Math.min(i + 200, kept.length) + ' of ' + kept.length + '…';
-    }
-    showToast('Imported ' + kept.length + ' plans for ' + states.join(', ') + ' (' + year + ').');
+    showToast('Imported ' + loaded.toLocaleString() + ' plans for ' + label + ' (' + year + ').');
     renderAdmin();
   }, { confirmLabel: 'Import' });
 }
