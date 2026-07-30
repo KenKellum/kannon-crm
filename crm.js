@@ -10786,6 +10786,15 @@ function qbMgRefresh_() {
     bars.push(['<div class="pk-bar warn" style="margin-bottom:5px;">No date of birth or Part B date on file, so we '
       + 'cannot tell whether Plans C and F are open to them. Add one before quoting those.</div>']);
   }
+  // Someone years away from 65 shouldn't be shown a Medigap window at all.
+  const age65 = prof.age != null ? prof.age : (prof.dob ? qbAgeFrom_(prof.dob) : null);
+  if (!prof.part_b_date && age65 != null && age65 < 64) {
+    bars.length = 0;
+    bars.push(['<div class="pk-bar warn" style="margin-bottom:5px;">They are <strong>' + age65
+      + '</strong> — not Medicare-eligible yet. Medicare Supplement starts at 65, or earlier on disability. '
+      + 'If they are eligible early, enter their Part B start date.</div>']);
+  }
+
   const src = window._qbMgSource || {};
   const notes = [];
   if (prof.dob) notes.push('Age ' + (qbAgeFrom_(prof.dob) ?? '?') + ' from their date of birth'
