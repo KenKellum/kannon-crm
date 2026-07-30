@@ -12930,6 +12930,7 @@ async function qbAcaCoverSelected_() {
           const p = byId[row.plan_id || row.planid || row.id];
           if (p) p._docCov[row.npi || row.provider_npi] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
         });
+        qbAcaOptionCardsPaint_();
       }).catch(e => console.error('provider coverage (saved plans):', e)));
   }
   if (meds.length) {
@@ -12940,11 +12941,21 @@ async function qbAcaCoverSelected_() {
           const p = byId[row.plan_id || row.planid || row.id];
           if (p) p._medCov[row.rxcui] = _covIsYes_(row.coverage != null ? row.coverage : row.covered);
         });
+        qbAcaOptionCardsPaint_();
       }).catch(e => console.error('drug coverage (saved plans):', e)));
   }
-  try { await Promise.all(jobs); } catch (e) { console.error('saved-plan coverage:', e); }
+  try { await qbCovDeadline_(jobs); } catch (e) { console.error('saved-plan coverage:', e); }
   window._qbAcaCovBusy = false;
   qbAcaOptionCardsPaint_();
+}
+
+// 45s and we stop saying "checking". An answer that never comes must not
+// look the same as one still on its way.
+function qbCovDeadline_(jobs, ms) {
+  return Promise.race([
+    Promise.all(jobs),
+    new Promise(r => setTimeout(r, ms || 45000)),
+  ]);
 }
 
 async function qbAcaCheckCoverage_() {
@@ -12972,9 +12983,14 @@ async function qbAcaCheckCoverage_() {
     qbAcaRenderBrowser_();
     qbAcaOptionCardsPaint_();
   };
+  // The plans already on the quote are the ones the agent is looking at, so
+  // they go in the first batch instead of wherever the list happens to put
+  // them \u2014 their cards then answer on the first round-trip.
+  const chosen = new Set(Object.keys(window._qbAcaSel || {}).map(k => (window._qbAcaSel[k] || {}).id).filter(Boolean));
+  const queue = chosen.size ? plans.filter(p => chosen.has(p.id)).concat(plans.filter(p => !chosen.has(p.id))) : plans;
   const jobs = [];
-  for (let i = 0; i < plans.length; i += 10) {   // API cap: 10 plan IDs per request
-    const ids = plans.slice(i, i + 10).map(p => p.id).join(',');
+  for (let i = 0; i < queue.length; i += 10) {   // API cap: 10 plan IDs per request
+    const ids = queue.slice(i, i + 10).map(p => p.id).join(',');
     if (docs.length) {
       jobs.push(acaProxy_('aca_provider_coverage', { planids: ids, providers: docs.map(d => d.npi).join(','), year: year })
         .then(r => {
@@ -12998,7 +13014,7 @@ async function qbAcaCheckCoverage_() {
         }).catch(e => console.error('drug coverage:', e)));
     }
   }
-  try { await Promise.all(jobs); } catch (e) { console.error('coverage check:', e); }
+  try { await qbCovDeadline_(jobs); } catch (e) { console.error('coverage check:', e); }
   window._qbAcaCovBusy = false;
   if (res) res.innerHTML = prev;
   qbAcaRefreshOptionLabels_();
@@ -13213,7 +13229,17 @@ function qbAcaCostFact_(label, ind, fam) {
     '</span>';
 }
 
-function qbAcaCovLines_(p) {
+// The same rows render in two places. Repaint whichever one the link is in:
+// slot is the option number on a card, and null inside the picker.
+function qbCovExpand_(key, open, slot) {
+  window._qbCovExp = window._qbCovExp || {};
+  window._qbCovExp[key] = open;
+  if (document.getElementById('qb-aca-picker')) renderPickerBody_();
+  if (slot !== null && slot !== undefined && slot !== '') qbAcaOptionView_(Number(slot));
+  return false;
+}
+
+function qbAcaCovLines_(p, slot) {
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
   if (!docs.length && !meds.length) return '';
   const busy = !!window._qbAcaCovBusy;
@@ -13245,9 +13271,9 @@ function qbAcaCovLines_(p) {
         const known = cover(p) && k in cover(p);
         return pill(known, known && cover(p)[k], escWeb(labelOf(x)), !!cover(p));
       }).join(' ')}
-      ${hidden > 0 ? `<a href="#" onclick="event.stopPropagation();window._qbCovExp['${escWeb(expKey)}']=true;renderPickerBody_();return false;"
+      ${hidden > 0 ? `<a href="#" onclick="event.stopPropagation();return qbCovExpand_('${escWeb(expKey)}', true, '${slot === undefined || slot === null ? '' : slot}');"
           style="font-size:11px;font-weight:700;color:var(--accent,#1d3557);text-decoration:none;line-height:18px;">+${hidden} more</a>` : ''}
-      ${open && list.length > SHOWN ? `<a href="#" onclick="event.stopPropagation();window._qbCovExp['${escWeb(expKey)}']=false;renderPickerBody_();return false;"
+      ${open && list.length > SHOWN ? `<a href="#" onclick="event.stopPropagation();return qbCovExpand_('${escWeb(expKey)}', false, '${slot === undefined || slot === null ? '' : slot}');"
           style="font-size:11px;color:var(--text-muted);text-decoration:none;line-height:18px;">less</a>` : ''}
     </div>`;
   };
@@ -13297,7 +13323,7 @@ function qbAcaCovGroup_(p, i) {
       <span style="font-size:11px;font-weight:700;color:var(--text-muted);">${open ? '\u25BE' : '\u25B8'} Providers/Facilities and Medications</span>
       <span style="flex:1;min-width:0;font-size:11px;color:${sum.tone};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sum.text}</span>
     </button>
-    ${open ? qbAcaCovLines_(p) : ''}
+    ${open ? qbAcaCovLines_(p, i) : ''}
   </div>`;
 }
 
