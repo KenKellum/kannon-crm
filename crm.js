@@ -10555,14 +10555,15 @@ function mgCardHtml_(p) {
   const slot = mgAddedSlot_(letter);
   const rate = (window._qbMgRates || {})[letter];
   return `<div class="pk-card ${slot >= 0 ? 'is-selected' : ''}"
-      style="border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;height:100%;">
+      style="border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;height:100%;cursor:pointer;"
+      onclick="openMgDetail_('${escWeb(letter)}')">
       ${slot >= 0 ? `<div class="pk-sel-badge">\u2713 OPTION ${qbOptionNo_(slot)}</div>` : ''}
       <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
         <span style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Plan</span>
         <span style="font-size:22px;font-weight:800;color:var(--accent,#c8a84b);line-height:1;">${escWeb(letter)}</span>
         <span style="font-size:13px;font-weight:700;">${escWeb(title.split('\u2014')[1] ? title.split('\u2014')[1].trim() : title)}</span>
-        <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer;">
-          <input type="checkbox" ${(window._qbMgCmp || new Set()).has(letter) ? 'checked' : ''}
+        <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="event.stopPropagation();">
+          <input type="checkbox" ${(window._qbMgCmp || new Set()).has(letter) ? 'checked' : ''} onclick="event.stopPropagation();"
             onchange="mgCmpToggle_('${escWeb(letter)}', this)" style="width:13px;height:13px;" /> \u2696\ufe0f Compare</label>
       </div>
       <ul style="list-style:none;margin:9px 0 0;padding:0;">
@@ -10588,14 +10589,14 @@ function mgCardHtml_(p) {
             </div>
             <div style="font-size:15px;font-weight:800;color:var(--accent,#1d3557);white-space:nowrap;">$${q.rate.toFixed(2)}</div>
             <button type="button" class="btn ${mgAddedSlot_(letter) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
-              onclick="qbMgAddPlan_('${escWeb(letter)}','${escWeb(q.product_id)}')">Add</button>
+              onclick="event.stopPropagation();qbMgAddPlan_('${escWeb(letter)}','${escWeb(q.product_id)}')">Add</button>
           </div>`).join('')}
         </div>`;
       })()}
       <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
         <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
-          onclick="qbMgAddPlan_('${escWeb(letter)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
-        <button type="button" class="btn btn-outline btn-sm" onclick="openMgDetail_('${escWeb(letter)}')">Plan details</button>
+          onclick="event.stopPropagation();qbMgAddPlan_('${escWeb(letter)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();openMgDetail_('${escWeb(letter)}')">Plan details</button>
       </div>
     </div>`;
 }
@@ -10675,10 +10676,15 @@ function mgCmpToggle_(letter, cb) {
 
 function mgCmpClear_() { window._qbMgCmp.clear(); renderMedigapPicker_(); }
 
+// Built to match the Medicare Advantage comparison, because an agent should
+// not have to learn a different screen for every product line. High-deductible
+// versions get their own column \u2014 they are a real choice, not a footnote.
 function openMgCompare_() {
-  const letters = ['A','B','C','D','F','G','K','L','M','N'].filter(L => window._qbMgCmp.has(L));
-  const extras = [...window._qbMgCmp].filter(L => !letters.includes(L));   // HDG / HDF
-  if (window._qbMgCmp.size < 2) { showToast('Tick \u2696\ufe0f Compare on at least 2 plans first.'); return; }
+  const picked = [...window._qbMgCmp];
+  if (picked.length < 2) { showToast('Tick \u2696\ufe0f Compare on at least 2 plans first.'); return; }
+  const order = ['A','B','C','D','F','HDF','G','HDG','K','L','M','N'];
+  const letters = order.filter(L => picked.includes(L)).concat(picked.filter(L => !order.includes(L)));
+
   let ov = document.getElementById('qb-mg-compare');
   if (!ov) {
     ov = document.createElement('div');
@@ -10686,21 +10692,62 @@ function openMgCompare_() {
     ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--surface-0);display:flex;flex-direction:column;';
     document.body.appendChild(ov);
   }
-  const rates = window._qbMgRates || {};
+
+  const th = 'position:sticky;left:0;background:var(--surface-0);z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);min-width:230px;';
+  const td = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:170px;text-align:center;';
+  const row = (label, fn) => `<tr><th style="${th}">${label}</th>${letters.map(L => `<td style="${td}">${fn(L)}</td>`).join('')}</tr>`;
+  const baseOf = L => String(L).replace(/^HD/, '');
+  const cheapest = L => {
+    const qs = (window._qbMgQuotes || {})[L] || [];
+    return qs.length ? qs[0] : null;
+  };
+
   ov.innerHTML = `
     <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="font-weight:800;font-size:15px;">\u2696\ufe0f Comparing ${window._qbMgCmp.size} supplement plans</div>
+      <div style="font-weight:800;font-size:15px;">\u2696\ufe0f Comparing ${letters.length} supplement plans</div>
+      <div style="font-size:12px;color:var(--text-muted);">${escWeb(qbMgProfile_().state || '')}${qbMgProfile_().age ? ' \u00b7 age ' + qbMgProfile_().age : ''}</div>
       <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="mgCmpClear_();document.getElementById('qb-mg-compare').style.display='none';">Clear picks</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('qb-mg-compare').style.display='none'">\u2715 Back</button>
     </div>
+
     <div style="flex:1;overflow:auto;padding:14px 18px;">
-      ${letters.length >= 2 ? mgGridHtml_(letters) : '<div style="color:var(--text-muted);font-size:13px;">Pick two lettered plans to see the benefit grid.</div>'}
-      ${extras.length ? `<div style="margin-top:14px;font-size:12px;color:var(--text-muted);">
-        Also picked: ${extras.map(e => escWeb('Plan ' + e)).join(', ')} \u2014 same benefits as the matching letter once the
-        yearly high deductible is met.</div>` : ''}
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
-        ${[...window._qbMgCmp].map(L => `<button class="btn ${mgAddedSlot_(L) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
-          onclick="qbMgAddPlan_('${escWeb(L)}');openMgCompare_();">${mgAddedSlot_(L) >= 0 ? '\u2713 Plan ' + escWeb(L) + ' on the quote' : '+ Add Plan ' + escWeb(L)}</button>`).join('')}
+      <table style="border-collapse:collapse;width:100%;">
+        <thead><tr><th style="${th}"></th>
+          ${letters.map(L => {
+            const q = cheapest(L);
+            const slot = mgAddedSlot_(L);
+            return `<td style="${td}border-bottom:1.5px solid var(--border);">
+              <div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Plan</div>
+              <div style="font-size:24px;font-weight:800;color:var(--accent,#c8a84b);line-height:1.1;">${escWeb(L)}</div>
+              ${String(L).indexOf('HD') === 0 ? '<div style="font-size:10px;color:var(--text-warning);">high deductible</div>' : ''}
+              ${q ? `<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-top:6px;">${escWeb(q.carrier_name)}</div>
+                     <div style="font-size:19px;font-weight:800;color:var(--accent,#1d3557);">$${q.rate.toFixed(2)}<span style="font-size:10px;font-weight:500;color:var(--text-muted);"> /mo</span></div>`
+                  : '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">no rate chart</div>'}
+              <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="width:100%;margin-top:8px;"
+                onclick="qbMgAddPlan_('${escWeb(L)}'${q ? ",'" + escWeb(q.product_id) + "'" : ''});openMgCompare_();">
+                ${slot >= 0 ? '\u2713 On the quote' : '+ Add to quote'}</button>
+            </td>`;
+          }).join('')}
+        </tr></thead>
+        <tbody>
+          ${MEDIGAP_GRID.rows.map(([label, byLetter]) =>
+            row(escWeb(label), L => MEDIGAP_MARK[byLetter[baseOf(L)] || 'none'])).join('')}
+          ${row('Yearly out-of-pocket limit', L => (baseOf(L) === 'K' || baseOf(L) === 'L')
+            ? '<span style="color:var(--text-success);font-weight:800;">\u2713</span>' : MEDIGAP_MARK.none)}
+          ${letters.some(L => String(L).indexOf('HD') === 0)
+            ? row('Yearly deductible first', L => String(L).indexOf('HD') === 0
+              ? '<span style="color:var(--text-warning);font-weight:700;">Yes</span>' : MEDIGAP_MARK.none) : ''}
+          ${letters.some(L => cheapest(L)) ? row('How the price changes', L => {
+            const q = cheapest(L);
+            const t = q && { 'attained-age': 'Rises with age', 'issue-age': 'Set at the age they buy', 'community': 'Same at every age' }[q.chart.rating_method];
+            return t ? escWeb(t) : MEDIGAP_MARK.none;
+          }) : ''}
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.5;">
+        These benefits are set by federal law \u2014 the same letter covers the same things at every carrier. Plan N also
+        has copays of up to $20 for office visits and $50 for an emergency room visit that does not lead to admission.
+        A high-deductible plan behaves exactly like its letter once the yearly deductible is met.
       </div>
     </div>`;
   ov.style.display = 'flex';
@@ -10993,6 +11040,10 @@ async function qbMgInit_() {
   if (!zip.value && c.zip) zip.value = c.zip;
   const age = document.getElementById('qb-mg-age');
   const pb = document.getElementById('qb-mg-partb');
+  const tob = document.getElementById('qb-rt-tob');
+  if (tob && c.tobacco_use) tob.checked = true;
+  const gen = document.getElementById('qb-rt-gender');
+  if (gen && !gen.value && c.gender) gen.value = c.gender;
   window._qbMgSource = { dob: null, partb: null };
 
   let dob = c.date_of_birth || c.dob || null;
@@ -11022,6 +11073,10 @@ async function qbMgInit_() {
   window._qbMgDob = dob || null;
   if (!age.value && dob) age.value = qbAgeFrom_(dob) ?? '';
 
+  if (!pb.value && c.part_b_effective) {
+    pb.value = String(c.part_b_effective).slice(0, 10);
+    window._qbMgSource.partb = 'their contact record';
+  }
   if (!pb.value) {
     const fromIntake = String(responses.med_part_b_date || '').slice(0, 10);
     if (fromIntake) { pb.value = fromIntake; window._qbMgSource.partb = 'their intake'; }
@@ -11033,6 +11088,38 @@ async function qbMgInit_() {
       }
     }
   }
+  qbMgRefresh_();
+}
+
+// The Part B date belongs to the client, not to this quote \u2014 it goes back on
+// the contact record and into their Medicare intake, so every later quote and
+// every other agent sees it.
+async function qbMgPartBChanged_() {
+  const c = window._qbContact;
+  const val = String((document.getElementById('qb-mg-partb') || {}).value || '').slice(0, 10) || null;
+  qbMgRefresh_();
+  if (!c) return;
+  try {
+    const { error } = await supabaseClient.from('contacts')
+      .update({ part_b_effective: val }).eq('id', c.id).select('id');
+    if (error) throw error;
+    c.part_b_effective = val;
+    const cc = contacts.find(x => x.id === c.id); if (cc) cc.part_b_effective = val;
+  } catch (e) { console.error('part b -> contact:', e); showToast('Could not save the Part B date.'); return; }
+
+  // and into the Medicare intake it came from, so the two never disagree
+  try {
+    const { data } = await supabaseClient.from('intake_sessions')
+      .select('id,responses').eq('contact_id', c.id).eq('form_type', 'medicare')
+      .order('created_at', { ascending: false }).limit(1);
+    const row = data && data[0];
+    if (row) {
+      const resp = Object.assign({}, row.responses || {}, { med_part_b_date: val });
+      await supabaseClient.from('intake_sessions').update({ responses: resp }).eq('id', row.id).select('id');
+    }
+  } catch (e) { console.error('part b -> intake:', e); }
+  window._qbMgSource = window._qbMgSource || {};
+  window._qbMgSource.partb = 'their contact record';
   qbMgRefresh_();
 }
 
@@ -11877,7 +11964,7 @@ async function openQuoteBuilder(dealId, opts) {
             <option value="">?</option><option value="M">M</option><option value="F">F</option>
           </select></div>
         <div><label style="font-size:10px;margin:0 0 2px;">Part B started</label>
-          <input type="date" id="qb-mg-partb" style="width:auto;" onchange="qbMgRefresh_()" /></div>
+          <input type="date" id="qb-mg-partb" style="width:auto;" onchange="qbMgPartBChanged_()" /></div>
         <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0 0 6px;font-size:12.5px;">
           <input type="checkbox" id="qb-rt-tob" onchange="qbReRate_();qbMgRefresh_();" style="width:auto;" /> Tobacco</label>
       </div>
