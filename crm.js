@@ -7362,7 +7362,7 @@ async function handleModalSave() {
 function closeModal() {
   qbCloseIntakeDrawer_();
   qbCloseWorkbench_();
-  window._qbWbSeen = null; document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
+  window._qbWbActive = null; document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
 
 // ============================================================
 // TOAST
@@ -11203,18 +11203,25 @@ function qbSectionSummary_() {
     + '<span style="color:var(--text-muted);"> \u2014 the client picks one from each section.</span>';
 }
 
-// Which lines have an automated data source, and what to call it
-function qbAutoLine_(line) {
-  if (line === 'Health \u2014 Individual')
-    return { key: 'aca', el: 'qb-aca-strip', title: '\u{1F3DB}\uFE0F ACA Marketplace workbench',
-             blurb: 'Household, income and subsidy \u2014 then shop the live Marketplace.' };
-  if (line === 'Medicare Advantage' || line === 'Part D (PDP)')
-    return { key: 'cms', el: 'qb-cms-strip', title: '\u{1F3DB}\uFE0F Medicare plan workbench',
-             blurb: 'Official CMS plan data for their county.' };
-  if (line === 'Medicare Supplement')
-    return { key: 'rate', el: 'qb-rate-strip', title: '\u{1F4CA} Medigap rating workbench',
-             blurb: 'Age, gender and tobacco drive the rate lookup.' };
-  return null;
+// Automated lookups AVAILABLE to a line — never a definition of it.
+// "Health — Individual" might be an ACA Marketplace plan, a short-term medical
+// policy, a health share, or an off-exchange plan typed in by hand. Each entry
+// here is one optional tool; add a source and it gets a workbench for free.
+function qbAutoSources_(line) {
+  const src = [];
+  if (line === 'Health \u2014 Individual') {
+    src.push({ key: 'aca', el: 'qb-aca-strip', title: '\u{1F3DB}\uFE0F ACA Marketplace',
+               blurb: 'Live on-exchange plans with subsidy, CSR and doctor/drug checks.' });
+  }
+  if (line === 'Medicare Advantage' || line === 'Part D (PDP)') {
+    src.push({ key: 'cms', el: 'qb-cms-strip', title: '\u{1F3DB}\uFE0F Official CMS plan data',
+               blurb: 'Medicare Advantage and Part D plans for their county.' });
+  }
+  if (line === 'Medicare Supplement') {
+    src.push({ key: 'rate', el: 'qb-rate-strip', title: '\u{1F4CA} Medigap rate lookup',
+               blurb: 'Rates from the charts you\u2019ve loaded, by age, gender and tobacco.' });
+  }
+  return src;
 }
 
 function qbEnsureWorkbench_() {
@@ -11234,10 +11241,12 @@ function qbEnsureWorkbench_() {
   return wb;
 }
 
-function qbWorkbenchOpen_(open) {
+function qbWorkbenchOpen_(open, key) {
   const wb = qbEnsureWorkbench_();
+  if (open && key) window._qbWbActive = key;
+  if (open) qbMountSource_();
   wb.style.display = open ? 'flex' : 'none';
-  if (!open) qbAutoCardPaint_();          // refresh the summary on the way out
+  if (!open) qbAutoCardPaint_();
 }
 
 function qbCloseWorkbench_() {
@@ -11245,76 +11254,107 @@ function qbCloseWorkbench_() {
   if (wb) wb.remove();
 }
 
-// Compact status card left behind in the dialog
-function qbAutoCardPaint_() {
-  const card = document.getElementById('qb-auto-card');
-  if (!card) return;
-  const cfg = qbAutoLine_((document.getElementById('qb-line') || {}).value);
-  if (!cfg) { card.style.display = 'none'; card.innerHTML = ''; return; }
-
-  const bits = [];
-  if (cfg.key === 'aca') {
-    const inc = (document.getElementById('qb-aca-income') || {}).value;
-    const zip = (document.getElementById('qb-aca-zip') || {}).value;
-    const cs = document.getElementById('qb-aca-county');
-    const county = (cs && cs.options[cs.selectedIndex]) ? cs.options[cs.selectedIndex].text : '';
-    const rows = document.querySelectorAll('#qb-aca-members > div').length;
-    if (inc) bits.push('$' + Number(inc).toLocaleString() + '/yr');
-    if (zip) bits.push(zip);
-    if (county) bits.push(county);
-    if (rows) bits.push(rows + (rows === 1 ? ' member' : ' members'));
-    const n = (window._qbAcaPlans || []).length;
-    if (n) bits.push('<strong style="color:var(--text-success);">' + n + ' plans loaded</strong>');
-    if (window._qbAcaAptc) bits.push('credit $' + Number(window._qbAcaAptc).toFixed(0) + '/mo');
-    const csr = (typeof acaCsrActive_ === 'function') ? acaCsrActive_() : null;
-    if (csr && typeof acaCsrPct_ === 'function') bits.push('\u2728 ' + acaCsrPct_(csr) + '% CSR');
-  } else if (cfg.key === 'cms') {
-    const n = (window._qbCmsPlans || []).length;
-    if (n) bits.push(n + ' CMS plans loaded');
-  } else if (cfg.key === 'rate') {
-    const age = window._qbRateAge;
-    if (age != null) bits.push('age ' + age);
-  }
-
-  card.style.display = 'block';
-  card.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid var(--accent,#c8a84b);border-radius:8px;padding:10px 12px;margin-top:10px;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:800;">${cfg.title}</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${bits.length ? bits.join(' \u00b7 ') : escWeb(cfg.blurb)}</div>
-      </div>
-      <button type="button" class="btn btn-outline btn-sm" onclick="qbWorkbenchOpen_(true)">\u2699\uFE0F Open workbench</button>
-    </div>`;
-}
-
-// Move the active strip into the workbench; park the others out of sight
-function qbSyncWorkbench_(autoOpen) {
+// Move the chosen source's panel into the workbench; park every other one
+function qbMountSource_() {
   const line = (document.getElementById('qb-line') || {}).value;
-  const cfg = qbAutoLine_(line);
-  const wb = qbEnsureWorkbench_();
+  const sources = qbAutoSources_(line);
+  const active = sources.find(x => x.key === window._qbWbActive) || sources[0];
   const body = document.getElementById('qb-wb-body');
   const holder = document.getElementById('qb-strip-holder');
   if (!body || !holder) return;
-
   ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (cfg && cfg.el === id) {
+    if (active && active.el === id) {
       if (el.parentElement !== body) body.appendChild(el);
       el.style.display = 'block';
-      el.style.border = 'none';
-      el.style.background = 'transparent';
-      el.style.padding = '0';
-      el.style.margin = '0';
+      el.style.border = 'none'; el.style.background = 'transparent';
+      el.style.padding = '0'; el.style.margin = '0';
     } else {
       if (el.parentElement !== holder) holder.appendChild(el);
       el.style.display = 'none';
     }
   });
-
   const t = document.getElementById('qb-wb-title');
-  if (t) t.innerHTML = cfg ? cfg.title : '';
-  if (!cfg) qbWorkbenchOpen_(false);
-  else if (autoOpen && window._qbWbSeen !== cfg.key) { window._qbWbSeen = cfg.key; qbWorkbenchOpen_(true); }
+  if (t && active) t.innerHTML = active.title;
+}
+
+// Live summary of a source that's already been used
+function qbSourceSummary_(key) {
+  const bits = [];
+  if (key === 'aca') {
+    const inc = (document.getElementById('qb-aca-income') || {}).value;
+    const zip = (document.getElementById('qb-aca-zip') || {}).value;
+    const cs = document.getElementById('qb-aca-county');
+    const county = (cs && cs.options[cs.selectedIndex]) ? cs.options[cs.selectedIndex].text : '';
+    if (inc) bits.push('$' + Number(inc).toLocaleString() + '/yr');
+    if (zip) bits.push(zip);
+    if (county && !/loading|need a ZIP|unavailable/i.test(county)) bits.push(county);
+    const n = (window._qbAcaPlans || []).length;
+    if (n) bits.push('<strong style="color:var(--text-success);">' + n + ' plans loaded</strong>');
+    if (window._qbAcaAptc) bits.push('credit $' + Number(window._qbAcaAptc).toFixed(0) + '/mo');
+    const csr = (typeof acaCsrActive_ === 'function') ? acaCsrActive_() : null;
+    if (csr && typeof acaCsrPct_ === 'function') bits.push('\u2728 ' + acaCsrPct_(csr) + '% CSR');
+  } else if (key === 'cms') {
+    const n = (window._qbCmsPlans || []).length;
+    if (n) bits.push(n + ' CMS plans loaded');
+  } else if (key === 'rate') {
+    if (window._qbRateAge != null) bits.push('age ' + window._qbRateAge);
+  }
+  return bits;
+}
+
+// The dialog's compact card: what's AVAILABLE, plus what's been used
+function qbAutoCardPaint_() {
+  const card = document.getElementById('qb-auto-card');
+  if (!card) return;
+  const line = (document.getElementById('qb-line') || {}).value;
+  const sources = qbAutoSources_(line);
+  if (!sources.length) { card.style.display = 'none'; card.innerHTML = ''; return; }
+
+  card.style.display = 'block';
+  card.innerHTML = `<div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
+      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:7px;">
+        Automated lookup${sources.length === 1 ? '' : 's'} available for this line \u2014 optional
+      </div>
+      ${sources.map(src => {
+        const bits = qbSourceSummary_(src.key);
+        return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12.5px;font-weight:700;">${src.title}</div>
+            <div style="font-size:11.5px;color:${bits.length ? 'var(--text-secondary)' : 'var(--text-muted)'};margin-top:2px;">
+              ${bits.length ? bits.join(' \u00b7 ') : escWeb(src.blurb)}</div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" onclick="qbWorkbenchOpen_(true, '${src.key}')">\u2699\uFE0F ${bits.length ? 'Reopen' : 'Open'}</button>
+        </div>`;
+      }).join('')}
+      <div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);margin-top:7px;padding-top:6px;">
+        Quoting something else on this line \u2014 short-term medical, a health share, an off-exchange plan? Just type it into the options below.
+      </div>
+    </div>`;
+}
+
+// Keep panels parked correctly as the line changes; never open on its own
+function qbSyncWorkbench_() {
+  const line = (document.getElementById('qb-line') || {}).value;
+  const sources = qbAutoSources_(line);
+  qbEnsureWorkbench_();
+  const holder = document.getElementById('qb-strip-holder');
+  if (holder) {
+    ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const wanted = sources.some(x => x.el === id);
+      if (!wanted) {
+        if (el.parentElement !== holder) holder.appendChild(el);
+        el.style.display = 'none';
+      }
+    });
+  }
+  if (!sources.length) { window._qbWbActive = null; qbWorkbenchOpen_(false); }
+  else if (!sources.some(x => x.key === window._qbWbActive)) window._qbWbActive = sources[0].key;
+  const wb = document.getElementById('qb-workbench');
+  if (wb && wb.style.display !== 'none') qbMountSource_();
   qbAutoCardPaint_();
 }
 
@@ -11368,7 +11408,7 @@ function qbLineChanged_() {
     if (ol && (!nm || !nm.value.trim())) ol.value = line;
   }
   qbSectionSummary_();
-  qbSyncWorkbench_(true);
+  qbSyncWorkbench_();
 }
 
 function qbFillProducts_(i) {
