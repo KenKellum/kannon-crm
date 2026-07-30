@@ -13031,6 +13031,14 @@ function acaCsrBanner_() {
       'No premium tax credit at this income \u2014 prices below are full price.'));
   }
 
+  const miss = window._qbAcaUnmatched || [];
+  if (miss.length) {
+    bars.push(bar('warn', '&#9888;&#65039; <strong>' + miss.length + ' plan'
+      + (miss.length === 1 ? '' : 's') + ' from the previous quote could not be matched</strong> to this year\u2019s list ('
+      + miss.map(m => escWeb(m.name)).join(', ')
+      + '). They stayed on the quote as typed \u2014 re-pick them here if you want live pricing.'));
+  }
+
   const csr = acaCsrActive_();
   if (csr) {
     const pct = acaCsrPct_(csr);
@@ -13149,7 +13157,19 @@ function qbAcaRenderBrowser_() {
 
 const _qbPk = { carriers: new Set(), metals: new Set(), types: new Set(), hsa: false, docsAll: false, medsAll: false, maxNet: null, sort: 'net', cmp: new Set() };
 
-function openAcaPicker_() {
+async function openAcaPicker_() {
+  if (!(window._qbAcaPlans || []).length) {
+    const inc = document.getElementById('qb-aca-income');
+    const cty = document.getElementById('qb-aca-county');
+    if (inc && inc.value && cty && cty.value) {
+      showToast('Getting this year\u2019s plans first\u2026');
+      await qbAcaGetPlans_();          // this opens the picker itself when it lands
+      return;
+    }
+    showToast('Run \u201cFind plans & subsidy\u201d first \u2014 opening the ACA tool.');
+    qbWorkbenchOpen_(true, 'aca');
+    return;
+  }
   _qbPk.carriers.clear(); _qbPk.metals.clear(); _qbPk.types.clear(); _qbPk.cmp.clear();
   _qbPk.hsa = false; _qbPk.docsAll = false; _qbPk.medsAll = false; _qbPk.maxNet = null; _qbPk.sort = 'net';
   let ov = document.getElementById('qb-aca-picker');
@@ -13592,6 +13612,7 @@ function qbAcaAddPlan_(planId) {
 
 function qbAcaRelinkOptions_() {
   const plans = window._qbAcaPlans || [];
+  window._qbAcaUnmatched = [];
   if (!plans.length) return 0;
   const rq = window._qbRequoteOpt || {};
   window._qbAcaSel = window._qbAcaSel || {};
@@ -13615,6 +13636,9 @@ function qbAcaRelinkOptions_() {
       qbAcaApptWarn_(i, hit);
       qbAcaOptionView_(i);      // rewrites name/premium from the plan
       linked++;
+    } else if ((rq[i] && rq[i].plan_meta) || /\((Bronze|Silver|Gold|Platinum|Catastrophic)\)\s*$/i.test(nm)) {
+      // looked like a Marketplace plan but isn't in this year's list
+      window._qbAcaUnmatched.push({ slot: i, name: nm });
     }
   }
   return linked;
