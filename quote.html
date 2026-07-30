@@ -105,6 +105,20 @@
   .btn-ghost { background: #fff; color: var(--brand); border: 1.5px solid #cbd5e1; }
   .btn-ghost:hover { border-color: var(--brand); }
   .btn:disabled { opacity: .5; cursor: default; }
+  .sec-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+              margin: 26px 0 4px; padding-bottom: 6px; border-bottom: 2px solid var(--brand); }
+  .sec-head:first-of-type { margin-top: 8px; }
+  .sec-head h2 { font-size: 17px; font-weight: 800; color: var(--brand); letter-spacing: -.2px; }
+  .sec-head .howmany { font-size: 12.5px; color: var(--muted); }
+  .sec-done { font-size: 12px; font-weight: 700; color: #15803d; margin-left: auto; }
+  .pkg { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+         padding: 14px 18px; margin: 22px 0 4px; }
+  .pkg-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .7px;
+               color: var(--muted); margin-bottom: 8px; }
+  .pkg-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px;
+             color: #334155; padding: 3px 0; }
+  .pkg-total { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px;
+               padding-top: 8px; border-top: 1px dashed #cbd5e1; font-size: 15px; font-weight: 800; color: var(--brand); }
   /* Compare view */
   #compare-view { display: none; }
   .cmp-scroll { overflow-x: auto; padding-bottom: 8px; }
@@ -307,12 +321,61 @@ function optCardHtml(o, inCompare) {
     </button>`;
 }
 
+// Options are grouped by coverage type. Within a section they're genuine
+// alternatives ("pick one"); across sections they're a package.
+function sectionsOf(opts) {
+  const order = [], byLine = {};
+  opts.forEach(o => {
+    const k = o.line || quote.line || 'Coverage';
+    if (!byLine[k]) { byLine[k] = []; order.push(k); }
+    byLine[k].push(o);
+  });
+  return order.map(k => ({ line: k, opts: byLine[k] }));
+}
+
 function renderCards() {
-  const grid = document.getElementById('opts');
-  grid.classList.toggle('few', allOpts.length <= 2);
-  grid.innerHTML = allOpts.map(o =>
-    `<div class="opt${o.is_recommended ? ' rec' : ''}" id="card-${o.id}">${optCardHtml(o, false)}</div>`).join('');
+  const host = document.getElementById('opts');
+  const secs = sectionsOf(allOpts);
+  host.classList.remove('few');
+  host.removeAttribute('style');
+
+  if (secs.length === 1) {                       // single coverage type: as before
+    host.className = 'grid' + (allOpts.length <= 2 ? ' few' : '');
+    host.innerHTML = allOpts.map(o =>
+      `<div class="opt${o.is_recommended ? ' rec' : ''}" id="card-${o.id}">${optCardHtml(o, false)}</div>`).join('');
+    refreshBar();
+    return;
+  }
+
+  host.className = '';                           // proposal: stacked sections
+  host.innerHTML = secs.map(sec => {
+    const picked = sec.opts.filter(o => discussSet.has(o.id)).length;
+    return `
+      <div class="sec-head">
+        <h2>${esc(sec.line)}</h2>
+        <span class="howmany">${sec.opts.length === 1 ? 'one option' : 'choose one of ' + sec.opts.length}</span>
+        ${picked ? `<span class="sec-done">\u2713 ${picked} picked</span>` : ''}
+      </div>
+      <div class="grid${sec.opts.length <= 2 ? ' few' : ''}">
+        ${sec.opts.map(o => `<div class="opt${o.is_recommended ? ' rec' : ''}" id="card-${o.id}">${optCardHtml(o, false)}</div>`).join('')}
+      </div>`;
+  }).join('') + packageHtml(secs);
   refreshBar();
+}
+
+// Running total of what they've picked, one line per section
+function packageHtml(secs) {
+  const picks = [];
+  secs.forEach(sec => sec.opts.forEach(o => { if (discussSet.has(o.id)) picks.push({ sec: sec.line, o }); }));
+  if (!picks.length) return `<div class="pkg"><div class="pkg-title">\u{1F4E6} Your package</div>
+    <div style="font-size:13px;color:#64748b;">Pick the option you like in each section above and your monthly total will add up here.</div></div>`;
+  const total = picks.reduce((t, p) => t + Number(p.o.monthly_premium || 0), 0);
+  const money = v => '$' + Number(v).toFixed(2).replace(/\.00$/, '');
+  return `<div class="pkg">
+    <div class="pkg-title">\u{1F4E6} Your package so far \u2014 ${picks.length} of ${secs.length} section${secs.length === 1 ? '' : 's'}</div>
+    ${picks.map(p => `<div class="pkg-row"><span>${esc(p.sec)} \u00b7 ${esc(p.o.display_name)}</span><strong>${money(p.o.monthly_premium)}/mo</strong></div>`).join('')}
+    <div class="pkg-total"><span>Total monthly</span><span>${money(total)}/mo</span></div>
+  </div>`;
 }
 
 // If the booking page is ours, tell it which quote sent them so it can prefill their details
@@ -324,6 +387,14 @@ function bookingHref() {
 function toggleCompare(id, cb) {
   if (cb.checked) {
     if (compareSet.size >= 4) { cb.checked = false; alert('You can compare up to 4 plans at a time.'); return; }
+    // comparing a life policy against a health plan tells you nothing
+    const mine = allOpts.find(o => o.id === id);
+    const other = allOpts.find(o => compareSet.has(o.id));
+    if (other && (other.line || quote.line) !== (mine.line || quote.line)) {
+      cb.checked = false;
+      alert('Compare works within one section at a time \u2014 these are different kinds of coverage.');
+      return;
+    }
     compareSet.add(id);
   } else compareSet.delete(id);
   refreshBar();
@@ -332,6 +403,7 @@ function toggleCompare(id, cb) {
 function toggleDiscuss(id, btn) {
   if (discussSet.has(id)) discussSet.delete(id); else discussSet.add(id);
   const o = allOpts.find(x => x.id === id);
+  if (sectionsOf(allOpts).length > 1) { renderCards(); refreshBar(); return; }
   const card = document.getElementById('card-' + id);
   if (card) card.innerHTML = optCardHtml(o, false);
   const col = document.getElementById('cmp-' + id);
@@ -507,7 +579,7 @@ async function init() {
   if (!quote) { showErr(); return; }
   if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showExpired(); return; }
   allOpts = await supa('/rest/v1/quote_options?quote_id=eq.' + encodeURIComponent(qid)
-    + '&select=*&order=sort_order', { method: 'GET' }) || [];
+    + '&select=*&order=line.asc,sort_order.asc', { method: 'GET' }) || [];
   if (!allOpts.length) { showErr(); return; }
 
   setBrand(quote.brand);
@@ -542,6 +614,14 @@ async function init() {
         <div style="font-size:11.5px;color:#94a3b8;margin-top:8px;">If any of this looks wrong or has changed, tell me — it changes the prices and the tax credit.</div>
       </div>`;
   }
+  const _secCount = sectionsOf(allOpts).length;
+  if (_secCount > 1) {
+    document.getElementById('q-title').textContent = 'Your Coverage Proposal';
+    document.getElementById('q-howto').innerHTML =
+      '<strong>How this works:</strong> this proposal covers <strong>' + _secCount + ' kinds of coverage</strong>. '
+      + 'In each section below, tap <em>“I’d like to discuss this one”</em> on the option you prefer — '
+      + 'your monthly total adds up at the bottom. Nothing is purchased or changed until we talk.';
+  } else
   document.getElementById('q-howto').innerHTML = allOpts.length > 1
     ? '<strong>How this works:</strong> tap <em>&ldquo;I’d like to discuss this one&rdquo;</em> on any plan that interests you (as many as you like)'
       + (allOpts.length > 2 ? ', tick <em>Compare</em> on up to 4 to see them side by side' : '')

@@ -10698,7 +10698,7 @@ async function loadDealTree_(deal) {
             .eq('contact_id', deal.contact_id).order('created_at', { ascending: false }).limit(6)
         : Promise.resolve({ data: [] }),
       supabaseClient.from('quotes')
-        .select('id,line,status,created_at,client_email,intake_session_id')
+        .select('id,line,lines,status,created_at,client_email,intake_session_id')
         .eq('deal_id', deal.id).order('created_at', { ascending: false }),
     ]);
     sess = a.data || []; qs = b.data || [];
@@ -10713,7 +10713,11 @@ async function loadDealTree_(deal) {
     else badge = '<span style="color:var(--text-warning);">Draft</span>';
     const send = (q.status === 'draft' && q.client_email)
       ? ` &middot; <a href="#" onclick="sendQuote_('${q.id}', this); return false;">Send now</a>` : '';
-    return `<div style="padding:2px 0;font-size:12px;">\u{1F4BC} ${escWeb(q.line)} &middot; ${fmt(q.created_at)} &middot; ${badge}
+    const lines = Array.isArray(q.lines) && q.lines.length ? q.lines : [q.line];
+    const label = lines.length > 1
+      ? '\u{1F4E6} ' + lines.length + '-part proposal: ' + escWeb(lines.join(' + '))
+      : '\u{1F4BC} ' + escWeb(lines[0] || q.line);
+    return `<div style="padding:2px 0;font-size:12px;">${label} &middot; ${fmt(q.created_at)} &middot; ${badge}
       &middot; <a href="quote.html?q=${q.id}" target="_blank">view &#8599;</a>${send}
       &middot; <a href="#" onclick="requoteFromQuote_('${q.id}','${deal.id}'); return false;" title="Start a fresh quote pre-filled from this one">&#8635; re-quote</a></div>`;
   };
@@ -10872,6 +10876,8 @@ async function openQuoteBuilder(dealId, opts) {
         <label>Product (from carrier's catalog — optional)</label>
         <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
       </div>
+      <label>Coverage type for this option</label>
+      <select id="qb-optline-${i}" onchange="qbOptLineChanged_(${i})">${lineOpts}</select>
       <div id="qb-aca-card-${i}" style="display:none;"></div>
       <div id="qb-manual-${i}">
         <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
@@ -10895,6 +10901,7 @@ async function openQuoteBuilder(dealId, opts) {
         <input type="date" id="qb-valid" value="${defValid}" style="width:auto;" /></div>
     </div>
     <div id="qb-intake-note" style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">${intakeNote}</div>
+    <div id="qb-sections" style="font-size:11.5px;margin-top:4px;line-height:1.5;"></div>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
     <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; ACA Marketplace — household &amp; subsidy</div>
@@ -11020,6 +11027,7 @@ async function openQuoteBuilder(dealId, opts) {
         agent_note: document.getElementById('qb-note-' + i).value.trim() || null,
         is_recommended: document.getElementById('qb-rec-' + i).checked,
         sort_order: options.length, plan_meta: planMeta,
+        line: (document.getElementById('qb-optline-' + i) || {}).value || line,
       });
     }
     if (!options.length) { showToast('Add at least one option.'); return false; }
@@ -11057,7 +11065,8 @@ async function openQuoteBuilder(dealId, opts) {
             ? window.location.origin + '/book.html?agent=' + currentAgent.id + '&context=client'
             : currentAgent.booking_link || null),
       client_name: contact.name || 'Client', client_email: contact.email || null,
-      line: line, brand: document.getElementById('qb-brand').value,
+      line: line, lines: [...new Set(options.map(o => o.line || line))],
+      brand: document.getElementById('qb-brand').value,
       valid_until: document.getElementById('qb-valid').value || null,
       quote_inputs: (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null,
       intake_session_id: window._qbIntakeSessionId || null,
@@ -11082,6 +11091,55 @@ async function openQuoteBuilder(dealId, opts) {
   const lineSel = document.getElementById('qb-line');
   if (lineSel && [...lineSel.options].some(o => o.value === smartLine)) lineSel.value = smartLine;
   qbLineChanged_();
+}
+
+// The top-level line drives the automated data (ACA / CMS / rate charts).
+// Each option can be a DIFFERENT coverage type, which is what turns a quote
+// into a multi-section proposal.
+function qbOptLineChanged_(i) {
+  const sel = document.getElementById('qb-optline-' + i);
+  const top = document.getElementById('qb-line');
+  if (!sel || !top) return;
+  const same = sel.value === top.value;
+  // official-plan pickers only make sense while this option matches the
+  // line whose data we actually loaded
+  const acaWrap = document.getElementById('qb-aca-wrap-' + i);
+  const cmsWrap = document.getElementById('qb-cms-wrap-' + i);
+  if (acaWrap) acaWrap.style.display = (same && top.value === 'Health \u2014 Individual') ? 'block' : 'none';
+  if (cmsWrap) cmsWrap.style.display = (same && (top.value === 'Medicare Advantage' || top.value === 'Part D (PDP)')) ? 'block' : 'none';
+  if (!same) {
+    // switching an option away from the loaded line drops its official plan
+    const a = document.getElementById('qb-aca-' + i);
+    if (a && a.value) { a.value = ''; qbApplyAcaPlan_(i); }
+    const c = document.getElementById('qb-cms-' + i);
+    if (c && c.value) { c.value = ''; }
+  }
+  qbSectionSummary_();
+}
+
+// Plain-English summary of what this proposal contains
+function qbSectionSummary_() {
+  const el = document.getElementById('qb-sections');
+  if (!el) return;
+  const counts = {};
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (!w || w.style.display === 'none') continue;
+    const nm = document.getElementById('qb-name-' + i);
+    if (!nm || !nm.value.trim()) continue;
+    const ln = (document.getElementById('qb-optline-' + i) || {}).value || '(unset)';
+    counts[ln] = (counts[ln] || 0) + 1;
+  }
+  const keys = Object.keys(counts);
+  if (!keys.length) { el.innerHTML = ''; return; }
+  if (keys.length === 1) {
+    el.innerHTML = '<span style="color:var(--text-muted);">One coverage type \u00b7 '
+      + counts[keys[0]] + ' option' + (counts[keys[0]] === 1 ? '' : 's') + ' for the client to choose from.</span>';
+    return;
+  }
+  el.innerHTML = '<strong style="color:var(--text-success);">\u{1F4E6} Proposal with ' + keys.length + ' sections:</strong> '
+    + keys.map(k => escWeb(k) + ' (' + counts[k] + ')').join(' \u00b7 ')
+    + '<span style="color:var(--text-muted);"> \u2014 the client picks one from each section.</span>';
 }
 
 function qbLineChanged_() {
@@ -11128,7 +11186,12 @@ function qbLineChanged_() {
     bul.readOnly = isMed;
     bul.placeholder = isMed ? 'Locked — filled from the product record' : 'e.g. $0 deductible';
     qbFillProducts_(i);
+    // untouched options follow the primary line; ones the agent re-typed stay put
+    const ol = document.getElementById('qb-optline-' + i);
+    const nm = document.getElementById('qb-name-' + i);
+    if (ol && (!nm || !nm.value.trim())) ol.value = line;
   }
+  qbSectionSummary_();
 }
 
 function qbFillProducts_(i) {
@@ -13273,6 +13336,7 @@ function qbAcaAddPlan_(planId) {
   const sel = document.getElementById('qb-aca-' + slot);
   if (sel) { sel.value = planId; qbApplyAcaPlan_(slot); }
   qbRenumberOptions_();
+  qbSectionSummary_();
   showToast('Added as Option ' + qbOptionNo_(slot) + '.');
   qbAcaRenderBrowser_();
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
