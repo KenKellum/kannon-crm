@@ -2636,7 +2636,34 @@ async function showIntakeForm(contactId, opts) {
   opts = opts || {};
   const c = contacts.find(x => x.id === contactId);
   if (!c) { showToast('Contact not found'); return; }
+
+  // One open intake at a time: a client shopping for coverage has ONE form
+  // going. Offer the open one rather than stacking a second.
+  if (!opts.editMode && !opts.forceNew) {
+    try {
+      const { data: openSess } = await supabaseClient.from('intake_sessions')
+        .select('id,form_type,created_at').eq('contact_id', contactId)
+        .eq('status', 'pending').order('created_at', { ascending: false }).limit(1);
+      if (openSess && openSess.length) {
+        const o = openSess[0];
+        const when = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const reuse = confirm(c.name + ' already has an open ' + (o.form_type || 'intake')
+          + ' form started ' + when + '.\n\nOK = continue that one (recommended)\nCancel = start a brand-new form anyway');
+        if (reuse) { closeModal(); viewIntakeSession(o.id); return; }
+      }
+    } catch (e) { /* never block the agent on this check */ }
+  }
+
   _intakeContactId = contactId;
+  // pull their saved doctors/medications so the form can pre-fill them
+  try {
+    const [pv, md] = await Promise.all([
+      supabaseClient.from('client_providers').select('npi,name').eq('contact_id', contactId).eq('is_active', true).order('created_at'),
+      supabaseClient.from('client_medications').select('rxcui,name').eq('contact_id', contactId).eq('is_active', true).order('created_at'),
+    ]);
+    c._providers = pv.data || [];
+    c._medications = md.data || [];
+  } catch (e) { c._providers = c._providers || []; c._medications = c._medications || []; }
   if (!opts.editMode) {
     _intakeEditSessionId = null;   // fresh form: never resume a prior edit
     _intakeEditResponses = {};
@@ -2825,7 +2852,23 @@ function _intakeRenderForm() {
     phone:         c.phone || '',
     dob:           c.dob   || c.date_of_birth || '',
     business_name: c.company || '',
+    zip:           c.zip || '',
   };
+  // What we already know about this client shouldn't be asked again
+  if (c.household_income != null && c.household_income !== '') prefill.aca_income = String(c.household_income);
+  const _hh = (() => { const v = c.household_members;
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} }
+    return []; })();
+  if (_hh.length) prefill.household_struct = JSON.stringify(_hh);
+  if ((c._providers || []).length) {
+    prefill.med_doctors_struct = JSON.stringify(c._providers);
+    prefill.med_doctors = c._providers.map(d => d.name).join(', ');
+  }
+  if ((c._medications || []).length) {
+    prefill.med_medications_struct = JSON.stringify(c._medications);
+    prefill.med_medications = c._medications.map(m => m.name).join(', ');
+  }
   // In edit mode, overlay saved responses onto prefill
   if (_intakeEditResponses && Object.keys(_intakeEditResponses).length) {
     Object.keys(_intakeEditResponses).forEach(function(k) { prefill[k] = _intakeEditResponses[k]; });
