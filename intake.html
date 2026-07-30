@@ -670,10 +670,24 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
       const arr = v => { if (Array.isArray(v)) return v;
         if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} } return null; };
       const hh = arr(responses.household_struct); if (hh && hh.length) prof.household_members = hh;
-      const dc = arr(responses.med_doctors_struct);
-      if (dc && dc.length) prof.providers = dc.filter(d => d && d.npi).map(d => ({ npi: d.npi, name: d.name }));
-      const md = arr(responses.med_medications_struct);
-      if (md && md.length) prof.medications = md.filter(m => m && m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+      // Doctors and medications go to their own tables (one row each)
+      const dc = (arr(responses.med_doctors_struct) || []).filter(d => d && d.npi);
+      const md = (arr(responses.med_medications_struct) || []).filter(m => m && m.rxcui);
+      const postRows = async (table, rows) => {
+        if (!rows.length) return;
+        await fetch(SUPABASE_URL + '/rest/v1/' + table + '?on_conflict=' +
+            (table === 'client_providers' ? 'contact_id,npi' : 'contact_id,rxcui'), {
+          method: 'POST',
+          headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + SUPABASE_ANON,
+                     'Content-Type': 'application/json',
+                     Prefer: 'return=minimal,resolution=merge-duplicates' },
+          body: JSON.stringify(rows)
+        });
+      };
+      await postRows('client_providers', dc.map(d => ({
+        contact_id: contactId, npi: String(d.npi), name: d.name || '(unnamed)', source: 'intake' })));
+      await postRows('client_medications', md.map(m => ({
+        contact_id: contactId, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'intake' })));
       if (Object.keys(prof).length) {
         prof.profile_updated_at = now;
         // Direct fetch, not supa(): an anon visitor may WRITE these columns but

@@ -3149,12 +3149,32 @@ function intakeProfilePatch_(responses) {
   };
   const hh = jsonArr(responses.household_struct);
   if (hh && hh.length) patch.household_members = hh;
-  const docs = jsonArr(responses.med_doctors_struct);
-  if (docs && docs.length) patch.providers = docs.filter(d => d && d.npi).map(d => ({ npi: d.npi, name: d.name }));
-  const meds = jsonArr(responses.med_medications_struct);
-  if (meds && meds.length) patch.medications = meds.filter(m => m && m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
   if (Object.keys(patch).length) patch.profile_updated_at = new Date().toISOString();
   return patch;
+}
+
+// Doctors/medications from an intake land in their own tables
+async function intakePromoteLists_(contactId, responses) {
+  if (!contactId) return;
+  const jsonArr = v => {
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} }
+    return null;
+  };
+  const docs = (jsonArr(responses.med_doctors_struct) || []).filter(d => d && d.npi);
+  const meds = (jsonArr(responses.med_medications_struct) || []).filter(m => m && m.rxcui);
+  try {
+    if (docs.length) {
+      await supabaseClient.from('client_providers').upsert(docs.map(d => ({
+        contact_id: contactId, npi: String(d.npi), name: d.name || '(unnamed)', source: 'intake',
+      })), { onConflict: 'contact_id,npi' });
+    }
+    if (meds.length) {
+      await supabaseClient.from('client_medications').upsert(meds.map(m => ({
+        contact_id: contactId, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'intake',
+      })), { onConflict: 'contact_id,rxcui' });
+    }
+  } catch (e) { console.error('intakePromoteLists_:', e); }
 }
 
 async function saveIntakeToCRM() {
@@ -3177,6 +3197,7 @@ async function saveIntakeToCRM() {
       if (_updErr) throw _updErr;
       // Sync key contact fields from updated responses
       const _efm = { dob:'date_of_birth', zip:'zip', email:'email', phone:'phone', business_name:'company', marital_status:'marital_status' };
+      await intakePromoteLists_(_intakeContactId, responses);
       const _ecu = Object.assign({}, intakeProfilePatch_(responses));
       for (const [fid, col] of Object.entries(_efm)) {
         if (responses[fid] !== undefined && responses[fid] !== '') _ecu[col] = responses[fid];
@@ -3216,6 +3237,7 @@ async function saveIntakeToCRM() {
     if (sessErr) throw sessErr;
 
     // 2. Update contact: sequence_status = 'Interested' + key fields from responses
+    await intakePromoteLists_(_intakeContactId, responses);
     const contactUpdates = Object.assign({ sequence_status: 'Interested' }, intakeProfilePatch_(responses));
     const fieldMap = {
       dob: 'date_of_birth', zip: 'zip', email: 'email', phone: 'phone',
@@ -4533,18 +4555,20 @@ async function viewContact(contactId, email) {
   document.body.style.overflow = 'hidden';
 
   const gv = q => q.then(r => r.data || []).catch(() => []);
-  const [opens, cc, tl, quotes, intakes, appts, soas, baas] = await Promise.all([
+  const [opens, cc, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds] = await Promise.all([
     gv(supabaseClient.from('email_opens').select('*').eq('contact_email', c.email || '\u2205').order('opened_at', { ascending: false }).limit(15)),
     gv(supabaseClient.from('contact_companies').select('companies(name,slug)').eq('contact_id', c.id)),
     supabaseClient.rpc('get_contact_timeline', { p_contact_id: c.id, p_limit: 30 }).then(r => r.data || []).catch(() => []),
-    gv(supabaseClient.from('quotes').select('id,line,status,created_at').eq('contact_id', c.id).order('created_at', { ascending: false })),
+    gv(supabaseClient.from('quotes').select('id,line,status,created_at,intake_session_id').eq('contact_id', c.id).order('created_at', { ascending: false })),
     gv(supabaseClient.from('intake_sessions').select('id,form_type,status,created_at').eq('contact_id', c.id).order('created_at', { ascending: false })),
     gv(supabaseClient.from('booking_intents').select('*').eq('contact_id', c.id).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(12)),
     gv(supabaseClient.from('soa_records').select('id,status,signed_at,created_at').eq('contact_id', c.id).order('created_at', { ascending: false })),
     gv(supabaseClient.from('baa_records').select('*').eq('contact_id', c.id).order('created_at', { ascending: false })),
+    gv(supabaseClient.from('client_providers').select('npi,name').eq('contact_id', c.id).eq('is_active', true)),
+    gv(supabaseClient.from('client_medications').select('rxcui,name').eq('contact_id', c.id).eq('is_active', true)),
   ]);
   window._c360 = {
-    c, opens, tl, quotes, intakes, appts, soas, baas,
+    c, opens, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds,
     companies: (cc || []).map(r => r.companies).filter(Boolean),
     deals: deals.filter(d => d.contact_id === c.id),
     tab: 'overview',
@@ -4656,7 +4680,7 @@ function c360Body_(D) {
         ${(() => {
           const arr = v => { if (Array.isArray(v)) return v;
             if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} } return []; };
-          const hh = arr(c.household_members), dc = arr(c.providers), md = arr(c.medications);
+          const hh = arr(c.household_members), dc = D.cProviders || [], md = D.cMeds || [];
           const applying = hh.filter(m => m.covered !== false).length;
           if (c.household_income == null && !hh.length && !dc.length && !md.length) return '';
           return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;">
@@ -4706,11 +4730,19 @@ function c360Body_(D) {
   }
 
   if (D.tab === 'intakes') {
-    const rows = D.intakes.length ? D.intakes.map(s => c360Row_(`
+    const B = { interested: ['\u2b50 INTERESTED', 'var(--text-success)'], viewed: ['Viewed', '#3b82f6'], sent: ['Sent', 'var(--text-secondary)'], draft: ['Draft', '#f59e0b'] };
+    const rows = D.intakes.length ? D.intakes.map(s => {
+      const kids = (D.quotes || []).filter(q => q.intake_session_id === s.id);
+      return c360Row_(`
       <div style="flex:1;min-width:0;">
         <div style="font-weight:700;font-size:13.5px;">${escWeb(s.form_type || 'intake')}</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${fmtD(s.created_at)} \u00b7 ${s.status === 'completed' ? '<span style="color:var(--success);font-weight:700;">Completed</span>' : '<span style="color:#f59e0b;">Pending</span>'}</div>
-      </div>`)).join('') : c360Empty_('No intakes yet.');
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${fmtD(s.created_at)} \u00b7 ${s.status === 'completed' ? '<span style="color:var(--text-success);font-weight:700;">Completed</span>' : '<span style="color:#f59e0b;">Pending</span>'}</div>
+        ${kids.length ? `<div style="margin-top:6px;border-left:2px solid var(--border-selected);padding-left:9px;">
+          ${kids.map(q => { const [lbl, col] = B[q.status] || [q.status, 'var(--text-muted)'];
+            return `<div style="font-size:11.5px;color:var(--text-muted);padding:1px 0;">\u{1F4BC} ${escWeb(q.line)} \u00b7 <span style="color:${col};font-weight:700;">${lbl}</span> \u00b7 <a href="quote.html?q=${q.id}" target="_blank">view \u2197</a></div>`;
+          }).join('')}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">no quotes from this intake yet</div>'}
+      </div>`);
+    }).join('') : c360Empty_('No intakes yet.');
     return rows + `<div style="display:flex;gap:8px;margin-top:12px;">
       <button class="btn btn-outline btn-sm" onclick="closeContactPanel();setTimeout(function(){dialerViewIntake('${c.id}');},150)">\u{1F4C4} View / Manage</button>
       <button class="btn btn-accent btn-sm" onclick="closeContactPanel();setTimeout(function(){showIntakeForm('${c.id}');},150)">\u{1F91D} New Intake</button>
@@ -10711,6 +10743,14 @@ async function openQuoteBuilder(dealId) {
   window._qbProds = prods || [];
   window._qbContact = contact;
   window._qbRequoteOpt = {};
+  // Phase 2: the quote remembers which intake it grew out of
+  window._qbIntakeSessionId = null;
+  try {
+    const { data: _si } = await supabaseClient.from('intake_sessions')
+      .select('id').eq('contact_id', contact.id).eq('status', 'completed')
+      .order('created_at', { ascending: false }).limit(1);
+    if (_si && _si.length) window._qbIntakeSessionId = _si[0].id;
+  } catch (e) { /* a quote without an intake is still perfectly valid */ }
   // Agency-level carrier list (owners' active appointments) — powers the ACA appointment warning
   window._qbAgencyCarrierNames = [];
   try {
@@ -10938,6 +10978,7 @@ async function openQuoteBuilder(dealId) {
       line: line, brand: document.getElementById('qb-brand').value,
       valid_until: document.getElementById('qb-valid').value || null,
       quote_inputs: (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null,
+      intake_session_id: window._qbIntakeSessionId || null,
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
     const { error: e2 } = await supabaseClient.from('quote_options')
@@ -11875,14 +11916,57 @@ async function qbSaveClientProfile_(patch) {
   } catch (e) { console.error('profile save:', e); return false; }
 }
 
+// Load the client's doctors and medications from their own tables. Cached on
+// the contact object for the life of the dialog.
+async function qbLoadClientLists_() {
+  const c = window._qbContact;
+  if (!c) return { providers: [], medications: [] };
+  try {
+    const [pv, md] = await Promise.all([
+      supabaseClient.from('client_providers').select('npi,name').eq('contact_id', c.id)
+        .eq('is_active', true).order('created_at'),
+      supabaseClient.from('client_medications').select('rxcui,name').eq('contact_id', c.id)
+        .eq('is_active', true).order('created_at'),
+    ]);
+    c._providers = pv.data || [];
+    c._medications = md.data || [];
+  } catch (e) { console.error('client lists:', e); c._providers = c._providers || []; c._medications = c._medications || []; }
+  return { providers: c._providers, medications: c._medications };
+}
+
+// Replace the client's saved set with what's on screen (add/remove in one go)
+async function qbSaveClientLists_() {
+  const c = window._qbContact;
+  if (!c) return;
+  const docs = (window._qbAcaDocs || []).filter(d => d.npi);
+  const meds = (window._qbAcaMeds || []).filter(m => m.rxcui);
+  try {
+    await supabaseClient.from('client_providers').delete().eq('contact_id', c.id);
+    if (docs.length) {
+      await supabaseClient.from('client_providers').insert(docs.map(d => ({
+        contact_id: c.id, npi: String(d.npi), name: d.name || '(unnamed)', source: 'quote',
+      })));
+    }
+    await supabaseClient.from('client_medications').delete().eq('contact_id', c.id);
+    if (meds.length) {
+      await supabaseClient.from('client_medications').insert(meds.map(m => ({
+        contact_id: c.id, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'quote',
+      })));
+    }
+    c._providers = docs.map(d => ({ npi: String(d.npi), name: d.name }));
+    c._medications = meds.map(m => ({ rxcui: String(m.rxcui), name: m.name }));
+    return true;
+  } catch (e) { console.error('save client lists:', e); return false; }
+}
+
 // Everything the ACA strip needs, read from the client record
 function qbClientProfile_() {
   const c = window._qbContact || {};
   return {
     income: (c.household_income != null && c.household_income !== '') ? Number(c.household_income) : null,
     household: _cpArr_(c.household_members),
-    providers: _cpArr_(c.providers),
-    medications: _cpArr_(c.medications),
+    providers: c._providers || [],
+    medications: c._medications || [],
   };
 }
 
@@ -11939,6 +12023,7 @@ function qbReadHouseholdRows_() {
 async function qbAcaPrefillFromIntake_() {
   const c = window._qbContact;
   if (!c) return;
+  await qbLoadClientLists_();                    // doctors/meds from their tables
   const fromProfile = qbApplyClientProfile_();   // client record wins
   try {
     const { data: sess } = await supabaseClient.from('intake_sessions')
@@ -12160,10 +12245,7 @@ async function qbAcaIntakeRow_(keys) {
 
 // Doctor/med edits made anywhere flow back to the client's intake record
 async function qbAcaSyncPicksToIntake_() {
-  await qbSaveClientProfile_({
-    providers: (window._qbAcaDocs || []).map(d => ({ npi: d.npi, name: d.name })),
-    medications: (window._qbAcaMeds || []).map(m => ({ rxcui: m.rxcui, name: m.name })),
-  });
+  await qbSaveClientLists_();
   try {
     const row = await qbAcaIntakeRow_(['med_doctors', 'med_medications', 'med_doctors_struct', 'med_medications_struct']);
     if (!row) return;
