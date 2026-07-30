@@ -10956,6 +10956,9 @@ function qbMgAddPlan_(letter, productId) {
   }
   if (slot < 0) { showToast('All ' + QB_MAX_OPTIONS + ' options are full \u2014 remove one first.'); return; }
 
+  const _w = document.getElementById('qb-opt-wrap-' + slot);
+  if (_w) _w.style.display = 'block';
+  qbRenumberOptions_();
   const prof = qbMgProfile_();
   const quotes = (window._qbMgQuotes || {})[letter] || [];
   const q = productId ? quotes.find(x => x.product_id === productId) : quotes[0];
@@ -13067,11 +13070,17 @@ function openNppVersionModal() {
 // Slots are fixed (0..9) but the agent sees "Option 1, 2, 3..." — after a
 // delete in the middle those must renumber, or Option 4 stays "Option 4"
 // while sitting third.
+function qbOptionFilled_(i) {
+  const nm = document.getElementById('qb-name-' + i);
+  return !!((nm && nm.value.trim())
+    || (window._qbAcaSel || {})[i] || (window._qbCmsSel || {})[i] || (window._qbMgSel || {})[i]);
+}
+
 function qbOptionNo_(slot) {
   let n = 0;
   for (let i = 0; i <= slot; i++) {
     const w = document.getElementById('qb-opt-wrap-' + i);
-    if (w && w.style.display !== 'none') n++;
+    if ((w && w.style.display !== 'none') || qbOptionFilled_(i)) n++;
   }
   return n;
 }
@@ -13080,7 +13089,9 @@ function qbRenumberOptions_() {
   let n = 0;
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {
     const w = document.getElementById('qb-opt-wrap-' + i);
-    if (!w || w.style.display === 'none') continue;
+    if (!w) continue;
+    if (w.style.display === 'none' && qbOptionFilled_(i)) w.style.display = 'block';   // never hide a filled option
+    if (w.style.display === 'none') continue;
     n++;
     const chip = document.getElementById('qb-opt-no-' + i);
     const lbl = document.getElementById('qb-opt-label-' + i);
@@ -14631,7 +14642,7 @@ function renderAcaCompare_() {
               <div style="font-size:21px;font-weight:800;color:var(--accent,#1d3557);">$${Number(p.net).toFixed(2)}<span style="font-size:10px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
               ${credit ? `<div style="font-size:10.5px;color:var(--text-muted);">full $${Number(p.premium).toFixed(0)} − <span style="color:var(--success);">$${credit.toFixed(0)} credit</span></div>` : ''}
               <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="margin-top:6px;width:100%;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}"
-                onclick="qbAcaAddPlan_('${escWeb(p.id)}');renderAcaCompare_()">${slot >= 0 ? '✓ Option ' + (slot + 1) + ' — remove' : '＋ Add to quote'}</button>
+                onclick="qbAcaAddPlan_('${escWeb(p.id)}');renderAcaCompare_()">${slot >= 0 ? '✓ Option ' + qbOptionNo_(slot) + ' — remove' : '＋ Add to quote'}</button>
             </td>`;
           }).join('')}
         </tr></thead>
@@ -14805,12 +14816,11 @@ function qbAcaAddPlan_(planId) {
   }
   let slot = -1;
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {
-    const nameEl = document.getElementById('qb-name-' + i);
-    if (nameEl && !nameEl.value.trim()) { slot = i; break; }
+    if (!qbOptionFilled_(i)) { slot = i; break; }
   }
   if (slot === -1) { showToast('All ' + QB_MAX_OPTIONS + ' option slots are full \u2014 remove one first.'); return; }
   const wrap = document.getElementById('qb-opt-wrap-' + slot);
-  while (wrap && wrap.style.display === 'none') qbRevealOption_();
+  if (wrap) wrap.style.display = 'block';
   const sel = document.getElementById('qb-aca-' + slot);
   if (sel) { sel.value = planId; qbApplyAcaPlan_(slot); }
   qbRenumberOptions_();
@@ -15907,6 +15917,9 @@ function qbCmsAddPlan_(planId) {
   }
   if (slot < 0) { showToast('All ' + QB_MAX_OPTIONS + ' options are full \u2014 remove one first.'); return; }
 
+  const _w = document.getElementById('qb-opt-wrap-' + slot);
+  if (_w) _w.style.display = 'block';
+  qbRenumberOptions_();
   window._qbCmsSel[slot] = p;
   const ol = document.getElementById('qb-optline-' + slot);
   if (ol && !ol.value) {
