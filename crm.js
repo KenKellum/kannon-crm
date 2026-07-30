@@ -13226,11 +13226,19 @@ function qbGroupOptions_() {
   if (!list || !parked) return;
   window._qbGrpOpen = window._qbGrpOpen || {};
 
+  // Take every option out of its group FIRST. Removing the group boxes while
+  // the options are still inside them destroys the options with them.
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (w) parked.appendChild(w);
+  }
+  list.querySelectorAll('.qb-optgrp').forEach(el => el.remove());
+
   const groups = [];
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {
     const w = document.getElementById('qb-opt-wrap-' + i);
     if (!w) continue;
-    if (w.style.display === 'none') { parked.appendChild(w); continue; }
+    if (w.style.display === 'none') continue;
     const line = (document.getElementById('qb-optline-' + i) || {}).value || '';
     let g = groups.find(x => x.line === line);
     if (!g) { g = { line: line, slots: [] }; groups.push(g); }
@@ -13238,7 +13246,6 @@ function qbGroupOptions_() {
   }
 
   // one header per coverage type, in the order the options appear
-  list.querySelectorAll('.qb-optgrp').forEach(el => el.remove());
   groups.forEach(g => {
     const key = g.line || '_none';
     const open = window._qbGrpOpen[key] !== false;
