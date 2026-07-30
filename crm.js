@@ -7360,7 +7360,9 @@ async function handleModalSave() {
 }
 
 function closeModal() {
-  qbCloseIntakeDrawer_(); document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
+  qbCloseIntakeDrawer_();
+  qbCloseWorkbench_();
+  window._qbWbSeen = null; document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
 
 // ============================================================
 // TOAST
@@ -10959,6 +10961,8 @@ async function openQuoteBuilder(dealId, opts) {
         onclick="qbToggleIntakeDrawer_()">\u{1F4C4} Their answers</button>
     </div>
     <div id="qb-sections" style="font-size:11.5px;margin-top:4px;line-height:1.5;"></div>
+    <div id="qb-auto-card" style="display:none;"></div>
+    <div id="qb-strip-holder" style="display:none;"></div>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
     <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; ACA Marketplace — household &amp; subsidy</div>
@@ -11199,6 +11203,121 @@ function qbSectionSummary_() {
     + '<span style="color:var(--text-muted);"> \u2014 the client picks one from each section.</span>';
 }
 
+// Which lines have an automated data source, and what to call it
+function qbAutoLine_(line) {
+  if (line === 'Health \u2014 Individual')
+    return { key: 'aca', el: 'qb-aca-strip', title: '\u{1F3DB}\uFE0F ACA Marketplace workbench',
+             blurb: 'Household, income and subsidy \u2014 then shop the live Marketplace.' };
+  if (line === 'Medicare Advantage' || line === 'Part D (PDP)')
+    return { key: 'cms', el: 'qb-cms-strip', title: '\u{1F3DB}\uFE0F Medicare plan workbench',
+             blurb: 'Official CMS plan data for their county.' };
+  if (line === 'Medicare Supplement')
+    return { key: 'rate', el: 'qb-rate-strip', title: '\u{1F4CA} Medigap rating workbench',
+             blurb: 'Age, gender and tobacco drive the rate lookup.' };
+  return null;
+}
+
+function qbEnsureWorkbench_() {
+  let wb = document.getElementById('qb-workbench');
+  if (!wb) {
+    wb = document.createElement('div');
+    wb.id = 'qb-workbench';
+    wb.style.cssText = 'position:fixed;top:0;left:0;bottom:0;width:min(560px,96vw);z-index:99988;display:none;'
+      + 'flex-direction:column;background:var(--surface-0);border-right:1px solid var(--border);'
+      + 'box-shadow:14px 0 44px rgba(0,0,0,.34);';
+    wb.innerHTML = '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--surface-1);">'
+      + '<div id="qb-wb-title" style="font-weight:800;font-size:14px;flex:1;"></div>'
+      + '<button class="btn btn-primary btn-sm" onclick="qbWorkbenchOpen_(false)">\u2713 Done</button></div>'
+      + '<div id="qb-wb-body" style="flex:1;overflow-y:auto;padding:14px 18px;"></div>';
+    document.body.appendChild(wb);
+  }
+  return wb;
+}
+
+function qbWorkbenchOpen_(open) {
+  const wb = qbEnsureWorkbench_();
+  wb.style.display = open ? 'flex' : 'none';
+  if (!open) qbAutoCardPaint_();          // refresh the summary on the way out
+}
+
+function qbCloseWorkbench_() {
+  const wb = document.getElementById('qb-workbench');
+  if (wb) wb.remove();
+}
+
+// Compact status card left behind in the dialog
+function qbAutoCardPaint_() {
+  const card = document.getElementById('qb-auto-card');
+  if (!card) return;
+  const cfg = qbAutoLine_((document.getElementById('qb-line') || {}).value);
+  if (!cfg) { card.style.display = 'none'; card.innerHTML = ''; return; }
+
+  const bits = [];
+  if (cfg.key === 'aca') {
+    const inc = (document.getElementById('qb-aca-income') || {}).value;
+    const zip = (document.getElementById('qb-aca-zip') || {}).value;
+    const cs = document.getElementById('qb-aca-county');
+    const county = (cs && cs.options[cs.selectedIndex]) ? cs.options[cs.selectedIndex].text : '';
+    const rows = document.querySelectorAll('#qb-aca-members > div').length;
+    if (inc) bits.push('$' + Number(inc).toLocaleString() + '/yr');
+    if (zip) bits.push(zip);
+    if (county) bits.push(county);
+    if (rows) bits.push(rows + (rows === 1 ? ' member' : ' members'));
+    const n = (window._qbAcaPlans || []).length;
+    if (n) bits.push('<strong style="color:var(--text-success);">' + n + ' plans loaded</strong>');
+    if (window._qbAcaAptc) bits.push('credit $' + Number(window._qbAcaAptc).toFixed(0) + '/mo');
+    const csr = (typeof acaCsrActive_ === 'function') ? acaCsrActive_() : null;
+    if (csr && typeof acaCsrPct_ === 'function') bits.push('\u2728 ' + acaCsrPct_(csr) + '% CSR');
+  } else if (cfg.key === 'cms') {
+    const n = (window._qbCmsPlans || []).length;
+    if (n) bits.push(n + ' CMS plans loaded');
+  } else if (cfg.key === 'rate') {
+    const age = window._qbRateAge;
+    if (age != null) bits.push('age ' + age);
+  }
+
+  card.style.display = 'block';
+  card.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface-1);border:0.5px solid var(--border);border-left:3px solid var(--accent,#c8a84b);border-radius:8px;padding:10px 12px;margin-top:10px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:800;">${cfg.title}</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${bits.length ? bits.join(' \u00b7 ') : escWeb(cfg.blurb)}</div>
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="qbWorkbenchOpen_(true)">\u2699\uFE0F Open workbench</button>
+    </div>`;
+}
+
+// Move the active strip into the workbench; park the others out of sight
+function qbSyncWorkbench_(autoOpen) {
+  const line = (document.getElementById('qb-line') || {}).value;
+  const cfg = qbAutoLine_(line);
+  const wb = qbEnsureWorkbench_();
+  const body = document.getElementById('qb-wb-body');
+  const holder = document.getElementById('qb-strip-holder');
+  if (!body || !holder) return;
+
+  ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (cfg && cfg.el === id) {
+      if (el.parentElement !== body) body.appendChild(el);
+      el.style.display = 'block';
+      el.style.border = 'none';
+      el.style.background = 'transparent';
+      el.style.padding = '0';
+      el.style.margin = '0';
+    } else {
+      if (el.parentElement !== holder) holder.appendChild(el);
+      el.style.display = 'none';
+    }
+  });
+
+  const t = document.getElementById('qb-wb-title');
+  if (t) t.innerHTML = cfg ? cfg.title : '';
+  if (!cfg) qbWorkbenchOpen_(false);
+  else if (autoOpen && window._qbWbSeen !== cfg.key) { window._qbWbSeen = cfg.key; qbWorkbenchOpen_(true); }
+  qbAutoCardPaint_();
+}
+
 function qbLineChanged_() {
   const line = document.getElementById('qb-line').value;
   const isMed = MEDICARE_QUOTE_LINES.includes(line);
@@ -11249,6 +11368,7 @@ function qbLineChanged_() {
     if (ol && (!nm || !nm.value.trim())) ol.value = line;
   }
   qbSectionSummary_();
+  qbSyncWorkbench_(true);
 }
 
 function qbFillProducts_(i) {
@@ -13502,6 +13622,7 @@ async function qbAcaGetPlans_() {
       if (sel) sel.innerHTML = opts;
     }
     qbAcaRelinkOptions_();     // plans already on the quote show as chosen
+    qbAutoCardPaint_();
     _qbAcaMetalFilter = 'All';
     qbAcaRenderBrowser_();
     openAcaPicker_();          // straight into the picker — no second click
