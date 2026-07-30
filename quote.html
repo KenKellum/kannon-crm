@@ -583,6 +583,9 @@ async function enterCompare() {
   document.getElementById('compare-view').style.display = 'block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
   const row = document.getElementById('cmp-row');
+  const allCms = list.length >= 2 && list.every(o => o.plan_meta && o.plan_meta.src === 'cms');
+  if (allCms) { row.innerHTML = cmsCmpTableHtml(list); return; }
+
   const detailed = list.length >= 2 && list.every(o => o.plan_meta && o.plan_meta.src === 'aca' && o.plan_meta.plan_id);
   if (!detailed) {
     row.innerHTML = list.map(o =>
@@ -612,6 +615,76 @@ function csTextC(b) {
   if (cs.coinsurance_rate != null && cs.coinsurance_rate > 0) bits.push(Math.round(cs.coinsurance_rate * 100) + '% coinsurance');
   if (cs.copay_amount === 0 && !cs.coinsurance_rate) bits.push('No charge');
   return bits.join(' + ') || '';
+}
+
+// Medicare plans side by side. Everything here is already on the quote — the
+// plan facts and the drug answers were recorded when it was built — so this
+// page never calls out to anything.
+function cmsCmpTableHtml(list) {
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const th = 'position:sticky;left:0;background:#fff;z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:#64748b;padding:9px 12px;border-bottom:1px solid #eef2f7;min-width:150px;max-width:190px;';
+  const td = o => 'padding:9px 12px;border-bottom:1px solid #eef2f7;font-size:12.5px;vertical-align:top;min-width:185px;color:#334155;'
+    + (o.is_recommended ? 'background:#fffdf5;' : '');
+  const rowH = (label, fn) => `<tr><th style="${th}">${label}</th>${list.map(o => `<td style="${td(o)}">${fn(o)}</td>`).join('')}</tr>`;
+  const m = o => o.plan_meta || {};
+
+  // every drug any of these plans answered for
+  const drugs = [];
+  list.forEach(o => (covOf(o) || { medications: [] }).medications.forEach(x => {
+    if (!drugs.some(d => d.id === x.id)) drugs.push(x);
+  }));
+  const drugCell = (o, id) => {
+    const c = covOf(o);
+    if (m(o).category === 'MA') return '<span style="color:#b45309;">no drug coverage</span>';
+    if (!c) return '<span style="color:#94a3b8;">not checked</span>';
+    const hit = c.medications.find(x => x.id === id);
+    if (!hit) return '<span style="color:#94a3b8;">not checked</span>';
+    if (!hit.covered) return '<span style="color:#b91c1c;font-weight:600;">\u2717 Not on drug list</span>';
+    const notes = [];
+    if (hit.prior_auth) notes.push('prior approval');
+    if (hit.step_therapy) notes.push('step therapy');
+    if (hit.quantity_limit) notes.push('quantity limit');
+    return '<span style="color:#15803d;font-weight:700;">\u2713 ' + (hit.tier ? 'Tier ' + hit.tier : 'Covered') + '</span>'
+      + (notes.length ? '<div style="font-size:11px;color:#b45309;">' + esc(notes.join(', ')) + '</div>' : '');
+  };
+
+  return `<table id="cmp-table" style="border-collapse:collapse;background:#fff;border:1px solid #eef2f7;border-radius:12px;">
+    <thead>
+    <tr>
+      <th style="${th}"></th>
+      ${list.map(o => `<td style="${td(o)}border-bottom:none;padding-bottom:0;">
+        ${o.is_recommended ? '<div style="color:#b3903a;font-size:10px;font-weight:800;letter-spacing:.8px;">&#11088; RECOMMENDED</div>' : ''}
+        <div class="pm-chips" style="margin:4px 0 6px;">
+          ${m(o).plan_type ? `<span class="pm-chip">${esc(m(o).plan_type)}</span>` : ''}
+          ${m(o).snp_type ? '<span class="pm-chip">SNP</span>' : ''}
+        </div>
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#64748b;">${esc(o.carrier_name)}</div>
+        <div style="font-size:13px;font-weight:700;margin:2px 0 0;color:var(--ink);">${esc(o.display_name)}</div>
+      </td>`).join('')}
+    </tr>
+    <tr>
+      <th style="${th}border-bottom:1.5px solid #e2e8f0;"></th>
+      ${list.map(o => `<td style="${td(o)}border-bottom:1.5px solid #e2e8f0;vertical-align:bottom;padding-top:6px;">
+        <div style="font-size:22px;font-weight:800;color:var(--brand);line-height:1.1;">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<span style="font-size:10px;font-weight:500;color:#64748b;"> /mo</span></div>
+        <div style="font-size:10.5px;color:#64748b;">plus your Part B premium</div>
+      </td>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${rowH('Plan type', o => esc(m(o).plan_type || '\u2014'))}
+      ${rowH('Prescription coverage', o => m(o).category === 'MA'
+        ? '<span style="color:#b45309;">Not included</span>'
+        : '<span style="color:#15803d;font-weight:700;">Included</span>')}
+      ${rowH('Max out-of-pocket', o => `<strong>${money(m(o).moop)}</strong>`)}
+      ${rowH('Yearly drug deductible', o => m(o).category === 'MA' ? '\u2014' : money(m(o).drug_deductible))}
+      ${rowH('Star rating', o => m(o).rating ? '&#11088; ' + esc(String(m(o).rating)) + ' of 5' : 'not rated yet')}
+      ${list.some(o => m(o).snp_type) ? rowH('Special Needs Plan', o => m(o).snp_type ? esc(m(o).snp_type) : '\u2014') : ''}
+      ${drugs.map(d => rowH('\u{1F48A} ' + esc(d.name), o => drugCell(o, d.id))).join('')}
+      <tr><th style="${th}"></th>${list.map(o => `<td style="${td(o)}border-bottom:none;">
+        <button class="pick ${discussSet.has(o.id) ? 'on' : ''}" style="width:100%;padding:9px;font-size:12px;margin:0;" onclick="toggleDiscuss('${o.id}', this)">
+          ${discussSet.has(o.id) ? '\u2713 On my discuss list' : '\u{1F4AC} Discuss this one'}</button></td>`).join('')}</tr>
+    </tbody>
+  </table>
+  <div style="font-size:11px;color:#94a3b8;margin-top:8px;">Plan facts come from the official CMS plan data. Drug coverage was checked against each plan\u2019s published drug list when this quote was prepared \u2014 drug lists change, so please confirm before you enroll.</div>`;
 }
 
 function cmpTableHtml(list) {
