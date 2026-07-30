@@ -10734,6 +10734,8 @@ async function loadDealTree_(deal) {
         ${done ? `<a href="#" onclick="viewIntakeSession('${x.id}'); return false;">view</a>` : ''}
         <a href="#" style="color:var(--text-danger);" title="Delete this intake"
            onclick="deleteIntakeSession('${x.id}','${x.form_type}','${x.status}','${deal.contact_id}'); return false;">&#128465;</a>
+        ${(canQuote && kids.length) ? `<button type="button" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:11px;padding:2px 9px;"
+            onclick="openQuoteBuilder('${deal.id}', { intakeSessionId: '${x.id}' })">\uff0b New Quote</button>` : ''}
       </div>
       <div style="margin-left:14px;padding-left:10px;border-left:2px solid var(--border-selected);margin-top:3px;">
         ${kids.length ? kids.map(quoteLine).join('')
@@ -10842,12 +10844,11 @@ async function openQuoteBuilder(dealId, opts) {
   const carOpts = '<option value="">— pick carrier —</option>'
     + myCarriers.map(c => `<option value="${c.id}">${escWeb(c.name)}</option>`).join('');
   const lineOpts = QUOTE_LINES.map(l => `<option value="${l}">${l}</option>`).join('');
-  const intakeOpts = (window._qbIntakeChoices || []).map(x => {
-    const lbl = (INTAKE_TYPE_LABELS[x.form_type] || x.form_type)
-      + ' \u00b7 ' + new Date(x.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      + (x.status === 'completed' ? '' : ' (pending)');
-    return `<option value="${x.id}"${x.id === window._qbIntakeSessionId ? ' selected' : ''}>${escWeb(lbl)}</option>`;
-  }).join('') + `<option value=""${!window._qbIntakeSessionId ? ' selected' : ''}>\u2014 not tied to an intake \u2014</option>`;
+  const _forIntake = (window._qbIntakeChoices || []).find(x => x.id === window._qbIntakeSessionId);
+  const intakeNote = _forIntake
+    ? '\u{1F91D} Filed under their <strong>' + escWeb(INTAKE_TYPE_LABELS[_forIntake.form_type] || _forIntake.form_type)
+      + '</strong> intake from ' + new Date(_forIntake.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '\u{1F91D} Not tied to an intake \u2014 it will show under \u201cQuotes not tied to an intake\u201d.';
   const defValid = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const optBlock = i => `
     <div id="qb-opt-wrap-${i}" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-top:14px;${i > 0 ? 'display:none;' : ''}">
@@ -10892,9 +10893,8 @@ async function openQuoteBuilder(dealId, opts) {
         </select></div>
       <div><label style="margin-top:0;">Valid until</label>
         <input type="date" id="qb-valid" value="${defValid}" style="width:auto;" /></div>
-      <div><label style="margin-top:0;">For which intake?</label>
-        <select id="qb-intake" style="width:auto;max-width:230px;">${intakeOpts}</select></div>
     </div>
+    <div id="qb-intake-note" style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">${intakeNote}</div>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
     <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; ACA Marketplace — household &amp; subsidy</div>
@@ -11060,7 +11060,7 @@ async function openQuoteBuilder(dealId, opts) {
       line: line, brand: document.getElementById('qb-brand').value,
       valid_until: document.getElementById('qb-valid').value || null,
       quote_inputs: (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null,
-      intake_session_id: (document.getElementById('qb-intake') || {}).value || null,
+      intake_session_id: window._qbIntakeSessionId || null,
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
     const { error: e2 } = await supabaseClient.from('quote_options')
