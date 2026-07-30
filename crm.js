@@ -10926,8 +10926,8 @@ function qbMgRemoveSlot_(i) {
     if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
   });
   qbMgOptionView_(i);
+  qbTidyOptions_();
   if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
-  qbSectionSummary_();
 }
 
 function qbMgAddPlan_(letter, productId) {
@@ -13128,6 +13128,26 @@ function qbOptionNo_(slot) {
   return n;
 }
 
+// Hide any option that has nothing in it, except the first \u2014 there is always
+// somewhere to type. Called after anything removes a plan.
+function qbTidyOptions_() {
+  const addBtn = document.getElementById('qb-add-opt');
+  for (let i = QB_MAX_OPTIONS - 1; i >= 1; i--) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (!w || w.style.display === 'none') continue;
+    if (qbOptionFilled_(i)) continue;
+    const note = document.getElementById('qb-note-' + i);
+    const bul = document.getElementById('qb-bul-' + i);
+    if ((note && note.value.trim()) || (bul && bul.value.trim())) continue;   // agent typed something
+    w.style.display = 'none';
+    const ol = document.getElementById('qb-optline-' + i);
+    if (ol) ol.value = '';
+  }
+  if (addBtn) addBtn.style.display = '';
+  qbRenumberOptions_();
+  qbSectionSummary_();
+}
+
 function qbRenumberOptions_() {
   let n = 0;
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {
@@ -13165,6 +13185,9 @@ function qbHideOption_(i) {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   const rec = document.getElementById('qb-rec-' + i); if (rec) rec.checked = false;
+  delete (window._qbAcaSel || {})[i];
+  delete (window._qbCmsSel || {})[i];
+  delete (window._qbMgSel || {})[i];
   const addBtn = document.getElementById('qb-add-opt'); if (addBtn) addBtn.style.display = '';
   // a hidden slot must also drop its picker link, or the plan still reads as chosen
   const sel = document.getElementById('qb-aca-' + i); if (sel) sel.value = '';
@@ -14853,6 +14876,7 @@ function qbAcaAddPlan_(planId) {
       const el = document.getElementById(pref + existing); if (el) el.value = '';
     });
     const rec = document.getElementById('qb-rec-' + existing); if (rec) rec.checked = false;
+    qbTidyOptions_();
     qbAcaRenderBrowser_();
     if (document.getElementById('qb-aca-picker')) renderPickerBody_();
     return;
@@ -15573,8 +15597,8 @@ function qbCmsRemoveSlot_(i) {
     if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
   });
   qbCmsOptionView_(i);
+  qbTidyOptions_();
   if (document.getElementById('qb-cms-picker')) renderCmsPicker_();
-  qbSectionSummary_();
 }
 
 function openCmsPicker_() {
