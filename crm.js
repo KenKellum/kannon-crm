@@ -5622,20 +5622,14 @@ function openDealPanel(dealId) {
     setTimeout(function() { loadCensusStatus_(deal); }, 70);
   }
 
-  if (deal.contact_id && (!deal.pipeline || !deal.pipeline.startsWith('agent-'))) {
-    healthHTML += '<div class="panel-section"><div class="panel-label">Intake</div>'
-      + '<div id="deal-intake-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking intakes&hellip;</div>'
-      + '<button class="btn btn-accent btn-sm" onclick="showIntakeForm(\'' + deal.contact_id + '\')">&#129309; New Intake</button>'
-      + '</div>';
-    setTimeout(function() { loadDealIntakeStatus_(deal); }, 55);
-  }
-
   if (!deal.pipeline || !deal.pipeline.startsWith('agent-')) {
-    healthHTML += '<div class="panel-section"><div class="panel-label">Quotes</div>'
-      + '<div id="quotes-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking quotes&hellip;</div>'
+    healthHTML += '<div class="panel-section"><div class="panel-label">Intakes &amp; Quotes</div>'
+      + '<div id="deal-tree-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Loading&hellip;</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      + (deal.contact_id ? '<button class="btn btn-accent btn-sm" onclick="showIntakeForm(\'' + deal.contact_id + '\')">&#129309; New Intake</button>' : '')
       + '<button class="btn btn-outline btn-sm" onclick="openQuoteBuilder(\'' + deal.id + '\')">&#128181; Create Quote</button>'
-      + '</div>';
-    setTimeout(function() { loadQuotesStatus_(deal); }, 60);
+      + '</div></div>';
+    setTimeout(function() { loadDealTree_(deal); }, 55);
   }
 
   var nextStepHTML = deal.next_step
@@ -6640,7 +6634,7 @@ async function deleteIntakeSession(sessionId, formType, status, contactId) {
   showToast('Intake deleted.');
   if (document.getElementById('intake-history-panel')) loadIntakeHistoryPanel(contactId);
   deals.filter(d => d.contact_id === contactId).forEach(d => {
-    if (document.getElementById('deal-intake-status-' + d.id)) loadDealIntakeStatus_(d);
+    if (document.getElementById('deal-tree-' + d.id)) loadDealTree_(d);
   });
 }
 
@@ -10690,47 +10684,77 @@ async function requoteFromQuote_(quoteId, dealId) {
   }, 350);
 }
 
-async function loadDealIntakeStatus_(deal) {
-  const el = document.getElementById('deal-intake-status-' + deal.id);
-  if (!el || !deal.contact_id) return;
-  const { data: sess } = await supabaseClient.from('intake_sessions')
-    .select('id,form_type,status,created_at')
-    .eq('contact_id', deal.contact_id).order('created_at', { ascending: false }).limit(3);
-  if (!sess || !sess.length) { el.textContent = 'No intakes yet for this client.'; return; }
-  el.innerHTML = sess.map(x => {
-    const lbl = (INTAKE_TYPE_LABELS[x.form_type] || x.form_type);
-    const d = new Date(x.created_at).toLocaleDateString();
-    const badge = x.status === 'completed'
-      ? '<span style="color:var(--success);font-weight:600;">completed</span>'
-      : '<span style="color:#f59e0b;">pending</span>';
-    const view = x.status === 'completed'
-      ? ` &middot; <a href="#" onclick="viewIntakeSession('${x.id}'); return false;">view</a>` : '';
-    const del = ` &middot; <a href="#" style="color:var(--danger);" title="Delete this intake" onclick="deleteIntakeSession('${x.id}','${x.form_type}','${x.status}','${deal.contact_id}'); return false;">&#128465;</a>`;
-    return `<div style="padding:2px 0;">${escWeb(lbl)} &middot; ${d} &middot; ${badge}${view}${del}</div>`;
-  }).join('');
-}
-
-async function loadQuotesStatus_(deal) {
-  const el = document.getElementById('quotes-status-' + deal.id);
+// The agent shouldn't have to mentally join two lists. One tree: the intake
+// they filled out, and underneath it the quotes that came from it.
+async function loadDealTree_(deal) {
+  const el = document.getElementById('deal-tree-' + deal.id);
   if (!el) return;
-  const { data: qs } = await supabaseClient.from('quotes')
-    .select('id,line,status,created_at,viewed_at,client_email')
-    .eq('deal_id', deal.id).order('created_at', { ascending: false });
-  if (!qs || !qs.length) { el.textContent = 'No quotes yet for this deal.'; return; }
-  el.innerHTML = qs.map(q => {
-    const d = new Date(q.created_at).toLocaleDateString();
+  const canQuote = !deal.pipeline || !deal.pipeline.startsWith('agent-');
+  let sess = [], qs = [];
+  try {
+    const [a, b] = await Promise.all([
+      deal.contact_id
+        ? supabaseClient.from('intake_sessions').select('id,form_type,status,created_at')
+            .eq('contact_id', deal.contact_id).order('created_at', { ascending: false }).limit(6)
+        : Promise.resolve({ data: [] }),
+      supabaseClient.from('quotes')
+        .select('id,line,status,created_at,client_email,intake_session_id')
+        .eq('deal_id', deal.id).order('created_at', { ascending: false }),
+    ]);
+    sess = a.data || []; qs = b.data || [];
+  } catch (e) { el.textContent = 'Could not load intakes and quotes.'; return; }
+
+  const fmt = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const quoteLine = q => {
     let badge;
-    if (q.status === 'interested') badge = '<span style="color:var(--success);font-weight:700;">&#11088; INTERESTED &mdash; follow up!</span>';
+    if (q.status === 'interested') badge = '<span style="color:var(--text-success);font-weight:700;">\u2b50 INTERESTED \u2014 follow up!</span>';
     else if (q.status === 'viewed') badge = '<span style="color:#3b82f6;font-weight:600;">Viewed</span>';
     else if (q.status === 'sent') badge = 'Sent';
-    else badge = '<span style="color:#f59e0b;">Draft</span>';
+    else badge = '<span style="color:var(--text-warning);">Draft</span>';
     const send = (q.status === 'draft' && q.client_email)
       ? ` &middot; <a href="#" onclick="sendQuote_('${q.id}', this); return false;">Send now</a>` : '';
-    return `<div style="padding:3px 0;">${escWeb(q.line)} &middot; ${d} &middot; ${badge}
+    return `<div style="padding:2px 0;font-size:12px;">\u{1F4BC} ${escWeb(q.line)} &middot; ${fmt(q.created_at)} &middot; ${badge}
       &middot; <a href="quote.html?q=${q.id}" target="_blank">view &#8599;</a>${send}
       &middot; <a href="#" onclick="requoteFromQuote_('${q.id}','${deal.id}'); return false;" title="Start a fresh quote pre-filled from this one">&#8635; re-quote</a></div>`;
+  };
+
+  const used = new Set();
+  const branches = sess.map(x => {
+    const kids = qs.filter(q => q.intake_session_id === x.id);
+    kids.forEach(q => used.add(q.id));
+    const lbl = INTAKE_TYPE_LABELS[x.form_type] || x.form_type;
+    const done = x.status === 'completed';
+    const badge = done
+      ? '<span style="color:var(--text-success);font-weight:600;">completed</span>'
+      : '<span style="color:var(--text-warning);">pending</span>';
+    return `<div style="margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;">
+        <span>\u{1F91D} <strong>${escWeb(lbl)}</strong></span>
+        <span style="color:var(--text-muted);">${fmt(x.created_at)} &middot; ${badge}</span>
+        ${done ? `<a href="#" onclick="viewIntakeSession('${x.id}'); return false;">view</a>` : ''}
+        <a href="#" style="color:var(--text-danger);" title="Delete this intake"
+           onclick="deleteIntakeSession('${x.id}','${x.form_type}','${x.status}','${deal.contact_id}'); return false;">&#128465;</a>
+      </div>
+      <div style="margin-left:14px;padding-left:10px;border-left:2px solid var(--border-selected);margin-top:3px;">
+        ${kids.length ? kids.map(quoteLine).join('')
+          : `<div style="font-size:11.5px;color:var(--text-muted);padding:2px 0;">no quotes from this intake yet${canQuote ? ` &middot; <a href="#" onclick="openQuoteBuilder('${deal.id}'); return false;">create one</a>` : ''}</div>`}
+      </div>
+    </div>`;
   }).join('');
+
+  const orphans = qs.filter(q => !used.has(q.id));
+  const orphanBlock = orphans.length ? `
+    <div style="margin-top:${sess.length ? '10' : '0'}px;">
+      ${sess.length ? '<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:3px;">Quotes not tied to an intake</div>' : ''}
+      ${orphans.map(quoteLine).join('')}
+    </div>` : '';
+
+  el.innerHTML = (branches || orphanBlock)
+    ? branches + orphanBlock
+    : '<div style="font-size:12px;color:var(--text-muted);">Nothing yet \u2014 start an intake, then quote from it.</div>';
 }
+
+
 
 // Pick the right Line of Business before the agent even looks:
 // pipeline decides the family, the client's intake refines it.
@@ -11029,7 +11053,7 @@ async function openQuoteBuilder(dealId) {
     if (e2) { showToast('Error saving options: ' + e2.message); return false; }
     closeModal();
     openQuoteReady_(q, contact);
-    loadQuotesStatus_(deal);
+    loadDealTree_(deal);
     return false;
   }, { confirmLabel: 'Save Quote' });
   const smartLine = await qbSmartDefaultLine_(deal, contact);
