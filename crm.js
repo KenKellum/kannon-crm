@@ -10508,6 +10508,7 @@ function openMedigapPicker_() {
   el.style.display = 'flex';
   window._qbMgShowGrid = false;
   renderMedigapPicker_();
+  qbMgLoadRates_();
 }
 
 function closeMedigapPicker_() {
@@ -10568,9 +10569,29 @@ function mgCardHtml_(p) {
         ${bullets.map(b => `<li style="font-size:12px;line-height:1.5;color:var(--text-secondary);padding:2px 0 2px 16px;position:relative;">
           <span style="position:absolute;left:0;color:var(--text-success);font-weight:800;">\u00b7</span>${escWeb(b)}</li>`).join('')}
       </ul>
-      ${rate != null
-        ? `<div style="margin-top:9px;font-size:20px;font-weight:800;color:var(--accent,#1d3557);">$${Number(rate).toFixed(2)}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo</span></div>`
-        : `<div style="margin-top:9px;font-size:11.5px;color:var(--text-muted);">No rate chart loaded for this state \u2014 type the premium on the option.</div>`}
+      ${(() => {
+        const qs = (window._qbMgQuotes || {})[letter] || [];
+        if (!qs.length) {
+          return `<div style="margin-top:9px;font-size:11.5px;color:var(--text-muted);">
+            No rate chart loaded for this letter in ${escWeb(qbMgProfile_().state || 'their state')} \u2014
+            add one under <strong>Admin \u2192 Carriers &amp; Products</strong>, or type the premium on the option.</div>`;
+        }
+        return `<div style="margin-top:9px;">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);">
+            ${qs.length} carrier${qs.length === 1 ? '' : 's'} \u00b7 cheapest first</div>
+          ${qs.map(q => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border);">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12.5px;font-weight:700;">${escWeb(q.carrier_name)}</div>
+              <div style="font-size:10.5px;color:var(--text-muted);">${escWeb(q.chart.rating_method || 'rate chart')}${
+                q.chart.effective_date ? ' \u00b7 eff. ' + escWeb(q.chart.effective_date) : ''}${
+                q.chart.household_discount_pct ? ' \u00b7 household \u2212' + q.chart.household_discount_pct + '%' : ''}</div>
+            </div>
+            <div style="font-size:15px;font-weight:800;color:var(--accent,#1d3557);white-space:nowrap;">$${q.rate.toFixed(2)}</div>
+            <button type="button" class="btn ${mgAddedSlot_(letter) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
+              onclick="qbMgAddPlan_('${escWeb(letter)}','${escWeb(q.product_id)}')">Add</button>
+          </div>`).join('')}
+        </div>`;
+      })()}
       <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
         <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
           onclick="qbMgAddPlan_('${escWeb(letter)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
@@ -10580,6 +10601,69 @@ function mgCardHtml_(p) {
 }
 
 window._qbMgCmp = window._qbMgCmp || new Set();
+
+// A product's code carries the letter: "Plan G", "HD Plan G".
+function mgLetterOf_(product) {
+  const code = String(product.product_code || product.name || '');
+  const m = code.match(/^(HD )?Plan\s+([A-N])$/i);
+  if (!m) return null;
+  return (m[1] ? 'HD' : '') + m[2].toUpperCase();
+}
+
+// For every lettered plan, which of YOUR carriers quote it in their state and
+// at what price. One pass over the charts rather than a query per product.
+async function qbMgLoadRates_() {
+  const prof = qbMgProfile_();
+  window._qbMgRates = {};
+  window._qbMgQuotes = {};
+  if (!prof.state || prof.age == null) { if (document.getElementById('qb-mg-picker')) renderMedigapPicker_(); return; }
+
+  const { data: prods } = await supabaseClient.from('carrier_products')
+    .select('id,name,product_code,carrier_id,is_active,line_of_business')
+    .eq('line_of_business', 'Medicare Supplement').eq('is_active', true);
+  const products = (prods || []).filter(p => mgLetterOf_(p));
+  if (!products.length) { if (document.getElementById('qb-mg-picker')) renderMedigapPicker_(); return; }
+
+  const { data: charts } = await supabaseClient.from('rate_charts')
+    .select('*').in('product_id', products.map(p => p.id))
+    .eq('is_active', true).eq('state', prof.state);
+  if (!charts || !charts.length) { if (document.getElementById('qb-mg-picker')) renderMedigapPicker_(); return; }
+
+  const { data: rows } = await supabaseClient.from('rate_rows')
+    .select('*').in('chart_id', charts.map(c => c.id))
+    .lte('age_min', prof.age).gte('age_max', prof.age);
+
+  const carriers = window._qbCarriers || [];
+  const zp = String(prof.zip || '').slice(0, 3);
+  const g = prof.gender === 'F' ? 'F' : 'M';
+
+  products.forEach(p => {
+    const mine = (charts || []).filter(c => c.product_id === p.id);
+    if (!mine.length) return;
+    const chart = mine.find(c => c.zip_prefixes && zp && c.zip_prefixes.split(',').map(x => x.trim()).includes(zp))
+      || mine.find(c => !c.zip_prefixes) || mine[0];
+    const rr = (rows || []).filter(r => r.chart_id === chart.id);
+    const pick = rr.find(r => r.gender === g && r.tobacco === prof.tobacco)
+      || rr.find(r => r.gender === 'U' && r.tobacco === prof.tobacco)
+      || rr.find(r => r.gender === g && !r.tobacco)
+      || rr.find(r => r.gender === 'U' && !r.tobacco);
+    if (!pick) return;
+    const letter = mgLetterOf_(p);
+    const carrier = carriers.find(c => c.id === p.carrier_id);
+    (window._qbMgQuotes[letter] = window._qbMgQuotes[letter] || []).push({
+      letter: letter, product_id: p.id, product_name: p.name,
+      carrier_id: p.carrier_id, carrier_name: (carrier && carrier.name) || 'Carrier',
+      rate: Number(pick.monthly_rate), chart: chart,
+      appointed: !!carrier,
+    });
+  });
+
+  Object.keys(window._qbMgQuotes).forEach(L => {
+    window._qbMgQuotes[L].sort((a, b) => a.rate - b.rate);
+    window._qbMgRates[L] = window._qbMgQuotes[L][0].rate;   // the cheapest, for the card
+  });
+  if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
+}
 
 function mgCmpToggle_(letter, cb) {
   if (cb.checked) {
@@ -10706,7 +10790,10 @@ function renderMedigapPicker_() {
       <span class="pk-tray-label">On the quote \u00b7 ${chosen.length}</span>
       ${chosen.map(x => `<div class="pk-tray-item">
         <span class="num">${qbOptionNo_(x.i)}</span>
-        <span class="who"><span class="pname">Plan ${escWeb(x.p.letter)}</span></span>
+        <span class="who">
+          ${x.p.carrier_name ? `<span class="carrier">${escWeb(x.p.carrier_name)}</span>` : ''}
+          <span class="pname">Plan ${escWeb(x.p.letter)}${x.p.rate != null ? ' \u00b7 $' + Number(x.p.rate).toFixed(2) : ''}</span>
+        </span>
         <button class="rm" onclick="qbMgRemoveSlot_(${x.i})" title="Take off the quote">\u2715</button>
       </div>`).join('')}
       <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeMedigapPicker_()">Done \u2014 back to the quote</button>
@@ -10724,9 +10811,10 @@ function qbMgRemoveSlot_(i) {
   qbSectionSummary_();
 }
 
-function qbMgAddPlan_(letter) {
+function qbMgAddPlan_(letter, productId) {
   const at = mgAddedSlot_(letter);
-  if (at >= 0) { qbMgRemoveSlot_(at); return; }
+  if (at >= 0 && !productId) { qbMgRemoveSlot_(at); return; }
+  if (at >= 0 && productId) { qbMgRemoveSlot_(at); }   // swapping carrier
   const p = MEDIGAP_PLANS.find(x => x[0] === letter);
   if (!p) return;
 
@@ -10750,14 +10838,38 @@ function qbMgAddPlan_(letter) {
   if (slot < 0) { showToast('All ' + QB_MAX_OPTIONS + ' options are full \u2014 remove one first.'); return; }
 
   const prof = qbMgProfile_();
-  const rate = (window._qbMgRates || {})[letter];
+  const quotes = (window._qbMgQuotes || {})[letter] || [];
+  const q = productId ? quotes.find(x => x.product_id === productId) : quotes[0];
+  const rate = q ? q.rate : (window._qbMgRates || {})[letter];
   window._qbMgSel = window._qbMgSel || {};
-  window._qbMgSel[slot] = { letter: letter, title: p[1], bullets: p[2], state: prof.state, rate: rate != null ? rate : null };
+  window._qbMgSel[slot] = {
+    letter: letter, title: p[1], bullets: p[2], state: prof.state,
+    rate: rate != null ? rate : null,
+    carrier_id: q ? q.carrier_id : null, carrier_name: q ? q.carrier_name : null,
+    product_id: q ? q.product_id : null,
+    rating_method: q ? q.chart.rating_method : null,
+  };
 
   const ol = document.getElementById('qb-optline-' + slot);
   if (ol && !ol.value) { ol.value = 'Medicare Supplement'; qbOptLineChanged_(slot); }
+
+  // point the option at the real carrier and product so the quote records them
+  if (q) {
+    const car = document.getElementById('qb-car-' + slot);
+    if (car) {
+      car.value = q.carrier_id;
+      qbFillProducts_(slot);
+      setTimeout(() => {
+        const pr = document.getElementById('qb-prod-' + slot);
+        if (pr) { pr.value = q.product_id; qbApplyProduct_(slot); }
+        const prem = document.getElementById('qb-prem-' + slot);
+        if (prem && rate != null) prem.value = Number(rate).toFixed(2);
+      }, 250);
+    }
+  }
+
   const nm = document.getElementById('qb-name-' + slot);
-  if (nm) nm.value = 'Medicare Supplement Plan ' + letter;
+  if (nm) nm.value = (q ? q.carrier_name + ' \u2014 ' : '') + 'Medicare Supplement Plan ' + letter;
   if (rate != null) { const pr = document.getElementById('qb-prem-' + slot); if (pr) pr.value = Number(rate).toFixed(2); }
   const bul = document.getElementById('qb-bul-' + slot);
   if (bul) { const ro = bul.readOnly; bul.readOnly = false; bul.value = p[2].join('\n'); bul.readOnly = ro; }
@@ -10902,7 +11014,7 @@ function qbMgRefresh_() {
   bars.push(['<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + notes.join(' \u00b7 ') + '</div>']);
 
   box.innerHTML = bars.map(b => b[0]).join('');
-  if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
+  if (document.getElementById('qb-mg-picker')) qbMgLoadRates_();
 }
 
 // ============================================================
