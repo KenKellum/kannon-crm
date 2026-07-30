@@ -10772,6 +10772,7 @@ async function requoteFromQuote_(quoteId, dealId) {
         olSel.value = o.line; qbOptLineChanged_(i);
       }
       if (o.plan_meta && o.plan_meta.src === 'aca') qbAcaHydrateOption_(i, o);
+      if (o.plan_meta && o.plan_meta.src === 'cms') qbCmsHydrateOption_(i, o);
     });
     showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
     qbAcaCoverSelected_();
@@ -10978,6 +10979,7 @@ async function openQuoteBuilder(dealId, opts) {
         <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
       </div>
       <div id="qb-aca-card-${i}" style="display:none;"></div>
+      <div id="qb-cms-card-${i}" style="display:none;"></div>
       <div id="qb-manual-${i}">
         <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
         <label>Monthly premium ($) *</label><input type="number" step="0.01" id="qb-prem-${i}" placeholder="e.g. 128.50" />
@@ -11054,13 +11056,35 @@ async function openQuoteBuilder(dealId, opts) {
       <div id="qb-aca-browser" style="display:none;margin-top:12px;"></div>
     </div>
     <div id="qb-cms-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; Medicare Advantage Plans</div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;">
-        <span id="qb-cms-status"></span>
-        <span id="qb-cms-county-wrap" style="display:none;">County:
-          <select id="qb-cms-county" onchange="qbCmsCountyChanged_()" style="width:auto;display:inline-block;"></select></span>
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#127963;&#65039; Medicare Advantage Plans</div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;font-size:13px;">
+        <div><label style="font-size:10px;margin:0 0 2px;">Their ZIP code</label>
+          <input type="text" id="qb-cms-zip" maxlength="5" inputmode="numeric" placeholder="59718"
+            style="width:90px;" onchange="qbCmsZipChanged_()" /></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">County</label>
+          <select id="qb-cms-county" onchange="qbCmsCountyChanged_()" style="width:auto;min-width:170px;"></select></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">Plan year</label>
+          <select id="qb-cms-year" style="width:auto;" onchange="qbCmsYearChanged_()"></select></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">Looking for</label>
+          <select id="qb-cms-kind" style="width:auto;min-width:210px;">
+            <option value="MAPD">Medicare Advantage with drugs (MA-PD)</option>
+            <option value="MA">Medicare Advantage only (no drugs)</option>
+            <option value="SNP">Special Needs Plans (SNP)</option>
+            <option value="PDP">Part D drug plan only</option>
+          </select></div>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">Pick a plan inside each option below — name, premium, and plan facts fill in from the official CMS landscape data.</div>
+
+      <div id="qb-cms-elig" style="margin-top:8px;"></div>
+      <div id="qb-cms-status" style="font-size:12px;color:var(--text-muted);margin-top:6px;"></div>
+
+      <div style="margin-top:10px;">
+        <button type="button" class="btn btn-primary" style="width:100%;" onclick="qbCmsGetPlans_()">&#128374; Find Medicare plans</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+        Plans, premiums, star ratings and out-of-pocket limits come straight from the official CMS landscape data
+        for the county they live in.
+      </div>
     </div>
     <div id="qb-rate-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#9889; Auto-rating inputs</div>
@@ -11133,6 +11157,18 @@ async function openQuoteBuilder(dealId, opts) {
           family_quote: !!window._qbAcaFamilyQuote, links: acaSel._links || null,
           csr: window._qbAcaCsr || null, csr_applies: acaCsrAppliesTo_(acaSel.metal),
           coverage: qbAcaCoverageSnapshot_(acaSel),
+        };
+      } else if (cmsSel) {
+        planMeta = {
+          src: 'cms', year: cmsSel.plan_year || window._qbCmsYear || null,
+          category: cmsSel.category || null, plan_type: cmsSel.plan_type || null,
+          contract_id: cmsSel.contract_id, plan_id: cmsSel.plan_id, segment_id: String(cmsSel.segment_id || '0'),
+          org_name: cmsSel.org_name || null, snp_type: cmsSel.snp_type || null,
+          premium: cmsPremium_(cmsSel),
+          part_c_premium: cmsSel.part_c_premium, part_d_premium: cmsSel.part_d_premium,
+          moop: cmsSel.moop, drug_deductible: cmsSel.drug_deductible,
+          rating: cmsSel.star_rating || null,
+          state: cmsSel.state || null, county: cmsSel.county || null,
         };
       } else {
         // Re-quoted option left untouched: reuse the previous quote's snapshot
@@ -11416,6 +11452,9 @@ function qbSourceSummary_(key) {
     if (csr && typeof acaCsrPct_ === 'function') bits.push('\u2728 ' + acaCsrPct_(csr) + '% CSR');
   } else if (key === 'cms') {
     const n = (window._qbCmsPlans || []).length;
+    if (window._qbCmsCounty || window._qbCmsState) {
+      bits.unshift(escWeb((window._qbCmsCounty ? window._qbCmsCounty + ' County, ' : '') + (window._qbCmsState || '')));
+    }
     if (n) bits.push(n + ' CMS plans loaded');
   } else if (key === 'rate') {
     if (window._qbRateAge != null) bits.push('age ' + window._qbRateAge);
@@ -14169,63 +14208,547 @@ function qbApplyAcaPlan_(i) {
 // CMS LANDSCAPE PICKER — official MA / MA-PD / SNP / PDP plans
 // with real premiums, filtered to the client's state and county.
 // ============================================================
-async function qbLoadCmsPlans_() {
+// ============================================================
+// MEDICARE ADVANTAGE / PART D \u2014 ZIP-first, like the ACA tool.
+// An agent knows a client\u2019s ZIP; nobody thinks in counties. The ZIP
+// resolves to the county (or offers a choice when it straddles two), and
+// everything else is a query against the CMS landscape data we hold.
+// ============================================================
+
+const CMS_KIND_LABEL = {
+  MAPD: 'Medicare Advantage with drugs',
+  MA: 'Medicare Advantage (no drugs)',
+  SNP: 'Special Needs Plan',
+  PDP: 'Part D drug plan',
+};
+
+// CMS county names and the ZIP lookup\u2019s names don\u2019t agree \u2014 "Gallatin" vs
+// "Gallatin County", "Fredericksburg City" vs "Fredericksburg city", parishes,
+// boroughs, census areas. Compare on a flattened key instead of the text.
+function cmsCountyKey_(name) {
+  return String(name || '').toLowerCase()
+    .replace(/\b(county|parish|borough|census area|municipality|city and borough|municipio)\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+async function qbCmsInit_() {
   const c = window._qbContact;
-  const line = document.getElementById('qb-line').value;
+  const zipEl = document.getElementById('qb-cms-zip');
+  if (!zipEl) return;
+  if (!zipEl.value && c && c.zip) zipEl.value = c.zip;
+
+  // plan years we actually hold
+  const yearSel = document.getElementById('qb-cms-year');
+  if (yearSel && !yearSel.options.length) {
+    const { data: yrs } = await supabaseClient.from('cms_plan_summary')
+      .select('plan_year').order('plan_year', { ascending: false });
+    yearSel.innerHTML = (yrs || []).map(y => `<option value="${y.plan_year}">${y.plan_year}</option>`).join('')
+      || '<option value="">no plan data loaded</option>';
+    window._qbCmsYear = parseInt(yearSel.value) || null;
+  }
+  qbCmsEligibility_();
+  if (zipEl.value && !(document.getElementById('qb-cms-county') || {}).options?.length) await qbCmsZipChanged_(true);
+}
+
+function qbCmsYearChanged_() {
+  window._qbCmsYear = parseInt((document.getElementById('qb-cms-year') || {}).value) || null;
+  qbCmsCounties_();
+}
+
+// ZIP \u2192 county, and the ZIP is the CRM\u2019s key so it goes back on the contact
+async function qbCmsZipChanged_(quiet) {
+  const zipEl = document.getElementById('qb-cms-zip');
+  const zip = String((zipEl && zipEl.value) || '').trim();
+  if (!/^\d{5}$/.test(zip)) { if (!quiet) showToast('Enter a 5-digit ZIP code.'); return; }
+  const c = window._qbContact;
+  if (c && zip !== c.zip) {
+    const st = zipToState_(zip);
+    const patch = st ? { zip: zip, state: st } : { zip: zip };
+    try {
+      await supabaseClient.from('contacts').update(patch).eq('id', c.id);
+      Object.assign(c, patch);
+      const cc = contacts.find(x => x.id === c.id); if (cc) Object.assign(cc, patch);
+    } catch (e) { console.error('cms zip->contact:', e); }
+  }
+  await qbCmsCounties_();
+  qbCmsEligibility_();
+}
+
+async function qbCmsCounties_() {
+  const zip = String((document.getElementById('qb-cms-zip') || {}).value || '').trim();
+  const sel = document.getElementById('qb-cms-county');
   const status = document.getElementById('qb-cms-status');
-  const countyWrap = document.getElementById('qb-cms-county-wrap');
-  if (!c || !c.state) {
-    status.innerHTML = '<span style="color:#f59e0b;">No state on the contact &mdash; add it to browse official plans.</span>';
-    countyWrap.style.display = 'none';
+  if (!sel || !/^\d{5}$/.test(zip)) return;
+  const year = window._qbCmsYear || parseInt((document.getElementById('qb-cms-year') || {}).value) || null;
+  if (!year) { if (status) status.innerHTML = '<span style="color:var(--text-warning);">No CMS plan data loaded yet.</span>'; return; }
+
+  sel.innerHTML = '<option value="">\u2026</option>';
+  if (status) status.textContent = 'Looking up that ZIP\u2026';
+
+  let hits = [];
+  try {
+    const d = await acaProxy_('aca_counties', { zip: zip });
+    hits = (d && d.counties) || [];
+  } catch (e) { console.error('zip->county:', e); }
+
+  const st = (hits[0] && hits[0].state) || zipToState_(zip) || (window._qbContact || {}).state;
+  window._qbCmsState = st ? String(st).toUpperCase() : null;
+  if (!window._qbCmsState) {
+    sel.innerHTML = '<option value="">\u2014 unknown ZIP \u2014</option>';
+    if (status) status.innerHTML = '<span style="color:var(--text-warning);">Couldn\u2019t place that ZIP.</span>';
     return;
   }
-  const state = c.state.toUpperCase();
-  const { data: yrRows } = await supabaseClient.from('cms_plans')
-    .select('plan_year').eq('state', state).order('plan_year', { ascending: false }).limit(1);
-  if (!yrRows || !yrRows.length) {
-    status.innerHTML = '<span style="color:#f59e0b;">No CMS plan data loaded for ' + escWeb(state) + ' yet (Admin &rarr; CMS Medicare Plan Data).</span>';
-    countyWrap.style.display = 'none';
+
+  // the counties WE hold for that state and year decide the wording
+  const { data: rows } = await supabaseClient.from('cms_plans')
+    .select('county').eq('state', window._qbCmsState).eq('plan_year', year).neq('county', 'All Counties');
+  const held = [...new Set((rows || []).map(r => r.county))].sort();
+  if (!held.length) {
+    sel.innerHTML = '<option value="">\u2014 no plans loaded for ' + escWeb(window._qbCmsState) + ' \u2014</option>';
+    if (status) status.innerHTML = '<span style="color:var(--text-warning);">No ' + year + ' plan data for '
+      + escWeb(window._qbCmsState) + ' yet.</span>';
     return;
   }
-  const year = yrRows[0].plan_year;
-  window._qbCmsYear = year;
-  status.innerHTML = 'Plan year <strong>' + year + '</strong> &middot; ' + escWeb(state);
-  if (line === 'Part D (PDP)') {
-    countyWrap.style.display = 'none';
-    qbCmsFetch_(state, year, null);
-  } else {
-    const { data: cRows } = await supabaseClient.from('cms_plans')
-      .select('county').eq('state', state).eq('plan_year', year).neq('category', 'PDP');
-    const counties = [...new Set((cRows || []).map(x => x.county))].sort();
-    const sel = document.getElementById('qb-cms-county');
-    sel.innerHTML = '<option value="">&mdash; pick county &mdash;</option>'
-      + counties.map(x => `<option value="${escWeb(x)}">${escWeb(x)}</option>`).join('');
-    countyWrap.style.display = 'inline';
+
+  const wanted = hits.map(h => cmsCountyKey_(h.name));
+  const matched = held.filter(h => wanted.includes(cmsCountyKey_(h)));
+  const list = matched.length ? matched : held;
+  sel.innerHTML = list.map(x => `<option value="${escWeb(x)}">${escWeb(x)}</option>`).join('');
+  if (!matched.length && hits.length) {
+    sel.innerHTML = '<option value="">\u2014 pick their county \u2014</option>' + sel.innerHTML;
+  }
+
+  if (status) {
+    status.innerHTML = matched.length === 1
+      ? '\u{1F4CD} ' + escWeb(matched[0]) + ' County, ' + escWeb(window._qbCmsState) + ' \u00b7 plan year <strong>' + year + '</strong>'
+      : (matched.length > 1
+        ? '\u{1F4CD} That ZIP covers <strong>' + matched.length + ' counties</strong> \u2014 pick the right one; plans differ between them.'
+        : '\u{1F4CD} Couldn\u2019t match that ZIP to a county we hold \u2014 choose it from the list.');
   }
 }
 
-function qbCmsCountyChanged_() {
-  const county = document.getElementById('qb-cms-county').value;
+function qbCmsCountyChanged_() { qbCmsEligibility_(); }
+
+// What would stop this agent selling this, said plainly and up front.
+function qbCmsEligibility_() {
+  const box = document.getElementById('qb-cms-elig');
+  if (!box) return;
+  const me = (window.allAgents || []).find(a => a.id === (window.currentAgent || {}).id) || window.currentAgent || {};
+  const st = window._qbCmsState;
+  const bars = [];
+  const bar = (tone, html) => bars.push('<div class="pk-bar ' + tone + '" style="margin-bottom:5px;">' + html + '</div>');
+
+  const lic = String(me.licensed_states || '').toUpperCase();
+  if (st && lic && !lic.split(/[^A-Z]+/).includes(st)) {
+    bar('warn', '&#9888;&#65039; You aren\u2019t showing a license in <strong>' + escWeb(st)
+      + '</strong>. You can quote these plans, but you can\u2019t write them until that\u2019s in place.');
+  }
+  const yr = new Date().getFullYear();
+  if (Number(me.ahip_certified_year || 0) < yr) {
+    bar('warn', '&#9888;&#65039; No <strong>AHIP certification on file for ' + yr
+      + '</strong> \u2014 carriers require it before you can enrol anyone in Medicare Advantage or Part D.');
+  }
+  if (!window._qbCmsSoaOk) {
+    bar('warn', '&#9888;&#65039; No <strong>Scope of Appointment</strong> on file for this client. CMS requires one '
+      + 'before you discuss Medicare Advantage or Part D \u2014 send it from their contact card first.');
+  }
+  box.innerHTML = bars.join('');
+}
+
+// Has this client signed a scope of appointment we can point to?
+async function qbCmsCheckSoa_() {
   const c = window._qbContact;
-  if (county && c && c.state) qbCmsFetch_(c.state.toUpperCase(), window._qbCmsYear, county);
+  window._qbCmsSoaOk = false;
+  if (!c) return;
+  try {
+    const { data } = await supabaseClient.from('soa_records')
+      .select('id,signed_at').eq('contact_id', c.id).not('signed_at', 'is', null)
+      .order('signed_at', { ascending: false }).limit(1);
+    window._qbCmsSoaOk = !!(data && data.length);
+  } catch (e) { window._qbCmsSoaOk = true; }   // never block on a lookup failure
+  qbCmsEligibility_();
 }
 
-async function qbCmsFetch_(state, year, county) {
-  const line = document.getElementById('qb-line').value;
-  let q = supabaseClient.from('cms_plans').select('*').eq('state', state).eq('plan_year', year);
-  if (line === 'Part D (PDP)') q = q.eq('category', 'PDP');
-  else q = q.neq('category', 'PDP').eq('county', county);
-  const { data: plans } = await q.order('org_name').order('plan_name');
-  window._qbCmsPlans = plans || [];
-  const opts = '<option value="">&mdash; pick a plan &mdash;</option>'
-    + (plans || []).map(p => {
-      const prem = line === 'Part D (PDP)' ? p.part_d_premium : (p.consolidated_premium != null ? p.consolidated_premium : p.part_c_premium);
-      return `<option value="${p.id}">${escWeb((p.org_name ? p.org_name + ' — ' : '') + p.plan_name)}${p.snp_type ? ' [SNP]' : ''} ($${prem != null ? Number(prem).toFixed(2) : '?'}/mo)</option>`;
-    }).join('');
-  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
-    const sel = document.getElementById('qb-cms-' + i);
-    if (sel) sel.innerHTML = opts;
+async function qbLoadCmsPlans_() {
+  await qbCmsInit_();
+  qbCmsCheckSoa_();
+}
+
+async function qbCmsGetPlans_() {
+  const year = window._qbCmsYear || parseInt((document.getElementById('qb-cms-year') || {}).value) || null;
+  const kind = (document.getElementById('qb-cms-kind') || {}).value || 'MAPD';
+  const county = (document.getElementById('qb-cms-county') || {}).value || '';
+  const st = window._qbCmsState;
+  const status = document.getElementById('qb-cms-status');
+  if (!year || !st) { showToast('Enter their ZIP code first.'); return; }
+  if (kind !== 'PDP' && !county) { showToast('Pick their county.'); return; }
+
+  if (status) status.textContent = 'Getting ' + year + ' plans\u2026';
+  let q = supabaseClient.from('cms_plans').select('*').eq('state', st).eq('plan_year', year);
+  if (kind === 'PDP') q = q.eq('category', 'PDP');
+  else {
+    q = q.eq('county', county);
+    if (kind === 'SNP') q = q.eq('category', 'SNP');
+    else if (kind === 'MA') q = q.eq('category', 'MA');
+    else q = q.in('category', ['MA-PD', 'MA']);
   }
+  const { data: plans, error } = await q.order('consolidated_premium', { nullsFirst: false }).limit(600);
+  if (error) { showToast('Could not load plans: ' + error.message); return; }
+
+  window._qbCmsPlans = (plans || []).map(p => Object.assign({}, p, {
+    _premium: (kind === 'PDP' ? p.part_d_premium
+      : (p.consolidated_premium != null ? p.consolidated_premium : p.part_c_premium)),
+  }));
+  window._qbCmsKind = kind;
+  window._qbCmsCounty = county;
+  if (status) {
+    status.innerHTML = '\u{1F4CD} ' + escWeb(kind === 'PDP' ? st : county + ' County, ' + st)
+      + ' \u00b7 <strong style="color:var(--text-success);">' + window._qbCmsPlans.length + ' plans</strong> \u00b7 '
+      + escWeb(CMS_KIND_LABEL[kind]) + ' \u00b7 ' + year;
+  }
+  if (!window._qbCmsPlans.length) { showToast('No plans of that kind in this county.'); return; }
+  qbCmsRelinkOptions_();
+  openCmsPicker_();
+}
+
+// Re-quoted options carry a plan id; match them to this year\u2019s list so the
+// picker shows them as already chosen.
+function qbCmsRelinkOptions_() {
+  const plans = window._qbCmsPlans || [];
+  if (!plans.length) return 0;
+  const rq = window._qbRequoteOpt || {};
+  window._qbCmsSel = window._qbCmsSel || {};
+  let linked = 0;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const nameEl = document.getElementById('qb-name-' + i);
+    if (!nameEl || !nameEl.value.trim() || window._qbCmsSel[i]) continue;
+    const meta = rq[i] && rq[i].plan_meta;
+    let hit = null;
+    if (meta && meta.src === 'cms' && meta.contract_id) {
+      hit = plans.find(p => p.contract_id === meta.contract_id && p.plan_id === meta.plan_id
+        && String(p.segment_id) === String(meta.segment_id || '0'));
+    }
+    if (!hit) hit = plans.find(p => p.plan_name.trim().toLowerCase() === nameEl.value.trim().toLowerCase());
+    if (hit) { window._qbCmsSel[i] = hit; qbCmsOptionView_(i); linked++; }
+  }
+  return linked;
+}
+
+// ============================================================
+// MEDICARE PLAN PICKER \u2014 same shape as the ACA one: full screen, filter
+// down, compare a few, add the ones you want to the quote.
+// ============================================================
+
+window._qbCmsPk = { carriers: new Set(), types: new Set(), zero: false, stars: 0, sort: 'premium' };
+
+function cmsPremium_(p) {
+  return p._premium != null ? p._premium
+    : (p.consolidated_premium != null ? p.consolidated_premium : p.part_c_premium);
+}
+
+function cmsAddedSlot_(planId) {
+  const sel = window._qbCmsSel || {};
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if (sel[i] && sel[i].id === planId) return i;
+  return -1;
+}
+
+function openCmsPicker_() {
+  if (!(window._qbCmsPlans || []).length) {
+    showToast('Run \u201cFind Medicare plans\u201d first \u2014 opening the Medicare tool.');
+    qbWorkbenchOpen_(true, 'cms');
+    return;
+  }
+  const pk = window._qbCmsPk;
+  pk.carriers.clear(); pk.types.clear(); pk.zero = false; pk.stars = 0;
+  let el = document.getElementById('qb-cms-picker');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'qb-cms-picker';
+    el.style.cssText = 'position:fixed;inset:0;z-index:99990;background:var(--surface-0);display:flex;flex-direction:column;';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  renderCmsPicker_();
+}
+
+function closeCmsPicker_() {
+  const el = document.getElementById('qb-cms-picker');
+  if (el) el.style.display = 'none';
+  qbSyncWorkbench_();
+}
+
+function cmsPkToggle_(kind, value) {
+  const pk = window._qbCmsPk;
+  const set = kind === 'carrier' ? pk.carriers : pk.types;
+  if (set.has(value)) set.delete(value); else set.add(value);
+  renderCmsPicker_();
+}
+function cmsPkZero_() { window._qbCmsPk.zero = !window._qbCmsPk.zero; renderCmsPicker_(); }
+function cmsPkStars_(n) { window._qbCmsPk.stars = window._qbCmsPk.stars === n ? 0 : n; renderCmsPicker_(); }
+function cmsPkSort_(v) { window._qbCmsPk.sort = v; renderCmsPicker_(); }
+
+function cmsPkFiltered_() {
+  const pk = window._qbCmsPk;
+  let list = (window._qbCmsPlans || []).slice();
+  if (pk.carriers.size) list = list.filter(p => pk.carriers.has(p.org_name));
+  if (pk.types.size) list = list.filter(p => pk.types.has(p.plan_type));
+  if (pk.zero) list = list.filter(p => Number(cmsPremium_(p) || 0) === 0);
+  if (pk.stars) list = list.filter(p => parseFloat(p.star_rating || 0) >= pk.stars);
+  const num = v => (v == null ? Infinity : Number(v));
+  if (pk.sort === 'premium') list.sort((a, b) => num(cmsPremium_(a)) - num(cmsPremium_(b)));
+  else if (pk.sort === 'moop') list.sort((a, b) => num(a.moop) - num(b.moop));
+  else if (pk.sort === 'stars') list.sort((a, b) => parseFloat(b.star_rating || 0) - parseFloat(a.star_rating || 0));
+  else list.sort((a, b) => String(a.org_name).localeCompare(String(b.org_name)));
+  return list;
+}
+
+function cmsCardHtml_(p) {
+  const slot = cmsAddedSlot_(p.id);
+  const prem = cmsPremium_(p);
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const stars = p.star_rating ? '\u2b50 ' + p.star_rating : '';
+  return `<div class="pk-card ${slot >= 0 ? 'is-selected' : ''}" style="border-radius:12px;padding:12px 14px;cursor:pointer;"
+      onclick="openCmsDetail_('${escWeb(p.id)}')">
+      ${slot >= 0 ? `<div class="pk-sel-badge">\u2713 OPTION ${qbOptionNo_(slot)}</div>` : ''}
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;background:var(--surface-2);color:var(--text-secondary);text-transform:uppercase;">${escWeb(p.plan_type || p.category)}</span>
+        ${p.category === 'MA' ? '<span style="font-size:10px;color:var(--text-warning);border:1px solid var(--border-warning);border-radius:6px;padding:2px 6px;">no drug coverage</span>' : ''}
+        ${p.snp_type ? `<span style="font-size:10px;color:#7c3aed;border:1px solid #7c3aed;border-radius:6px;padding:2px 6px;">SNP \u00b7 ${escWeb(p.snp_type)}</span>` : ''}
+        ${stars ? `<span style="font-size:11px;color:#b3903a;">${stars}</span>` : ''}
+      </div>
+      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:6px;">${escWeb(p.org_name || '')}</div>
+      <div style="font-size:14.5px;font-weight:700;margin:1px 0 8px;">${escWeb(p.plan_name)}</div>
+      <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${prem != null ? Number(prem).toFixed(2) : '?'}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo plan premium</span></div>
+          <div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;">plus their Part B premium</div>
+        </div>
+        <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;margin-left:auto;">
+          ${p.moop != null ? `<div><div style="font-size:10px;color:var(--text-muted);">Max out-of-pocket</div><div style="font-weight:700;">${money(p.moop)}</div></div>` : ''}
+          ${p.category !== 'MA' ? `<div><div style="font-size:10px;color:var(--text-muted);">Drug deductible</div><div style="font-weight:700;">${money(p.drug_deductible)}</div></div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
+          onclick="event.stopPropagation();qbCmsAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();openCmsDetail_('${escWeb(p.id)}')">Details</button>
+      </div>
+    </div>`;
+}
+
+function renderCmsPicker_() {
+  const el = document.getElementById('qb-cms-picker');
+  if (!el) return;
+  const all = window._qbCmsPlans || [];
+  const list = cmsPkFiltered_();
+  const pk = window._qbCmsPk;
+  const carriers = [...new Set(all.map(p => p.org_name).filter(Boolean))].sort();
+  const types = [...new Set(all.map(p => p.plan_type).filter(Boolean))].sort();
+  const chosen = [];
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if ((window._qbCmsSel || {})[i]) chosen.push({ i: i, p: window._qbCmsSel[i] });
+  const kind = CMS_KIND_LABEL[window._qbCmsKind || 'MAPD'];
+  const where = window._qbCmsKind === 'PDP' ? window._qbCmsState : (window._qbCmsCounty + ' County, ' + window._qbCmsState);
+
+  el.innerHTML = `
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div style="font-weight:800;font-size:15px;">\u{1F3DB}\uFE0F ${escWeb(kind)}</div>
+      <div style="font-size:12px;color:var(--text-muted);">${escWeb(where)} \u00b7 ${window._qbCmsYear || ''} \u00b7 showing ${list.length} of ${all.length}</div>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="closeCmsPicker_()">\u2715 Done</button>
+    </div>
+
+    <div style="padding:10px 18px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;">
+      <button class="btn btn-outline btn-sm ${pk.zero ? 'is-on' : ''}" style="${pk.zero ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkZero_()">$0 premium</button>
+      ${[4, 4.5].map(n => `<button class="btn btn-outline btn-sm" style="${pk.stars === n ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkStars_(${n})">\u2b50 ${n}+</button>`).join('')}
+      ${types.map(t => `<button class="btn btn-outline btn-sm" style="${pk.types.has(t) ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkToggle_('type','${escWeb(t)}')">${escWeb(t)}</button>`).join('')}
+      <select onchange="cmsPkSort_(this.value)" style="width:auto;margin-left:auto;">
+        <option value="premium"${pk.sort === 'premium' ? ' selected' : ''}>Lowest premium</option>
+        <option value="moop"${pk.sort === 'moop' ? ' selected' : ''}>Lowest max out-of-pocket</option>
+        <option value="stars"${pk.sort === 'stars' ? ' selected' : ''}>Best star rating</option>
+        <option value="carrier"${pk.sort === 'carrier' ? ' selected' : ''}>Carrier A\u2013Z</option>
+      </select>
+    </div>
+
+    ${carriers.length > 1 ? `<div style="padding:8px 18px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;">
+      ${carriers.map(c => `<button class="btn btn-outline btn-sm" style="font-size:11px;${pk.carriers.has(c) ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkToggle_('carrier','${escWeb(c)}')">${escWeb(c)}</button>`).join('')}
+    </div>` : ''}
+
+    <div style="flex:1;overflow:auto;padding:14px 18px;">
+      ${list.length
+        ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;">${list.map(cmsCardHtml_).join('')}</div>`
+        : '<div style="color:var(--text-muted);font-size:13px;padding:20px 0;">Nothing matches those filters.</div>'}
+    </div>
+
+    ${chosen.length ? `<div class="pk-tray">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">On the quote</div>
+      ${chosen.map(x => `<span class="pk-tray-item">${qbOptionNo_(x.i)}. ${escWeb(x.p.plan_name)}
+        <button class="rm" onclick="qbCmsAddPlan_('${escWeb(x.p.id)}')" title="Remove">\u2715</button></span>`).join('')}
+      <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeCmsPicker_()">Done \u2014 back to the quote</button>
+    </div>` : ''}`;
+}
+
+// A read-only look at everything CMS publishes for one plan.
+function openCmsDetail_(planId) {
+  const p = (window._qbCmsPlans || []).find(x => x.id === planId);
+  if (!p) return;
+  let dr = document.getElementById('qb-cms-detail');
+  if (!dr) {
+    dr = document.createElement('div');
+    dr.id = 'qb-cms-detail';
+    dr.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:min(520px,92vw);z-index:99995;background:var(--surface-1);border-left:1px solid var(--border);box-shadow:-12px 0 40px rgba(15,23,42,.18);display:flex;flex-direction:column;';
+    document.body.appendChild(dr);
+  }
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const row = (l, v) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
+      <span style="color:var(--text-muted);">${l}</span><span style="font-weight:600;text-align:right;">${v}</span></div>`;
+  dr.style.display = 'flex';
+  dr.innerHTML = `<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <div style="font-weight:800;font-size:15px;flex:1;min-width:0;">${escWeb(p.plan_name)}</div>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('qb-cms-detail').style.display='none'">\u2715 Close</button>
+    </div>
+    <div style="padding:16px 20px;overflow:auto;">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.org_name || '')}</div>
+      ${row('Plan type', escWeb(p.plan_type || p.category))}
+      ${row('Monthly plan premium', money(cmsPremium_(p)))}
+      ${p.part_c_premium != null ? row('Part C portion', money(p.part_c_premium)) : ''}
+      ${p.part_d_premium != null ? row('Part D portion', money(p.part_d_premium)) : ''}
+      ${row('Max out-of-pocket (in network)', money(p.moop))}
+      ${p.category !== 'MA' ? row('Yearly drug deductible', money(p.drug_deductible)) : ''}
+      ${row('CMS star rating', p.star_rating ? '\u2b50 ' + escWeb(p.star_rating) + ' of 5' : 'not rated yet')}
+      ${p.snp_type ? row('Special Needs Plan', escWeb(p.snp_type)) : ''}
+      ${row('Contract / plan', escWeb(p.contract_id + '-' + p.plan_id + (String(p.segment_id) !== '0' ? '-' + p.segment_id : '')))}
+      ${row('Service area', escWeb((p.county && p.county !== 'All Counties' ? p.county + ' County, ' : '') + p.state))}
+      <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.5;">
+        Doctor networks and drug lists aren\u2019t part of this data \u2014 check them on the carrier\u2019s own directory
+        before enrolling.
+      </div>
+      <button class="btn btn-primary btn-sm" style="width:100%;margin-top:14px;" onclick="qbCmsAddPlan_('${escWeb(p.id)}');document.getElementById('qb-cms-detail').style.display='none';">
+        ${cmsAddedSlot_(p.id) >= 0 ? '\u2713 Added \u2014 remove from quote' : '+ Add this plan to the quote'}</button>
+    </div>`;
+}
+
+// A saved Medicare option is a complete plan record on its own \u2014 rebuild the
+// card from it so re-opening a quote looks like building one.
+function qbCmsHydrateOption_(i, o) {
+  const m = o.plan_meta || {};
+  window._qbCmsSel = window._qbCmsSel || {};
+  window._qbCmsSel[i] = {
+    id: 'saved-' + i,
+    plan_name: o.display_name, org_name: m.org_name || o.carrier_name || '',
+    plan_type: m.plan_type || '', category: m.category || 'MA-PD',
+    snp_type: m.snp_type || null, star_rating: m.rating || null,
+    _premium: m.premium != null ? m.premium : o.monthly_premium,
+    part_c_premium: m.part_c_premium, part_d_premium: m.part_d_premium,
+    moop: m.moop, drug_deductible: m.drug_deductible,
+    contract_id: m.contract_id, plan_id: m.plan_id, segment_id: m.segment_id,
+    state: m.state, county: m.county, plan_year: m.year,
+    _snapshot: true,
+  };
+  qbCmsOptionView_(i);
+}
+
+// Add or remove a plan from the quote\u2019s options.
+function qbCmsAddPlan_(planId) {
+  const p = (window._qbCmsPlans || []).find(x => x.id === planId);
+  if (!p) return;
+  window._qbCmsSel = window._qbCmsSel || {};
+  const at = cmsAddedSlot_(planId);
+  if (at >= 0) {
+    delete window._qbCmsSel[at];
+    ['qb-name-' + at, 'qb-prem-' + at, 'qb-bul-' + at].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
+    });
+    qbCmsOptionView_(at);
+    renderCmsPicker_();
+    qbSectionSummary_();
+    return;
+  }
+  // first free slot
+  let slot = -1;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    const nm = document.getElementById('qb-name-' + i);
+    if (!w || !nm) continue;
+    const empty = !nm.value.trim() && !(window._qbCmsSel || {})[i] && !(window._qbAcaSel || {})[i];
+    if (w.style.display !== 'none' && empty) { slot = i; break; }
+  }
+  if (slot < 0) {
+    qbRevealOption_();
+    for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+      const w = document.getElementById('qb-opt-wrap-' + i);
+      const nm = document.getElementById('qb-name-' + i);
+      if (w && w.style.display !== 'none' && nm && !nm.value.trim()) { slot = i; break; }
+    }
+  }
+  if (slot < 0) { showToast('All ' + QB_MAX_OPTIONS + ' options are full \u2014 remove one first.'); return; }
+
+  window._qbCmsSel[slot] = p;
+  const ol = document.getElementById('qb-optline-' + slot);
+  if (ol && !ol.value) {
+    ol.value = window._qbCmsKind === 'PDP' ? 'Part D (PDP)' : 'Medicare Advantage';
+    qbOptLineChanged_(slot);
+  }
+  qbCmsOptionView_(slot);
+  renderCmsPicker_();
+  qbSectionSummary_();
+  showToast('Added as option ' + qbOptionNo_(slot) + '.');
+}
+
+// The option card \u2014 a record, not a form, exactly like the ACA one.
+function qbCmsOptionView_(i) {
+  const card = document.getElementById('qb-cms-card-' + i);
+  const manual = document.getElementById('qb-manual-' + i);
+  const carprod = document.getElementById('qb-carprod-' + i);
+  const cmsWrap = document.getElementById('qb-cms-wrap-' + i);
+  const p = (window._qbCmsSel || {})[i];
+  if (!card) return;
+
+  if (!p) {
+    card.style.display = 'none'; card.innerHTML = '';
+    if (manual) manual.style.display = '';
+    if (carprod) carprod.style.display = '';
+    if (cmsWrap) cmsWrap.style.display = '';
+    return;
+  }
+
+  const prem = cmsPremium_(p);
+  const nameEl = document.getElementById('qb-name-' + i);
+  const premEl = document.getElementById('qb-prem-' + i);
+  if (nameEl) nameEl.value = p.plan_name;
+  if (premEl && prem != null) premEl.value = Number(prem).toFixed(2);
+  if (manual) manual.style.display = 'none';
+  if (carprod) carprod.style.display = 'none';
+  if (cmsWrap) cmsWrap.style.display = 'none';
+
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  card.style.display = 'block';
+  card.innerHTML = `
+    <div class="pk-card is-selected" style="border-radius:12px;padding:12px 14px;">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:10px;font-weight:800;border-radius:6px;padding:2px 8px;background:var(--surface-2);color:var(--text-secondary);text-transform:uppercase;">${escWeb(p.plan_type || p.category)}</span>
+        ${p.category === 'MA' ? '<span style="font-size:10px;color:var(--text-warning);border:1px solid var(--border-warning);border-radius:6px;padding:2px 6px;">no drug coverage</span>' : ''}
+        ${p.snp_type ? `<span style="font-size:10px;color:#7c3aed;border:1px solid #7c3aed;border-radius:6px;padding:2px 6px;">SNP</span>` : ''}
+        ${p.star_rating ? `<span style="font-size:11px;color:#b3903a;">\u2b50 ${escWeb(p.star_rating)}</span>` : ''}
+      </div>
+      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:6px;">${escWeb(p.org_name || '')}</div>
+      <div style="font-size:14.5px;font-weight:700;margin:1px 0 8px;">${escWeb(p.plan_name)}</div>
+      <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">$${prem != null ? Number(prem).toFixed(2) : '?'}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
+          <div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;">plus their Part B premium</div>
+        </div>
+        <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);flex-wrap:wrap;margin-left:auto;">
+          ${p.moop != null ? `<div><div style="font-size:10px;color:var(--text-muted);">Max out-of-pocket</div><div style="font-weight:700;">${money(p.moop)}</div></div>` : ''}
+          ${p.category !== 'MA' ? `<div><div style="font-size:10px;color:var(--text-muted);">Drug deductible</div><div style="font-weight:700;">${money(p.drug_deductible)}</div></div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="openCmsDetail_('${escWeb(p.id)}')">Plan details</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openCmsPicker_()">\u{1F5D6} Change plan</button>
+        <button type="button" class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);margin-left:auto;" onclick="qbCmsAddPlan_('${escWeb(p.id)}')">\u{1F5D1} Remove</button>
+      </div>
+      <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">Plan name, premium and limits come straight from the official CMS landscape data \u2014 add your own note below.</div>
+    </div>`;
 }
 
 function qbApplyCmsPlan_(i) {

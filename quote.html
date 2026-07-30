@@ -374,6 +374,28 @@ document.addEventListener('click', e => {
   if (el) { tipShow(el); setTimeout(tipHide, 4000); } else tipHide();
 });
 
+// A Medicare option carries its own facts \u2014 premium, out-of-pocket limit,
+// drug deductible, star rating \u2014 straight from the CMS landscape data.
+function cmsFactsHtml(o) {
+  const m = (o.plan_meta && o.plan_meta.src === 'cms') ? o.plan_meta : null;
+  if (!m) return '';
+  const money = v => v != null ? '$' + Number(v).toLocaleString() : null;
+  const chip = (t, cls) => `<span class="pm-chip${cls ? ' ' + cls : ''}">${esc(t)}</span>`;
+  const chips = [
+    m.plan_type ? chip(m.plan_type) : '',
+    m.category === 'MA' ? chip('No drug coverage') : '',
+    m.snp_type ? chip('Special Needs Plan') : '',
+    m.rating ? chip('\u2b50 ' + m.rating + ' / 5') : '',
+  ].filter(Boolean).join('');
+  const row = (lbl, val) => val == null ? '' :
+    `<div class="pm-row"><span class="lbl">${lbl}</span><span class="val">${val}</span></div>`;
+  const facts = row('Max out-of-pocket', money(m.moop))
+    + (m.category !== 'MA' ? row('Yearly drug deductible', money(m.drug_deductible)) : '');
+  return (chips ? `<div class="pm-chips">${chips}</div>` : '')
+    + (facts ? `<div class="pm-facts">${facts}</div>` : '')
+    + `<div style="font-size:11.5px;color:#64748b;margin-top:7px;line-height:1.5;">This is the plan\u2019s own monthly premium \u2014 you keep paying your Part B premium as well.</div>`;
+}
+
 function optCardHtml(o, inCompare) {
   const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
   let bl = o.benefit_bullets || [];
@@ -420,6 +442,7 @@ function optCardHtml(o, inCompare) {
     <div class="plan">${esc(o.display_name)}</div>
     <div class="prem">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<small> /month</small></div>
     ${creditHtml}${chipsHtml}${pmHtml}
+    ${cmsFactsHtml(o)}
     ${covBlockHtml(o)}
     <ul>${bullets}</ul>
     ${linksHtml}
@@ -768,7 +791,11 @@ async function init() {
   renderCards();
 
   let fine = 'Premiums shown are quotes only and are subject to carrier verification, underwriting where applicable, and final approval. No coverage is bound, changed, or cancelled by viewing this page or expressing interest.';
-  if (MEDICARE_LINES.includes(quote.line)) fine += '<br><br>' + TPMO + '<br>' + NOT_GOV;
+  // A Medicare plan anywhere on the quote triggers the CMS notices — a mixed
+  // proposal can carry one even when the quote itself is filed under another line.
+  const anyMedicare = MEDICARE_LINES.includes(quote.line)
+    || allOpts.some(o => MEDICARE_LINES.includes(o.line) || (o.plan_meta && o.plan_meta.src === 'cms'));
+  if (anyMedicare) fine += '<br><br>' + TPMO + '<br>' + NOT_GOV;
   document.getElementById('q-fine').innerHTML = fine;
 
   document.getElementById('loader').style.display = 'none';
