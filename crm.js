@@ -10872,6 +10872,7 @@ async function openQuoteBuilder(dealId, opts) {
   window._qbProds = prods || [];
   window._qbContact = contact;
   window._qbRequoteOpt = {};
+  window._qbAutoOpen = false;   // automation group starts collapsed
   // Phase 2: the quote is tied to an intake, and the agent can see/change which
   window._qbIntakeSessionId = opts.intakeSessionId || null;
   window._qbIntakeChoices = [];
@@ -11337,34 +11338,61 @@ function qbSourceSummary_(key) {
 }
 
 // The dialog's compact card: what's AVAILABLE, plus what's been used
+// The dialog's automated-quoting group: collapsed by default, with a
+// one-line summary so a collapsed section still tells the agent something.
+function qbAutoToggle_() {
+  window._qbAutoOpen = !window._qbAutoOpen;
+  qbAutoCardPaint_();
+}
+
 function qbAutoCardPaint_() {
   const card = document.getElementById('qb-auto-card');
   if (!card) return;
   const sources = qbAutoSources_();
   if (!sources.length) { card.style.display = 'none'; card.innerHTML = ''; return; }
+  const open = !!window._qbAutoOpen;
+
+  // collapsed headline: whatever has actually been run, else how many tools
+  const runBits = [];
+  sources.forEach(src => {
+    if (qbSourceUsed_(src.key)) {
+      const b = qbSourceSummary_(src.key);
+      runBits.push(src.title.replace(/^[^ ]+ /, '') + (b.length ? ' \u00b7 ' + b.join(' \u00b7 ') : ''));
+    }
+  });
+  const headline = runBits.length
+    ? runBits.join('  |  ')
+    : sources.length + ' tool' + (sources.length === 1 ? '' : 's') + ' available \u2014 optional';
 
   card.style.display = 'block';
-  card.innerHTML = `<div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:7px;">
-        \u2699\uFE0F Available Automated Quoting
-      </div>
-      ${sources.map(src => {
-        const used = qbSourceUsed_(src.key);
-        const bits = used ? qbSourceSummary_(src.key) : [];
-        return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:5px 0;">
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:12.5px;font-weight:700;">${src.title}${used ? ' <span style="font-size:10px;font-weight:800;color:var(--text-success);">\u2713 RUN</span>' : ''}</div>
-            <div style="font-size:11.5px;color:${used ? 'var(--text-secondary)' : 'var(--text-muted)'};margin-top:2px;">
-              ${used ? bits.join(' \u00b7 ') : escWeb(src.blurb)}</div>
-          </div>
-          <button type="button" class="btn ${used ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="qbWorkbenchOpen_(true, '${src.key}')">\u2699\uFE0F ${used ? 'Reopen' : 'Open'}</button>
-        </div>`;
-      }).join('')}
-      <div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);margin-top:7px;padding-top:6px;">
-        Quoting something else on this line \u2014 short-term medical, a health share, an off-exchange plan? Just type it into the options below.
-      </div>
+  card.innerHTML = `<div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;margin-top:10px;overflow:hidden;">
+      <button type="button" onclick="qbAutoToggle_()" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:10px 12px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);white-space:nowrap;">
+          ${open ? '\u25BE' : '\u25B8'} \u2699\uFE0F Available Automated Quoting
+        </span>
+        <span style="flex:1;min-width:0;font-size:11.5px;color:${runBits.length ? 'var(--text-success)' : 'var(--text-muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escWeb(headline)}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--accent,#c8a84b);white-space:nowrap;">${open ? 'Hide' : 'Show'}</span>
+      </button>
+      ${open ? `<div style="padding:0 12px 10px;">
+        ${sources.map(src => {
+          const used = qbSourceUsed_(src.key);
+          const bits = used ? qbSourceSummary_(src.key) : [];
+          return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:5px 0;border-top:1px solid var(--border);">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12.5px;font-weight:700;">${src.title}${used ? ' <span style="font-size:10px;font-weight:800;color:var(--text-success);">\u2713 RUN</span>' : ''}</div>
+              <div style="font-size:11.5px;color:${used ? 'var(--text-secondary)' : 'var(--text-muted)'};margin-top:2px;">
+                ${used ? bits.join(' \u00b7 ') : escWeb(src.blurb)}</div>
+            </div>
+            <button type="button" class="btn ${used ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="qbWorkbenchOpen_(true, '${src.key}')">\u2699\uFE0F ${used ? 'Reopen' : 'Open'}</button>
+          </div>`;
+        }).join('')}
+        <div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);margin-top:7px;padding-top:6px;">
+          Quoting something else on this line \u2014 short-term medical, a health share, an off-exchange plan? Just type it into the options below.
+        </div>
+      </div>` : ''}
     </div>`;
 }
+
 
 // Keep panels parked correctly as the line changes; never open on its own
 function qbSyncWorkbench_() {
