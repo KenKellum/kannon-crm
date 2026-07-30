@@ -10692,7 +10692,8 @@ async function openMyCarriers() {
 // quote.html?q=<uuid> -> "I'm interested" advances the follow-up.
 // ============================================================
 const QB_MAX_OPTIONS = 10; // agents sometimes compare 10+ carriers
-const QUOTE_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Other'];
+// Group health is deliberately absent \u2014 it gets its own quoting engine.
+const QUOTE_LINES = ['Life','Health — Individual','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Other'];
 const MEDICARE_QUOTE_LINES = ['Medicare Advantage','Medicare Supplement','Part D (PDP)'];
 
 async function requoteFromQuote_(quoteId, dealId) {
@@ -10929,7 +10930,7 @@ async function openQuoteBuilder(dealId, opts) {
       <div id="qb-optline-hint-${i}" style="display:none;font-size:11px;color:var(--text-danger);margin-top:3px;">
         &#9888;&#65039; Required &mdash; what is this option quoting?</div>
       <div id="qb-cms-wrap-${i}" style="display:none;">
-        <label>Official CMS plan</label>
+        <label id="qb-cms-label-${i}">Medicare Advantage plan</label>
         <select id="qb-cms-${i}" onchange="qbApplyCmsPlan_(${i})"><option value="">&mdash; pick a plan &mdash;</option></select>
       </div>
       <div id="qb-aca-wrap-${i}" style="display:none;">
@@ -10938,7 +10939,7 @@ async function openQuoteBuilder(dealId, opts) {
       </div>
       <div id="qb-aca-warn-${i}" style="display:none;font-size:11.5px;line-height:1.5;border-radius:8px;padding:8px 10px;margin:6px 0;"></div>
       <div id="qb-carprod-${i}">
-        <label>Carrier <span id="qb-car-opt-${i}" style="display:none;font-size:10px;color:var(--text-muted);">(optional when a CMS plan is picked)</span></label>
+        <label>Carrier <span id="qb-car-opt-${i}" style="display:none;font-size:10px;color:var(--text-muted);">(optional when an official plan is picked)</span></label>
         <select id="qb-car-${i}" onchange="qbFillProducts_(${i})">${carOpts}</select>
         <label>Product (from carrier's catalog — optional)</label>
         <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
@@ -11020,7 +11021,7 @@ async function openQuoteBuilder(dealId, opts) {
       <div id="qb-aca-browser" style="display:none;margin-top:12px;"></div>
     </div>
     <div id="qb-cms-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; Official CMS plan data</div>
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; Medicare Advantage Plans</div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;">
         <span id="qb-cms-status"></span>
         <span id="qb-cms-county-wrap" style="display:none;">County:
@@ -11211,6 +11212,8 @@ function qbOptFields_(i) {
   // dropdown — the tool is what prices the subsidy and CSR.
   if (acaWrap) acaWrap.style.display = 'none';
   if (cmsWrap) cmsWrap.style.display = isCms ? 'block' : 'none';
+  const cmsLbl = document.getElementById('qb-cms-label-' + i);
+  if (cmsLbl && isCms) cmsLbl.textContent = sel.value === 'Part D (PDP)' ? 'Part D plan' : 'Medicare Advantage plan';
   if (carOpt) carOpt.style.display = isCms ? 'inline' : 'none';
   if (isCms) {
     const c = document.getElementById('qb-cms-' + i);
@@ -11287,8 +11290,8 @@ function qbAutoSources_() {
       title: '\u{1F3DB}\uFE0F ACA Marketplace',
       blurb: 'Live on-exchange plans with subsidy, CSR and doctor/drug checks.' },
     { key: 'cms', el: 'qb-cms-strip', line: 'Medicare Advantage',
-      title: '\u{1F3DB}\uFE0F Official CMS plan data',
-      blurb: 'Medicare Advantage and Part D plans for their county.' },
+      title: '\u{1F3DB}\uFE0F Medicare Advantage Plans',
+      blurb: 'Official CMS plan data \u2014 Advantage and Part D plans where they live.' },
     { key: 'rate', el: 'qb-rate-strip', line: 'Medicare Supplement',
       title: '\u{1F4CA} Medigap rate lookup',
       blurb: 'Rates from the charts you\u2019ve loaded, by age, gender and tobacco.' },
