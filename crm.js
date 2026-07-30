@@ -14607,14 +14607,7 @@ function closeCmsPicker_() {
   qbSyncWorkbench_();
 }
 
-function cmsPkToggle_(kind, value) {
-  const pk = window._qbCmsPk;
-  const set = kind === 'carrier' ? pk.carriers : pk.types;
-  if (set.has(value)) set.delete(value); else set.add(value);
-  renderCmsPicker_();
-}
-function cmsPkZero_() { window._qbCmsPk.zero = !window._qbCmsPk.zero; renderCmsPicker_(); }
-function cmsPkStars_(n) { window._qbCmsPk.stars = window._qbCmsPk.stars === n ? 0 : n; renderCmsPicker_(); }
+// (the old one-per-filter toggles are gone — cmsPkChip_ handles them all)
 function cmsPkSort_(v) { window._qbCmsPk.sort = v; renderCmsPicker_(); }
 
 function cmsPkFiltered_() {
@@ -14670,6 +14663,32 @@ function cmsCardHtml_(p) {
     </div>`;
 }
 
+// How many plans each filter WOULD leave, judged with that filter's own
+// group ignored \u2014 the number an agent expects to see before clicking.
+function cmsPkCount_(patch) {
+  const pk = window._qbCmsPk;
+  const saved = { carriers: new Set(pk.carriers), types: new Set(pk.types), zero: pk.zero, stars: pk.stars };
+  Object.assign(pk, patch);
+  const n = cmsPkFiltered_().length;
+  Object.assign(pk, saved);
+  return n;
+}
+
+function cmsPkClear_() {
+  const pk = window._qbCmsPk;
+  pk.carriers.clear(); pk.types.clear(); pk.zero = false; pk.stars = 0;
+  renderCmsPicker_();
+}
+
+function cmsPkChip_(id) {
+  const pk = window._qbCmsPk;
+  if (id === 'zero') { pk.zero = !pk.zero; }
+  else if (id.indexOf('stars') === 0) { const n = parseFloat(id.slice(5)); pk.stars = pk.stars === n ? 0 : n; }
+  else if (id.indexOf('type|') === 0) { const t = id.slice(5); pk.types.has(t) ? pk.types.delete(t) : pk.types.add(t); }
+  else if (id.indexOf('carrier|') === 0) { const c = id.slice(8); pk.carriers.has(c) ? pk.carriers.delete(c) : pk.carriers.add(c); }
+  renderCmsPicker_();
+}
+
 function renderCmsPicker_() {
   const el = document.getElementById('qb-cms-picker');
   if (!el) return;
@@ -14678,6 +14697,20 @@ function renderCmsPicker_() {
   const pk = window._qbCmsPk;
   const carriers = [...new Set(all.map(p => p.org_name).filter(Boolean))].sort();
   const types = [...new Set(all.map(p => p.plan_type).filter(Boolean))].sort();
+
+  const counts = { zero: cmsPkCount_({ zero: true }) };
+  [4, 4.5].forEach(n => counts['stars' + n] = cmsPkCount_({ stars: n }));
+  types.forEach(t => counts['type|' + t] = cmsPkCount_({ types: new Set([t]) }));
+  carriers.forEach(c => counts['carrier|' + c] = cmsPkCount_({ carriers: new Set([c]) }));
+
+  const chip = (id, label, n, on) => `<button type="button" class="fx-chip${on ? ' on' : ''}${!n && !on ? ' dead' : ''}"
+      ${!n && !on ? 'disabled' : ''} onclick="cmsPkChip_('${escWeb(id)}')">${escWeb(label)} <span class="n">${n}</span></button>`;
+
+  const active = [];
+  if (pk.zero) active.push('$0 premium');
+  if (pk.stars) active.push('\u2b50 ' + pk.stars + '+');
+  if (pk.types.size) active.push([...pk.types].join(', '));
+  if (pk.carriers.size) active.push([...pk.carriers].join(', '));
   const chosen = [];
   for (let i = 0; i < QB_MAX_OPTIONS; i++) if ((window._qbCmsSel || {})[i]) chosen.push({ i: i, p: window._qbCmsSel[i] });
   const kind = CMS_KIND_LABEL[window._qbCmsKind || 'MAPD'];
@@ -14692,21 +14725,38 @@ function renderCmsPicker_() {
       <button class="btn btn-outline btn-sm" style="${window._qbCmsPk.cmp.size ? '' : 'margin-left:auto;'}" onclick="closeCmsPicker_()">\u2715 Done</button>
     </div>
 
-    <div style="padding:10px 18px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;">
-      <button class="btn btn-outline btn-sm ${pk.zero ? 'is-on' : ''}" style="${pk.zero ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkZero_()">$0 premium</button>
-      ${[4, 4.5].map(n => `<button class="btn btn-outline btn-sm" style="${pk.stars === n ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkStars_(${n})">\u2b50 ${n}+</button>`).join('')}
-      ${types.map(t => `<button class="btn btn-outline btn-sm" style="${pk.types.has(t) ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkToggle_('type','${escWeb(t)}')">${escWeb(t)}</button>`).join('')}
-      <select onchange="cmsPkSort_(this.value)" style="width:auto;margin-left:auto;">
-        <option value="premium"${pk.sort === 'premium' ? ' selected' : ''}>Lowest premium</option>
-        <option value="moop"${pk.sort === 'moop' ? ' selected' : ''}>Lowest max out-of-pocket</option>
-        <option value="stars"${pk.sort === 'stars' ? ' selected' : ''}>Best star rating</option>
-        <option value="carrier"${pk.sort === 'carrier' ? ' selected' : ''}>Carrier A\u2013Z</option>
-      </select>
+    <div style="padding:8px 18px 10px;border-bottom:1px solid var(--border);">
+      <div class="fx-row">
+        <span class="fx-label">Premium</span>
+        ${chip('zero', '$0 premium', counts.zero, pk.zero)}
+        <span class="fx-label" style="margin-left:14px;">Rating</span>
+        ${[4, 4.5].map(n => chip('stars' + n, '\u2b50 ' + n + '+', counts['stars' + n], pk.stars === n)).join('')}
+      </div>
+      ${types.length > 1 ? `<div class="fx-row">
+        <span class="fx-label">Plan type</span>
+        ${types.map(t => chip('type|' + t, t, counts['type|' + t], pk.types.has(t))).join('')}
+      </div>` : ''}
+      ${carriers.length > 1 ? `<div class="fx-row">
+        <span class="fx-label">Carrier</span>
+        ${carriers.map(c => chip('carrier|' + c, c, counts['carrier|' + c], pk.carriers.has(c))).join('')}
+      </div>` : ''}
+      <div class="fx-row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:8px;">
+        <span class="fx-summary">
+          <span class="what">${list.length} of ${all.length} plans</span>
+          ${active.length ? '\u00b7 ' + active.map(x => escWeb(x)).join(' \u00b7 ') : '\u00b7 no filters on'}
+          ${active.length ? '<button class="fx-clear" onclick="cmsPkClear_()">\u2715 Clear all</button>' : ''}
+        </span>
+        <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-muted);">
+          Sort
+          <select onchange="cmsPkSort_(this.value)" style="width:auto;">
+            <option value="premium"${pk.sort === 'premium' ? ' selected' : ''}>Lowest premium</option>
+            <option value="moop"${pk.sort === 'moop' ? ' selected' : ''}>Lowest max out-of-pocket</option>
+            <option value="stars"${pk.sort === 'stars' ? ' selected' : ''}>Best star rating</option>
+            <option value="carrier"${pk.sort === 'carrier' ? ' selected' : ''}>Carrier A\u2013Z</option>
+          </select>
+        </label>
+      </div>
     </div>
-
-    ${carriers.length > 1 ? `<div style="padding:8px 18px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;">
-      ${carriers.map(c => `<button class="btn btn-outline btn-sm" style="font-size:11px;${pk.carriers.has(c) ? 'background:var(--bg-selected);border-color:var(--border-selected);color:var(--text-selected);' : ''}" onclick="cmsPkToggle_('carrier','${escWeb(c)}')">${escWeb(c)}</button>`).join('')}
-    </div>` : ''}
 
     <div style="flex:1;overflow:auto;padding:14px 18px;">
       ${list.length
