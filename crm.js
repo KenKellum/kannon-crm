@@ -10973,7 +10973,7 @@ function qbMgAddPlan_(letter, productId) {
   };
 
   const ol = document.getElementById('qb-optline-' + slot);
-  if (ol && !ol.value) { ol.value = 'Medicare Supplement'; qbOptLineChanged_(slot); }
+  if (ol && ol.value !== 'Medicare Supplement') { ol.value = 'Medicare Supplement'; qbOptLineChanged_(slot); }
 
   // point the option at the real carrier and product so the quote records them
   if (q) {
@@ -11000,6 +11000,17 @@ function qbMgAddPlan_(letter, productId) {
   renderMedigapPicker_();
   qbSectionSummary_();
   showToast('Added as option ' + qbOptionNo_(slot) + '.');
+}
+
+// "Medicare Supplement Plan G", "... High-Deductible Plan G" \u2014 the letter is
+// right there in the name, so an option saved before we recorded a snapshot
+// can still be recognised.
+function mgLetterFromName_(name) {
+  const t = String(name || '');
+  let m = t.match(/High[- ]?Deductible Plan\s+([A-N])\b/i) || t.match(/\bHD Plan\s+([A-N])\b/i);
+  if (m) return 'HD' + m[1].toUpperCase();
+  m = t.match(/Medicare Supplement Plan\s+([A-N])\b/i) || t.match(/\bPlan\s+([A-N])\b/i);
+  return m ? m[1].toUpperCase() : null;
 }
 
 function qbMgProfile_() {
@@ -11628,6 +11639,25 @@ async function requoteFromQuote_(quoteId, dealId) {
       }
       if (o.plan_meta && o.plan_meta.src === 'aca') qbAcaHydrateOption_(i, o);
       if (o.plan_meta && o.plan_meta.src === 'cms') qbCmsHydrateOption_(i, o);
+      if ((!o.plan_meta || o.plan_meta.src !== 'medigap')
+          && (o.line === 'Medicare Supplement' || /medicare supplement/i.test(o.display_name || ''))) {
+        const L = mgLetterFromName_(o.display_name);
+        if (L) {
+          const known = MEDIGAP_PLANS.find(x => x[0] === L);
+          window._qbMgSel = window._qbMgSel || {};
+          window._qbMgSel[i] = {
+            letter: L, title: (known || [, 'Medicare Supplement Plan ' + L])[1],
+            bullets: (known || [, , []])[2] || [],
+            state: (window._qbContact || {}).state || null,
+            rate: o.monthly_premium != null ? Number(o.monthly_premium) : null,
+            carrier_name: o.carrier_name || null, product_id: o.product_id || null,
+            rating_method: null, _snapshot: true, _recovered: true,
+          };
+          const ol = document.getElementById('qb-optline-' + i);
+          if (ol && ol.value !== 'Medicare Supplement') { ol.value = 'Medicare Supplement'; qbOptLineChanged_(i); }
+          qbMgOptionView_(i);
+        }
+      }
       if (o.plan_meta && o.plan_meta.src === 'medigap') {
         const m = o.plan_meta;
         window._qbMgSel = window._qbMgSel || {};
@@ -11779,6 +11809,12 @@ async function openQuoteBuilder(dealId, opts) {
   window._qbProds = prods || [];
   window._qbContact = contact;
   window._qbRequoteOpt = {};
+  window._qbAcaSel = {};        // nothing from the last quote leaks into this one
+  window._qbCmsSel = {};
+  window._qbMgSel = {};
+  window._qbMgCmp = new Set();
+  window._qbMgQuotes = {};
+  window._qbMgRates = {};
   window._qbAutoOpen = false;   // automation group starts collapsed
   window._qbCovGrpOpen = {};    // ...and so does each card's coverage detail
   // Phase 2: the quote is tied to an intake, and the agent can see/change which
@@ -12049,8 +12085,15 @@ async function openQuoteBuilder(dealId, opts) {
           csr: window._qbAcaCsr || null, csr_applies: acaCsrAppliesTo_(acaSel.metal),
           coverage: qbAcaCoverageSnapshot_(acaSel),
         };
-      } else if ((window._qbMgSel || {})[i]) {
-        const mg = window._qbMgSel[i];
+      } else if ((window._qbMgSel || {})[i]
+                 || ((document.getElementById('qb-optline-' + i) || {}).value === 'Medicare Supplement'
+                     && mgLetterFromName_(name))) {
+        const mg = (window._qbMgSel || {})[i] || {
+          letter: mgLetterFromName_(name),
+          carrier_name: (car && car.name) || null,
+          rate: prem != null ? prem : null,
+          state: (window._qbContact || {}).state || null,
+        };
         const base = String(mg.letter).replace(/^HD/, '');
         planMeta = {
           src: 'medigap', letter: mg.letter, base_letter: base,
