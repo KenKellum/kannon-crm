@@ -10926,6 +10926,8 @@ async function openQuoteBuilder(dealId, opts) {
       <label>Coverage type *</label>
       <select id="qb-optline-${i}" onchange="qbOptLineChanged_(${i})">
         <option value="">&mdash; choose coverage type &mdash;</option>${lineOpts}</select>
+      <div id="qb-optline-hint-${i}" style="display:none;font-size:11px;color:var(--text-danger);margin-top:3px;">
+        &#9888;&#65039; Required &mdash; what is this option quoting?</div>
       <div id="qb-cms-wrap-${i}" style="display:none;">
         <label>Official CMS plan</label>
         <select id="qb-cms-${i}" onchange="qbApplyCmsPlan_(${i})"><option value="">&mdash; pick a plan &mdash;</option></select>
@@ -11051,7 +11053,12 @@ async function openQuoteBuilder(dealId, opts) {
       const nm = document.getElementById('qb-name-' + k);
       if (!w || w.style.display === 'none' || !nm || !nm.value.trim()) continue;
       const ol = document.getElementById('qb-optline-' + k);
-      if (!ol || !ol.value) { showToast('Option ' + qbOptionNo_(k) + ': choose a coverage type.'); return false; }
+      if (!ol || !ol.value) {
+        qbOptRequiredMark_(k);
+        ol && ol.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showToast('Option ' + qbOptionNo_(k) + ': choose a coverage type.');
+        return false;
+      }
       _optLines.push(ol.value);
     }
     const line = _optLines[0] || document.getElementById('qb-line').value;
@@ -11168,13 +11175,53 @@ async function openQuoteBuilder(dealId, opts) {
   const lineSel = document.getElementById('qb-line');
   if (lineSel && [...lineSel.options].some(o => o.value === smartLine)) lineSel.value = smartLine;
   qbLineChanged_();
-  const firstOpt = document.getElementById('qb-optline-0');
-  if (firstOpt && !firstOpt.value) { firstOpt.value = smartLine; qbOptLineChanged_(0); }
+  // The agent tells us what each option is; we don't guess on their behalf.
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) qbOptFields_(i);
 }
 
 // The top-level line drives the automated data (ACA / CMS / rate charts).
 // Each option can be a DIFFERENT coverage type, which is what turns a quote
 // into a multi-section proposal.
+// Lines whose official plan list we can actually load today. Medicare
+// Supplement is deliberately absent: its official source is the carrier's
+// product record and rate chart, which sit right below anyway.
+const QB_CMS_PLAN_LINES = ['Medicare Advantage', 'Part D (PDP)'];
+
+// The coverage type is the option's first decision and everything else keys
+// off it, so an unanswered one is flagged rather than quietly defaulted.
+function qbOptRequiredMark_(i) {
+  const sel = document.getElementById('qb-optline-' + i);
+  const hint = document.getElementById('qb-optline-hint-' + i);
+  if (!sel) return;
+  const missing = !sel.value;
+  sel.style.borderColor = missing ? 'var(--border-danger)' : '';
+  sel.style.background = missing ? 'var(--bg-danger)' : '';
+  if (hint) hint.style.display = missing ? 'block' : 'none';
+}
+
+// Only show a field when the option's own coverage type can use it.
+function qbOptFields_(i) {
+  const sel = document.getElementById('qb-optline-' + i);
+  if (!sel) return;
+  const acaWrap = document.getElementById('qb-aca-wrap-' + i);
+  const cmsWrap = document.getElementById('qb-cms-wrap-' + i);
+  const carOpt = document.getElementById('qb-car-opt-' + i);
+  const isCms = QB_CMS_PLAN_LINES.includes(sel.value);
+  // Marketplace plans are attached from the ACA tool, never from a bare
+  // dropdown — the tool is what prices the subsidy and CSR.
+  if (acaWrap) acaWrap.style.display = 'none';
+  if (cmsWrap) cmsWrap.style.display = isCms ? 'block' : 'none';
+  if (carOpt) carOpt.style.display = isCms ? 'inline' : 'none';
+  if (isCms) {
+    const c = document.getElementById('qb-cms-' + i);
+    const loaded = (window._qbCmsPlans || []).length;
+    if (c && !loaded) {
+      c.innerHTML = '<option value="">\u2014 open the Medicare tool above to load plans \u2014</option>';
+    }
+  }
+  qbOptRequiredMark_(i);
+}
+
 function qbOptLineChanged_(i) {
   const sel = document.getElementById('qb-optline-' + i);
   const top = document.getElementById('qb-line');
@@ -11192,19 +11239,15 @@ function qbOptLineChanged_(i) {
   if (brand) { if (anyMed) { brand.value = 'ia'; brand.disabled = true; } else { brand.disabled = false; } }
   const medNote = document.getElementById('qb-med-note');
   if (medNote) medNote.style.display = anyMed ? 'block' : 'none';
-  const same = sel.value === top.value;
-  // official-plan pickers only make sense while this option matches the
-  // line whose data we actually loaded
-  const acaWrap = document.getElementById('qb-aca-wrap-' + i);
-  const cmsWrap = document.getElementById('qb-cms-wrap-' + i);
-  if (acaWrap) acaWrap.style.display = (same && top.value === 'Health \u2014 Individual') ? 'block' : 'none';
-  if (cmsWrap) cmsWrap.style.display = (same && (top.value === 'Medicare Advantage' || top.value === 'Part D (PDP)')) ? 'block' : 'none';
-  if (!same) {
-    // switching an option away from the loaded line drops its official plan
+  qbOptFields_(i);
+  // an option moved off its line can't keep the official plan it had
+  if (sel.value !== 'Health \u2014 Individual') {
     const a = document.getElementById('qb-aca-' + i);
-    if (a && a.value) { a.value = ''; qbApplyAcaPlan_(i); }
+    if ((window._qbAcaSel || {})[i] || (a && a.value)) { if (a) a.value = ''; qbApplyAcaPlan_(i); }
+  }
+  if (!QB_CMS_PLAN_LINES.includes(sel.value)) {
     const c = document.getElementById('qb-cms-' + i);
-    if (c && c.value) { c.value = ''; }
+    if (c && c.value) { c.value = ''; qbApplyCmsPlan_(i); }
   }
   qbSectionSummary_();
 }
@@ -11439,45 +11482,25 @@ function qbLineChanged_() {
     strip.style.display = line === 'Medicare Supplement' ? 'block' : 'none';
     if (line === 'Medicare Supplement') qbInitRateStrip_();
   }
+  // qb-line now only says WHICH TOOL is loaded. It must never rewrite or
+  // clear the options \u2014 each option owns its coverage type and its plan.
   const acaStrip = document.getElementById('qb-aca-strip');
   if (acaStrip) {
-    const isAca = line === 'Health — Individual';
+    const isAca = line === 'Health \u2014 Individual';
     acaStrip.style.display = isAca ? 'block' : 'none';
-    for (let k = 0; k < QB_MAX_OPTIONS; k++) {
-      const w = document.getElementById('qb-aca-wrap-' + k);
-      if (w) w.style.display = isAca ? 'block' : 'none';
-      const cp = document.getElementById('qb-carprod-' + k);
-      if (cp) cp.style.display = '';
-      qbAcaApptWarn_(k, null);
-      qbAcaOptionView_(k);
-    }
-    window._qbAcaSel = {};
     if (isAca) qbAcaInit_();
   }
   const cmsStrip = document.getElementById('qb-cms-strip');
   if (cmsStrip) {
-    const isCms = line === 'Medicare Advantage' || line === 'Part D (PDP)';
+    const isCms = QB_CMS_PLAN_LINES.includes(line);
     cmsStrip.style.display = isCms ? 'block' : 'none';
-    for (let k = 0; k < QB_MAX_OPTIONS; k++) {
-      const w = document.getElementById('qb-cms-wrap-' + k);
-      const o = document.getElementById('qb-car-opt-' + k);
-      if (w) w.style.display = isCms ? 'block' : 'none';
-      if (o) o.style.display = isCms ? 'inline' : 'none';
-    }
-    window._qbCmsSel = {};
     if (isCms) qbLoadCmsPlans_();
   }
   const brand = document.getElementById('qb-brand');
   if (isMed) { brand.value = 'ia'; brand.disabled = true; } else { brand.disabled = false; }
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {
-    const bul = document.getElementById('qb-bul-' + i);
-    bul.readOnly = isMed;
-    bul.placeholder = isMed ? 'Locked — filled from the product record' : 'e.g. $0 deductible';
     qbFillProducts_(i);
-    // untouched options follow the primary line; ones the agent re-typed stay put
-    const ol = document.getElementById('qb-optline-' + i);
-    const nm = document.getElementById('qb-name-' + i);
-    if (ol && (!nm || !nm.value.trim())) ol.value = line;
+    qbOptFields_(i);
   }
   qbSectionSummary_();
   qbSyncWorkbench_();
@@ -12059,6 +12082,7 @@ function qbRevealOption_() {
       w.style.display = 'block';
       if (i === QB_MAX_OPTIONS - 1) document.getElementById('qb-add-opt').style.display = 'none';
       qbRenumberOptions_();
+      qbOptFields_(i);
       return;
     }
   }
