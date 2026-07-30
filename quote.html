@@ -274,12 +274,30 @@ function csrLabel(csr) {
 
 // What we found for THEIR doctors and prescriptions on THIS plan, recorded
 // when the quote was built. Nothing is looked up from this page.
+const COV_BULLET = /^(In-network: |NOT in-network: |Covers |Does NOT cover )/;
+
 function covOf(o) {
   const c = o.plan_meta && o.plan_meta.coverage;
-  if (!c) return null;
-  const p = (c.providers || []).filter(x => x.covered !== null);
-  const m = (c.medications || []).filter(x => x.covered !== null);
-  return (p.length || m.length) ? { providers: p, medications: m, checked_at: c.checked_at } : null;
+  if (c) {
+    const p = (c.providers || []).filter(x => x.covered !== null)
+      .map(x => ({ id: x.npi, name: x.name, covered: x.covered }));
+    const m = (c.medications || []).filter(x => x.covered !== null)
+      .map(x => ({ id: x.rxcui, name: x.name, covered: x.covered }));
+    return (p.length || m.length) ? { providers: p, medications: m, checked_at: c.checked_at } : null;
+  }
+  // older quote: the answers are still there, just written as sentences
+  const providers = [], medications = [];
+  (o.benefit_bullets || []).forEach(b => {
+    const clean = n => n.replace(/\s*[\u2713\u2717]\s*$/, '').trim();
+    if (b.indexOf('In-network: ') === 0) providers.push({ name: clean(b.slice(12)), covered: true });
+    else if (b.indexOf('NOT in-network: ') === 0) providers.push({ name: clean(b.slice(16)), covered: false });
+    else if (b.indexOf('Does NOT cover ') === 0) medications.push({ name: clean(b.slice(15)), covered: false });
+    else if (b.indexOf('Covers ') === 0) medications.push({ name: clean(b.slice(7)), covered: true });
+  });
+  providers.forEach(x => x.id = 'n:' + x.name);
+  medications.forEach(x => x.id = 'n:' + x.name);
+  return (providers.length || medications.length)
+    ? { providers: providers, medications: medications, checked_at: null } : null;
 }
 
 function covMark(ok, yes, no) {
@@ -305,7 +323,7 @@ function covBlockHtml(o) {
     <div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:${allGood ? '#15803d' : '#b45309'};">${sum.join(' \u00b7 ')}</div>
     ${c.providers.map(x => line('\u{1FA7A}', x.name, x.covered, 'In network', 'Not in network')).join('')}
     ${c.medications.map(x => line('\u{1F48A}', x.name, x.covered, 'Covered', 'Not on drug list')).join('')}
-    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;line-height:1.45;">Checked against this plan\u2019s published directory and drug list${c.checked_at ? ' on ' + new Date(c.checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}. Networks change \u2014 please confirm with the plan before you enroll.</div>
+    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;line-height:1.45;">Checked against this plan\u2019s published directory and drug list${c.checked_at ? ' on ' + new Date(c.checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ' when this quote was prepared'}. Networks change \u2014 please confirm with the plan before you enroll.</div>
   </div>`;
 }
 
@@ -612,17 +630,17 @@ function cmpTableHtml(list) {
         // every provider/medication that at least one of these plans answered for
         const docs = [], meds = [];
         list.forEach(o => { const c = covOf(o); if (!c) return;
-          c.providers.forEach(x => { if (!docs.some(d => d.npi === x.npi)) docs.push(x); });
-          c.medications.forEach(x => { if (!meds.some(m => m.rxcui === x.rxcui)) meds.push(x); });
+          c.providers.forEach(x => { if (!docs.some(d => d.id === x.id)) docs.push(x); });
+          c.medications.forEach(x => { if (!meds.some(m => m.id === x.id)) meds.push(x); });
         });
         if (!docs.length && !meds.length) return '';
         const cell = (o, key, id, yes, no) => {
           const c = covOf(o); if (!c) return '<span style="color:#94a3b8;">not checked</span>';
-          const hit = c[key].find(x => (key === 'providers' ? x.npi : x.rxcui) === id);
+          const hit = c[key].find(x => x.id === id);
           return hit ? covMark(hit.covered, yes, no) : '<span style="color:#94a3b8;">not checked</span>';
         };
-        return docs.map(d => rowH('\u{1FA7A} ' + esc(d.name), o => cell(o, 'providers', d.npi, 'In network', 'Not in network'))).join('')
-             + meds.map(m => rowH('\u{1F48A} ' + esc(m.name), o => cell(o, 'medications', m.rxcui, 'Covered', 'Not on drug list'))).join('');
+        return docs.map(d => rowH('\u{1FA7A} ' + esc(d.name), o => cell(o, 'providers', d.id, 'In network', 'Not in network'))).join('')
+             + meds.map(m => rowH('\u{1F48A} ' + esc(m.name), o => cell(o, 'medications', m.id, 'Covered', 'Not on drug list'))).join('');
       })()}
       ${rowH('HSA-eligible', o => o.plan_meta.hsa ? '<span style="color:#0d9488;font-weight:700;">✓ Yes</span>' : '—')}
       ${rowH('Star rating', o => o.plan_meta.rating ? '&#11088; ' + esc(String(o.plan_meta.rating)) + ' of 5' : '—')}
