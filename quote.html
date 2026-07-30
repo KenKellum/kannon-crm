@@ -579,7 +579,7 @@ async function init() {
   if (!quote) { showErr(); return; }
   if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showExpired(); return; }
   allOpts = await supa('/rest/v1/quote_options?quote_id=eq.' + encodeURIComponent(qid)
-    + '&select=*&order=line.asc,sort_order.asc', { method: 'GET' }) || [];
+    + '&select=*&order=sort_order.asc', { method: 'GET' }) || [];
   if (!allOpts.length) { showErr(); return; }
 
   setBrand(quote.brand);
