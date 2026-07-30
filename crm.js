@@ -6898,13 +6898,43 @@ async function renderAdmin() {
         + (x.states === 1 ? '' : 's') + ' and ' + Number(x.counties).toLocaleString() + ' counties').join('<br>');
     }
   }
+  // How the automatic refresh is doing \u2014 this is the normal path now.
+  let _cmsAuto = '';
+  {
+    const { data: imp } = await supabaseClient.from('cms_imports')
+      .select('status,message,rows_loaded,started_at,finished_at,source_url')
+      .eq('kind', 'landscape').order('started_at', { ascending: false }).limit(1);
+    const r = imp && imp[0];
+    if (r) {
+      const when = new Date(r.finished_at || r.started_at).toLocaleString('en-US',
+        { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+      const tone = r.status === 'ok' ? 'var(--text-success)'
+                 : (r.status === 'failed' ? 'var(--text-danger)' : 'var(--text-muted)');
+      const word = r.status === 'ok' ? '\u2713 Up to date'
+                 : (r.status === 'failed' ? '\u26a0\ufe0f Last check failed' : '\u23f3 Working\u2026');
+      _cmsAuto = `<div style="font-size:12px;color:${tone};margin-top:6px;">
+        <strong>${word}</strong> \u00b7 ${escWeb(when)}${r.message ? ' \u00b7 ' + escWeb(r.message) : ''}</div>`;
+    } else {
+      _cmsAuto = '<div style="font-size:12px;color:var(--text-muted);margin-top:6px;">No automatic check has run yet.</div>';
+    }
+  }
+
   const cmsSection = `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
         <div style="font-weight:700;font-size:14px;">&#127963;&#65039; CMS Medicare Plan Data</div>
-        <button class="btn btn-outline btn-sm" onclick="openCmsImportModal()">Import landscape file</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-outline btn-sm" onclick="cmsCheckNow_()">Check CMS now</button>
+          <button class="btn btn-outline btn-sm" onclick="openCmsImportModal()">Import a file by hand</button>
+        </div>
       </div>
-      <div style="font-size:12px;color:var(--text-muted);">${_cmsLine}<br>Annual ritual: every fall, download the new Landscape file from cms.gov (free) and import it here &mdash; MA and Part D quoting updates instantly for the new plan year.</div>
+      <div style="font-size:12px;color:var(--text-muted);">${_cmsLine}</div>
+      ${_cmsAuto}
+      <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
+        This looks after itself: every Monday the system checks cms.gov for a new Landscape file and loads it if
+        there is one. Nothing to download, nothing to remember. The manual import is only there if you ever need
+        to force a particular file.
+      </div>
     </div>`;
 
   const { data: _newApps } = await supabaseClient.from('recruit_applications')
@@ -14427,6 +14457,22 @@ function cmsSplitLine_(line) {
   }
   out.push(cur);
   return out;
+}
+
+// Ask the automatic loader to look at cms.gov right now rather than waiting
+// for Monday. It does nothing if the file on offer is the one we already have.
+async function cmsCheckNow_() {
+  showToast('Asking CMS for the current file\u2026');
+  try {
+    const { data, error } = await supabaseClient.functions.invoke('cms-landscape-sync', { body: { mode: 'stage' } });
+    if (error) throw error;
+    if (data && data.status === 'skipped') showToast('Already on the newest file CMS publishes.');
+    else if (data && data.status === 'staged') showToast('New file found \u2014 loading it now (a minute or two).');
+    else showToast('Check finished: ' + ((data && data.status) || 'no answer'));
+  } catch (e) {
+    showToast('Could not reach the loader: ' + (e.message || e));
+  }
+  setTimeout(renderAdmin, 4000);
 }
 
 function openCmsImportModal() {
