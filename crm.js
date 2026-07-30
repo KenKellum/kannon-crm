@@ -14127,14 +14127,10 @@ function qbApplyAcaPlan_(i) {
     + (famQ && plan.moop_family != null ? ' per person / $' + Number(plan.moop_family).toLocaleString() + ' family' : ''));
   if (plan.hsa) bullets.push('HSA-eligible');
   if (plan.rating) bullets.push('Quality rating: ' + plan.rating + ' of 5');
-  (window._qbAcaDocs || []).forEach(d => {
-    if (plan._docCov && d.npi in plan._docCov)
-      bullets.push((plan._docCov[d.npi] ? 'In-network: ' : 'NOT in-network: ') + d.name.split(' \u00b7 ')[0] + (plan._docCov[d.npi] ? ' \u2713' : ' \u2717'));
-  });
-  (window._qbAcaMeds || []).forEach(m => {
-    if (plan._medCov && m.rxcui in plan._medCov)
-      bullets.push((plan._medCov[m.rxcui] ? 'Covers ' : 'Does NOT cover ') + m.name + (plan._medCov[m.rxcui] ? ' \u2713' : ' \u2717'));
-  });
+  // Doctors and drugs are NOT bullets any more. They ride along with the plan
+  // snapshot (plan_meta.coverage) and the client page renders them as their
+  // own block \u2014 a frozen line of text was drifting out of date and ending up
+  // contradicting the live answer sitting right above it.
   document.getElementById('qb-bul-' + i).value = bullets.join('\n');
 }
 

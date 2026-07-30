@@ -359,8 +359,12 @@ document.addEventListener('click', e => {
 function optCardHtml(o, inCompare) {
   const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
   let bl = o.benefit_bullets || [];
+  // Facts that now have a proper home elsewhere on the card. Older quotes
+  // still carry them as text, including doctor/drug lines that can disagree
+  // with the recorded coverage \u2014 the block below is the one to trust.
   if (pm) bl = bl.filter(b =>
-    !/^(Deductible: |Yearly max out-of-pocket: |Full price \$|HSA-eligible$|(Bronze|Silver|Gold|Platinum|Catastrophic) plan)/.test(b));
+    !/^(Deductible: |Yearly max out-of-pocket: |Full price \$|HSA-eligible$|Quality rating: |(Bronze|Silver|Gold|Platinum|Catastrophic) plan)/.test(b)
+    && !/^(In-network: |NOT in-network: |Covers |Does NOT cover )/.test(b));
   const bullets = bl.map(b => '<li>' + esc(b) + '</li>').join('');
   const money = v => '$' + Number(v).toLocaleString();
   let pmHtml = '', creditHtml = '', chipsHtml = '';
