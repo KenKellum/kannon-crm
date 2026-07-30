@@ -407,6 +407,40 @@ function cmsFactsHtml(o) {
     + `<div style="font-size:11.5px;color:#64748b;margin-top:7px;line-height:1.5;">This is the plan\u2019s own monthly premium \u2014 you keep paying your Part B premium as well.</div>`;
 }
 
+// A Medicare Supplement option. The letter is the coverage — identical at
+// every carrier — so the useful thing to show a client is what it pays,
+// what it doesn't, and how the premium will behave as they age.
+const MG_METHOD_TEXT = {
+  'attained-age': 'Attained-age priced \u2014 the premium goes up as you get older.',
+  'issue-age': 'Issue-age priced \u2014 based on your age when you buy it, so age alone won\u2019t raise it.',
+  'community': 'Community-rated \u2014 everyone with this plan pays the same, whatever their age.',
+};
+
+function mgFactsHtml(o) {
+  const m = (o.plan_meta && o.plan_meta.src === 'medigap') ? o.plan_meta : null;
+  if (!m) return '';
+  const pays = m.pays || [], gaps = m.gaps || [];
+  const line = (label, ok, note) => `<div style="display:flex;gap:7px;align-items:baseline;padding:2px 0;font-size:12.5px;">
+      <span style="flex-shrink:0;color:${ok ? '#15803d' : '#94a3b8'};font-weight:800;">${ok ? '\u2713' : '\u2014'}</span>
+      <span style="flex:1;min-width:0;color:#334155;">${esc(label)}</span>
+      ${note ? `<span style="flex-shrink:0;font-size:11px;color:#b45309;">${esc(note)}</span>` : ''}
+    </div>`;
+  return `<div class="pm-chips">
+      <span class="pm-chip">Plan ${esc(m.letter)}</span>
+      ${m.letter && String(m.letter).indexOf('HD') === 0 ? '<span class="pm-chip">High deductible</span>' : ''}
+      <span class="pm-chip">Standardized by law</span>
+    </div>
+    <div style="margin-top:10px;border:1px solid #eef2f7;border-radius:10px;padding:9px 11px;background:#fbfdff;">
+      <div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#64748b;">What this plan pays</div>
+      ${pays.map(x => line(x.label.replace(/ \(80%\)/, ''), true,
+        x.level === '50' ? '50%' : (x.level === '75' ? '75%' : (x.level === 'copay' ? 'small copays' : '')))).join('')}
+      ${gaps.length ? `<div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#64748b;margin-top:8px;">You pay these yourself</div>
+        ${gaps.map(g => line(g, false, '')).join('')}` : ''}
+      ${MG_METHOD_TEXT[m.rating_method] ? `<div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.5;">${esc(MG_METHOD_TEXT[m.rating_method])}</div>` : ''}
+      <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;line-height:1.45;">Every insurance company must cover exactly the same things under Plan ${esc(m.base_letter || m.letter)} \u2014 only the premium and the service differ. You keep paying your Part B premium as well.</div>
+    </div>`;
+}
+
 function optCardHtml(o, inCompare) {
   const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
   let bl = o.benefit_bullets || [];
@@ -454,6 +488,7 @@ function optCardHtml(o, inCompare) {
     <div class="prem">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<small> /month</small></div>
     ${creditHtml}${chipsHtml}${pmHtml}
     ${cmsFactsHtml(o)}
+    ${mgFactsHtml(o)}
     ${covBlockHtml(o)}
     <ul>${bullets}</ul>
     ${linksHtml}
@@ -597,6 +632,9 @@ async function enterCompare() {
   document.getElementById('compare-view').style.display = 'block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
   const row = document.getElementById('cmp-row');
+  const allMg = list.length >= 2 && list.every(o => o.plan_meta && o.plan_meta.src === 'medigap');
+  if (allMg) { row.innerHTML = mgCmpTableHtml(list); return; }
+
   const allCms = list.length >= 2 && list.every(o => o.plan_meta && o.plan_meta.src === 'cms');
   if (allCms) { row.innerHTML = cmsCmpTableHtml(list); return; }
 
@@ -634,6 +672,53 @@ function csTextC(b) {
 // Medicare plans side by side. Everything here is already on the quote — the
 // plan facts and the drug answers were recorded when it was built — so this
 // page never calls out to anything.
+function mgCmpTableHtml(list) {
+  const th = 'position:sticky;left:0;background:#fff;z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:#64748b;padding:9px 12px;border-bottom:1px solid #eef2f7;min-width:210px;';
+  const td = o => 'padding:9px 12px;border-bottom:1px solid #eef2f7;font-size:12.5px;text-align:center;min-width:150px;'
+    + (o.is_recommended ? 'background:#fffdf5;' : '');
+  const rowH = (label, fn) => `<tr><th style="${th}">${label}</th>${list.map(o => `<td style="${td(o)}">${fn(o)}</td>`).join('')}</tr>`;
+  const m = o => o.plan_meta || {};
+  // every benefit line mentioned by any of the plans being compared
+  const labels = [];
+  list.forEach(o => {
+    (m(o).pays || []).forEach(x => { if (!labels.includes(x.label)) labels.push(x.label); });
+    (m(o).gaps || []).forEach(l => { if (!labels.includes(l)) labels.push(l); });
+  });
+  const cell = (o, label) => {
+    const hit = (m(o).pays || []).find(x => x.label === label);
+    if (!hit) return '<span style="color:#94a3b8;">\u2014</span>';
+    if (hit.level === '50' || hit.level === '75') return '<span style="color:#b45309;font-weight:700;">' + hit.level + '%</span>';
+    if (hit.level === 'copay') return '<span style="color:#15803d;font-weight:800;">\u2713</span><div style="font-size:10.5px;color:#b45309;">small copays</div>';
+    return '<span style="color:#15803d;font-weight:800;">\u2713</span>';
+  };
+
+  return `<table id="cmp-table" style="border-collapse:collapse;background:#fff;border:1px solid #eef2f7;border-radius:12px;">
+    <thead>
+    <tr><th style="${th}"></th>
+      ${list.map(o => `<td style="${td(o)}border-bottom:none;padding-bottom:0;">
+        ${o.is_recommended ? '<div style="color:#b3903a;font-size:10px;font-weight:800;letter-spacing:.8px;">&#11088; RECOMMENDED</div>' : ''}
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#64748b;">${esc(o.carrier_name)}</div>
+        <div style="font-size:20px;font-weight:800;margin:2px 0 0;color:var(--ink);">Plan ${esc(m(o).letter || '')}</div>
+      </td>`).join('')}
+    </tr>
+    <tr><th style="${th}border-bottom:1.5px solid #e2e8f0;"></th>
+      ${list.map(o => `<td style="${td(o)}border-bottom:1.5px solid #e2e8f0;vertical-align:bottom;padding-top:6px;">
+        <div style="font-size:22px;font-weight:800;color:var(--brand);line-height:1.1;">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<span style="font-size:10px;font-weight:500;color:#64748b;"> /mo</span></div>
+        <div style="font-size:10.5px;color:#64748b;">plus your Part B premium</div>
+      </td>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${labels.map(l => rowH(esc(l.replace(/ \(80%\)/, '')), o => cell(o, l))).join('')}
+      ${list.some(o => MG_METHOD_TEXT[m(o).rating_method]) ? rowH('How the price changes', o =>
+        MG_METHOD_TEXT[m(o).rating_method] ? '<span style="font-size:11.5px;color:#475569;">' + esc(MG_METHOD_TEXT[m(o).rating_method]) + '</span>' : '\u2014') : ''}
+      <tr><th style="${th}"></th>${list.map(o => `<td style="${td(o)}border-bottom:none;">
+        <button class="pick ${discussSet.has(o.id) ? 'on' : ''}" style="width:100%;padding:9px;font-size:12px;margin:0;" onclick="toggleDiscuss('${o.id}', this)">
+          ${discussSet.has(o.id) ? '\u2713 On my discuss list' : '\u{1F4AC} Discuss this one'}</button></td>`).join('')}</tr>
+    </tbody>
+  </table>
+  <div style="font-size:11px;color:#94a3b8;margin-top:8px;">Medicare Supplement benefits are set by federal law: the same letter covers the same things at every insurance company. What differs is the premium, how it changes over time, and the service you get.</div>`;
+}
+
 function cmsCmpTableHtml(list) {
   const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
   const th = 'position:sticky;left:0;background:#fff;z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:#64748b;padding:9px 12px;border-bottom:1px solid #eef2f7;min-width:150px;max-width:190px;';

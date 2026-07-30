@@ -10800,6 +10800,71 @@ function renderMedigapPicker_() {
     </div>` : ''}`;
 }
 
+// The same treatment the ACA and Medicare Advantage options get: a record,
+// not a form. The letter is the coverage; the carrier is the choice.
+function qbMgOptionView_(i) {
+  const card = document.getElementById('qb-mg-card-' + i);
+  const manual = document.getElementById('qb-manual-' + i);
+  const carprod = document.getElementById('qb-carprod-' + i);
+  const p = (window._qbMgSel || {})[i];
+  if (!card) return;
+
+  if (!p) {
+    card.style.display = 'none'; card.innerHTML = '';
+    if (manual) manual.style.display = '';
+    if (carprod) carprod.style.display = '';
+    return;
+  }
+  if (manual) manual.style.display = 'none';
+  if (carprod) carprod.style.display = 'none';
+
+  const base = String(p.letter).replace(/^HD/, '');
+  const pays = MEDIGAP_GRID.rows.filter(([, by]) => by[base] && by[base] !== 'none');
+  const gaps = MEDIGAP_GRID.rows.filter(([, by]) => !by[base] || by[base] === 'none');
+  const method = { 'attained-age': 'Attained-age \u2014 the premium rises as they age',
+                   'issue-age': 'Issue-age \u2014 priced at the age they buy',
+                   'community': 'Community-rated \u2014 everyone pays the same' }[p.rating_method] || null;
+
+  card.style.display = 'block';
+  card.innerHTML = `
+    <div class="pk-card is-selected" style="border-radius:12px;padding:12px 14px;">
+      <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
+        <span style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Plan</span>
+        <span style="font-size:22px;font-weight:800;color:var(--accent,#c8a84b);line-height:1;">${escWeb(p.letter)}</span>
+        ${p.letter.indexOf('HD') === 0 ? '<span style="font-size:10px;color:var(--text-warning);border:1px solid var(--border-warning);border-radius:6px;padding:2px 6px;">high deductible</span>' : ''}
+        <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">standardised by law</span>
+      </div>
+      ${p.carrier_name ? `<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:7px;">${escWeb(p.carrier_name)}</div>` : ''}
+      <div style="font-size:14px;font-weight:700;margin:1px 0 8px;">Medicare Supplement Plan ${escWeb(p.letter)}</div>
+
+      <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">${p.rate != null ? '$' + Number(p.rate).toFixed(2) : '\u2014'}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
+          ${method ? `<div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;">${escWeb(method)}</div>` : ''}
+        </div>
+        <div style="margin-left:auto;font-size:12px;color:var(--text-secondary);text-align:right;">
+          <div style="font-size:10px;color:var(--text-muted);">Pays in full</div>
+          <div style="font-weight:700;">${pays.length} of ${MEDIGAP_GRID.rows.length} gaps</div>
+        </div>
+      </div>
+
+      <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
+        <div style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${pays.slice(0, 5).map(([label, by]) => `<span class="pk-pill ${by[base] === 'full' || by[base] === 'copay' ? 'ok' : 'unk'}">${by[base] === 'full' ? '\u2713' : by[base] === 'copay' ? '\u2713' : by[base] + '%'} ${escWeb(label.replace(/ \(80%\)/, ''))}</span>`).join(' ')}
+          ${pays.length > 5 ? `<span class="pk-pill unk">+${pays.length - 5} more</span>` : ''}
+        </div>
+        ${gaps.length ? `<div style="font-size:11px;color:var(--text-muted);margin-top:5px;">Not covered: ${gaps.map(([l]) => escWeb(l)).join(', ')}</div>` : ''}
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="openMgDetail_('${escWeb(p.letter)}')">Plan details</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openMedigapPicker_()">\u{1F5D6} Change plan or carrier</button>
+        <button type="button" class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);margin-left:auto;" onclick="qbMgRemoveSlot_(${i})">\u{1F5D1} Remove</button>
+      </div>
+      <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">Benefits are fixed by federal law \u2014 Plan ${escWeb(base)} covers the same at every carrier. ${p.rate != null ? 'The premium comes from your loaded rate chart.' : 'No rate chart loaded \u2014 type the premium below.'}</div>
+    </div>`;
+}
+
 function qbMgRemoveSlot_(i) {
   if (!(window._qbMgSel || {})[i]) return;
   delete window._qbMgSel[i];
@@ -10807,6 +10872,7 @@ function qbMgRemoveSlot_(i) {
     const el = document.getElementById(id);
     if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
   });
+  qbMgOptionView_(i);
   if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
   qbSectionSummary_();
 }
@@ -10874,6 +10940,7 @@ function qbMgAddPlan_(letter, productId) {
   const bul = document.getElementById('qb-bul-' + slot);
   if (bul) { const ro = bul.readOnly; bul.readOnly = false; bul.value = p[2].join('\n'); bul.readOnly = ro; }
 
+  qbMgOptionView_(slot);
   renderMedigapPicker_();
   qbSectionSummary_();
   showToast('Added as option ' + qbOptionNo_(slot) + '.');
@@ -11465,6 +11532,18 @@ async function requoteFromQuote_(quoteId, dealId) {
       }
       if (o.plan_meta && o.plan_meta.src === 'aca') qbAcaHydrateOption_(i, o);
       if (o.plan_meta && o.plan_meta.src === 'cms') qbCmsHydrateOption_(i, o);
+      if (o.plan_meta && o.plan_meta.src === 'medigap') {
+        const m = o.plan_meta;
+        window._qbMgSel = window._qbMgSel || {};
+        window._qbMgSel[i] = {
+          letter: m.letter, title: 'Medicare Supplement Plan ' + m.letter,
+          bullets: (MEDIGAP_PLANS.find(x => x[0] === m.letter) || [, , []])[2] || [],
+          state: m.state, rate: m.premium != null ? m.premium : o.monthly_premium,
+          carrier_name: m.carrier_name || o.carrier_name, product_id: m.product_id,
+          rating_method: m.rating_method, _snapshot: true,
+        };
+        qbMgOptionView_(i);
+      }
     });
     showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
     qbAcaCoverSelected_();
@@ -11672,6 +11751,7 @@ async function openQuoteBuilder(dealId, opts) {
       </div>
       <div id="qb-aca-card-${i}" style="display:none;"></div>
       <div id="qb-cms-card-${i}" style="display:none;"></div>
+      <div id="qb-mg-card-${i}" style="display:none;"></div>
       <div id="qb-manual-${i}">
         <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
         <label>Monthly premium ($) *</label><input type="number" step="0.01" id="qb-prem-${i}" placeholder="e.g. 128.50" />
@@ -11867,6 +11947,18 @@ async function openQuoteBuilder(dealId, opts) {
           family_quote: !!window._qbAcaFamilyQuote, links: acaSel._links || null,
           csr: window._qbAcaCsr || null, csr_applies: acaCsrAppliesTo_(acaSel.metal),
           coverage: qbAcaCoverageSnapshot_(acaSel),
+        };
+      } else if ((window._qbMgSel || {})[i]) {
+        const mg = window._qbMgSel[i];
+        const base = String(mg.letter).replace(/^HD/, '');
+        planMeta = {
+          src: 'medigap', letter: mg.letter, base_letter: base,
+          carrier_name: mg.carrier_name || null, product_id: mg.product_id || null,
+          rating_method: mg.rating_method || null, state: mg.state || null,
+          premium: mg.rate != null ? mg.rate : null,
+          pays: MEDIGAP_GRID.rows.filter(([, by]) => by[base] && by[base] !== 'none')
+            .map(([label, by]) => ({ label: label, level: by[base] })),
+          gaps: MEDIGAP_GRID.rows.filter(([, by]) => !by[base] || by[base] === 'none').map(([label]) => label),
         };
       } else if (cmsSel) {
         planMeta = {
