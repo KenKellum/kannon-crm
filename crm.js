@@ -14227,6 +14227,8 @@ const CMS_KIND_LABEL = {
 // boroughs, census areas. Compare on a flattened key instead of the text.
 function cmsCountyKey_(name) {
   return String(name || '').toLowerCase()
+    .replace(/\bste\.?\b/g, 'sainte')
+    .replace(/\bst\.?\b/g, 'saint')
     .replace(/\b(county|parish|borough|census area|municipality|city and borough|municipio)\b/g, '')
     .replace(/[^a-z0-9]/g, '');
 }
@@ -14300,9 +14302,9 @@ async function qbCmsCounties_() {
   }
 
   // the counties WE hold for that state and year decide the wording
-  const { data: rows } = await supabaseClient.from('cms_plans')
-    .select('county').eq('state', window._qbCmsState).eq('plan_year', year).neq('county', 'All Counties');
-  const held = [...new Set((rows || []).map(r => r.county))].sort();
+  const { data: rows } = await supabaseClient.from('cms_counties')
+    .select('county').eq('state', window._qbCmsState).eq('plan_year', year).order('county');
+  const held = (rows || []).map(r => r.county);
   if (!held.length) {
     sel.innerHTML = '<option value="">\u2014 no plans loaded for ' + escWeb(window._qbCmsState) + ' \u2014</option>';
     if (status) status.innerHTML = '<span style="color:var(--text-warning);">No ' + year + ' plan data for '
