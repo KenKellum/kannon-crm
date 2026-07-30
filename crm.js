@@ -10816,8 +10816,9 @@ function qbMgOptionView_(i) {
     return;
   }
   const needsTyping = p.rate == null;
+  const carPicked = !!p.carrier_id || !!(document.getElementById('qb-car-' + i) || {}).value;
   if (manual) manual.style.display = needsTyping ? '' : 'none';
-  if (carprod) carprod.style.display = 'none';
+  if (carprod) carprod.style.display = carPicked ? 'none' : '';
 
   const base = String(p.letter).replace(/^HD/, '');
   const pays = MEDIGAP_GRID.rows.filter(([, by]) => by[base] && by[base] !== 'none');
@@ -10835,7 +10836,11 @@ function qbMgOptionView_(i) {
         ${p.letter.indexOf('HD') === 0 ? '<span style="font-size:10px;color:var(--text-warning);border:1px solid var(--border-warning);border-radius:6px;padding:2px 6px;">high deductible</span>' : ''}
         <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">standardised by law</span>
       </div>
-      ${p.carrier_name ? `<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:7px;">${escWeb(p.carrier_name)}</div>` : ''}
+      ${p.carrier_name
+        ? `<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:7px;">${escWeb(p.carrier_name)}</div>`
+        : `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:8px;font-size:11.5px;">
+             &#9888;&#65039; <strong>Pick the carrier below</strong> \u2014 the letter says what it covers, the carrier says who writes it and what it costs.
+           </div>`}
       <div style="font-size:14px;font-weight:700;margin:1px 0 8px;">Medicare Supplement Plan ${escWeb(p.letter)}</div>
 
       <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
@@ -11746,7 +11751,7 @@ async function openQuoteBuilder(dealId, opts) {
       <div id="qb-aca-warn-${i}" style="display:none;font-size:11.5px;line-height:1.5;border-radius:8px;padding:8px 10px;margin:6px 0;"></div>
       <div id="qb-carprod-${i}">
         <label>Carrier <span id="qb-car-opt-${i}" style="display:none;font-size:10px;color:var(--text-muted);">(optional when an official plan is picked)</span></label>
-        <select id="qb-car-${i}" onchange="qbFillProducts_(${i})">${carOpts}</select>
+        <select id="qb-car-${i}" onchange="qbFillProducts_(${i});qbMgCarrierPicked_(${i});">${carOpts}</select>
         <label>Product (from carrier's catalog — optional)</label>
         <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
       </div>
@@ -11924,7 +11929,12 @@ async function openQuoteBuilder(dealId, opts) {
       const car = (window._qbCarriers || []).find(c => c.id === carId);
       const cmsSel = (window._qbCmsSel || {})[i];
       const acaSel = (window._qbAcaSel || {})[i];
-      if (!car && !cmsSel && !acaSel) { showToast('Option ' + (i + 1) + ': pick a carrier or an official plan.'); return false; }
+      if (!car && !cmsSel && !acaSel) {
+        showToast((window._qbMgSel || {})[i]
+          ? 'Option ' + qbOptionNo_(i) + ': choose the carrier writing this supplement plan.'
+          : 'Option ' + qbOptionNo_(i) + ': pick a carrier or an official plan.');
+        return false;
+      }
       const prodId = document.getElementById('qb-prod-' + i).value || null;
       let bullets = document.getElementById('qb-bul-' + i).value.split('\n').map(x => x.trim()).filter(Boolean);
       if (MEDICARE_QUOTE_LINES.includes(line)) {
@@ -12412,6 +12422,15 @@ function qbLineChanged_() {
   }
   qbSectionSummary_();
   qbSyncWorkbench_();
+}
+
+function qbMgCarrierPicked_(i) {
+  const sel = (window._qbMgSel || {})[i];
+  if (!sel) return;
+  const carSel = document.getElementById('qb-car-' + i);
+  const car = (window._qbCarriers || []).find(c => c.id === (carSel || {}).value);
+  if (car) { sel.carrier_id = car.id; sel.carrier_name = car.name; }
+  qbMgOptionView_(i);
 }
 
 function qbFillProducts_(i) {
