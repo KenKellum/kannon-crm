@@ -10737,7 +10737,7 @@ async function loadDealTree_(deal) {
       </div>
       <div style="margin-left:14px;padding-left:10px;border-left:2px solid var(--border-selected);margin-top:3px;">
         ${kids.length ? kids.map(quoteLine).join('')
-          : `<div style="font-size:11.5px;color:var(--text-muted);padding:2px 0;">no quotes from this intake yet${canQuote ? ` &middot; <a href="#" onclick="openQuoteBuilder('${deal.id}'); return false;">create one</a>` : ''}</div>`}
+          : `<div style="font-size:11.5px;color:var(--text-muted);padding:2px 0;">no quotes from this intake yet${canQuote ? ` &middot; <a href="#" onclick="openQuoteBuilder('${deal.id}', { intakeSessionId: '${x.id}' }); return false;">create one</a>` : ''}</div>`}
       </div>
     </div>`;
   }).join('');
@@ -10787,7 +10787,8 @@ async function qbSmartDefaultLine_(deal, contact) {
   return 'Life';
 }
 
-async function openQuoteBuilder(dealId) {
+async function openQuoteBuilder(dealId, opts) {
+  opts = opts || {};
   const deal = deals.find(d => d.id === dealId); if (!deal) return;
   const contact = contacts.find(c => c.id === deal.contact_id);
   if (!contact) { showToast('No contact linked to this deal.'); return; }
@@ -10810,13 +10811,19 @@ async function openQuoteBuilder(dealId) {
   window._qbProds = prods || [];
   window._qbContact = contact;
   window._qbRequoteOpt = {};
-  // Phase 2: the quote remembers which intake it grew out of
-  window._qbIntakeSessionId = null;
+  // Phase 2: the quote is tied to an intake, and the agent can see/change which
+  window._qbIntakeSessionId = opts.intakeSessionId || null;
+  window._qbIntakeChoices = [];
   try {
     const { data: _si } = await supabaseClient.from('intake_sessions')
-      .select('id').eq('contact_id', contact.id).eq('status', 'completed')
-      .order('created_at', { ascending: false }).limit(1);
-    if (_si && _si.length) window._qbIntakeSessionId = _si[0].id;
+      .select('id,form_type,status,created_at').eq('contact_id', contact.id)
+      .order('created_at', { ascending: false }).limit(8);
+    window._qbIntakeChoices = _si || [];
+    // default: what the caller asked for, else the newest completed one
+    if (!window._qbIntakeSessionId) {
+      const done = (_si || []).find(x => x.status === 'completed');
+      if (done) window._qbIntakeSessionId = done.id;
+    }
   } catch (e) { /* a quote without an intake is still perfectly valid */ }
   // Agency-level carrier list (owners' active appointments) — powers the ACA appointment warning
   window._qbAgencyCarrierNames = [];
@@ -10835,6 +10842,12 @@ async function openQuoteBuilder(dealId) {
   const carOpts = '<option value="">— pick carrier —</option>'
     + myCarriers.map(c => `<option value="${c.id}">${escWeb(c.name)}</option>`).join('');
   const lineOpts = QUOTE_LINES.map(l => `<option value="${l}">${l}</option>`).join('');
+  const intakeOpts = (window._qbIntakeChoices || []).map(x => {
+    const lbl = (INTAKE_TYPE_LABELS[x.form_type] || x.form_type)
+      + ' \u00b7 ' + new Date(x.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      + (x.status === 'completed' ? '' : ' (pending)');
+    return `<option value="${x.id}"${x.id === window._qbIntakeSessionId ? ' selected' : ''}>${escWeb(lbl)}</option>`;
+  }).join('') + `<option value=""${!window._qbIntakeSessionId ? ' selected' : ''}>\u2014 not tied to an intake \u2014</option>`;
   const defValid = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const optBlock = i => `
     <div id="qb-opt-wrap-${i}" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-top:14px;${i > 0 ? 'display:none;' : ''}">
@@ -10879,6 +10892,8 @@ async function openQuoteBuilder(dealId) {
         </select></div>
       <div><label style="margin-top:0;">Valid until</label>
         <input type="date" id="qb-valid" value="${defValid}" style="width:auto;" /></div>
+      <div><label style="margin-top:0;">For which intake?</label>
+        <select id="qb-intake" style="width:auto;max-width:230px;">${intakeOpts}</select></div>
     </div>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
     <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
@@ -11045,7 +11060,7 @@ async function openQuoteBuilder(dealId) {
       line: line, brand: document.getElementById('qb-brand').value,
       valid_until: document.getElementById('qb-valid').value || null,
       quote_inputs: (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null,
-      intake_session_id: window._qbIntakeSessionId || null,
+      intake_session_id: (document.getElementById('qb-intake') || {}).value || null,
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
     const { error: e2 } = await supabaseClient.from('quote_options')
@@ -11056,7 +11071,14 @@ async function openQuoteBuilder(dealId) {
     loadDealTree_(deal);
     return false;
   }, { confirmLabel: 'Save Quote' });
-  const smartLine = await qbSmartDefaultLine_(deal, contact);
+  let smartLine = await qbSmartDefaultLine_(deal, contact);
+  // started from a specific intake? let its type pick the line
+  const _chosen = (window._qbIntakeChoices || []).find(x => x.id === window._qbIntakeSessionId);
+  if (opts.intakeSessionId && _chosen) {
+    const byType = { 'health-individual': 'Health \u2014 Individual', 'medicare': 'Medicare Supplement',
+                     'group-health': 'Health \u2014 Group', 'financial': 'Life' };
+    if (byType[_chosen.form_type]) smartLine = byType[_chosen.form_type];
+  }
   const lineSel = document.getElementById('qb-line');
   if (lineSel && [...lineSel.options].some(o => o.value === smartLine)) lineSel.value = smartLine;
   qbLineChanged_();
