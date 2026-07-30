@@ -14542,6 +14542,12 @@ function qbCmsRelinkOptions_() {
 
 window._qbCmsPk = { carriers: new Set(), types: new Set(), zero: false, stars: 0, sort: 'premium', cmp: new Set() };
 
+// Dollars and cents, every time. “$35.6” is not a price.
+function cmsUsd_(v) {
+  return v == null ? '—' : '$' + Number(v).toLocaleString('en-US',
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function cmsPremium_(p) {
   return p._premium != null ? p._premium
     : (p.consolidated_premium != null ? p.consolidated_premium : p.part_c_premium);
@@ -14628,9 +14634,10 @@ function cmsPkFiltered_() {
 function cmsCardHtml_(p) {
   const slot = cmsAddedSlot_(p.id);
   const prem = cmsPremium_(p);
-  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const money = cmsUsd_;
   const stars = p.star_rating ? '\u2b50 ' + p.star_rating : '';
-  return `<div class="pk-card ${slot >= 0 ? 'is-selected' : ''}" style="border-radius:12px;padding:12px 14px;cursor:pointer;"
+  return `<div class="pk-card ${slot >= 0 ? 'is-selected' : ''}"
+      style="border-radius:12px;padding:12px 14px;cursor:pointer;display:flex;flex-direction:column;height:100%;"
       onclick="openCmsDetail_('${escWeb(p.id)}')">
       ${slot >= 0 ? `<div class="pk-sel-badge">\u2713 OPTION ${qbOptionNo_(slot)}</div>` : ''}
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -14655,7 +14662,7 @@ function cmsCardHtml_(p) {
         </div>
       </div>
       ${qbCmsDrugLine_(p)}
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
         <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
           onclick="event.stopPropagation();qbCmsAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();openCmsDetail_('${escWeb(p.id)}')">Details</button>
@@ -14801,7 +14808,7 @@ function openCmsCompare_() {
     ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--surface-0);display:flex;flex-direction:column;';
     document.body.appendChild(ov);
   }
-  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const money = cmsUsd_;
   const meds = window._qbCmsMeds || [];
   const th = 'position:sticky;left:0;background:var(--surface-0);z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);min-width:150px;';
   const td = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:190px;';
@@ -14863,7 +14870,7 @@ function openCmsDetail_(planId) {
     dr.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:min(520px,92vw);z-index:99995;background:var(--surface-1);border-left:1px solid var(--border);box-shadow:-12px 0 40px rgba(15,23,42,.18);display:flex;flex-direction:column;';
     document.body.appendChild(dr);
   }
-  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const money = cmsUsd_;
   const row = (l, v) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
       <span style="color:var(--text-muted);">${l}</span><span style="font-weight:600;text-align:right;">${v}</span></div>`;
   dr.style.display = 'flex';
@@ -15002,7 +15009,7 @@ function qbCmsOptionView_(i) {
   if (carprod) carprod.style.display = 'none';
   if (cmsWrap) cmsWrap.style.display = 'none';
 
-  const money = v => v != null ? '$' + Number(v).toLocaleString() : '\u2014';
+  const money = cmsUsd_;
   card.style.display = 'block';
   card.innerHTML = `
     <div class="pk-card is-selected" style="border-radius:12px;padding:12px 14px;">
