@@ -10734,6 +10734,12 @@ async function requoteFromQuote_(quoteId, dealId) {
       if (o.is_recommended) { const r = document.getElementById('qb-rec-' + i); if (r) r.checked = true; }
       // Keep the official plan snapshot (facts + document links) alive across the re-quote
       if (o.plan_meta) window._qbRequoteOpt[i] = { plan_meta: o.plan_meta, display_name: o.display_name };
+      // ...and put the coverage type back on the option, so Save doesn't ask again
+      const olSel = document.getElementById('qb-optline-' + i);
+      if (olSel && o.line && [...olSel.options].some(x => x.value === o.line)) {
+        olSel.value = o.line; qbOptLineChanged_(i);
+      }
+      if (o.plan_meta && o.plan_meta.src === 'aca') qbAcaHydrateOption_(i, o);
     });
     showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
   }, 350);
@@ -13874,8 +13880,34 @@ function qbAcaOptionView_(i) {
         <button type="button" class="btn btn-outline btn-sm" onclick="openAcaPicker_()">\u{1F5D6} Change plan</button>
         <button type="button" class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);margin-left:auto;" onclick="qbAcaAddPlan_('${escWeb(p.id)}')">\u{1F5D1} Remove</button>
       </div>
-      <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">Plan name, price and benefits come straight from healthcare.gov \u2014 add your own note below.</div>
+      <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">${p._snapshot
+        ? 'Saved from the last quote' + (p._year ? ' (' + escWeb(String(p._year)) + ' plan year)' : '')
+          + ' \u2014 open <strong>Available Automated Quoting</strong> above to re-check this year\u2019s price.'
+        : 'Plan name, price and benefits come straight from healthcare.gov \u2014 add your own note below.'}</div>
     </div>`;
+}
+
+// A saved ACA option is a complete plan record on its own. Rebuild the card
+// from it so re-opening a quote looks the same as building one; the live
+// lookup replaces this object with fresh pricing the moment it runs.
+function qbAcaHydrateOption_(i, o) {
+  const m = o.plan_meta || {};
+  window._qbAcaSel = window._qbAcaSel || {};
+  window._qbAcaSel[i] = {
+    id: m.plan_id || '',
+    name: String(o.display_name || '').replace(/\s*\((Bronze|Silver|Gold|Platinum|Catastrophic)\)\s*$/i, '').trim(),
+    issuer: o.carrier_name || '',
+    metal: m.metal || '', type: m.plan_type || '',
+    premium: m.full_premium != null ? m.full_premium : o.monthly_premium,
+    net: m.net_premium != null ? m.net_premium : o.monthly_premium,
+    deductible: m.deductible, deductible_family: m.deductible_family,
+    moop: m.moop, moop_family: m.moop_family,
+    hsa: !!m.hsa, rating: m.rating || null,
+    _snapshot: true, _year: m.year || null, _links: m.links || null,
+  };
+  if (m.family_quote) window._qbAcaFamilyQuote = true;
+  qbAcaApptWarn_(i, window._qbAcaSel[i]);
+  qbAcaOptionView_(i);
 }
 
 function qbApplyAcaPlan_(i) {
