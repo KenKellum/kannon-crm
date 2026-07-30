@@ -14229,7 +14229,7 @@ function cmsCountyKey_(name) {
   return String(name || '').toLowerCase()
     .replace(/\bste\.?\b/g, 'sainte')
     .replace(/\bst\.?\b/g, 'saint')
-    .replace(/\b(county|parish|borough|census area|municipality|city and borough|municipio)\b/g, '')
+    .replace(/\b(city and borough|census area|municipality|municipio|county|parish|borough)\b/g, '')
     .replace(/[^a-z0-9]/g, '');
 }
 
@@ -14306,9 +14306,20 @@ async function qbCmsCounties_() {
     .select('county').eq('state', window._qbCmsState).eq('plan_year', year).order('county');
   const held = (rows || []).map(r => r.county);
   if (!held.length) {
-    sel.innerHTML = '<option value="">\u2014 no plans loaded for ' + escWeb(window._qbCmsState) + ' \u2014</option>';
-    if (status) status.innerHTML = '<span style="color:var(--text-warning);">No ' + year + ' plan data for '
-      + escWeb(window._qbCmsState) + ' yet.</span>';
+    const { count: pdp } = await supabaseClient.from('cms_plans')
+      .select('id', { count: 'exact', head: true })
+      .eq('state', window._qbCmsState).eq('plan_year', year).eq('category', 'PDP');
+    sel.innerHTML = '<option value="">\u2014 none \u2014</option>';
+    if (pdp) {
+      const kindSel = document.getElementById('qb-cms-kind');
+      if (kindSel) kindSel.value = 'PDP';
+      if (status) status.innerHTML = '<strong>' + escWeb(window._qbCmsState)
+        + ' has no Medicare Advantage plans in ' + year + '</strong> \u2014 only standalone Part D, which is priced '
+        + 'statewide. Switched to <strong>Part D drug plan only</strong> (' + pdp + ' plans).';
+    } else if (status) {
+      status.innerHTML = '<span style="color:var(--text-warning);">No ' + year + ' plan data for '
+        + escWeb(window._qbCmsState) + ' yet.</span>';
+    }
     return;
   }
 
