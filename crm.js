@@ -10916,6 +10916,9 @@ async function openQuoteBuilder(dealId, opts) {
         <span id="qb-opt-label-${i}" style="font-weight:700;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Option ${i + 1}</span>
         ${i > 0 ? `<button type="button" onclick="qbHideOption_(${i})" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;" title="Remove this option">&#10005;</button>` : ''}
       </div>
+      <label>Coverage type *</label>
+      <select id="qb-optline-${i}" onchange="qbOptLineChanged_(${i})">
+        <option value="">&mdash; choose coverage type &mdash;</option>${lineOpts}</select>
       <div id="qb-cms-wrap-${i}" style="display:none;">
         <label>Official CMS plan</label>
         <select id="qb-cms-${i}" onchange="qbApplyCmsPlan_(${i})"><option value="">&mdash; pick a plan &mdash;</option></select>
@@ -10931,8 +10934,6 @@ async function openQuoteBuilder(dealId, opts) {
         <label>Product (from carrier's catalog — optional)</label>
         <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
       </div>
-      <label>Coverage type for this option</label>
-      <select id="qb-optline-${i}" onchange="qbOptLineChanged_(${i})">${lineOpts}</select>
       <div id="qb-aca-card-${i}" style="display:none;"></div>
       <div id="qb-manual-${i}">
         <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
@@ -10944,15 +10945,14 @@ async function openQuoteBuilder(dealId, opts) {
     </div>`;
 
   showModal('Create Quote — ' + escWeb(contact.name || ''), `
+    <select id="qb-line" onchange="qbLineChanged_()" style="display:none;">${lineOpts}</select>
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
-      <div><label style="margin-top:0;">Line of business</label>
-        <select id="qb-line" onchange="qbLineChanged_()" style="width:auto;min-width:170px;">${lineOpts}</select></div>
       <div><label style="margin-top:0;">Brand on the client's page</label>
         <select id="qb-brand" style="width:auto;min-width:150px;">
           <option value="ia" selected>Insured America</option>
           <option value="kfg">Kannon Financial</option>
         </select></div>
-      <div><label style="margin-top:0;">Valid until</label>
+      <div><label style="margin-top:0;">This Quote is Valid Until:</label>
         <input type="date" id="qb-valid" value="${defValid}" style="width:auto;" /></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
@@ -11038,7 +11038,16 @@ async function openQuoteBuilder(dealId, opts) {
     <button type="button" id="qb-add-opt" class="btn btn-outline btn-sm" style="margin-top:12px;" onclick="qbRevealOption_()">+ Add another option</button>
     <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Client: <strong>${escWeb(contact.name || '')}</strong>${contact.email ? ' &middot; ' + escWeb(contact.email) : ' &middot; <span style="color:#f59e0b;">no email on file — you can still copy the link</span>'}</p>
   `, async () => {
-    const line = document.getElementById('qb-line').value;
+    const _optLines = [];
+    for (let k = 0; k < QB_MAX_OPTIONS; k++) {
+      const w = document.getElementById('qb-opt-wrap-' + k);
+      const nm = document.getElementById('qb-name-' + k);
+      if (!w || w.style.display === 'none' || !nm || !nm.value.trim()) continue;
+      const ol = document.getElementById('qb-optline-' + k);
+      if (!ol || !ol.value) { showToast('Option ' + qbOptionNo_(k) + ': choose a coverage type.'); return false; }
+      _optLines.push(ol.value);
+    }
+    const line = _optLines[0] || document.getElementById('qb-line').value;
     if (MEDICARE_QUOTE_LINES.includes(line) && typeof medicareCertified_ === 'function' && !medicareCertified_()) {
       showToast('Medicare quoting requires Insured America + health license.'); return false;
     }
@@ -11152,6 +11161,8 @@ async function openQuoteBuilder(dealId, opts) {
   const lineSel = document.getElementById('qb-line');
   if (lineSel && [...lineSel.options].some(o => o.value === smartLine)) lineSel.value = smartLine;
   qbLineChanged_();
+  const firstOpt = document.getElementById('qb-optline-0');
+  if (firstOpt && !firstOpt.value) { firstOpt.value = smartLine; qbOptLineChanged_(0); }
 }
 
 // The top-level line drives the automated data (ACA / CMS / rate charts).
@@ -11161,6 +11172,19 @@ function qbOptLineChanged_(i) {
   const sel = document.getElementById('qb-optline-' + i);
   const top = document.getElementById('qb-line');
   if (!sel || !top) return;
+  // Medicare compliance rules follow the OPTION, not the dialog
+  const optIsMed = MEDICARE_QUOTE_LINES.includes(sel.value);
+  const bul = document.getElementById('qb-bul-' + i);
+  if (bul) {
+    bul.readOnly = optIsMed;
+    bul.placeholder = optIsMed ? 'Locked \u2014 filled from the product record' : 'e.g. $0 deductible';
+  }
+  const anyMed = Array.from({ length: QB_MAX_OPTIONS }, (_, k) => document.getElementById('qb-optline-' + k))
+    .some(el => el && MEDICARE_QUOTE_LINES.includes(el.value));
+  const brand = document.getElementById('qb-brand');
+  if (brand) { if (anyMed) { brand.value = 'ia'; brand.disabled = true; } else { brand.disabled = false; } }
+  const medNote = document.getElementById('qb-med-note');
+  if (medNote) medNote.style.display = anyMed ? 'block' : 'none';
   const same = sel.value === top.value;
   // official-plan pickers only make sense while this option matches the
   // line whose data we actually loaded
@@ -11207,21 +11231,18 @@ function qbSectionSummary_() {
 // "Health — Individual" might be an ACA Marketplace plan, a short-term medical
 // policy, a health share, or an off-exchange plan typed in by hand. Each entry
 // here is one optional tool; add a source and it gets a workbench for free.
-function qbAutoSources_(line) {
-  const src = [];
-  if (line === 'Health \u2014 Individual') {
-    src.push({ key: 'aca', el: 'qb-aca-strip', title: '\u{1F3DB}\uFE0F ACA Marketplace',
-               blurb: 'Live on-exchange plans with subsidy, CSR and doctor/drug checks.' });
-  }
-  if (line === 'Medicare Advantage' || line === 'Part D (PDP)') {
-    src.push({ key: 'cms', el: 'qb-cms-strip', title: '\u{1F3DB}\uFE0F Official CMS plan data',
-               blurb: 'Medicare Advantage and Part D plans for their county.' });
-  }
-  if (line === 'Medicare Supplement') {
-    src.push({ key: 'rate', el: 'qb-rate-strip', title: '\u{1F4CA} Medigap rate lookup',
-               blurb: 'Rates from the charts you\u2019ve loaded, by age, gender and tobacco.' });
-  }
-  return src;
+function qbAutoSources_() {
+  return [
+    { key: 'aca', el: 'qb-aca-strip', line: 'Health \u2014 Individual',
+      title: '\u{1F3DB}\uFE0F ACA Marketplace',
+      blurb: 'Live on-exchange plans with subsidy, CSR and doctor/drug checks.' },
+    { key: 'cms', el: 'qb-cms-strip', line: 'Medicare Advantage',
+      title: '\u{1F3DB}\uFE0F Official CMS plan data',
+      blurb: 'Medicare Advantage and Part D plans for their county.' },
+    { key: 'rate', el: 'qb-rate-strip', line: 'Medicare Supplement',
+      title: '\u{1F4CA} Medigap rate lookup',
+      blurb: 'Rates from the charts you\u2019ve loaded, by age, gender and tobacco.' },
+  ];
 }
 
 function qbEnsureWorkbench_() {
@@ -11243,7 +11264,12 @@ function qbEnsureWorkbench_() {
 
 function qbWorkbenchOpen_(open, key) {
   const wb = qbEnsureWorkbench_();
-  if (open && key) window._qbWbActive = key;
+  if (open && key) {
+    window._qbWbActive = key;
+    const src = qbAutoSources_().find(x => x.key === key);
+    const ls = document.getElementById('qb-line');
+    if (src && ls && ls.value !== src.line) { ls.value = src.line; qbLineChanged_(); }
+  }
   if (open) qbMountSource_();
   wb.style.display = open ? 'flex' : 'none';
   if (!open) qbAutoCardPaint_();
@@ -11256,8 +11282,7 @@ function qbCloseWorkbench_() {
 
 // Move the chosen source's panel into the workbench; park every other one
 function qbMountSource_() {
-  const line = (document.getElementById('qb-line') || {}).value;
-  const sources = qbAutoSources_(line);
+  const sources = qbAutoSources_();
   const active = sources.find(x => x.key === window._qbWbActive) || sources[0];
   const body = document.getElementById('qb-wb-body');
   const holder = document.getElementById('qb-strip-holder');
@@ -11315,8 +11340,7 @@ function qbSourceSummary_(key) {
 function qbAutoCardPaint_() {
   const card = document.getElementById('qb-auto-card');
   if (!card) return;
-  const line = (document.getElementById('qb-line') || {}).value;
-  const sources = qbAutoSources_(line);
+  const sources = qbAutoSources_();
   if (!sources.length) { card.style.display = 'none'; card.innerHTML = ''; return; }
 
   card.style.display = 'block';
@@ -11344,8 +11368,7 @@ function qbAutoCardPaint_() {
 
 // Keep panels parked correctly as the line changes; never open on its own
 function qbSyncWorkbench_() {
-  const line = (document.getElementById('qb-line') || {}).value;
-  const sources = qbAutoSources_(line);
+  const sources = qbAutoSources_();
   qbEnsureWorkbench_();
   const holder = document.getElementById('qb-strip-holder');
   if (holder) {
@@ -13808,6 +13831,8 @@ function qbApplyAcaPlan_(i) {
     return;
   }
   window._qbAcaSel[i] = plan;
+  const _ol = document.getElementById('qb-optline-' + i);
+  if (_ol && !_ol.value) { _ol.value = 'Health \u2014 Individual'; qbOptLineChanged_(i); }
   // Official Marketplace plan: our carrier/product catalog doesn't apply — hide it, warn on appointments instead
   if (cp) cp.style.display = 'none';
   const carSel = document.getElementById('qb-car-' + i);
