@@ -608,15 +608,6 @@ function cmpTableHtml(list) {
       ${rowH('Max out-of-pocket' + (famQ ? ' (per person)' : ''), o => `<strong>${money(o.plan_meta.moop)}</strong>`)}
       ${famQ ? rowH('Max out-of-pocket (family)', o => money(o.plan_meta.moop_family)) : ''}
       ${list.some(o => csrApplies(o.plan_meta)) ? rowH('Extra savings applied', o => csrApplies(o.plan_meta) ? `<span style="color:#15803d;font-weight:700;">✨ ${esc(csrLabel(o.plan_meta.csr))}</span>` : '<span style="color:#94a3b8;">not on this plan</span>') : ''}
-      ${rowH('HSA-eligible', o => o.plan_meta.hsa ? '<span style="color:#0d9488;font-weight:700;">✓ Yes</span>' : '—')}
-      ${rowH('Star rating', o => o.plan_meta.rating ? '&#11088; ' + esc(String(o.plan_meta.rating)) + ' of 5' : '—')}
-      ${rowH('Plan documents', o => {
-        const L = o.plan_meta.links || {};
-        const links = [['sbc', '&#128196; Benefits summary'], ['brochure', '&#128216; Brochure'], ['formulary', '&#128138; Drug list'], ['network', '&#129658; Find a doctor']]
-          .filter(([k]) => L[k])
-          .map(([k, lbl]) => `<a href="${esc(L[k])}" target="_blank" rel="noopener" style="font-size:11px;font-weight:600;display:inline-block;border:1px solid #e2e8f0;border-radius:999px;padding:3px 9px;text-decoration:none;color:var(--brand);margin:1px 2px 1px 0;">${lbl}</a>`).join('');
-        return links || '—';
-      })}
       ${(function () {
         // every provider/medication that at least one of these plans answered for
         const docs = [], meds = [];
@@ -633,6 +624,15 @@ function cmpTableHtml(list) {
         return docs.map(d => rowH('\u{1FA7A} ' + esc(d.name), o => cell(o, 'providers', d.npi, 'In network', 'Not in network'))).join('')
              + meds.map(m => rowH('\u{1F48A} ' + esc(m.name), o => cell(o, 'medications', m.rxcui, 'Covered', 'Not on drug list'))).join('');
       })()}
+      ${rowH('HSA-eligible', o => o.plan_meta.hsa ? '<span style="color:#0d9488;font-weight:700;">✓ Yes</span>' : '—')}
+      ${rowH('Star rating', o => o.plan_meta.rating ? '&#11088; ' + esc(String(o.plan_meta.rating)) + ' of 5' : '—')}
+      ${rowH('Plan documents', o => {
+        const L = o.plan_meta.links || {};
+        const links = [['sbc', '&#128196; Benefits summary'], ['brochure', '&#128216; Brochure'], ['formulary', '&#128138; Drug list'], ['network', '&#129658; Find a doctor']]
+          .filter(([k]) => L[k])
+          .map(([k, lbl]) => `<a href="${esc(L[k])}" target="_blank" rel="noopener" style="font-size:11px;font-weight:600;display:inline-block;border:1px solid #e2e8f0;border-radius:999px;padding:3px 9px;text-decoration:none;color:var(--brand);margin:1px 2px 1px 0;">${lbl}</a>`).join('');
+        return links || '—';
+      })}
       ${names.map(name => rowH(esc(name), o => {
         const b = ((det(o) || {}).benefits || []).find(x => x.name === name);
         if (!b) return '<span style="color:#94a3b8;">—</span>';
