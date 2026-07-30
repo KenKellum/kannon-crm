@@ -538,8 +538,6 @@ function cmpTableHtml(list) {
           <div style="font-size:13px;font-weight:700;margin:2px 0 6px;color:var(--ink);">${esc(o.display_name)}</div>
           <div style="font-size:22px;font-weight:800;color:var(--brand);">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<span style="font-size:10px;font-weight:500;color:#64748b;"> /mo</span></div>
           ${credit ? `<div style="font-size:10.5px;color:#64748b;">full $${Number(pm.full_premium).toFixed(0)} − <span style="color:#15803d;font-weight:700;">$${credit.toFixed(0)} credit</span></div>` : ''}
-          <button class="pick ${discussSet.has(o.id) ? 'on' : ''}" style="margin-top:8px;padding:8px;font-size:12px;" onclick="toggleDiscuss('${o.id}', this)">
-            ${discussSet.has(o.id) ? '✓ On my discuss list' : '💬 Discuss this one'}</button>
         </td>`;
       }).join('')}
     </tr></thead>
@@ -581,6 +579,9 @@ function cmpTableHtml(list) {
           ? '<span style="color:#15803d;font-weight:800;">✓</span> <span style="font-size:12px;color:#475569;">' + esc(csTextC(b)) + '</span>'
           : '<span style="color:#b91c1c;">✗ Not covered</span>';
       })).join('')}
+      <tr><th style="${th}"></th>${list.map(o => `<td style="${td(o)}border-bottom:none;">
+        <button class="pick ${discussSet.has(o.id) ? 'on' : ''}" style="width:100%;padding:9px;font-size:12px;margin:0;" onclick="toggleDiscuss('${o.id}', this)">
+          ${discussSet.has(o.id) ? '✓ On my discuss list' : '💬 Discuss this one'}</button></td>`).join('')}</tr>
     </tbody>
   </table>
   <div style="font-size:11px;color:#94a3b8;margin-top:8px;">Benefit details come straight from the official healthcare.gov record for each plan.</div>`;
