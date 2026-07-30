@@ -11093,14 +11093,15 @@ async function openQuoteBuilder(dealId, opts) {
       let planMeta = null;
       if (acaSel) {
         planMeta = {
-          src: 'aca', plan_id: acaSel.id, year: window._qbAcaYear || null,
+          src: 'aca', plan_id: acaSel.id, year: window._qbAcaYear || acaSel._year || null,
           metal: acaSel.metal || null, plan_type: acaSel.type || null,
           full_premium: acaSel.premium, net_premium: acaSel.net,
           deductible: acaSel.deductible, deductible_family: acaSel.deductible_family,
           moop: acaSel.moop, moop_family: acaSel.moop_family,
           hsa: !!acaSel.hsa, rating: acaSel.rating || null,
-          family_quote: !!window._qbAcaFamilyQuote, links: null,
+          family_quote: !!window._qbAcaFamilyQuote, links: acaSel._links || null,
           csr: window._qbAcaCsr || null, csr_applies: acaCsrAppliesTo_(acaSel.metal),
+          coverage: qbAcaCoverageSnapshot_(acaSel),
         };
       } else {
         // Re-quoted option left untouched: reuse the previous quote's snapshot
@@ -14050,6 +14051,26 @@ function qbAcaOptionView_(i) {
 // A saved ACA option is a complete plan record on its own. Rebuild the card
 // from it so re-opening a quote looks the same as building one; the live
 // lookup replaces this object with fresh pricing the moment it runs.
+// The provider/drug answers are already in hand when the quote is saved, so
+// they travel with the plan snapshot. No extra lookups now, and none later
+// from the client's page \u2014 it just reads what we recorded.
+function qbAcaCoverageSnapshot_(p) {
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  if (!docs.length && !meds.length) return null;
+  const dc = p._docCov || null, mc = p._medCov || null;
+  const providers = docs.map(d => ({
+    npi: String(d.npi), name: String(d.name || '').split(' \u00b7 ')[0],
+    covered: dc && (d.npi in dc) ? !!dc[d.npi] : null,
+  }));
+  const medications = meds.map(m => ({
+    rxcui: String(m.rxcui), name: m.name,
+    covered: mc && (m.rxcui in mc) ? !!mc[m.rxcui] : null,
+  }));
+  // nothing was actually answered \u2014 don't record a wall of question marks
+  if (!providers.some(x => x.covered !== null) && !medications.some(x => x.covered !== null)) return null;
+  return { checked_at: new Date().toISOString(), providers: providers, medications: medications };
+}
+
 function qbAcaHydrateOption_(i, o) {
   const m = o.plan_meta || {};
   window._qbAcaSel = window._qbAcaSel || {};
@@ -14064,6 +14085,8 @@ function qbAcaHydrateOption_(i, o) {
     moop: m.moop, moop_family: m.moop_family,
     hsa: !!m.hsa, rating: m.rating || null,
     _snapshot: true, _year: m.year || null, _links: m.links || null,
+    _docCov: (m.coverage && m.coverage.providers || []).reduce((a, x) => { if (x.covered !== null) a[x.npi] = x.covered; return a; }, {}),
+    _medCov: (m.coverage && m.coverage.medications || []).reduce((a, x) => { if (x.covered !== null) a[x.rxcui] = x.covered; return a; }, {}),
   };
   if (m.family_quote) window._qbAcaFamilyQuote = true;
   if (m.csr && !window._qbAcaCsr) window._qbAcaCsr = m.csr;

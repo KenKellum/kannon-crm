@@ -271,6 +271,43 @@ function csrLabel(csr) {
   return 'Extra savings \u00b7 ' + pct + '% plan';
 }
 
+// What we found for THEIR doctors and prescriptions on THIS plan, recorded
+// when the quote was built. Nothing is looked up from this page.
+function covOf(o) {
+  const c = o.plan_meta && o.plan_meta.coverage;
+  if (!c) return null;
+  const p = (c.providers || []).filter(x => x.covered !== null);
+  const m = (c.medications || []).filter(x => x.covered !== null);
+  return (p.length || m.length) ? { providers: p, medications: m, checked_at: c.checked_at } : null;
+}
+
+function covMark(ok, yes, no) {
+  return ok ? '<span style="color:#15803d;font-weight:700;">\u2713 ' + yes + '</span>'
+            : '<span style="color:#b91c1c;font-weight:600;">\u2717 ' + no + '</span>';
+}
+
+function covBlockHtml(o) {
+  const c = covOf(o);
+  if (!c) return '';
+  const line = (icon, name, ok, yes, no) => `<div style="display:flex;gap:7px;align-items:baseline;padding:2px 0;font-size:12.5px;">
+      <span style="flex-shrink:0;">${icon}</span>
+      <span style="flex:1;min-width:0;color:#334155;">${esc(name)}</span>
+      <span style="flex-shrink:0;">${covMark(ok, yes, no)}</span>
+    </div>`;
+  const dOk = c.providers.filter(x => x.covered).length, mOk = c.medications.filter(x => x.covered).length;
+  const sum = [];
+  if (c.providers.length) sum.push('\u{1FA7A} ' + dOk + ' of ' + c.providers.length + ' in network');
+  if (c.medications.length) sum.push('\u{1F48A} ' + mOk + ' of ' + c.medications.length + ' covered');
+  const allGood = dOk === c.providers.length && mOk === c.medications.length;
+  return `<div style="margin-top:10px;border:1px solid #eef2f7;border-radius:10px;padding:9px 11px;background:#fbfdff;">
+    <div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#64748b;">Your doctors &amp; prescriptions</div>
+    <div style="font-size:12px;font-weight:700;margin:2px 0 6px;color:${allGood ? '#15803d' : '#b45309'};">${sum.join(' \u00b7 ')}</div>
+    ${c.providers.map(x => line('\u{1FA7A}', x.name, x.covered, 'In network', 'Not in network')).join('')}
+    ${c.medications.map(x => line('\u{1F48A}', x.name, x.covered, 'Covered', 'Not on drug list')).join('')}
+    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;line-height:1.45;">Checked against this plan\u2019s published directory and drug list${c.checked_at ? ' on ' + new Date(c.checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}. Networks change \u2014 please confirm with the plan before you enroll.</div>
+  </div>`;
+}
+
 function optCardHtml(o, inCompare) {
   const pm = (o.plan_meta && o.plan_meta.src === 'aca') ? o.plan_meta : null;
   let bl = o.benefit_bullets || [];
@@ -313,6 +350,7 @@ function optCardHtml(o, inCompare) {
     <div class="plan">${esc(o.display_name)}</div>
     <div class="prem">$${Number(o.monthly_premium).toFixed(2).replace(/\.00$/, '')}<small> /month</small></div>
     ${creditHtml}${chipsHtml}${pmHtml}
+    ${covBlockHtml(o)}
     <ul>${bullets}</ul>
     ${linksHtml}
     ${o.agent_note ? '<div class="note">' + esc(o.agent_note) + '</div>' : ''}
@@ -520,6 +558,22 @@ function cmpTableHtml(list) {
           .map(([k, lbl]) => `<a href="${esc(L[k])}" target="_blank" rel="noopener" style="font-size:11px;font-weight:600;display:inline-block;border:1px solid #e2e8f0;border-radius:999px;padding:3px 9px;text-decoration:none;color:var(--brand);margin:1px 2px 1px 0;">${lbl}</a>`).join('');
         return links || '—';
       })}
+      ${(function () {
+        // every provider/medication that at least one of these plans answered for
+        const docs = [], meds = [];
+        list.forEach(o => { const c = covOf(o); if (!c) return;
+          c.providers.forEach(x => { if (!docs.some(d => d.npi === x.npi)) docs.push(x); });
+          c.medications.forEach(x => { if (!meds.some(m => m.rxcui === x.rxcui)) meds.push(x); });
+        });
+        if (!docs.length && !meds.length) return '';
+        const cell = (o, key, id, yes, no) => {
+          const c = covOf(o); if (!c) return '<span style="color:#94a3b8;">not checked</span>';
+          const hit = c[key].find(x => (key === 'providers' ? x.npi : x.rxcui) === id);
+          return hit ? covMark(hit.covered, yes, no) : '<span style="color:#94a3b8;">not checked</span>';
+        };
+        return docs.map(d => rowH('\u{1FA7A} ' + esc(d.name), o => cell(o, 'providers', d.npi, 'In network', 'Not in network'))).join('')
+             + meds.map(m => rowH('\u{1F48A} ' + esc(m.name), o => cell(o, 'medications', m.rxcui, 'Covered', 'Not on drug list'))).join('');
+      })()}
       ${names.map(name => rowH(esc(name), o => {
         const b = ((det(o) || {}).benefits || []).find(x => x.name === name);
         if (!b) return '<span style="color:#94a3b8;">—</span>';
