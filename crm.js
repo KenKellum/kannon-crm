@@ -10517,6 +10517,7 @@ function closeMedigapPicker_() {
   if (el) el.style.display = 'none';
   qbAutoCardPaint_();
   qbOptAutoFold_();
+  qbGroupOptions_();
 }
 
 function mgToggleGrid_() { window._qbMgShowGrid = !window._qbMgShowGrid; renderMedigapPicker_(); }
@@ -11675,6 +11676,8 @@ async function requoteFromQuote_(quoteId, dealId) {
     });
     showToast('Pre-filled from the previous quote — check the premiums, then save & send.');
     qbAcaCoverSelected_();
+    qbOptAutoFold_();
+    qbGroupOptions_();
   }, 350);
 }
 
@@ -12029,7 +12032,10 @@ async function openQuoteBuilder(dealId, opts) {
     </div>
 
 
-    ${Array.from({ length: QB_MAX_OPTIONS }, (_, oi) => oi).map(optBlock).join('')}
+    <div id="qb-opt-list">
+      ${Array.from({ length: QB_MAX_OPTIONS }, (_, oi) => oi).map(optBlock).join('')}
+    </div>
+    <div id="qb-opt-parked" style="display:none;"></div>
     <button type="button" id="qb-add-opt" class="btn btn-outline btn-sm" style="margin-top:12px;" onclick="qbRevealOption_()">+ Add another option</button>
     <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Client: <strong>${escWeb(contact.name || '')}</strong>${contact.email ? ' &middot; ' + escWeb(contact.email) : ' &middot; <span style="color:#f59e0b;">no email on file — you can still copy the link</span>'}</p>
   `, async () => {
@@ -12202,6 +12208,7 @@ async function openQuoteBuilder(dealId, opts) {
   qbLineChanged_();
   // The agent tells us what each option is; we don't guess on their behalf.
   for (let i = 0; i < QB_MAX_OPTIONS; i++) qbOptFields_(i);
+  qbGroupOptions_();
 }
 
 // The top-level line drives the automated data (ACA / CMS / rate charts).
@@ -12267,6 +12274,7 @@ function qbOptLineChanged_(i) {
   const medNote = document.getElementById('qb-med-note');
   if (medNote) medNote.style.display = anyMed ? 'block' : 'none';
   qbOptFields_(i);
+  setTimeout(qbGroupOptions_, 0);
   // an option moved off its line can't keep the official plan it had
   if (sel.value !== 'Health \u2014 Individual') {
     const a = document.getElementById('qb-aca-' + i);
@@ -13152,6 +13160,7 @@ function qbTidyOptions_() {
   if (addBtn) addBtn.style.display = '';
   qbRenumberOptions_();
   qbOptAutoFold_();
+  qbGroupOptions_();
   qbSectionSummary_();
 }
 
@@ -13207,6 +13216,69 @@ function qbOptAutoFold_() {
   return openCount;
 }
 
+// Group the options by coverage type ON SCREEN ONLY. Saving reads options by
+// their slot number, never by where they sit in the page, so nothing about the
+// quote or the client's proposal changes \u2014 and the client's page was already
+// sectioned by coverage type, so the two now agree.
+function qbGroupOptions_() {
+  const list = document.getElementById('qb-opt-list');
+  const parked = document.getElementById('qb-opt-parked');
+  if (!list || !parked) return;
+  window._qbGrpOpen = window._qbGrpOpen || {};
+
+  const groups = [];
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    if (!w) continue;
+    if (w.style.display === 'none') { parked.appendChild(w); continue; }
+    const line = (document.getElementById('qb-optline-' + i) || {}).value || '';
+    let g = groups.find(x => x.line === line);
+    if (!g) { g = { line: line, slots: [] }; groups.push(g); }
+    g.slots.push(i);
+  }
+
+  // one header per coverage type, in the order the options appear
+  list.querySelectorAll('.qb-optgrp').forEach(el => el.remove());
+  groups.forEach(g => {
+    const key = g.line || '_none';
+    const open = window._qbGrpOpen[key] !== false;
+    let total = 0, priced = 0;
+    g.slots.forEach(i => {
+      const v = parseFloat((document.getElementById('qb-prem-' + i) || {}).value);
+      if (!isNaN(v)) { total += v; priced++; }
+    });
+    const box = document.createElement('div');
+    box.className = 'qb-optgrp';
+    box.style.cssText = 'border:1px solid var(--border);border-radius:12px;margin-top:14px;overflow:hidden;';
+    box.innerHTML = `
+      <div style="display:flex;align-items:center;gap:9px;padding:9px 13px;background:var(--surface-2);cursor:pointer;"
+           onclick="qbGroupToggle_('${escWeb(key)}')">
+        <span style="font-size:11px;color:var(--text-muted);width:10px;">${open ? '&#9662;' : '&#9656;'}</span>
+        <span style="font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;">
+          ${g.line ? escWeb(g.line) : 'Coverage type not chosen yet'}</span>
+        <span style="font-size:11px;color:var(--text-muted);">${g.slots.length} option${g.slots.length === 1 ? '' : 's'}</span>
+        ${priced ? `<span style="margin-left:auto;font-size:11.5px;color:var(--text-muted);">${priced === g.slots.length ? '' : 'so far '}<strong style="color:var(--text-success);">$${total.toFixed(2)}</strong>/mo if they take all ${g.slots.length === 1 ? 'of it' : g.slots.length}</span>` : ''}
+      </div>
+      <div class="qb-optgrp-body" style="padding:0 13px 13px;${open ? '' : 'display:none;'}"></div>`;
+    list.appendChild(box);
+    const body = box.querySelector('.qb-optgrp-body');
+    g.slots.forEach(i => {
+      const w = document.getElementById('qb-opt-wrap-' + i);
+      w.style.border = 'none';
+      w.style.borderRadius = '0';
+      w.style.padding = '10px 0 0';
+      w.style.borderTop = body.children.length ? '1px solid var(--border)' : 'none';
+      body.appendChild(w);
+    });
+  });
+}
+
+function qbGroupToggle_(key) {
+  window._qbGrpOpen = window._qbGrpOpen || {};
+  window._qbGrpOpen[key] = window._qbGrpOpen[key] === false;
+  qbGroupOptions_();
+}
+
 function qbRenumberOptions_() {
   let n = 0;
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {
@@ -13231,6 +13303,7 @@ function qbRevealOption_() {
       if (i === QB_MAX_OPTIONS - 1) document.getElementById('qb-add-opt').style.display = 'none';
       qbRenumberOptions_();
       qbOptFields_(i);
+      qbGroupOptions_();
       return;
     }
   }
@@ -14540,6 +14613,7 @@ function closeAcaPicker_() {
   if (cm) cm.remove();
   qbAcaRenderBrowser_();
   qbOptAutoFold_();
+  qbGroupOptions_();
 }
 
 function pkToggle_(set, val) { if (_qbPk[set].has(val)) _qbPk[set].delete(val); else _qbPk[set].add(val); renderPickerBody_(); }
@@ -15688,6 +15762,7 @@ function closeCmsPicker_() {
   if (el) el.style.display = 'none';
   qbAutoCardPaint_();            // the tool list stays current, the bench stays shut
   qbOptAutoFold_();
+  qbGroupOptions_();
 }
 
 // (the old one-per-filter toggles are gone — cmsPkChip_ handles them all)
