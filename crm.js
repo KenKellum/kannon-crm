@@ -6919,6 +6919,53 @@ async function renderAdmin() {
     }
   }
 
+  // Upkeep a person still has to do. Anything overdue says so in red rather
+  // than living in someone's memory.
+  let _reviewSection = '';
+  {
+    const { data: revs } = await supabaseClient.from('system_reviews')
+      .select('*').eq('active', true).order('name');
+    const today = new Date();
+    const rows = (revs || []).map(r => {
+      let due = null;
+      if (r.cadence === 'days' && r.interval_days) {
+        due = r.last_reviewed ? new Date(r.last_reviewed) : new Date();
+        due.setDate(due.getDate() + r.interval_days);
+      } else if (r.due_month) {
+        const lastYear = r.last_reviewed ? new Date(r.last_reviewed).getFullYear() : null;
+        let year = today.getFullYear();
+        // done already this cycle? then it is next year's job
+        if (lastYear === year && (today.getMonth() + 1) >= r.due_month) year += 1;
+        due = new Date(year, r.due_month - 1, 1);
+      }
+      const overdue = due && due <= today;
+      const soon = due && !overdue && (due - today) < 45 * 86400000;
+      const when = due ? due.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'no date set';
+      return { r, due, overdue, soon, when };
+    }).sort((a, b) => (a.due || 0) - (b.due || 0));
+
+    const late = rows.filter(x => x.overdue).length;
+    _reviewSection = `
+      <div style="border:1px solid ${late ? 'var(--border-danger)' : 'var(--border)'};border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:14px;">&#128197; Upkeep &amp; reviews${late ? ' <span style="color:var(--text-danger);">\u00b7 ' + late + ' due</span>' : ''}</div>
+        </div>
+        ${rows.length ? rows.map(x => `
+          <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border);">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">${escWeb(x.r.name)}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;margin-top:2px;">${escWeb(x.r.what)}</div>
+              <div style="font-size:11px;margin-top:3px;color:${x.overdue ? 'var(--text-danger)' : (x.soon ? 'var(--text-warning)' : 'var(--text-muted)')};">
+                ${x.overdue ? '\u26a0\ufe0f Due now' : 'Next due'}: <strong>${escWeb(x.when)}</strong>${
+                  x.r.last_reviewed ? ' \u00b7 last done ' + new Date(x.r.last_reviewed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ' \u00b7 never done'}
+              </div>
+            </div>
+            <button class="btn btn-outline btn-sm" style="flex-shrink:0;" onclick="markReviewed_('${x.r.id}')">\u2713 Done today</button>
+          </div>`).join('')
+          : '<div style="font-size:12px;color:var(--text-muted);">Nothing on the list.</div>'}
+      </div>`;
+  }
+
   const cmsSection = `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
@@ -7090,7 +7137,7 @@ async function renderAdmin() {
       ${carriersSection}
       ${baaSection}
       ${nppSection}
-      ${cmsSection}
+      ${_reviewSection}${cmsSection}
       ${agentRows || '<div class="empty-state" style="padding:20px;"><p>No active agents yet.</p></div>'}
     </div>
 
@@ -10632,9 +10679,29 @@ function qbMgProfile_() {
     age: parseInt((document.getElementById('qb-mg-age') || {}).value) || null,
     gender: (document.getElementById('qb-rt-gender') || {}).value || c.gender || '',
     tobacco: !!(document.getElementById('qb-rt-tob') || {}).checked,
-    dob: c.dob || null,
+    dob: c.date_of_birth || c.dob || window._qbMgDob || null,
     part_b_date: (document.getElementById('qb-mg-partb') || {}).value || null,
   };
+}
+
+function qbAgeFrom_(dob) {
+  const d = new Date(dob);
+  if (isNaN(d)) return null;
+  const n = new Date();
+  let a = n.getFullYear() - d.getFullYear();
+  if (n < new Date(n.getFullYear(), d.getMonth(), d.getDate())) a--;
+  return a;
+}
+
+// Turning 65 makes someone Medicare-eligible on the first of that month
+// (or the month before, if they were born on the 1st). It is the usual Part B
+// start date, so it is a reasonable assumption \u2014 clearly labelled as one.
+function qbPartBGuess_(dob) {
+  const d = new Date(dob);
+  if (isNaN(d)) return null;
+  const at65 = new Date(d.getFullYear() + 65, d.getMonth(), 1);
+  if (d.getDate() === 1) at65.setMonth(at65.getMonth() - 1);
+  return at65.toISOString().slice(0, 10);
 }
 
 async function qbMgInit_() {
@@ -10643,22 +10710,46 @@ async function qbMgInit_() {
   const zip = document.getElementById('qb-mg-zip');
   if (!zip.value && c.zip) zip.value = c.zip;
   const age = document.getElementById('qb-mg-age');
-  if (!age.value && c.dob) {
-    const d = new Date(c.dob), n = new Date();
-    let a = n.getFullYear() - d.getFullYear();
-    if (n < new Date(n.getFullYear(), d.getMonth(), d.getDate())) a--;
-    age.value = a;
-  }
   const pb = document.getElementById('qb-mg-partb');
-  if (!pb.value) {
-    // the Medicare intake asks for this \u2014 use their answer
-    try {
+  window._qbMgSource = { dob: null, partb: null };
+
+  let dob = c.date_of_birth || c.dob || null;
+  if (dob) window._qbMgSource.dob = 'their contact record';
+
+  // The intake tied to THIS quote first, then their newest Medicare intake.
+  let responses = null;
+  try {
+    if (window._qbIntakeSessionId) {
       const { data } = await supabaseClient.from('intake_sessions')
-        .select('responses').eq('contact_id', c.id).eq('form_type', 'medicare')
-        .order('created_at', { ascending: false }).limit(1);
-      const r = (data && data[0] && data[0].responses) || {};
-      if (r.med_part_b_date) pb.value = String(r.med_part_b_date).slice(0, 10);
-    } catch (e) { /* nothing on file is not an error */ }
+        .select('responses').eq('id', window._qbIntakeSessionId).maybeSingle();
+      if (data) responses = data.responses || {};
+    }
+    if (!responses || (!responses.med_part_b_date && !responses.dob)) {
+      const { data } = await supabaseClient.from('intake_sessions')
+        .select('responses,form_type,created_at').eq('contact_id', c.id)
+        .order('created_at', { ascending: false }).limit(6);
+      const med = (data || []).find(x => x.form_type === 'medicare' && x.responses
+        && (x.responses.med_part_b_date || x.responses.dob));
+      if (med) responses = med.responses;
+      else if (!responses) responses = ((data || [])[0] || {}).responses || {};
+    }
+  } catch (e) { responses = responses || {}; }
+  responses = responses || {};
+
+  if (!dob && responses.dob) { dob = responses.dob; window._qbMgSource.dob = 'their intake'; }
+  window._qbMgDob = dob || null;
+  if (!age.value && dob) age.value = qbAgeFrom_(dob) ?? '';
+
+  if (!pb.value) {
+    const fromIntake = String(responses.med_part_b_date || '').slice(0, 10);
+    if (fromIntake) { pb.value = fromIntake; window._qbMgSource.partb = 'their intake'; }
+    else if (dob) {
+      const guess = qbPartBGuess_(dob);
+      if (guess && new Date(guess) <= new Date()) {
+        pb.value = guess;
+        window._qbMgSource.partb = 'assumed \u2014 the month they turned 65';
+      }
+    }
   }
   qbMgRefresh_();
 }
@@ -10695,6 +10786,15 @@ function qbMgRefresh_() {
     bars.push(['<div class="pk-bar warn" style="margin-bottom:5px;">No date of birth or Part B date on file, so we '
       + 'cannot tell whether Plans C and F are open to them. Add one before quoting those.</div>']);
   }
+  const src = window._qbMgSource || {};
+  const notes = [];
+  if (prof.dob) notes.push('Age ' + (qbAgeFrom_(prof.dob) ?? '?') + ' from their date of birth'
+    + (src.dob ? ' (' + src.dob + ')' : ''));
+  else notes.push('<strong>No date of birth on file</strong> \u2014 add one to their contact record');
+  if (prof.part_b_date && src.partb) notes.push('Part B date ' + (src.partb.indexOf('assumed') === 0
+    ? '<strong>' + src.partb + '</strong> \u2014 confirm it with them' : 'from ' + src.partb));
+  bars.push(['<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + notes.join(' \u00b7 ') + '</div>']);
+
   box.innerHTML = bars.map(b => b[0]).join('');
   if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
 }
@@ -15678,6 +15778,16 @@ async function cmsCheckNow_() {
     showToast('Could not reach the loader: ' + (e.message || e));
   }
   setTimeout(renderAdmin, 4000);
+}
+
+async function markReviewed_(id) {
+  const note = prompt('Anything worth noting about this review? (optional)') || null;
+  const { error } = await supabaseClient.from('system_reviews')
+    .update({ last_reviewed: new Date().toISOString().slice(0, 10), last_note: note })
+    .eq('id', id).select('id');
+  if (error) { showToast('Could not save: ' + error.message); return; }
+  showToast('Marked reviewed today.');
+  renderAdmin();
 }
 
 function openCmsImportModal() {
