@@ -10815,7 +10815,8 @@ function qbMgOptionView_(i) {
     if (carprod) carprod.style.display = '';
     return;
   }
-  if (manual) manual.style.display = 'none';
+  const needsTyping = p.rate == null;
+  if (manual) manual.style.display = needsTyping ? '' : 'none';
   if (carprod) carprod.style.display = 'none';
 
   const base = String(p.letter).replace(/^HD/, '');
@@ -10861,7 +10862,7 @@ function qbMgOptionView_(i) {
         <button type="button" class="btn btn-outline btn-sm" onclick="openMedigapPicker_()">\u{1F5D6} Change plan or carrier</button>
         <button type="button" class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);margin-left:auto;" onclick="qbMgRemoveSlot_(${i})">\u{1F5D1} Remove</button>
       </div>
-      <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">Benefits are fixed by federal law \u2014 Plan ${escWeb(base)} covers the same at every carrier. ${p.rate != null ? 'The premium comes from your loaded rate chart.' : 'No rate chart loaded \u2014 type the premium below.'}</div>
+      <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">Benefits are fixed by federal law \u2014 Plan ${escWeb(base)} covers the same at every carrier. ${p.rate != null ? 'The premium comes from your loaded rate chart.' : 'No rate chart loaded for this state \u2014 enter the premium in the box below, or load the chart under Admin \u2192 Carriers &amp; Products.'}</div>
     </div>`;
 }
 
