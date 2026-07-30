@@ -11280,6 +11280,13 @@ function qbMountSource_() {
 }
 
 // Live summary of a source that's already been used
+function qbSourceUsed_(key) {
+  if (key === 'aca') return ((window._qbAcaPlans || []).length > 0);
+  if (key === 'cms') return ((window._qbCmsPlans || []).length > 0);
+  if (key === 'rate') return (window._qbRateAge != null);
+  return false;
+}
+
 function qbSourceSummary_(key) {
   const bits = [];
   if (key === 'aca') {
@@ -11315,17 +11322,18 @@ function qbAutoCardPaint_() {
   card.style.display = 'block';
   card.innerHTML = `<div style="background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:7px;">
-        Automated lookup${sources.length === 1 ? '' : 's'} available for this line \u2014 optional
+        \u2699\uFE0F Available Automated Quoting
       </div>
       ${sources.map(src => {
-        const bits = qbSourceSummary_(src.key);
-        return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0;">
+        const used = qbSourceUsed_(src.key);
+        const bits = used ? qbSourceSummary_(src.key) : [];
+        return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:5px 0;">
           <div style="flex:1;min-width:0;">
-            <div style="font-size:12.5px;font-weight:700;">${src.title}</div>
-            <div style="font-size:11.5px;color:${bits.length ? 'var(--text-secondary)' : 'var(--text-muted)'};margin-top:2px;">
-              ${bits.length ? bits.join(' \u00b7 ') : escWeb(src.blurb)}</div>
+            <div style="font-size:12.5px;font-weight:700;">${src.title}${used ? ' <span style="font-size:10px;font-weight:800;color:var(--text-success);">\u2713 RUN</span>' : ''}</div>
+            <div style="font-size:11.5px;color:${used ? 'var(--text-secondary)' : 'var(--text-muted)'};margin-top:2px;">
+              ${used ? bits.join(' \u00b7 ') : escWeb(src.blurb)}</div>
           </div>
-          <button type="button" class="btn btn-outline btn-sm" onclick="qbWorkbenchOpen_(true, '${src.key}')">\u2699\uFE0F ${bits.length ? 'Reopen' : 'Open'}</button>
+          <button type="button" class="btn ${used ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="qbWorkbenchOpen_(true, '${src.key}')">\u2699\uFE0F ${used ? 'Reopen' : 'Open'}</button>
         </div>`;
       }).join('')}
       <div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);margin-top:7px;padding-top:6px;">
