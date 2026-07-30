@@ -11371,15 +11371,20 @@ function qbSyncWorkbench_() {
   const sources = qbAutoSources_();
   qbEnsureWorkbench_();
   const holder = document.getElementById('qb-strip-holder');
+  const wb0 = document.getElementById('qb-workbench');
+  const wbOpen = !!(wb0 && wb0.style.display !== 'none');
+  const activeEl = (sources.find(x => x.key === window._qbWbActive) || {}).el;
   if (holder) {
+    // Every tool is on offer now, so "offered" can't decide visibility:
+    // a panel belongs on screen ONLY while it's the one open in the workbench.
+    // Otherwise it parks, or it leaks back onto the dialog (qbLineChanged_
+    // sets display:block on whichever strip matches the working line).
     ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
-      const wanted = sources.some(x => x.el === id);
-      if (!wanted) {
-        if (el.parentElement !== holder) holder.appendChild(el);
-        el.style.display = 'none';
-      }
+      if (wbOpen && id === activeEl) return;
+      if (el.parentElement !== holder) holder.appendChild(el);
+      el.style.display = 'none';
     });
   }
   if (!sources.length) { window._qbWbActive = null; qbWorkbenchOpen_(false); }
