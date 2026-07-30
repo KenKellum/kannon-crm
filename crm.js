@@ -11357,7 +11357,9 @@ function qbAutoCardPaint_() {
   sources.forEach(src => {
     if (qbSourceUsed_(src.key)) {
       const b = qbSourceSummary_(src.key);
-      runBits.push(src.title.replace(/^[^ ]+ /, '') + (b.length ? ' \u00b7 ' + b.join(' \u00b7 ') : ''));
+      // the summaries carry markup for the expanded rows; a headline is plain text
+      const plain = b.join(' \u00b7 ').replace(/<[^>]+>/g, '');
+      runBits.push(src.title.replace(/^[^ ]+ /, '') + (plain ? ' \u00b7 ' + plain : ''));
     }
   });
   const headline = runBits.length
