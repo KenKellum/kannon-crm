@@ -10444,6 +10444,380 @@ function openSoaModal(dealId) {
 // ============================================================
 // Federally standardized Medigap plans: the letter defines the benefits
 // at EVERY carrier, so the product form fills itself from this list.
+// The picker: one card per lettered plan they may actually buy, with the
+// standardised benefits spelled out and a grid to compare them side by side.
+window._qbMgSel = window._qbMgSel || {};
+
+function openMedigapPicker_() {
+  const prof = qbMgProfile_();
+  if (!prof.state) { showToast('Enter their ZIP code first.'); return; }
+  let el = document.getElementById('qb-mg-picker');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'qb-mg-picker';
+    el.style.cssText = 'position:fixed;inset:0;z-index:99990;background:var(--surface-0);display:flex;flex-direction:column;';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  window._qbMgShowGrid = false;
+  renderMedigapPicker_();
+}
+
+function closeMedigapPicker_() {
+  const el = document.getElementById('qb-mg-picker');
+  if (el) el.style.display = 'none';
+  qbSyncWorkbench_();
+}
+
+function mgToggleGrid_() { window._qbMgShowGrid = !window._qbMgShowGrid; renderMedigapPicker_(); }
+
+function mgAddedSlot_(letter) {
+  const sel = window._qbMgSel || {};
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if (sel[i] && sel[i].letter === letter) return i;
+  return -1;
+}
+
+function mgGridHtml_(letters) {
+  const th = 'position:sticky;left:0;background:var(--surface-0);z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:8px 12px;border-bottom:1px solid var(--border);min-width:230px;';
+  const td = 'padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;text-align:center;min-width:74px;';
+  return `<table style="border-collapse:collapse;width:100%;">
+    <thead><tr><th style="${th}">What it pays</th>
+      ${letters.map(L => `<td style="${td}font-weight:800;font-size:14px;border-bottom:1.5px solid var(--border);">${escWeb(L)}</td>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${MEDIGAP_GRID.rows.map(([label, byLetter]) => `<tr>
+        <th style="${th}font-weight:500;color:var(--text-secondary);">${escWeb(label)}</th>
+        ${letters.map(L => `<td style="${td}">${MEDIGAP_MARK[byLetter[L] || 'none']}</td>`).join('')}
+      </tr>`).join('')}
+      <tr><th style="${th}font-weight:500;color:var(--text-secondary);">Yearly out-of-pocket limit</th>
+        ${letters.map(L => `<td style="${td}">${(L === 'K' || L === 'L')
+          ? '<span style="color:var(--text-success);font-weight:800;">\u2713</span>' : MEDIGAP_MARK.none}</td>`).join('')}
+      </tr>
+    </tbody>
+  </table>
+  <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.5;">
+    These benefits are set by federal law \u2014 Plan G from one carrier covers exactly what Plan G covers at any other.
+    Only the premium, the rate increases and the service differ. Plan N also has copays of up to $20 for office visits
+    and $50 for an emergency room visit that does not lead to admission.
+  </div>`;
+}
+
+function mgCardHtml_(p) {
+  const [letter, title, bullets] = p;
+  const slot = mgAddedSlot_(letter);
+  const rate = (window._qbMgRates || {})[letter];
+  return `<div class="pk-card ${slot >= 0 ? 'is-selected' : ''}"
+      style="border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;height:100%;">
+      ${slot >= 0 ? `<div class="pk-sel-badge">\u2713 OPTION ${qbOptionNo_(slot)}</div>` : ''}
+      <div style="display:flex;align-items:baseline;gap:8px;">
+        <span style="font-size:22px;font-weight:800;color:var(--accent,#c8a84b);line-height:1;">${escWeb(letter)}</span>
+        <span style="font-size:13px;font-weight:700;">${escWeb(title.split('\u2014')[1] ? title.split('\u2014')[1].trim() : title)}</span>
+      </div>
+      <ul style="list-style:none;margin:9px 0 0;padding:0;">
+        ${bullets.map(b => `<li style="font-size:12px;line-height:1.5;color:var(--text-secondary);padding:2px 0 2px 16px;position:relative;">
+          <span style="position:absolute;left:0;color:var(--text-success);font-weight:800;">\u00b7</span>${escWeb(b)}</li>`).join('')}
+      </ul>
+      ${rate != null
+        ? `<div style="margin-top:9px;font-size:20px;font-weight:800;color:var(--accent,#1d3557);">$${Number(rate).toFixed(2)}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo</span></div>`
+        : `<div style="margin-top:9px;font-size:11.5px;color:var(--text-muted);">No rate chart loaded for this state \u2014 type the premium on the option.</div>`}
+      <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
+        <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
+          onclick="qbMgAddPlan_('${escWeb(letter)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
+      </div>
+    </div>`;
+}
+
+function renderMedigapPicker_() {
+  const el = document.getElementById('qb-mg-picker');
+  if (!el) return;
+  const prof = qbMgProfile_();
+  const letters = medigapLetters_(prof);
+  const w = medigapWindow_(prof);
+  const gridLetters = ['A', 'B', 'C', 'D', 'F', 'G', 'K', 'L', 'M', 'N']
+    .filter(L => letters.some(p => p[0] === L));
+  const chosen = [];
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if ((window._qbMgSel || {})[i]) chosen.push({ i: i, p: window._qbMgSel[i] });
+
+  el.innerHTML = `
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div style="font-weight:800;font-size:15px;">\u{1F511} Medicare Supplement \u00b7 ${escWeb(prof.state || '')}</div>
+      <div style="font-size:12px;color:var(--text-muted);">${letters.length} plans they can buy${prof.age ? ' \u00b7 age ' + prof.age : ''}</div>
+      <button class="btn ${window._qbMgShowGrid ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-left:auto;" onclick="mgToggleGrid_()">
+        ${window._qbMgShowGrid ? '\u25A4 Show the plans' : '\u2696\ufe0f Compare all benefits'}</button>
+      <button class="btn btn-outline btn-sm" onclick="closeMedigapPicker_()">\u2715 Done</button>
+    </div>
+
+    <div style="padding:9px 18px;border-bottom:1px solid var(--border);">
+      <div class="pk-bar ${w.tone === 'ok' ? 'ok' : (w.tone === 'warn' ? 'warn' : 'muted')}" style="border-radius:8px;border:1px solid;">${w.note}</div>
+      ${w.extra.filter(x => x.tone !== 'muted').map(x => `<div class="pk-bar ${x.tone === 'ok' ? 'ok' : 'warn'}" style="border-radius:8px;border:1px solid;margin-top:5px;">${x.text}</div>`).join('')}
+    </div>
+
+    <div style="flex:1;overflow:auto;padding:14px 18px;">
+      ${window._qbMgShowGrid
+        ? mgGridHtml_(gridLetters)
+        : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">${letters.map(mgCardHtml_).join('')}</div>`}
+    </div>
+
+    ${chosen.length ? `<div class="pk-tray" style="padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span class="pk-tray-label">On the quote \u00b7 ${chosen.length}</span>
+      ${chosen.map(x => `<div class="pk-tray-item">
+        <span class="num">${qbOptionNo_(x.i)}</span>
+        <span class="who"><span class="pname">Plan ${escWeb(x.p.letter)}</span></span>
+        <button class="rm" onclick="qbMgRemoveSlot_(${x.i})" title="Take off the quote">\u2715</button>
+      </div>`).join('')}
+      <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeMedigapPicker_()">Done \u2014 back to the quote</button>
+    </div>` : ''}`;
+}
+
+function qbMgRemoveSlot_(i) {
+  if (!(window._qbMgSel || {})[i]) return;
+  delete window._qbMgSel[i];
+  ['qb-name-' + i, 'qb-prem-' + i, 'qb-bul-' + i].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
+  });
+  if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
+  qbSectionSummary_();
+}
+
+function qbMgAddPlan_(letter) {
+  const at = mgAddedSlot_(letter);
+  if (at >= 0) { qbMgRemoveSlot_(at); return; }
+  const p = MEDIGAP_PLANS.find(x => x[0] === letter);
+  if (!p) return;
+
+  let slot = -1;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    const nm = document.getElementById('qb-name-' + i);
+    if (!w || !nm) continue;
+    const empty = !nm.value.trim() && !(window._qbMgSel || {})[i]
+      && !(window._qbCmsSel || {})[i] && !(window._qbAcaSel || {})[i];
+    if (w.style.display !== 'none' && empty) { slot = i; break; }
+  }
+  if (slot < 0) {
+    qbRevealOption_();
+    for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+      const w = document.getElementById('qb-opt-wrap-' + i);
+      const nm = document.getElementById('qb-name-' + i);
+      if (w && w.style.display !== 'none' && nm && !nm.value.trim()) { slot = i; break; }
+    }
+  }
+  if (slot < 0) { showToast('All ' + QB_MAX_OPTIONS + ' options are full \u2014 remove one first.'); return; }
+
+  const prof = qbMgProfile_();
+  const rate = (window._qbMgRates || {})[letter];
+  window._qbMgSel = window._qbMgSel || {};
+  window._qbMgSel[slot] = { letter: letter, title: p[1], bullets: p[2], state: prof.state, rate: rate != null ? rate : null };
+
+  const ol = document.getElementById('qb-optline-' + slot);
+  if (ol && !ol.value) { ol.value = 'Medicare Supplement'; qbOptLineChanged_(slot); }
+  const nm = document.getElementById('qb-name-' + slot);
+  if (nm) nm.value = 'Medicare Supplement Plan ' + letter;
+  if (rate != null) { const pr = document.getElementById('qb-prem-' + slot); if (pr) pr.value = Number(rate).toFixed(2); }
+  const bul = document.getElementById('qb-bul-' + slot);
+  if (bul) { const ro = bul.readOnly; bul.readOnly = false; bul.value = p[2].join('\n'); bul.readOnly = ro; }
+
+  renderMedigapPicker_();
+  qbSectionSummary_();
+  showToast('Added as option ' + qbOptionNo_(slot) + '.');
+}
+
+function qbMgProfile_() {
+  const c = window._qbContact || {};
+  const zip = (document.getElementById('qb-mg-zip') || {}).value || c.zip || '';
+  return {
+    zip: zip,
+    state: (zipToState_(zip) || c.state || '').toUpperCase(),
+    age: parseInt((document.getElementById('qb-mg-age') || {}).value) || null,
+    gender: (document.getElementById('qb-rt-gender') || {}).value || c.gender || '',
+    tobacco: !!(document.getElementById('qb-rt-tob') || {}).checked,
+    dob: c.dob || null,
+    part_b_date: (document.getElementById('qb-mg-partb') || {}).value || null,
+  };
+}
+
+async function qbMgInit_() {
+  const c = window._qbContact;
+  if (!c || !document.getElementById('qb-mg-zip')) return;
+  const zip = document.getElementById('qb-mg-zip');
+  if (!zip.value && c.zip) zip.value = c.zip;
+  const age = document.getElementById('qb-mg-age');
+  if (!age.value && c.dob) {
+    const d = new Date(c.dob), n = new Date();
+    let a = n.getFullYear() - d.getFullYear();
+    if (n < new Date(n.getFullYear(), d.getMonth(), d.getDate())) a--;
+    age.value = a;
+  }
+  const pb = document.getElementById('qb-mg-partb');
+  if (!pb.value) {
+    // the Medicare intake asks for this \u2014 use their answer
+    try {
+      const { data } = await supabaseClient.from('intake_sessions')
+        .select('responses').eq('contact_id', c.id).eq('form_type', 'medicare')
+        .order('created_at', { ascending: false }).limit(1);
+      const r = (data && data[0] && data[0].responses) || {};
+      if (r.med_part_b_date) pb.value = String(r.med_part_b_date).slice(0, 10);
+    } catch (e) { /* nothing on file is not an error */ }
+  }
+  qbMgRefresh_();
+}
+
+function qbMgZipChanged_() {
+  const c = window._qbContact;
+  const zip = String((document.getElementById('qb-mg-zip') || {}).value || '').trim();
+  if (/^\d{5}$/.test(zip) && c && zip !== c.zip) {
+    const st = zipToState_(zip);
+    const patch = st ? { zip: zip, state: st } : { zip: zip };
+    supabaseClient.from('contacts').update(patch).eq('id', c.id).then(() => {
+      Object.assign(c, patch);
+      const cc = contacts.find(x => x.id === c.id); if (cc) Object.assign(cc, patch);
+    });
+  }
+  qbMgRefresh_();
+}
+
+// Say plainly whether they can buy today without health questions.
+function qbMgRefresh_() {
+  const box = document.getElementById('qb-mg-window');
+  if (!box) return;
+  const prof = qbMgProfile_();
+  const w = medigapWindow_(prof);
+  const bars = [['<div class="pk-bar ' + (w.tone === 'ok' ? 'ok' : (w.tone === 'warn' ? 'warn' : 'muted'))
+    + '" style="margin-bottom:5px;">' + w.note + '</div>']];
+  w.extra.forEach(x => bars.push(['<div class="pk-bar ' + (x.tone === 'ok' ? 'ok' : (x.tone === 'warn' ? 'warn' : 'muted'))
+    + '" style="margin-bottom:5px;">' + x.text + '</div>']));
+  const pre = medigapEligibleBefore2020_(prof);
+  if (pre === false) {
+    bars.push(['<div class="pk-bar muted" style="margin-bottom:5px;">Plans <strong>C, F and high-deductible F</strong> '
+      + 'are closed to them \u2014 they became eligible for Medicare after 1 January 2020. Those letters are hidden below.</div>']);
+  } else if (pre === null) {
+    bars.push(['<div class="pk-bar warn" style="margin-bottom:5px;">No date of birth or Part B date on file, so we '
+      + 'cannot tell whether Plans C and F are open to them. Add one before quoting those.</div>']);
+  }
+  box.innerHTML = bars.map(b => b[0]).join('');
+  if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
+}
+
+// ============================================================
+// MEDICARE SUPPLEMENT \u2014 what the law fixes, we can automate.
+//
+// Medigap letters are standardised by federal law: Plan G from one carrier
+// covers exactly what Plan G from any other covers. Only price and service
+// differ. So the benefit grid, who may buy which letter, and when they can
+// buy without answering health questions are all knowable without a single
+// carrier feed \u2014 which is just as well, because no public rate source exists.
+// ============================================================
+
+// Benefit \u00d7 plan letter, straight from the federal standardisation.
+// full = paid in full, 50/75 = that share, none = not covered.
+const MEDIGAP_GRID = {
+  rows: [
+    ['Part A coinsurance & 365 extra hospital days', { A:'full', B:'full', C:'full', D:'full', F:'full', G:'full', K:'full', L:'full', M:'full', N:'full' }],
+    ['Part B coinsurance or copayment',              { A:'full', B:'full', C:'full', D:'full', F:'full', G:'full', K:'50',   L:'75',   M:'full', N:'copay' }],
+    ['First 3 pints of blood',                       { A:'full', B:'full', C:'full', D:'full', F:'full', G:'full', K:'50',   L:'75',   M:'full', N:'full' }],
+    ['Part A hospice coinsurance',                   { A:'full', B:'full', C:'full', D:'full', F:'full', G:'full', K:'50',   L:'75',   M:'full', N:'full' }],
+    ['Skilled nursing facility coinsurance',         { A:'none', B:'none', C:'full', D:'full', F:'full', G:'full', K:'50',   L:'75',   M:'full', N:'full' }],
+    ['Part A hospital deductible',                   { A:'none', B:'full', C:'full', D:'full', F:'full', G:'full', K:'50',   L:'75',   M:'50',   N:'full' }],
+    ['Part B deductible',                            { A:'none', B:'none', C:'full', D:'none', F:'full', G:'none', K:'none', L:'none', M:'none', N:'none' }],
+    ['Part B excess charges',                        { A:'none', B:'none', C:'none', D:'none', F:'full', G:'full', K:'none', L:'none', M:'none', N:'none' }],
+    ['Foreign travel emergency (80%)',               { A:'none', B:'none', C:'full', D:'full', F:'full', G:'full', K:'none', L:'none', M:'full', N:'full' }],
+  ],
+  // K and L are the only letters with a yearly out-of-pocket limit. The
+  // amounts change every year; leave them null rather than quote a stale one.
+  oopLimit: { year: null, K: null, L: null },
+};
+
+const MEDIGAP_MARK = {
+  full: '<span style="color:var(--text-success);font-weight:800;">\u2713</span>',
+  '50': '<span style="color:var(--text-warning);font-weight:700;">50%</span>',
+  '75': '<span style="color:var(--text-warning);font-weight:700;">75%</span>',
+  copay: '<span style="color:var(--text-success);font-weight:800;">\u2713</span><span style="font-size:10px;color:var(--text-muted);"> less copays</span>',
+  none: '<span style="color:var(--text-muted);">\u2014</span>',
+};
+
+// Massachusetts, Minnesota and Wisconsin standardise differently; the letter
+// grid above does not describe their plans.
+const MEDIGAP_WAIVER_STATES = { MA: 'Massachusetts', MN: 'Minnesota', WI: 'Wisconsin' };
+
+// States with a "birthday rule" \u2014 an annual window to move to an equal or
+// lesser plan with no health questions. Reviewed 2026-07-30; these change by
+// legislature, so re-check each year.
+const MEDIGAP_BIRTHDAY_RULES = {
+  CA: 'Starts 30 days before their birthday and runs 60 days after \u2014 equal or lesser benefits.',
+  OR: 'The 30 days starting on their birthday \u2014 equal or lesser benefits.',
+  ID: 'The 63 days starting on their birthday \u2014 equal or lesser benefits.',
+  IL: 'The 45 days starting on their birthday, ages 65\u201375 \u2014 same letter, any carrier.',
+  NV: 'The 60 days starting the first day of their birth month \u2014 equal or lesser benefits.',
+  LA: 'The 63 days starting on their birthday \u2014 same letter, any carrier.',
+  OK: 'The 60 days starting on their birthday \u2014 equal or lesser benefits.',
+  MD: 'A window around their birthday \u2014 equal or lesser benefits.',
+  KY: 'The 60 days starting on their birthday \u2014 equal or lesser benefits.',
+};
+
+// States where an application can be made at any time without underwriting.
+const MEDIGAP_YEAR_ROUND = {
+  CT: 'Connecticut requires continuous open enrollment \u2014 no health questions at any time.',
+  NY: 'New York requires continuous open enrollment \u2014 no health questions at any time.',
+  ME: 'Maine has a designated annual open enrollment month and guaranteed-issue rules.',
+  WA: 'Washington lets someone already on a Medigap plan switch at any time (except from Plan A upward).',
+};
+
+// Plans C, F and high-deductible F were closed to anyone who became eligible
+// for Medicare on or after 1 January 2020. Quoting them to someone newly
+// eligible is quoting something they cannot legally buy.
+const MEDIGAP_MACRA_CLOSED = ['C', 'F', 'HDF'];
+
+function medigapEligibleBefore2020_(profile) {
+  const d = profile && (profile.medicare_eligible_on || profile.part_b_date);
+  if (d) return new Date(d) < new Date('2020-01-01');
+  // fall back on turning 65 \u2014 anyone 65 by the end of 2019 was eligible
+  const dob = profile && profile.dob ? new Date(profile.dob) : null;
+  if (!dob) return null;                    // unknown: warn rather than guess
+  const sixtyFive = new Date(dob); sixtyFive.setFullYear(sixtyFive.getFullYear() + 65);
+  return sixtyFive < new Date('2020-01-01');
+}
+
+function medigapLetters_(profile) {
+  const preMacra = medigapEligibleBefore2020_(profile);
+  return MEDIGAP_PLANS.filter(p => preMacra === false ? !MEDIGAP_MACRA_CLOSED.includes(p[0]) : true);
+}
+
+// When can they buy without answering a health question?
+function medigapWindow_(profile) {
+  const out = { open: false, note: '', tone: 'muted', extra: [] };
+  const st = String((profile && profile.state) || '').toUpperCase();
+  const pb = profile && profile.part_b_date ? new Date(profile.part_b_date) : null;
+
+  if (pb && !isNaN(pb)) {
+    const ends = new Date(pb); ends.setMonth(ends.getMonth() + 6); ends.setDate(ends.getDate() - 1);
+    const today = new Date();
+    const fmt = d => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    if (today <= ends) {
+      const days = Math.ceil((ends - today) / 86400000);
+      out.open = true; out.tone = 'ok';
+      out.note = 'In their <strong>6-month Medigap open enrollment</strong> until <strong>' + fmt(ends)
+        + '</strong> (' + days + ' day' + (days === 1 ? '' : 's') + ' left) \u2014 any plan, any carrier, no health questions.';
+    } else {
+      out.note = 'Their 6-month open enrollment ended <strong>' + fmt(ends)
+        + '</strong>. Outside a guaranteed-issue situation, carriers may ask health questions.';
+      out.tone = 'warn';
+    }
+  } else {
+    out.note = 'Add their <strong>Part B start date</strong> to work out the open-enrollment window.';
+    out.tone = 'muted';
+  }
+
+  if (MEDIGAP_YEAR_ROUND[st]) { out.extra.push({ tone: 'ok', text: MEDIGAP_YEAR_ROUND[st] }); out.open = true; }
+  if (MEDIGAP_BIRTHDAY_RULES[st]) out.extra.push({ tone: 'ok', text: '\u{1F382} <strong>' + st + ' birthday rule:</strong> ' + MEDIGAP_BIRTHDAY_RULES[st] });
+  if (MEDIGAP_WAIVER_STATES[st]) {
+    out.extra.push({ tone: 'warn', text: '\u26a0\ufe0f <strong>' + MEDIGAP_WAIVER_STATES[st]
+      + '</strong> standardises Medigap differently \u2014 the lettered plans below do not apply there.' });
+  }
+  out.extra.push({ tone: 'muted', text: 'Guaranteed issue also applies when they lose employer coverage, when a Medicare Advantage plan leaves the area, or within the first 12 months of trying Medicare Advantage for the first time.' });
+  return out;
+}
+
 const MEDIGAP_PLANS = [
   ['G',   'Plan G — most popular comprehensive plan', [
     'Covers the Part A hospital deductible',
@@ -11087,17 +11461,35 @@ async function openQuoteBuilder(dealId, opts) {
       </div>
     </div>
     <div id="qb-rate-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#9889; Auto-rating inputs</div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;">
-        <span id="qb-rt-age"></span>
-        <span>Gender:
-          <select id="qb-rt-gender" onchange="qbReRate_()" style="width:auto;display:inline-block;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#128273; Medicare Supplement</div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;font-size:13px;">
+        <div><label style="font-size:10px;margin:0 0 2px;">Their ZIP</label>
+          <input type="text" id="qb-mg-zip" maxlength="5" inputmode="numeric" style="width:82px;" onchange="qbMgZipChanged_()" /></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">Age</label>
+          <input type="number" id="qb-mg-age" style="width:70px;" onchange="qbMgRefresh_()" /></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">Gender</label>
+          <select id="qb-rt-gender" onchange="qbReRate_();qbMgRefresh_();" style="width:auto;">
             <option value="">?</option><option value="M">M</option><option value="F">F</option>
-          </select></span>
-        <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0;"><input type="checkbox" id="qb-rt-tob" onchange="qbReRate_()" style="width:auto;" /> Tobacco</label>
-        <span id="qb-rt-loc"></span>
+          </select></div>
+        <div><label style="font-size:10px;margin:0 0 2px;">Part B started</label>
+          <input type="date" id="qb-mg-partb" style="width:auto;" onchange="qbMgRefresh_()" /></div>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0 0 6px;font-size:12.5px;">
+          <input type="checkbox" id="qb-rt-tob" onchange="qbReRate_();qbMgRefresh_();" style="width:auto;" /> Tobacco</label>
       </div>
+
+      <div id="qb-mg-window" style="margin-top:8px;"></div>
+      <span id="qb-rt-age" style="display:none;"></span>
+      <span id="qb-rt-loc" style="display:none;"></span>
       <div id="qb-rt-warn" style="font-size:11px;color:#f59e0b;margin-top:5px;"></div>
+
+      <div style="margin-top:10px;">
+        <button type="button" class="btn btn-primary" style="width:100%;" onclick="openMedigapPicker_()">&#128273; Show Medicare Supplement plans</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+        Every letter covers exactly the same benefits at every carrier &mdash; that is federal law. Premiums come from
+        the rate charts you load under Admin.
+      </div>
     </div>
 
 
@@ -11558,7 +11950,7 @@ function qbLineChanged_() {
   const strip = document.getElementById('qb-rate-strip');
   if (strip) {
     strip.style.display = line === 'Medicare Supplement' ? 'block' : 'none';
-    if (line === 'Medicare Supplement') qbInitRateStrip_();
+    if (line === 'Medicare Supplement') { qbInitRateStrip_(); qbMgInit_(); }
   }
   // qb-line now only says WHICH TOOL is loaded. It must never rewrite or
   // clear the options \u2014 each option owns its coverage type and its plan.
