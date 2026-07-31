@@ -203,6 +203,19 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnN
 const MEDICARE_LINES = ['Medicare Advantage', 'Medicare Supplement', 'Part D (PDP)'];
 const TPMO = 'We do not offer every plan available in your area. Any information we provide is limited to those plans we do offer in your area. Please contact Medicare.gov, 1-800-MEDICARE, or your local State Health Insurance Assistance Program (SHIP) to get information on all of your options.';
 const NOT_GOV = 'Not connected with or endorsed by the United States government or the federal Medicare program.';
+const SHORT_TERM_LINES = ['Short-Term Medical'];
+const STM_NOTICE_TITLE = 'IMPORTANT: this is a short-term, limited-duration policy \u2014 NOT comprehensive health coverage.';
+const STM_NOTICE = [
+  'It has fewer benefits and fewer federal protections than other kinds of health insurance, including the plans on HealthCare.gov.',
+  'It might not cover you because of a pre-existing condition \u2014 things like diabetes, cancer, stroke, arthritis, heart disease, or mental health and substance use disorders.',
+  'It might not cover prescription drugs, preventive screenings, maternity care, emergency services, hospitalisation, pediatric care or physical therapy.',
+  'It might have no limit on what you pay out of pocket.',
+  'You will not qualify for federal financial help toward the premium or the out-of-pocket costs.',
+  'It does not have to meet federal standards for comprehensive health coverage.',
+];
+const STM_WHERE_ELSE = 'Looking for comprehensive health insurance? Visit HealthCare.gov or call 1-800-318-2596 '
+  + '(TTY 1-855-889-4325). You can also ask your employer, or a family member\u2019s employer, whether coverage is available through work. '
+  + 'For questions or complaints about a policy, contact your State Department of Insurance.';
 const MED_FACT_LABEL = {
   part_a_deductible:     ['Hospital deductible', 'each benefit period'],
   part_a_coins_61_90:    ['Hospital days 61\u201390', 'a day'],
@@ -1080,6 +1093,24 @@ async function init() {
   const anyMedicare = MEDICARE_LINES.includes(quote.line)
     || allOpts.some(o => MEDICARE_LINES.includes(o.line) || (o.plan_meta && o.plan_meta.src === 'cms'));
   if (anyMedicare) fine += '<br><br>' + TPMO + '<br>' + NOT_GOV;
+
+  // A short-term plan anywhere on the quote carries the federal notice, and it
+  // goes ABOVE the plans rather than in the small print at the bottom. Someone
+  // comparing a short-term price against an ACA price has to know they are not
+  // comparing like with like.
+  const anyShortTerm = SHORT_TERM_LINES.includes(quote.line)
+    || allOpts.some(o => SHORT_TERM_LINES.includes(o.line));
+  if (anyShortTerm) {
+    const host = document.getElementById('q-inputs');
+    if (host) host.insertAdjacentHTML('beforebegin', `
+      <div style="background:#fff7ed;border:1px solid #fdba74;border-left:5px solid #ea580c;border-radius:12px;padding:14px 18px;margin:6px 0 16px;">
+        <div style="font-size:13.5px;font-weight:800;color:#9a3412;line-height:1.45;">${STM_NOTICE_TITLE}</div>
+        <ul style="margin:8px 0 0 18px;padding:0;font-size:12.5px;color:#7c2d12;line-height:1.65;">
+          ${STM_NOTICE.map(x => '<li>' + esc(x) + '</li>').join('')}
+        </ul>
+        <div style="font-size:11.5px;color:#9a3412;margin-top:9px;line-height:1.55;">${esc(STM_WHERE_ELSE)}</div>
+      </div>`);
+  }
   document.getElementById('q-fine').innerHTML = fine;
 
   document.getElementById('loader').style.display = 'none';
