@@ -15705,6 +15705,16 @@ function qbAcaAddPlan_(planId) {
   if (document.getElementById('qb-aca-picker')) renderPickerBody_();
 }
 
+// Is this option one the Marketplace could ever have priced? A saved option
+// says where it came from; failing that its coverage type does; failing both,
+// a metal level in the name is the giveaway.
+function qbSlotIsAca_(i, meta, name) {
+  if (meta && meta.src) return meta.src === 'aca';
+  const line = (document.getElementById('qb-optline-' + i) || {}).value || '';
+  if (line) return line === 'Health — Individual';
+  return /\((Bronze|Silver|Gold|Platinum|Catastrophic)\)\s*$/i.test(name || '');
+}
+
 function qbAcaRelinkOptions_() {
   const plans = window._qbAcaPlans || [];
   window._qbAcaUnmatched = [];
@@ -15731,7 +15741,7 @@ function qbAcaRelinkOptions_() {
       qbAcaApptWarn_(i, hit);
       qbAcaOptionView_(i);      // rewrites name/premium from the plan
       linked++;
-    } else if ((rq[i] && rq[i].plan_meta) || /\((Bronze|Silver|Gold|Platinum|Catastrophic)\)\s*$/i.test(nm)) {
+    } else if (qbSlotIsAca_(i, meta, nm)) {
       // looked like a Marketplace plan but isn't in this year's list
       window._qbAcaUnmatched.push({ slot: i, name: nm });
     }
