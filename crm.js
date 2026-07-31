@@ -6970,9 +6970,9 @@ async function renderAdmin() {
       </div>`;
   }
 
-  // The plan-year facts. Most of them we can work out ourselves; two are
-  // published by CMS in a press release each autumn and have to be typed in
-  // once a year. The card says plainly which is which, and what is missing.
+  // The plan-year facts. Some we work out ourselves, most we can read straight
+  // off the CMS announcements, and two have to be typed. One list drives the
+  // card, the editor and the count of what is still blank.
   let _planYearSection = '';
   {
     const thisYear = new Date().getFullYear();
@@ -6991,10 +6991,8 @@ async function renderAdmin() {
     window._pyMaxDed = maxDed;
 
     const money = v => v == null ? null : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const missing = [];
-    if (!cfg || cfg.part_d_oop_cap == null) missing.push('Part D out-of-pocket limit');
-    if (!cfg || cfg.part_b_premium == null) missing.push('Part B premium');
-    if (!cfg || cfg.part_b_deductible == null) missing.push('Part B deductible');
+    const F = PLAN_YEAR_FIELDS;
+    const missing = F.filter(f => !cfg || cfg[f.key] == null);
 
     const known = (label, value, note) => `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:12.5px;">
         <span style="color:var(--text-muted);min-width:190px;">${label}</span>
@@ -7023,24 +7021,29 @@ async function renderAdmin() {
         ${known('Highest Part D deductible', maxDed != null ? money(maxDed) : '\u2014', 'from the ' + yr + ' plan data')}
         ${known('CMS disclaimers', cfg && cfg.tpmo_disclaimer ? '\u2713 on file' : '\u2014', 'wording set by CMS')}
 
-        <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-top:10px;">CMS publishes these \u2014 type them once a year</div>
-        ${known('Part D out-of-pocket limit', cfg && cfg.part_d_oop_cap != null ? money(cfg.part_d_oop_cap)
-          : '<span style="color:var(--text-warning);">not set \u2014 drug cost estimates run high without it</span>')}
-        ${known('Part B premium', cfg && cfg.part_b_premium != null ? money(cfg.part_b_premium) + '/mo' : '<span style="color:var(--text-muted);">not set</span>')}
-        ${known('Part B deductible', cfg && cfg.part_b_deductible != null ? money(cfg.part_b_deductible) : '<span style="color:var(--text-muted);">not set</span>')}
+        <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-top:10px;">Read off the CMS announcement \u2014 one button, once a year</div>
+        ${F.filter(f => f.cms).map(f => known(f.label,
+          cfg && cfg[f.key] != null ? money(cfg[f.key]) + (f.per || '')
+            : `<span style="color:${f.hurts ? 'var(--text-warning)' : 'var(--text-muted)'};">not set${f.hurts ? ' \u2014 ' + f.hurts : ''}</span>`,
+          f.note)).join('')}
+
+        <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-top:10px;">Announced separately \u2014 typed by hand</div>
+        ${F.filter(f => !f.cms).map(f => known(f.label,
+          cfg && cfg[f.key] != null ? money(cfg[f.key]) + (f.per || '') : '<span style="color:var(--text-muted);">not set</span>',
+          f.note)).join('')}
 
         ${years.length > 1 ? `<div style="font-size:11px;color:var(--text-muted);margin-top:9px;padding-top:7px;border-top:1px solid var(--border);">
           Also on file: ${years.slice(1).map(y => {
-            const gaps = ['part_d_oop_cap', 'part_b_premium', 'part_b_deductible'].filter(k => y[k] == null).length;
+            const gaps = PLAN_YEAR_FIELDS.filter(f => y[f.key] == null).length;
             return `<strong>${y.plan_year}</strong> <a href="#" onclick="event.preventDefault();planYearEdit_(${y.plan_year})" style="color:var(--link);">`
               + (gaps ? gaps + ' to fill in' : 'complete') + '</a>';
           }).join(' \u00b7 ')}
         </div>` : ''}
 
         <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5;">
-          The two Part B figures and the Part D limit come from CMS\u2019s annual release each autumn
-          (<a href="https://www.cms.gov/newsroom/fact-sheets" target="_blank" rel="noopener" style="color:var(--accent,#c8a84b);">cms.gov newsroom</a>).
-          Everything else here looks after itself.
+          Press Edit and then <strong>Get the CMS figures</strong> \u2014 it reads them straight off the CMS
+          announcement and fills the boxes for you to check before saving. Only the Medigap K and L limits
+          need typing, and only once a year.
         </div>
       </div>`;
   }
@@ -10607,6 +10610,24 @@ function mgAddedSlot_(letter) {
   return -1;
 }
 
+// What the gap is actually worth this year. Blank until the plan year holds
+// the figure \u2014 a stale amount would be worse than none.
+const MG_ROW_AMOUNT = {
+  'Part A hospital deductible': ['part_a_deductible', 'per benefit period'],
+  'Part B deductible': ['part_b_deductible', 'a year'],
+  'Skilled nursing facility coinsurance': ['part_a_snf_coins', 'a day, days 21\u2013100'],
+  'Part A coinsurance & 365 extra hospital days': ['part_a_coins_61_90', 'a day, days 61\u201390'],
+};
+
+function mgAmountNote_(label) {
+  const hit = MG_ROW_AMOUNT[label];
+  if (!hit) return '';
+  const amt = (window._planYearAmts || {})[hit[0]];
+  if (amt == null) return '';
+  return `<span style="display:block;font-size:10.5px;color:var(--text-muted);font-weight:400;">$${
+    Number(amt).toLocaleString('en-US')} ${hit[1]}</span>`;
+}
+
 function mgGridHtml_(letters) {
   const th = 'position:sticky;left:0;background:var(--surface-0);z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:8px 12px;border-bottom:1px solid var(--border);min-width:230px;';
   const td = 'padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;text-align:center;min-width:74px;';
@@ -10616,12 +10637,18 @@ function mgGridHtml_(letters) {
     </tr></thead>
     <tbody>
       ${MEDIGAP_GRID.rows.map(([label, byLetter]) => `<tr>
-        <th style="${th}font-weight:500;color:var(--text-secondary);">${escWeb(label)}</th>
+        <th style="${th}font-weight:500;color:var(--text-secondary);">${escWeb(label)}${mgAmountNote_(label)}</th>
         ${letters.map(L => `<td style="${td}">${MEDIGAP_MARK[byLetter[L] || 'none']}</td>`).join('')}
       </tr>`).join('')}
       <tr><th style="${th}font-weight:500;color:var(--text-secondary);">Yearly out-of-pocket limit</th>
-        ${letters.map(L => `<td style="${td}">${(L === 'K' || L === 'L')
-          ? '<span style="color:var(--text-success);font-weight:800;">\u2713</span>' : MEDIGAP_MARK.none}</td>`).join('')}
+        ${letters.map(L => {
+          const amt = (window._planYearAmts || {})[L === 'K' ? 'medigap_k_oop' : 'medigap_l_oop'];
+          return `<td style="${td}">${(L === 'K' || L === 'L')
+            ? (amt != null
+                ? '<span style="color:var(--text-success);font-weight:800;">$' + Number(amt).toLocaleString('en-US') + '</span>'
+                : '<span style="color:var(--text-success);font-weight:800;">\u2713</span>')
+            : MEDIGAP_MARK.none}</td>`;
+        }).join('')}
       </tr>
     </tbody>
   </table>
@@ -10703,7 +10730,21 @@ function mgLetterOf_(product) {
 
 // For every lettered plan, which of YOUR carriers quote it in their state and
 // at what price. One pass over the charts rather than a query per product.
+// The year's Medicare dollar amounts, fetched once. Held on window so the
+// grid \u2014 which is drawn synchronously \u2014 can read them.
+async function planYearAmts_() {
+  if (window._planYearAmts) return window._planYearAmts;
+  try {
+    const { data } = await supabaseClient.from('plan_year_config')
+      .select('*').lte('plan_year', new Date().getFullYear())
+      .order('plan_year', { ascending: false }).limit(1).maybeSingle();
+    window._planYearAmts = data || {};
+  } catch (e) { window._planYearAmts = {}; }
+  return window._planYearAmts;
+}
+
 async function qbMgLoadRates_() {
+  await planYearAmts_();
   const prof = qbMgProfile_();
   window._qbMgRates = {};
   window._qbMgQuotes = {};
@@ -10769,7 +10810,8 @@ function mgCmpClear_() { window._qbMgCmp.clear(); renderMedigapPicker_(); }
 // Built to match the Medicare Advantage comparison, because an agent should
 // not have to learn a different screen for every product line. High-deductible
 // versions get their own column \u2014 they are a real choice, not a footnote.
-function openMgCompare_() {
+async function openMgCompare_() {
+  await planYearAmts_();
   const picked = [...window._qbMgCmp];
   if (picked.length < 2) { showToast('Tick \u2696\ufe0f Compare on at least 2 plans first.'); return; }
   const order = ['A','B','C','D','F','HDF','G','HDG','K','L','M','N'];
@@ -10844,7 +10886,8 @@ function openMgCompare_() {
 }
 
 // Everything about one lettered plan, in one place.
-function openMgDetail_(letter) {
+async function openMgDetail_(letter) {
+  await planYearAmts_();
   const p = MEDIGAP_PLANS.find(x => x[0] === letter);
   if (!p) return;
   const base = letter.replace(/^HD/, '');
@@ -11409,9 +11452,6 @@ const MEDIGAP_GRID = {
     ['Part B excess charges',                        { A:'none', B:'none', C:'none', D:'none', F:'full', G:'full', K:'none', L:'none', M:'none', N:'none' }],
     ['Foreign travel emergency (80%)',               { A:'none', B:'none', C:'full', D:'full', F:'full', G:'full', K:'none', L:'none', M:'full', N:'full' }],
   ],
-  // K and L are the only letters with a yearly out-of-pocket limit. The
-  // amounts change every year; leave them null rather than quote a stale one.
-  oopLimit: { year: null, K: null, L: null },
 };
 
 const MEDIGAP_MARK = {
@@ -11603,41 +11643,95 @@ async function carrierDelete_(id) {
   renderAdmin();
 }
 
+// Every dollar figure a plan year holds. `cms: true` means the Get button can
+// read it off the CMS announcement; the rest are typed. `hurts` is what goes
+// wrong while it is blank \u2014 said on the card so nobody has to guess.
+const PLAN_YEAR_FIELDS = [
+  { key: 'part_d_oop_cap',        label: 'Part D out-of-pocket limit', cms: true,
+    hurts: 'drug cost estimates run high without it',
+    help: 'Once a client has paid this much for covered drugs, they pay nothing more for the rest of the year.' },
+  { key: 'part_b_premium',        label: 'Part B premium',        cms: true, per: '/mo' },
+  { key: 'part_b_deductible',     label: 'Part B deductible',     cms: true },
+  { key: 'part_a_deductible',     label: 'Part A hospital deductible', cms: true,
+    note: 'what Medigap B, C, D, F, G and N pay in full',
+    help: 'Charged per benefit period, not per year \u2014 someone admitted twice in a year can pay it twice.' },
+  { key: 'part_a_coins_61_90',    label: 'Hospital days 61\u201390', cms: true, per: '/day' },
+  { key: 'part_a_coins_lifetime', label: 'Lifetime reserve days',    cms: true, per: '/day' },
+  { key: 'part_a_snf_coins',      label: 'Nursing home days 21\u2013100', cms: true, per: '/day',
+    note: 'the gap Plan A leaves open' },
+  { key: 'medigap_k_oop',         label: 'Medigap Plan K yearly limit', cms: false,
+    help: 'Announced separately from the CMS fact sheet, so this one is typed.' },
+  { key: 'medigap_l_oop',         label: 'Medigap Plan L yearly limit', cms: false },
+];
+
 function planYearEdit_(year) {
   const cfg = (window._planYears || []).find(x => x.plan_year === year) || {};
+  const row = f => `
+    <label style="margin-top:9px;">${f.label} ($)${f.cms ? '' : ' <span style="font-size:10.5px;font-weight:400;color:var(--text-muted);">\u00b7 typed by hand</span>'}</label>
+    <input type="number" step="0.01" id="py-${f.key}" value="${cfg[f.key] != null ? cfg[f.key] : ''}" />
+    ${f.help ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${f.help}</div>` : ''}`;
+
   showModal('Plan year ' + year, `
-    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">
-      These three come from CMS\u2019s annual release. Everything else about the plan year is worked out
-      from the data or fixed by law, so there is nothing else to keep up to date.
-    </p>
-    <label>Part D annual out-of-pocket limit ($)</label>
-    <input type="number" step="0.01" id="py-oop" value="${cfg.part_d_oop_cap != null ? cfg.part_d_oop_cap : ''}" placeholder="e.g. 2100" />
-    <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Once a client reaches this, covered drugs cost them nothing for the rest of the year. Drug cost estimates read high until it is set.</div>
-    <label>Part B monthly premium ($)</label>
-    <input type="number" step="0.01" id="py-bprem" value="${cfg.part_b_premium != null ? cfg.part_b_premium : ''}" />
-    <label>Part B annual deductible ($)</label>
-    <input type="number" step="0.01" id="py-bded" value="${cfg.part_b_deductible != null ? cfg.part_b_deductible : ''}" />
+    <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:9px 11px;border-radius:9px;background:var(--bg-info);border:1px solid var(--border-info);">
+      <button class="btn btn-primary btn-sm" onclick="planYearFetch_(${year})">Get the CMS figures</button>
+      <span style="font-size:11.5px;color:var(--text-info);flex:1;min-width:200px;">
+        Reads them off the CMS announcement for ${year}. Check them, then save.
+      </span>
+    </div>
+    <div id="py-fetch-note" style="font-size:11.5px;margin-top:7px;"></div>
+    ${PLAN_YEAR_FIELDS.map(row).join('')}
   `, async () => {
-    const num = id => {
-      const v = parseFloat((document.getElementById(id) || {}).value);
-      return isNaN(v) ? null : v;
-    };
-    const patch = {
-      plan_year: year,
-      part_d_oop_cap: num('py-oop'),
-      part_b_premium: num('py-bprem'),
-      part_b_deductible: num('py-bded'),
-      aep_start: year - 1 + '-10-15',
-      aep_end: year - 1 + '-12-07',
-      updated_at: new Date().toISOString(),
-    };
+    const patch = { plan_year: year, aep_start: year - 1 + '-10-15', aep_end: year - 1 + '-12-07',
+                    updated_at: new Date().toISOString() };
+    PLAN_YEAR_FIELDS.forEach(f => {
+      const v = parseFloat((document.getElementById('py-' + f.key) || {}).value);
+      patch[f.key] = isNaN(v) ? null : v;
+    });
     const { error } = await supabaseClient.from('plan_year_config')
       .upsert(patch, { onConflict: 'plan_year' }).select('plan_year');
     if (error) { showToast('Could not save: ' + error.message); return false; }
     window._qbPartDCap = undefined;      // quoting picks the new figure up
+    window._planYearAmts = null;         // and so does the Medigap grid
     showToast('Plan year ' + year + ' saved.');
     renderAdmin();
   }, { confirmLabel: 'Save' });
+}
+
+// Fills the boxes from the CMS announcement. It never saves on its own \u2014 a
+// person looks at the numbers first, which is the whole point of the button.
+async function planYearFetch_(year) {
+  const note = document.getElementById('py-fetch-note');
+  if (note) note.innerHTML = '<span style="color:var(--text-muted);">Reading the CMS announcement\u2026</span>';
+  try {
+    const { data, error } = await supabaseClient.functions.invoke('medicare-amounts?year=' + year);
+    if (error) throw error;
+    const found = (data && data.found) || {};
+    const got = Object.keys(found);
+    got.forEach(k => {
+      const el = document.getElementById('py-' + k);
+      if (el) { el.value = found[k]; el.style.borderColor = 'var(--border-info)'; }
+    });
+
+    // The Part D deductible is a cross-check, not a field we keep: if CMS and
+    // our own plan data disagree, one of the two is stale and worth knowing.
+    let cross = '';
+    if (found.part_d_deductible != null && window._pyMaxDed != null) {
+      cross = Number(found.part_d_deductible) === Number(window._pyMaxDed)
+        ? ` Part D deductible $${found.part_d_deductible} matches our plan data.`
+        : ` <strong>CMS says the Part D deductible is $${found.part_d_deductible}, our plan data says $${window._pyMaxDed}</strong> \u2014 worth a look.`;
+    }
+
+    const src = (data && data.sources && Object.values(data.sources)[0]) || 'https://www.cms.gov/newsroom/fact-sheets';
+    if (note) note.innerHTML = got.length
+      ? `<span style="color:var(--text-success);">Filled in ${got.filter(k => k !== 'part_d_deductible').length} figure(s)</span> from
+         <a href="${src}" target="_blank" rel="noopener" style="color:var(--link);">the CMS announcement</a>.${cross}
+         <br><span style="color:var(--text-muted);">${(data.notes || []).join(' ')}</span>`
+      : `<span style="color:var(--text-warning);">Nothing found for ${year}.</span>
+         <span style="color:var(--text-muted);">${(data.notes || []).join(' ')}</span>`;
+  } catch (e) {
+    if (note) note.innerHTML = `<span style="color:var(--text-warning);">Could not reach the CMS announcement (${e.message || e}).</span>
+      <span style="color:var(--text-muted);">Type the figures in below.</span>`;
+  }
 }
 
 // A new year starts from the last one's wording, with the CMS figures blank
