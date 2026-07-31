@@ -12947,7 +12947,39 @@ function ppComboPickers_(p, key, d) {
       }).join('')}
     </div>
     ${ppComboShown_(d, chosen)}
+    ${ppExposure_(d, chosen)}
     ${ppComboNote_(d, chosen)}
+  </div>`;
+}
+
+// Deductible plus the coinsurance cap is what a person actually faces on
+// covered, in-network care before the plan starts paying everything. Worth
+// showing, because neither number means much alone — but it is NOT a maximum
+// out-of-pocket and must never be labelled as one. Copays sit on top,
+// out-of-network doubles on these plans, the coverage-period maximum caps what
+// the PLAN pays, and nothing excluded counts at all.
+function ppMoney_(v) {
+  const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.]/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+function ppExposure_(d, chosen) {
+  const open = ppOpenCombos_(d, chosen);
+  if (open.length !== 1) return '';
+  const c = open[0];
+  const dedKey = Object.keys(c).find(k => /deductible/i.test(k));
+  const oopKey = Object.keys(c).find(k => /out-?of-?pocket|oop/i.test(k));
+  if (!dedKey || !oopKey) return '';
+  const ded = ppMoney_(c[dedKey]), oop = ppMoney_(c[oopKey]);
+  if (ded == null || oop == null) return '';
+  const total = ded + oop;
+  return `<div style="margin-top:7px;padding:7px 10px;border-radius:8px;background:var(--bg-info);border:1px solid var(--border-info);">
+    <div style="font-size:13px;font-weight:800;color:var(--text-info);">$${total.toLocaleString('en-US')} in network,
+      before the plan pays 100%</div>
+    <div style="font-size:10.5px;color:var(--text-info);opacity:.85;line-height:1.5;margin-top:2px;">
+      $${ded.toLocaleString('en-US')} deductible + $${oop.toLocaleString('en-US')} coinsurance cap.
+      <strong>Not a maximum out-of-pocket</strong> — copays are on top, out-of-network is double on these plans,
+      and anything the policy excludes does not count.</div>
   </div>`;
 }
 
