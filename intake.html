@@ -381,14 +381,30 @@ function renderPickerField_(id, def, prefillVal) {
     <div id="pk_c_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
     <input type="hidden" name="${id}" id="f_${id}">
     <input type="hidden" name="${id}_struct" id="f_${id}_struct">
-    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${isMed ? 'Pick from the official medication list \u2014 it lets us check drug coverage on every plan for you.' : 'Pick from the official provider registry \u2014 it lets us check which plans include your doctors.'}</div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${isMed ? 'Pick from the official medication list \u2014 it lets us check drug coverage on every plan for you. Then tell us how much you pick up at a time, because a 90-day refill often costs less than three monthly ones.' : 'Pick from the official provider registry \u2014 it lets us check which plans include your doctors.'}</div>
   </div>`;
+}
+
+// How much they pick up at a time. It decides how many times a year they pay
+// a copay, so it moves the yearly figure more than almost anything else.
+function pickerDays_(x) {
+  const d = Number(x && x.days_supply);
+  return (d === 60 || d === 90) ? d : 30;
+}
+function pickerSetDays_(id, i, days) {
+  if (_pickers[id][i]) _pickers[id][i].days_supply = Number(days) || 30;
+  pickerSync_(id);
 }
 
 function pickerSync_(id) {
   const chips = document.getElementById('pk_c_' + id);
+  const isMed = id === 'med_medications';
   chips.innerHTML = _pickers[id].map((x, i) =>
-    `<span style="display:inline-flex;align-items:center;gap:5px;background:#eef2f7;border-radius:999px;padding:4px 12px;font-size:13px;">${x.name.replace(/</g,'&lt;')}
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:#eef2f7;border-radius:999px;padding:4px 12px;font-size:13px;">${x.name.replace(/</g,'&lt;')}
+      ${isMed ? `<select onchange="pickerSetDays_('${id}',${i},this.value)" aria-label="How many days each refill lasts"
+          style="width:auto;padding:1px 4px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;">
+          ${[30, 60, 90].map(d => `<option value="${d}"${pickerDays_(x) === d ? ' selected' : ''}>${d}-day supply</option>`).join('')}
+        </select>` : ''}
       <button type="button" onclick="_pickers['${id}'].splice(${i},1);pickerSync_('${id}')" style="background:none;border:none;cursor:pointer;color:#64748b;">&#10005;</button></span>`).join('');
   document.getElementById('f_' + id).value = _pickers[id].map(x => x.name).join(', ');
   document.getElementById('f_' + id + '_struct').value = JSON.stringify(_pickers[id]);
@@ -687,7 +703,8 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
       await postRows('client_providers', dc.map(d => ({
         contact_id: contactId, npi: String(d.npi), name: d.name || '(unnamed)', source: 'intake' })));
       await postRows('client_medications', md.map(m => ({
-        contact_id: contactId, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'intake' })));
+        contact_id: contactId, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'intake',
+        days_supply: pickerDays_(m) })));
       if (Object.keys(prof).length) {
         prof.profile_updated_at = now;
         // Direct fetch, not supa(): an anon visitor may WRITE these columns but

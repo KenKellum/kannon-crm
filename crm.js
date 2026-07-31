@@ -14111,8 +14111,8 @@ async function qbLoadClientLists_() {
     const [pv, md] = await Promise.all([
       supabaseClient.from('client_providers').select('npi,name').eq('contact_id', c.id)
         .eq('is_active', true).order('created_at'),
-      supabaseClient.from('client_medications').select('rxcui,name').eq('contact_id', c.id)
-        .eq('is_active', true).order('created_at'),
+      supabaseClient.from('client_medications').select('rxcui,name,quantity,days_supply')
+        .eq('contact_id', c.id).eq('is_active', true).order('created_at'),
     ]);
     c._providers = pv.data || [];
     c._medications = md.data || [];
@@ -14137,10 +14137,12 @@ async function qbSaveClientLists_() {
     if (meds.length) {
       await supabaseClient.from('client_medications').insert(meds.map(m => ({
         contact_id: c.id, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'quote',
+        days_supply: qbMedDays_(m), quantity: m.quantity == null ? null : Number(m.quantity),
       })));
     }
     c._providers = docs.map(d => ({ npi: String(d.npi), name: d.name }));
-    c._medications = meds.map(m => ({ rxcui: String(m.rxcui), name: m.name }));
+    c._medications = meds.map(m => ({ rxcui: String(m.rxcui), name: m.name,
+      days_supply: qbMedDays_(m), quantity: m.quantity == null ? null : Number(m.quantity) }));
     return true;
   } catch (e) { console.error('save client lists:', e); return false; }
 }
@@ -14187,7 +14189,8 @@ function qbApplyClientProfile_() {
     filled.providers = !!window._qbAcaDocs.length;
   }
   if (prof.medications.length) {
-    window._qbAcaMeds = prof.medications.filter(m => m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+    window._qbAcaMeds = prof.medications.filter(m => m.rxcui)
+      .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
     filled.medications = !!window._qbAcaMeds.length;
   }
   if (filled.providers || filled.medications) qbAcaRenderChips_();
@@ -14267,7 +14270,8 @@ async function qbAcaPrefillFromIntake_() {
     try { if (r.med_medications_struct) structMeds = JSON.parse(r.med_medications_struct); } catch (e) {}
     try { if (r.med_doctors_struct) structDocs = JSON.parse(r.med_doctors_struct); } catch (e) {}
     if (structMeds && structMeds.length && !fromProfile.medications) {
-      window._qbAcaMeds = structMeds.filter(m => m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+      window._qbAcaMeds = structMeds.filter(m => m.rxcui)
+        .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
       if (window._qbAcaMeds.length) pulled.push('medications (' + window._qbAcaMeds.length + ', exact picks from intake)');
     }
     if (structDocs && structDocs.length && !fromProfile.providers) {
@@ -14439,7 +14443,8 @@ async function qbAcaSyncPicksToIntake_() {
     const resp = Object.assign({}, row.responses, {
       med_doctors_struct: JSON.stringify(docs.map(d => ({ npi: d.npi, name: d.name }))),
       med_doctors: docs.map(d => d.name).join(', '),
-      med_medications_struct: JSON.stringify(meds.map(m => ({ rxcui: m.rxcui, name: m.name }))),
+      med_medications_struct: JSON.stringify(meds.map(m => ({
+        rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity || null }))),
       med_medications: meds.map(m => m.name).join(', '),
     });
     const { data: ok } = await supabaseClient.from('intake_sessions')
@@ -14452,12 +14457,37 @@ async function qbAcaSyncPicksToIntake_() {
 function qbAcaRenderChips_() {
   const wraps = [document.getElementById('qb-aca-chips'), document.getElementById('qbpk-aca-chips')].filter(Boolean);
   if (!wraps.length) return;
-  const chip = (label, kind, key) =>
-    `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;">${kind === 'doc' ? '\u{1FA7A}' : '\u{1F48A}'} ${escWeb(label)}
+  const chip = (label, kind, key, extra) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;">${kind === 'doc' ? '\u{1FA7A}' : '\u{1F48A}'} ${escWeb(label)}${extra || ''}
       <button type="button" onclick="qbAcaRemoveChip_('${kind}','${escWeb(String(key))}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;">&#10005;</button></span>`;
+  // How much they pick up at a time decides how many copays a year they pay,
+  // which is most of what a drug plan costs them.
+  const supply = m => `<select onchange="qbMedDaysSet_('${escWeb(String(m.rxcui))}',this.value)" title="How many days each fill covers"
+      style="width:auto;padding:0 3px;margin:0 0 0 2px;font-size:11px;height:19px;background:var(--surface-1);border:0.5px solid var(--border);border-radius:5px;color:var(--text-secondary);">
+      ${[30, 60, 90].map(d => `<option value="${d}"${qbMedDays_(m) === d ? ' selected' : ''}>${d}-day</option>`).join('')}
+    </select>`;
   const html = (window._qbAcaDocs || []).map(d => chip(d.name, 'doc', d.npi)).join('')
-    + (window._qbAcaMeds || []).map(m => chip(m.name, 'med', m.rxcui)).join('');
+    + (window._qbAcaMeds || []).map(m => chip(m.name, 'med', m.rxcui, supply(m))).join('');
   wraps.forEach(w => w.innerHTML = html);
+}
+
+// A fill is 30 days unless we are told otherwise \u2014 that is what the CMS
+// prices are quoted against, so it is the honest default.
+function qbMedDays_(m) {
+  const d = Number(m && m.days_supply);
+  return (d === 60 || d === 90) ? d : 30;
+}
+
+function qbMedDaysSet_(rxcui, days) {
+  const m = (window._qbAcaMeds || []).find(x => String(x.rxcui) === String(rxcui));
+  if (!m) return;
+  m.days_supply = Number(days) || 30;
+  const c = (window._qbCmsMeds || []).find(x => String(x.rxcui) === String(rxcui));
+  if (c) c.days_supply = m.days_supply;
+  qbAcaSyncPicksToIntake_();
+  qbSaveClientLists_();
+  if ((window._qbCmsPlans || []).length) qbCmsDrugCheck_();   // the year changes
+  if (typeof qbAcaCheckCoverage_ === 'function' && document.getElementById('qb-aca-chips')) qbAcaCheckCoverage_();
 }
 
 function qbAcaRemoveChip_(kind, key) {
@@ -14629,7 +14659,8 @@ async function qbAcaCoverSelected_() {
   if (!(window._qbAcaDocs || []).length && !(window._qbAcaMeds || []).length) {
     const lists = await qbLoadClientLists_();
     window._qbAcaDocs = (lists.providers || []).filter(d => d.npi).map(d => ({ npi: d.npi, name: d.name }));
-    window._qbAcaMeds = (lists.medications || []).filter(m => m.rxcui).map(m => ({ rxcui: m.rxcui, name: m.name }));
+    window._qbAcaMeds = (lists.medications || []).filter(m => m.rxcui)
+      .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
   }
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
   if (!docs.length && !meds.length) return;
@@ -16082,7 +16113,7 @@ async function qbCmsDrugCheck_() {
   if (!(window._qbCmsMeds || []).length) {
     const lists = await qbLoadClientLists_();
     window._qbCmsMeds = (lists.medications || []).filter(m => m.rxcui)
-      .map(m => ({ rxcui: String(m.rxcui), name: m.name }));
+      .map(m => ({ rxcui: String(m.rxcui), name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
   }
   const meds = window._qbCmsMeds || [];
   if (!meds.length) return;
@@ -16127,22 +16158,35 @@ async function qbCmsDrugCheck_() {
     // what each plan charges per fill, by tier \u2014 so the card can say what a
     // year actually costs rather than just what the premium is
     const { data: tiers } = await supabaseClient.from('pdp_tier_cost')
-      .select('contract_id,plan_id,segment_id,tier,cost_type,amount')
+      .select('contract_id,plan_id,segment_id,tier,days_supply,cost_type,amount')
       .in('contract_id', [...new Set(plans.map(p => p.contract_id))]);
     const priceOf = {};
-    (tiers || []).forEach(t => { priceOf[t.contract_id + '|' + t.plan_id + '|' + t.segment_id + '|' + t.tier] = t; });
+    (tiers || []).forEach(t => {
+      priceOf[t.contract_id + '|' + t.plan_id + '|' + t.segment_id + '|' + t.tier + '|' + t.days_supply] = t;
+    });
 
     plans.forEach((p, i) => {
       p._estYear = null; p._estCoins = false; p._estMissing = 0;
       if (!p._drugCov) return;
       let monthly = 0;
+      p._estSupply = null;
       meds.forEach(m => {
         const hit = p._drugCov[m.rxcui];
         if (!hit) { p._estMissing++; return; }
-        const t = priceOf[keys[i].split('|')[0] + '|' + keys[i].split('|')[1] + '|' + keys[i].split('|')[2] + '|' + hit.tier];
+        const days = qbMedDays_(m);
+        const at = d => priceOf[keys[i].split('|').slice(0, 3).join('|') + '|' + hit.tier + '|' + d];
+        // Plans price a 90-day fill in its own right; only fall back to the
+        // 30-day copay when they have not published one for this supply.
+        let t = at(days), per = days;
+        if (!t && days !== 30) { t = at(30); per = 30; }
         if (!t) return;
         if (t.cost_type === 2) { p._estCoins = true; return; }   // a share of a price we don't hold
-        monthly += Number(t.amount) || 0;
+        // Refills a year, as people actually collect them: monthly, every
+        // other month, quarterly. Not 365/days, which would put a phantom
+        // extra fill on every monthly prescription.
+        const fills = { 30: 12, 60: 6, 90: 4 }[per] || 12;
+        monthly += ((Number(t.amount) || 0) * fills) / 12;
+        if (days !== 30) p._estSupply = true;
       });
       const prem = Number(cmsPremium_(p)) || 0;
       p._estMonthly = monthly;
@@ -16434,6 +16478,7 @@ function pdpCardHtml_(p) {
         <div style="font-size:17px;font-weight:800;color:var(--text-info);">${p._estCoins || p._estMissing ? 'from ' : ''}${money(p._estYear)}</div>
         <div style="font-size:10.5px;color:var(--text-info);opacity:.85;line-height:1.45;">
           premium ${money(cmsPremium_(p))}/mo${p._estMonthly ? ' + ' + money(p._estMonthly) + '/mo in copays' : ' \u00b7 their drugs cost nothing per fill'}${
+            p._estSupply ? ' \u00b7 priced on the refill sizes they actually get' : ''}${
             p._estMissing ? ' \u00b7 <strong>' + p._estMissing + ' drug' + (p._estMissing === 1 ? '' : 's') + ' not on this list</strong>, so not counted' : ''}${
             p._estCoins ? ' \u00b7 <strong>one or more priced as a % of the drug\u2019s cost</strong>, which we cannot total' : ''}${
             Number(p.drug_deductible) ? ' \u00b7 before the ' + money(p.drug_deductible) + ' deductible' : ''}${
