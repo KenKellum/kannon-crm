@@ -2948,6 +2948,7 @@ function _imPickerField_(id, def) {
         onkeydown="if(event.key==='Enter'){event.preventDefault();imPickerSearch_('${id}');}" />
       <button type="button" class="btn btn-outline btn-sm" onclick="imPickerSearch_('${id}')">${id === 'med_medications' ? 'Find Medication' : 'Find Provider/Facility'}</button>
     </div>
+    ${isMed ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Off the label: how many a day, and how many they get each time. A 90-day fill often costs less than three monthly ones.</div>` : ''}
     <div id="imm_${id}" style="font-size:12px;margin-top:4px;"></div>
     <div id="imc_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;"></div>
   </div>`;
@@ -2956,9 +2957,29 @@ function _imPickerField_(id, def) {
 function imPickerSync_(id) {
   const chips = document.getElementById('imc_' + id);
   if (!chips) return;
+  const isMed = id === 'med_medications';
+  const box = (i, x, field, ph, w) => `<input type="number" min="0" step="any" value="${x[field] == null ? '' : x[field]}"
+      placeholder="${ph}" title="${field === 'doses_per_day' ? 'Doses a day' : 'How many in one fill'}"
+      onchange="imMedSet_('${id}',${i},'${field}',this.value)"
+      style="width:${w};padding:0 3px;margin:0;font-size:11px;height:19px;text-align:center;background:var(--surface-1);border:0.5px solid var(--border);border-radius:5px;color:var(--text-primary);" />`;
   chips.innerHTML = (window._imPickers[id] || []).map((x, i) =>
     `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface-2,#eef2f7);border-radius:999px;padding:3px 10px;font-size:12px;">${escWeb(x.name)}
+      ${isMed ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);">
+        ${box(i, x, 'doses_per_day', '2', '30px')}/day
+        ${box(i, x, 'quantity', 'qty', '42px')}
+        ${medDaysFrom_(x.quantity, x.doses_per_day)
+          ? `<span style="color:var(--text-info);font-weight:600;">${medDaysFrom_(x.quantity, x.doses_per_day)}-day supply</span>` : ''}
+      </span>` : ''}
       <button type="button" onclick="window._imPickers['${id}'].splice(${i},1);imPickerSync_('${id}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted,#64748b);">&#10005;</button></span>`).join('');
+}
+
+function imMedSet_(id, i, field, value) {
+  const x = (window._imPickers[id] || [])[i];
+  if (!x) return;
+  const n = parseFloat(value);
+  x[field] = isNaN(n) || n <= 0 ? null : n;
+  x.days_supply = medDaysFrom_(x.quantity, x.doses_per_day) || 30;
+  imPickerSync_(id);
 }
 
 function imToggleFar_(id) {
@@ -3215,6 +3236,9 @@ async function intakePromoteLists_(contactId, responses) {
     if (meds.length) {
       await supabaseClient.from('client_medications').upsert(meds.map(m => ({
         contact_id: contactId, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'intake',
+        days_supply: medDaysFrom_(m.quantity, m.doses_per_day) || Number(m.days_supply) || 30,
+        quantity: m.quantity == null ? null : Number(m.quantity),
+        doses_per_day: m.doses_per_day == null ? null : Number(m.doses_per_day),
       })), { onConflict: 'contact_id,rxcui' });
     }
   } catch (e) { console.error('intakePromoteLists_:', e); }
