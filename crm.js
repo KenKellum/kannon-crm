@@ -14111,7 +14111,7 @@ async function qbLoadClientLists_() {
     const [pv, md] = await Promise.all([
       supabaseClient.from('client_providers').select('npi,name').eq('contact_id', c.id)
         .eq('is_active', true).order('created_at'),
-      supabaseClient.from('client_medications').select('rxcui,name,quantity,days_supply')
+      supabaseClient.from('client_medications').select('rxcui,name,quantity,doses_per_day,days_supply')
         .eq('contact_id', c.id).eq('is_active', true).order('created_at'),
     ]);
     c._providers = pv.data || [];
@@ -14137,12 +14137,15 @@ async function qbSaveClientLists_() {
     if (meds.length) {
       await supabaseClient.from('client_medications').insert(meds.map(m => ({
         contact_id: c.id, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'quote',
-        days_supply: qbMedDays_(m), quantity: m.quantity == null ? null : Number(m.quantity),
+        days_supply: qbMedDays_(m),
+        quantity: m.quantity == null ? null : Number(m.quantity),
+        doses_per_day: m.doses_per_day == null ? null : Number(m.doses_per_day),
       })));
     }
     c._providers = docs.map(d => ({ npi: String(d.npi), name: d.name }));
     c._medications = meds.map(m => ({ rxcui: String(m.rxcui), name: m.name,
-      days_supply: qbMedDays_(m), quantity: m.quantity == null ? null : Number(m.quantity) }));
+      days_supply: qbMedDays_(m), quantity: m.quantity == null ? null : Number(m.quantity),
+      doses_per_day: m.doses_per_day == null ? null : Number(m.doses_per_day) }));
     return true;
   } catch (e) { console.error('save client lists:', e); return false; }
 }
@@ -14190,7 +14193,7 @@ function qbApplyClientProfile_() {
   }
   if (prof.medications.length) {
     window._qbAcaMeds = prof.medications.filter(m => m.rxcui)
-      .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
+      .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity, doses_per_day: m.doses_per_day }));
     filled.medications = !!window._qbAcaMeds.length;
   }
   if (filled.providers || filled.medications) qbAcaRenderChips_();
@@ -14271,7 +14274,7 @@ async function qbAcaPrefillFromIntake_() {
     try { if (r.med_doctors_struct) structDocs = JSON.parse(r.med_doctors_struct); } catch (e) {}
     if (structMeds && structMeds.length && !fromProfile.medications) {
       window._qbAcaMeds = structMeds.filter(m => m.rxcui)
-        .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
+        .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity, doses_per_day: m.doses_per_day }));
       if (window._qbAcaMeds.length) pulled.push('medications (' + window._qbAcaMeds.length + ', exact picks from intake)');
     }
     if (structDocs && structDocs.length && !fromProfile.providers) {
@@ -14444,7 +14447,8 @@ async function qbAcaSyncPicksToIntake_() {
       med_doctors_struct: JSON.stringify(docs.map(d => ({ npi: d.npi, name: d.name }))),
       med_doctors: docs.map(d => d.name).join(', '),
       med_medications_struct: JSON.stringify(meds.map(m => ({
-        rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity || null }))),
+        rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m),
+        quantity: m.quantity || null, doses_per_day: m.doses_per_day || null }))),
       med_medications: meds.map(m => m.name).join(', '),
     });
     const { data: ok } = await supabaseClient.from('intake_sessions')
@@ -14460,34 +14464,64 @@ function qbAcaRenderChips_() {
   const chip = (label, kind, key, extra) =>
     `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:0.5px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;">${kind === 'doc' ? '\u{1FA7A}' : '\u{1F48A}'} ${escWeb(label)}${extra || ''}
       <button type="button" onclick="qbAcaRemoveChip_('${kind}','${escWeb(String(key))}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;">&#10005;</button></span>`;
-  // How much they pick up at a time decides how many copays a year they pay,
-  // which is most of what a drug plan costs them.
-  const supply = m => `<select onchange="qbMedDaysSet_('${escWeb(String(m.rxcui))}',this.value)" title="How many days each fill covers"
-      style="width:auto;padding:0 3px;margin:0 0 0 2px;font-size:11px;height:19px;background:var(--surface-1);border:0.5px solid var(--border);border-radius:5px;color:var(--text-secondary);">
-      ${[30, 60, 90].map(d => `<option value="${d}"${qbMedDays_(m) === d ? ' selected' : ''}>${d}-day</option>`).join('')}
-    </select>`;
+  // Two things off the bottle. The supply falls out of them, and how much they
+  // pick up at a time is most of what a drug plan costs them.
+  const box = (m, field, ph, w) => `<input type="number" min="0" step="any" value="${m[field] == null ? '' : m[field]}"
+      placeholder="${ph}" title="${field === 'doses_per_day' ? 'Doses a day' : 'How many in one fill'}"
+      onchange="qbMedSet_('${escWeb(String(m.rxcui))}','${field}',this.value)"
+      style="width:${w};padding:0 3px;margin:0;font-size:11px;height:19px;text-align:center;background:var(--surface-1);border:0.5px solid var(--border);border-radius:5px;color:var(--text-primary);" />`;
+  const supply = m => {
+    const note = medSupplyNote_(m);
+    return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);">
+      ${box(m, 'doses_per_day', '2', '30px')}/day
+      ${box(m, 'quantity', 'qty', '42px')}
+      ${note ? `<span style="color:${medDaysFrom_(m.quantity, m.doses_per_day) ? 'var(--text-info)' : 'var(--text-muted)'};font-weight:600;">${note}</span>` : ''}
+    </span>`;
+  };
   const html = (window._qbAcaDocs || []).map(d => chip(d.name, 'doc', d.npi)).join('')
     + (window._qbAcaMeds || []).map(m => chip(m.name, 'med', m.rxcui, supply(m))).join('');
   wraps.forEach(w => w.innerHTML = html);
 }
 
-// A fill is 30 days unless we are told otherwise \u2014 that is what the CMS
-// prices are quoted against, so it is the honest default.
+// Nobody says "ninety day supply" \u2014 they say "two a day" and the bottle says
+// how many they got. That division is the supply, snapped to the three sizes
+// CMS actually prices. Anything we cannot work out is a monthly fill, which is
+// what the CMS prices are quoted against.
+function medDaysFrom_(quantity, dosesPerDay) {
+  const q = Number(quantity), d = Number(dosesPerDay);
+  if (!(q > 0) || !(d > 0)) return null;
+  const days = q / d;
+  return [30, 60, 90].reduce((best, n) =>
+    Math.abs(n - days) < Math.abs(best - days) ? n : best, 30);
+}
+
 function qbMedDays_(m) {
+  const worked = medDaysFrom_(m && m.quantity, m && m.doses_per_day);
+  if (worked) return worked;
   const d = Number(m && m.days_supply);
   return (d === 60 || d === 90) ? d : 30;
 }
 
-function qbMedDaysSet_(rxcui, days) {
+// What the client would recognise on the label
+function medSupplyNote_(m) {
+  const worked = medDaysFrom_(m && m.quantity, m && m.doses_per_day);
+  if (worked) return worked + '-day supply';
+  if (Number(m && m.doses_per_day) > 0) return 'how many did they get?';
+  return null;
+}
+
+function qbMedSet_(rxcui, field, value) {
   const m = (window._qbAcaMeds || []).find(x => String(x.rxcui) === String(rxcui));
   if (!m) return;
-  m.days_supply = Number(days) || 30;
+  const n = parseFloat(value);
+  m[field] = isNaN(n) || n <= 0 ? null : n;
+  m.days_supply = qbMedDays_(m);
   const c = (window._qbCmsMeds || []).find(x => String(x.rxcui) === String(rxcui));
-  if (c) c.days_supply = m.days_supply;
+  if (c) { c.quantity = m.quantity; c.doses_per_day = m.doses_per_day; c.days_supply = m.days_supply; }
+  qbAcaRenderChips_();
   qbAcaSyncPicksToIntake_();
   qbSaveClientLists_();
   if ((window._qbCmsPlans || []).length) qbCmsDrugCheck_();   // the year changes
-  if (typeof qbAcaCheckCoverage_ === 'function' && document.getElementById('qb-aca-chips')) qbAcaCheckCoverage_();
 }
 
 function qbAcaRemoveChip_(kind, key) {
@@ -14660,7 +14694,7 @@ async function qbAcaCoverSelected_() {
     const lists = await qbLoadClientLists_();
     window._qbAcaDocs = (lists.providers || []).filter(d => d.npi).map(d => ({ npi: d.npi, name: d.name }));
     window._qbAcaMeds = (lists.medications || []).filter(m => m.rxcui)
-      .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
+      .map(m => ({ rxcui: m.rxcui, name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity, doses_per_day: m.doses_per_day }));
   }
   const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
   if (!docs.length && !meds.length) return;
@@ -16113,7 +16147,7 @@ async function qbCmsDrugCheck_() {
   if (!(window._qbCmsMeds || []).length) {
     const lists = await qbLoadClientLists_();
     window._qbCmsMeds = (lists.medications || []).filter(m => m.rxcui)
-      .map(m => ({ rxcui: String(m.rxcui), name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity }));
+      .map(m => ({ rxcui: String(m.rxcui), name: m.name, days_supply: qbMedDays_(m), quantity: m.quantity, doses_per_day: m.doses_per_day }));
   }
   const meds = window._qbCmsMeds || [];
   if (!meds.length) return;

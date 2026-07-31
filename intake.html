@@ -381,18 +381,30 @@ function renderPickerField_(id, def, prefillVal) {
     <div id="pk_c_${id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
     <input type="hidden" name="${id}" id="f_${id}">
     <input type="hidden" name="${id}_struct" id="f_${id}_struct">
-    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${isMed ? 'Pick from the official medication list \u2014 it lets us check drug coverage on every plan for you. Then tell us how much you pick up at a time, because a 90-day refill often costs less than three monthly ones.' : 'Pick from the official provider registry \u2014 it lets us check which plans include your doctors.'}</div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">${isMed ? 'Pick from the official medication list \u2014 it lets us check drug coverage on every plan for you. Then, from the label: how many you take a day and how many you get each time. A 90-day refill often costs less than three monthly ones.' : 'Pick from the official provider registry \u2014 it lets us check which plans include your doctors.'}</div>
   </div>`;
 }
 
-// How much they pick up at a time. It decides how many times a year they pay
-// a copay, so it moves the yearly figure more than almost anything else.
-function pickerDays_(x) {
-  const d = Number(x && x.days_supply);
-  return (d === 60 || d === 90) ? d : 30;
+// People know what is on the bottle: how many a day, and how many they got.
+// The supply is those two divided, snapped to the sizes plans price. It
+// decides how many times a year they pay a copay, which moves the yearly
+// figure more than almost anything else.
+function medDaysFrom_(quantity, dosesPerDay) {
+  const q = Number(quantity), d = Number(dosesPerDay);
+  if (!(q > 0) || !(d > 0)) return null;
+  const days = q / d;
+  return [30, 60, 90].reduce((best, n) =>
+    Math.abs(n - days) < Math.abs(best - days) ? n : best, 30);
 }
-function pickerSetDays_(id, i, days) {
-  if (_pickers[id][i]) _pickers[id][i].days_supply = Number(days) || 30;
+function pickerDays_(x) {
+  return medDaysFrom_(x && x.quantity, x && x.doses_per_day) || 30;
+}
+function pickerSetNum_(id, i, field, value) {
+  const x = _pickers[id][i];
+  if (!x) return;
+  const n = parseFloat(value);
+  x[field] = isNaN(n) || n <= 0 ? null : n;
+  x.days_supply = pickerDays_(x);
   pickerSync_(id);
 }
 
@@ -401,10 +413,16 @@ function pickerSync_(id) {
   const isMed = id === 'med_medications';
   chips.innerHTML = _pickers[id].map((x, i) =>
     `<span style="display:inline-flex;align-items:center;gap:6px;background:#eef2f7;border-radius:999px;padding:4px 12px;font-size:13px;">${x.name.replace(/</g,'&lt;')}
-      ${isMed ? `<select onchange="pickerSetDays_('${id}',${i},this.value)" aria-label="How many days each refill lasts"
-          style="width:auto;padding:1px 4px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;">
-          ${[30, 60, 90].map(d => `<option value="${d}"${pickerDays_(x) === d ? ' selected' : ''}>${d}-day supply</option>`).join('')}
-        </select>` : ''}
+      ${isMed ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#64748b;">
+          <input type="number" min="0" step="any" value="${x.doses_per_day == null ? '' : x.doses_per_day}" placeholder="2"
+            aria-label="How many you take a day" onchange="pickerSetNum_('${id}',${i},'doses_per_day',this.value)"
+            style="width:38px;padding:1px 3px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;" />a day
+          <input type="number" min="0" step="any" value="${x.quantity == null ? '' : x.quantity}" placeholder="qty"
+            aria-label="How many you get each time" onchange="pickerSetNum_('${id}',${i},'quantity',this.value)"
+            style="width:48px;padding:1px 3px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;" />each time
+          ${medDaysFrom_(x.quantity, x.doses_per_day)
+            ? `<strong style="color:#15803d;">= ${medDaysFrom_(x.quantity, x.doses_per_day)}-day supply</strong>` : ''}
+        </span>` : ''}
       <button type="button" onclick="_pickers['${id}'].splice(${i},1);pickerSync_('${id}')" style="background:none;border:none;cursor:pointer;color:#64748b;">&#10005;</button></span>`).join('');
   document.getElementById('f_' + id).value = _pickers[id].map(x => x.name).join(', ');
   document.getElementById('f_' + id + '_struct').value = JSON.stringify(_pickers[id]);
@@ -704,7 +722,9 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
         contact_id: contactId, npi: String(d.npi), name: d.name || '(unnamed)', source: 'intake' })));
       await postRows('client_medications', md.map(m => ({
         contact_id: contactId, rxcui: String(m.rxcui), name: m.name || '(unnamed)', source: 'intake',
-        days_supply: pickerDays_(m) })));
+        days_supply: pickerDays_(m),
+        quantity: m.quantity == null ? null : Number(m.quantity),
+        doses_per_day: m.doses_per_day == null ? null : Number(m.doses_per_day) })));
       if (Object.keys(prof).length) {
         prof.profile_updated_at = now;
         // Direct fetch, not supa(): an anon visitor may WRITE these columns but
