@@ -15776,6 +15776,14 @@ async function qbCmsDrugCheck_() {
   const meds = window._qbCmsMeds || [];
   if (!meds.length) return;
 
+  if (window._qbPartDCap === undefined) {
+    try {
+      const { data: cfg } = await supabaseClient.from('plan_year_config')
+        .select('part_d_oop_cap').eq('plan_year', window._qbCmsYear || new Date().getFullYear()).maybeSingle();
+      window._qbPartDCap = (cfg && Number(cfg.part_d_oop_cap)) || null;
+    } catch (e) { window._qbPartDCap = null; }
+  }
+
   window._qbCmsDrugBusy = true;
   qbCmsOptionCardsPaint_();
   try {
@@ -15827,7 +15835,18 @@ async function qbCmsDrugCheck_() {
       });
       const prem = Number(cmsPremium_(p)) || 0;
       p._estMonthly = monthly;
-      p._estYear = (prem + monthly) * 12;
+
+      // Once they reach the year's out-of-pocket limit, covered drugs cost
+      // them nothing more \u2014 so the drug half of the estimate stops there.
+      // With no figure on file we apply no cap rather than inventing one.
+      const cap = window._qbPartDCap;
+      let drugYear = monthly * 12;
+      p._estCapMonth = null;
+      if (cap && monthly > 0 && drugYear > cap) {
+        drugYear = cap;
+        p._estCapMonth = Math.ceil(cap / monthly);   // the month they get there
+      }
+      p._estYear = prem * 12 + drugYear;
     });
   } catch (e) {
     console.error('drug check:', e);
@@ -16106,8 +16125,12 @@ function pdpCardHtml_(p) {
           premium ${money(cmsPremium_(p))}/mo${p._estMonthly ? ' + ' + money(p._estMonthly) + '/mo in copays' : ' \u00b7 their drugs cost nothing per fill'}${
             p._estMissing ? ' \u00b7 <strong>' + p._estMissing + ' drug' + (p._estMissing === 1 ? '' : 's') + ' not on this list</strong>, so not counted' : ''}${
             p._estCoins ? ' \u00b7 <strong>one or more priced as a % of the drug\u2019s cost</strong>, which we cannot total' : ''}${
-            Number(p.drug_deductible) ? ' \u00b7 before the ' + money(p.drug_deductible) + ' deductible' : ''}
-        </div>
+            Number(p.drug_deductible) ? ' \u00b7 before the ' + money(p.drug_deductible) + ' deductible' : ''}${
+            p._estCapMonth ? ' \u00b7 <strong>reaches the yearly out-of-pocket limit around month ' + p._estCapMonth
+              + '</strong>, so covered drugs cost nothing after that' : ''}</div>
+        ${!window._qbPartDCap ? `<div style="font-size:10px;color:var(--text-warning);margin-top:3px;">
+          No Part D out-of-pocket limit on file for this year \u2014 a heavy drug list will read higher than it really is.
+          Set it in Admin \u2192 plan year config.</div>` : ''}
       </div>` : ''}
 
       <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-top:10px;">
