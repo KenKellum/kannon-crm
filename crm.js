@@ -12654,7 +12654,7 @@ async function productDocCopy_(productId) {
 function carrierQuotingUrl_(carrierId, productId) {
   const appt = (window._qbAppts || []).find(a => a.carrier_id === carrierId && a.is_active !== false);
   if (appt && appt.quoting_url) return { url: appt.quoting_url, whose: 'your page' };
-  const prod = (window._qbProducts || []).find(p => p.id === productId);
+  const prod = (window._qbProds || []).find(p => p.id === productId);
   if (prod && prod.quoting_url) return { url: prod.quoting_url, whose: 'the product page' };
   const car = (window._qbCarriers || []).find(c => c.id === carrierId);
   if (car && car.broker_portal_url) return { url: car.broker_portal_url, whose: 'the broker portal' };
@@ -12689,11 +12689,16 @@ function qbQuoteLinkPaint_(i) {
   const prod = (window._qbProds || []).find(p => p.id === prodId);
   const st = (typeof _acaClientState_ === 'function') ? _acaClientState_() : '';
   const fit = prod ? productFit_(prod, st, carId) : { warnings: [] };
+  // Who actually pays the claim is often not the name on the brochure, and
+  // clients ask. Say it wherever the product is in play.
+  const meta = (prod && prod.metadata) || {};
+  const uw = meta.underwriter && meta.underwriter !== (prod && prod.name)
+    ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Underwritten by <strong>${escWeb(meta.underwriter)}</strong>${meta.policy_form ? ' · form ' + escWeb(meta.policy_form) : ''}</div>` : '';
   const broch = prodId
     ? ` <a href="#" onclick="event.preventDefault();productDocOpen_('${escWeb(prodId)}')" style="font-size:11px;color:var(--link);margin-left:8px;">\u{1F4C4} Brochure</a>`
       + ` <a href="#" onclick="event.preventDefault();productDocCopy_('${escWeb(prodId)}')" style="font-size:11px;color:var(--link);margin-left:6px;">copy link for the client</a>`
     : '';
-  host.innerHTML = line + broch + fit.warnings.map(w =>
+  host.innerHTML = line + broch + uw + fit.warnings.map(w =>
     `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:5px;font-size:11.5px;">⚠️ ${w.text}</div>`).join('');
 }
 
