@@ -12638,6 +12638,10 @@ async function pwSave_() {
         compliance_notes: shared.compliance_notes || [],
         dimensions: p.dimensions || {},
         facts: p.facts || {},
+        network: p.network || null,
+        prescription: p.prescription || null,
+        oop_includes_deductible: (p.oop_includes_deductible === true || p.oop_includes_deductible === false)
+          ? p.oop_includes_deductible : null,
         underwriter: carrier.underwriter || null,
         policy_form: carrier.policy_form || null,
         from_document: _pw.docs[0] || null,
@@ -13078,6 +13082,7 @@ function ppCardHtml_(p) {
 
     <div style="min-height:34px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;">${p.notes ? escWeb(p.notes) : ''}</div>
     <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
+    <div style="min-height:18px;">${ppRxHtml_(p)}</div>
 
     <div style="min-height:52px;margin-top:5px;">${facts}</div>
 
@@ -13122,6 +13127,23 @@ function ppNetworkHtml_(p, big) {
     ${url ? `<a href="${escWeb(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link);margin-left:6px;">check a doctor &#8599;</a>` : ''}
     ${big && n.size ? `<div style="margin-top:2px;">${escWeb(n.size)}</div>` : ''}
   </div>`;
+}
+
+// Whether the plan pays anything toward prescriptions. Many short-term plans
+// pay nothing, and a discount card is not a benefit: it does not pay a claim.
+function ppRxHtml_(p, big) {
+  const rx = (ppMeta_(p) || {}).prescription;
+  const fact = ((ppMeta_(p) || {}).facts || {}).pharmacy;
+  const size = big ? '13' : '11';
+  if (!rx && !fact) return '';
+  if (!rx) return `<div style="font-size:${size}px;color:var(--text-muted);">&#128138; ${escWeb(String(fact))}</div>`;
+  if (rx.discount_card_only) return `<div style="font-size:${size}px;color:var(--text-warning);">&#128138; Discount card only &mdash; not a drug benefit</div>`;
+  if (rx.has_benefit === false) return `<div style="font-size:${size}px;color:var(--text-muted);">&#128138; No prescription coverage</div>`;
+  const bits = [rx.copay, rx.generics_only ? 'generics only' : null,
+                rx.maximum_benefit ? 'max ' + rx.maximum_benefit : null].filter(Boolean).map(x => escWeb(String(x)));
+  return `<div style="font-size:${size}px;color:var(--text-secondary);">&#128138;
+    ${escWeb(rx.summary || 'Prescription coverage')}${bits.length && !rx.summary ? ' &middot; ' + bits.join(' &middot; ') : ''}
+    ${rx.is_rider ? '<span style="color:var(--text-warning);"> (separate rider)</span>' : ''}</div>`;
 }
 
 function ppFmt_(v, d) {
@@ -13335,6 +13357,10 @@ function openProductCompare_() {
         ${listRow('Limits and exclusions', 'limitations', 'warning')}
         ${listRow('Eligibility', 'eligibility')}
         ${listRow('Say this out loud', 'compliance_notes', 'warning')}
+        <tr><th style="${TH}">Network</th>${picked.map(p =>
+          `<td style="${TD}">${ppNetworkHtml_(p, true) || dash}</td>`).join('')}</tr>
+        <tr><th style="${TH}">Prescriptions</th>${picked.map(p =>
+          `<td style="${TD}">${ppRxHtml_(p, true) || dash}</td>`).join('')}</tr>
         <tr><th style="${TH}">Underwritten by</th>${picked.map(p =>
           `<td style="${TD}">${escWeb(ppMeta_(p).underwriter || carrierOf(p.carrier_id))}</td>`).join('')}</tr>
         <tr><th style="${TH}"></th>${picked.map(p => {
