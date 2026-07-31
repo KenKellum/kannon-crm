@@ -155,6 +155,7 @@
       <div class="agent-line" id="q-agent"></div>
       <div class="valid" id="q-valid"></div>
       <div id="q-inputs"></div>
+      <div id="q-vs"></div>
       <div class="howto" id="q-howto"></div>
       <div class="grid" id="opts"></div>
       <a class="ask" id="q-ask" href="#">Questions? Contact me directly &rarr;</a>
@@ -303,6 +304,136 @@ function renderBasis() {
           tell me — it changes the prices${qi.income != null ? ' and the tax credit' : ''}.
         </div>
       </div>` : ''}
+    </div>`;
+}
+
+// A short-term plan next to a Marketplace plan, both from this quote.
+//
+// It only appears when the quote holds both, so it answers a question the
+// client is already asking rather than raising one. The rows that explain the
+// price gap sit at the top and cannot be collapsed — on premium alone a
+// short-term plan looks like a bargain, and that is the misreading this is
+// here to prevent.
+const VS_STRUCTURAL = [
+  ['Conditions you already have', 'Not covered', 'Covered'],
+  ['Can you be turned down for health?', 'Yes', 'No'],
+  ['The ten essential health benefits', 'Not required', 'All of them, required'],
+  ['A yearly limit on what you pay', 'May be none', 'Required'],
+  ['Help with the premium from the government', 'Never', 'Often, depending on income'],
+  ['Can you renew it?', 'No — and ending it does not let you join a Marketplace plan', 'Yes, every year'],
+];
+
+const VS_BENEFITS = [
+  ['office_visit_primary', 'Primary care visit'],
+  ['office_visit_specialist', 'Specialist visit'],
+  ['preventive_care', 'Preventive care'],
+  ['urgent_care', 'Urgent care'],
+  ['emergency_room', 'Emergency room'],
+  ['inpatient_hospital', 'Hospital stay'],
+  ['outpatient_surgery', 'Outpatient surgery'],
+  ['diagnostic_lab', 'Diagnostic and lab'],
+  ['imaging', 'Imaging'],
+  ['mental_health', 'Mental health'],
+  ['maternity', 'Maternity'],
+  ['prescription_drugs', 'Prescriptions'],
+];
+
+const VS_ACA_MAP = [
+  [/primary care/i, 'office_visit_primary'], [/specialist/i, 'office_visit_specialist'],
+  [/preventive/i, 'preventive_care'], [/urgent care/i, 'urgent_care'],
+  [/emergency room|emergency services/i, 'emergency_room'],
+  [/inpatient hospital|hospital stay/i, 'inpatient_hospital'],
+  [/outpatient (facility|surgery)|ambulatory surgery/i, 'outpatient_surgery'],
+  [/laborator/i, 'diagnostic_lab'], [/x-ray|imaging/i, 'imaging'],
+  [/mental|behavioral/i, 'mental_health'],
+  [/maternity|prenatal|delivery/i, 'maternity'], [/drug/i, 'prescription_drugs'],
+];
+
+let vsPick = null;
+
+function vsAcaOptions() {
+  return allOpts.filter(o => (o.plan_meta || {}).src === 'aca');
+}
+function vsStmOptions() {
+  return allOpts.filter(o => o.line === 'Short-Term Medical');
+}
+
+function vsAcaCell(o, key) {
+  for (const b of ((o.plan_meta || {}).benefits || [])) {
+    const hit = VS_ACA_MAP.find(([re]) => re.test(String(b.name || '')));
+    if (hit && hit[1] === key) {
+      if (b.covered === false) return '<span style="color:#b45309;">Not covered</span>';
+      return esc(b.cost || 'Covered');
+    }
+  }
+  return null;
+}
+function vsStmCell(o, key) {
+  const b = ((o.plan_meta || {}).benefits || {})[key];
+  if (!b) return null;
+  if (typeof b === 'string') return esc(b);
+  if (b.covered === false) return '<span style="color:#b45309;">Not covered</span>';
+  return esc([b.value, b.limit].filter(Boolean).join(' · ')) || 'Covered';
+}
+
+function renderVsPanel() {
+  const host = document.getElementById('q-vs');
+  if (!host) return;
+  const stm = vsStmOptions(), aca = vsAcaOptions();
+  if (!stm.length || !aca.length) { host.innerHTML = ''; return; }
+  if (vsPick == null) vsPick = aca[0].id;
+  const a = aca.find(x => x.id === vsPick) || aca[0];
+  const s = stm[0];
+
+  const TH = 'text-align:left;font-size:12.5px;font-weight:600;color:#64748b;padding:9px 12px;border-bottom:1px solid #e2e8f0;vertical-align:top;';
+  const TD = 'padding:9px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;vertical-align:top;line-height:1.55;';
+  const dash = '<span style="color:#94a3b8;">—</span>';
+
+  const benefitRows = VS_BENEFITS.filter(([k]) => vsStmCell(s, k) || vsAcaCell(a, k))
+    .map(([k, label]) => `<tr><th style="${TH}">${esc(label)}</th>
+      <td style="${TD}">${vsStmCell(s, k) || dash}</td>
+      <td style="${TD}">${vsAcaCell(a, k) || dash}</td></tr>`).join('');
+
+  host.innerHTML = `
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin:6px 0 18px;overflow:hidden;">
+      <div style="padding:13px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#64748b;">How these two compare</span>
+        ${aca.length > 1 ? `<select onchange="vsPick=this.value;renderVsPanel()" style="font-size:13px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:7px;">
+          ${aca.map(o => `<option value="${esc(o.id)}"${o.id === a.id ? ' selected' : ''}>${esc(o.display_name)}</option>`).join('')}
+        </select>` : ''}
+      </div>
+
+      <div style="padding:12px 18px;background:#fff7ed;border-bottom:1px solid #fdba74;font-size:12.5px;color:#7c2d12;line-height:1.6;">
+        These are <strong>two different kinds of coverage</strong>, not two versions of the same one.
+        The rows above the line are what a Marketplace plan must do and a short-term plan need not —
+        and they are most of the reason for any difference in price.
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table style="border-collapse:collapse;width:100%;min-width:560px;">
+          <thead><tr><th style="${TH}"></th>
+            <td style="${TD}font-weight:800;">${esc(s.display_name)}<div style="font-size:11.5px;color:#64748b;font-weight:400;">short-term medical</div></td>
+            <td style="${TD}font-weight:800;">${esc(a.display_name)}<div style="font-size:11.5px;color:#64748b;font-weight:400;">Marketplace plan</div></td>
+          </tr></thead>
+          <tbody>
+            ${VS_STRUCTURAL.map(([label, x, y]) => `<tr>
+              <th style="${TH}">${esc(label)}</th>
+              <td style="${TD}color:#b45309;">${esc(x)}</td>
+              <td style="${TD}color:#15803d;">${esc(y)}</td></tr>`).join('')}
+            <tr><th style="${TH}border-top:2px solid #cbd5e1;">Monthly premium</th>
+              <td style="${TD}border-top:2px solid #cbd5e1;font-weight:800;">$${Number(s.monthly_premium || 0).toFixed(2)}</td>
+              <td style="${TD}border-top:2px solid #cbd5e1;font-weight:800;">$${Number(a.monthly_premium || 0).toFixed(2)}</td></tr>
+            ${benefitRows}
+          </tbody>
+        </table>
+      </div>
+
+      <div style="padding:12px 18px;font-size:11.5px;color:#64748b;line-height:1.6;border-top:1px solid #e2e8f0;">
+        This compares only the two plans quoted here, not everything available to you. Short-term medical is
+        not ACA-compliant coverage. Figures are taken from the plan as quoted and from the carrier's own
+        brochure — <strong>the policy you are issued governs</strong>, not this summary. Ask me anything that
+        looks unclear.
+      </div>
     </div>`;
 }
 
@@ -1086,6 +1217,7 @@ async function init() {
   else if (quote.agent_phone) ask.href = 'tel:' + quote.agent_phone.replace(/[^0-9+]/g, '');
 
   renderCards();
+  renderVsPanel();
 
   let fine = 'Premiums shown are quotes only and are subject to carrier verification, underwriting where applicable, and final approval. No coverage is bound, changed, or cancelled by viewing this page or expressing interest.';
   // A Medicare plan anywhere on the quote triggers the CMS notices — a mixed

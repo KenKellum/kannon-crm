@@ -13157,6 +13157,8 @@ function ppCardHtml_(p) {
         <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="flex:1;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}" onclick="ppAdd_('${escWeb(p.id)}')">
           ${slot >= 0 ? '✓ Option ' + qbOptionNo_(slot) : '＋ Add'}</button>
         <button class="btn btn-outline btn-sm" onclick="ppDetail_('${escWeb(p.id)}')">Details</button>
+        ${ppAcaOnQuote_().length ? `<button class="btn btn-outline btn-sm" title="Against the Marketplace plan already on this quote"
+          onclick="ppVsAca_('${escWeb(p.id)}')">vs ACA</button>` : ''}
       </div>
     </div>
   </div>`;
@@ -13439,6 +13441,153 @@ function ppAgentBar_(prof) {
   if (agentStates_(me).has(prof.state)) return '';
   return bar('You are not showing a license in <strong>' + escWeb(prof.state) + '</strong>. You can quote '
     + 'everything here, but you cannot write any of it until that is in place.');
+}
+
+// ---------------------------------------------------------------------------
+// SHORT-TERM AGAINST A MARKETPLACE PLAN
+//
+// Only ever against a plan already on this quote, because that is the one the
+// client is actually weighing. The structural rows sit at the top and are not
+// collapsible: a copay table alone makes these look like two versions of the
+// same thing, and they are not. The wording follows the federal notice these
+// policies are required to carry.
+// ---------------------------------------------------------------------------
+
+// healthcare.gov names its benefits at length and inconsistently, so match on
+// what the name contains rather than on an exact string.
+const ACA_BENEFIT_MAP = [
+  [/primary care/i, 'office_visit_primary'],
+  [/specialist/i, 'office_visit_specialist'],
+  [/preventive/i, 'preventive_care'],
+  [/urgent care/i, 'urgent_care'],
+  [/emergency room|emergency services/i, 'emergency_room'],
+  [/ambulance|emergency transport/i, 'ambulance'],
+  [/inpatient hospital|hospital stay/i, 'inpatient_hospital'],
+  [/outpatient (facility|surgery)|ambulatory surgery/i, 'outpatient_surgery'],
+  [/laborator/i, 'diagnostic_lab'],
+  [/x-ray|imaging/i, 'imaging'],
+  [/therapy|rehabilitat/i, 'therapy_rehab'],
+  [/mental|behavioral/i, 'mental_health'],
+  [/substance/i, 'substance_use'],
+  [/maternity|prenatal|delivery/i, 'maternity'],
+  [/durable medical/i, 'durable_medical_equipment'],
+  [/transplant/i, 'organ_transplant'],
+  [/drug/i, 'prescription_drugs'],
+];
+
+function acaBenefitRow_(plan, key) {
+  const list = (plan && plan.benefits) || [];
+  for (const b of list) {
+    const hit = ACA_BENEFIT_MAP.find(([re]) => re.test(String(b.name || '')));
+    if (hit && hit[1] === key) {
+      if (b.covered === false) return '<span style="color:var(--text-warning);">Not covered</span>';
+      return escWeb(b.cost || 'Covered');
+    }
+  }
+  return null;
+}
+
+// The Marketplace plans on this quote, whichever way they were added.
+function ppAcaOnQuote_() {
+  const out = [];
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const live = (window._qbAcaSel || {})[i];
+    const saved = ((window._qbRequoteOpt || {})[i] || {}).plan_meta;
+    const p = live || (saved && saved.src === 'aca' ? saved : null);
+    if (!p) continue;
+    const nm = (document.getElementById('qb-name-' + i) || {}).value;
+    out.push({ slot: i, label: 'Option ' + qbOptionNo_(i) + ' \u00b7 ' + (nm || p.name || 'Marketplace plan'), plan: p });
+  }
+  return out;
+}
+
+// What a Marketplace plan must do that a short-term plan need not. These are
+// the rows that explain the price gap, so they are never behind a toggle.
+const PP_STRUCTURAL = [
+  ['Pre-existing conditions', 'Not covered', 'Covered'],
+  ['Can you be turned down for health?', 'Yes', 'No'],
+  ['The ten essential health benefits', 'Not required', 'All of them, required'],
+  ['A yearly limit on what you pay', 'May be none', 'Required'],
+  ['Premium tax credit', 'Never', 'Often, depending on income'],
+  ['Renewable', 'No \u2014 and ending it is not a qualifying life event', 'Yes, every year'],
+];
+
+function ppVsAca_(prodId) {
+  const pp = ppState_();
+  const p = (pp.products || []).find(x => x.id === prodId);
+  const acaList = ppAcaOnQuote_();
+  if (!p) return;
+  if (!acaList.length) { showToast('No Marketplace plan on this quote to compare against.'); return; }
+  pp.vsAca = pp.vsAca || acaList[0].slot;
+  const pick = acaList.find(a => a.slot === pp.vsAca) || acaList[0];
+  const a = pick.plan;
+  pp.vsProd = prodId;
+
+  const TH = 'text-align:left;font-size:12px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;min-width:200px;';
+  const TD = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:200px;line-height:1.55;';
+  const dash = '<span style="color:var(--text-muted);">\u2014</span>';
+  const money = v => (v == null || v === '') ? dash : ('$' + Number(v).toLocaleString('en-US'));
+
+  const benefitRows = PP_BENEFITS.filter(([k]) => ppBenefitCell_(p, k) || acaBenefitRow_(a, k))
+    .map(([k, label]) => `<tr><th style="${TH}">${escWeb(label)}</th>
+      <td style="${TD}">${ppBenefitCell_(p, k) || dash}</td>
+      <td style="${TD}">${acaBenefitRow_(a, k) || dash}</td></tr>`).join('');
+
+  ppOverlay_('qb-pp-vsaca', '\u2696\ufe0f ' + escWeb(p.name) + ' against a Marketplace plan', `
+    <div style="max-width:900px;">
+      <label style="font-size:11px;margin:0 0 4px;">Compare against</label>
+      <select onchange="ppState_().vsAca = Number(this.value); ppVsAca_('${escWeb(prodId)}')" style="width:auto;min-width:260px;">
+        ${acaList.map(x => `<option value="${x.slot}"${x.slot === pick.slot ? ' selected' : ''}>${escWeb(x.label)}</option>`).join('')}
+      </select>
+
+      <div class="pk-bar warn" style="border-radius:9px;border:1px solid;margin:12px 0;">
+        These are different kinds of coverage, not two versions of the same one. The rows below the line
+        are what a Marketplace plan must do and a short-term plan need not \u2014 they are most of the reason
+        for any difference in price.
+      </div>
+
+      <table style="border-collapse:collapse;width:100%;">
+        <thead><tr><th style="${TH}"></th>
+          <td style="${TD}font-weight:800;">${escWeb(p.name)}<div style="font-size:11px;color:var(--text-muted);font-weight:400;">short-term medical</div></td>
+          <td style="${TD}font-weight:800;">${escWeb(a.name || 'Marketplace plan')}<div style="font-size:11px;color:var(--text-muted);font-weight:400;">${escWeb(a.metal || 'ACA')}${a.issuer ? ' \u00b7 ' + escWeb(a.issuer) : ''}</div></td>
+        </tr></thead>
+        <tbody>
+          ${PP_STRUCTURAL.map(([label, stm, aca]) => `<tr>
+            <th style="${TH}">${escWeb(label)}</th>
+            <td style="${TD}color:var(--text-warning);">${escWeb(stm)}</td>
+            <td style="${TD}color:var(--text-success);">${escWeb(aca)}</td></tr>`).join('')}
+
+          <tr><th style="${TH}border-top:2px solid var(--border);">Deductible</th>
+            <td style="${TD}border-top:2px solid var(--border);">${ppDeductibleSaid_(p)}</td>
+            <td style="${TD}border-top:2px solid var(--border);">${money(a.deductible)}</td></tr>
+          <tr><th style="${TH}">Yearly out-of-pocket limit</th>
+            <td style="${TD}"><span style="color:var(--text-warning);">No true limit</span>
+              <div style="font-size:11px;color:var(--text-muted);">coinsurance is capped; deductible, copays and anything excluded are on top</div></td>
+            <td style="${TD}">${money(a.moop)}<div style="font-size:11px;color:var(--text-muted);">a real ceiling on covered care</div></td></tr>
+          ${benefitRows}
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--text-muted);margin-top:12px;line-height:1.55;">
+        Marketplace figures come from the plan as quoted. Short-term figures come from the carrier's brochure.
+        The issued policy governs in both cases.
+      </div>
+    </div>`);
+}
+
+// The deductible on a short-term plan depends on which combination is chosen,
+// so say the chosen one, or the range when nothing is chosen yet.
+function ppDeductibleSaid_(p) {
+  const dims = ppDims_(p);
+  for (const [k, d] of Object.entries(dims)) {
+    if (!ppCombos_(d)) continue;
+    const chosen = (ppChoice_(p)[k] || {});
+    const dedPart = ppParts_(d).find(pt => /deduct/i.test(pt));
+    if (!dedPart) continue;
+    if (chosen[dedPart]) return escWeb(String(chosen[dedPart]));
+    const all = [...new Set((ppCombos_(d) || []).map(c => String(c[dedPart])))];
+    return escWeb(all.join(' / ')) + '<div style="font-size:11px;color:var(--text-muted);">choose one on the card</div>';
+  }
+  return '<span style="color:var(--text-muted);">\u2014</span>';
 }
 
 function renderProductPicker_() {
@@ -14216,6 +14365,12 @@ async function openQuoteBuilder(dealId, opts) {
           sbc: d.benefits_url || null, brochure: d.brochure_url || null,
           formulary: d.formulary_url || null, network: d.network_url || null,
         };
+        // and what the plan actually pays, so it can be compared against a
+        // short-term plan later without going back to the Marketplace
+        o.plan_meta.benefits = (d.benefits || []).filter(b => b && b.name).slice(0, 40).map(b => ({
+          name: String(b.name), covered: b.covered !== false,
+          cost: (b.cost_sharings || []).map(cs => cs.display_string).filter(Boolean).join('; ') || null,
+        }));
       }).catch(() => {});
       await Promise.race([
         Promise.all(needLinks.map(grab)),
