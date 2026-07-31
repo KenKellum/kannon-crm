@@ -10556,28 +10556,36 @@ function mgGridHtml_(letters) {
 function mgCardHtml_(p) {
   const [letter, title, bullets] = p;
   const slot = mgAddedSlot_(letter);
-  const rate = (window._qbMgRates || {})[letter];
+  const qs = (window._qbMgQuotes || {})[letter] || [];
+  const manualOpen = !qs.length || (window._qbMgManualOpen || {})[letter];
+  const desc = title.split('\u2014')[1] ? title.split('\u2014')[1].trim() : title;
+
   return `<div class="pk-card ${slot >= 0 ? 'is-selected' : ''}"
       style="border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;height:100%;cursor:pointer;"
       onclick="openMgDetail_('${escWeb(letter)}')">
-      ${slot >= 0 ? `<div class="pk-sel-badge">\u2713 OPTION ${qbOptionNo_(slot)}</div>` : ''}
-      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
-        <span style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Plan</span>
-        <span style="font-size:22px;font-weight:800;color:var(--accent,#c8a84b);line-height:1;">${escWeb(letter)}</span>
-        <span style="font-size:13px;font-weight:700;">${escWeb(title.split('\u2014')[1] ? title.split('\u2014')[1].trim() : title)}</span>
+
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;">
+        <button type="button" class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
+          onclick="event.stopPropagation();openMgDetail_('${escWeb(letter)}')">Plan details</button>
         <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="event.stopPropagation();">
           <input type="checkbox" ${(window._qbMgCmp || new Set()).has(letter) ? 'checked' : ''} onclick="event.stopPropagation();"
             onchange="mgCmpToggle_('${escWeb(letter)}', this)" style="width:13px;height:13px;" /> \u2696\ufe0f Compare</label>
       </div>
+
+      ${slot >= 0 ? `<div class="pk-sel-badge">\u2713 OPTION ${qbOptionNo_(slot)}</div>` : ''}
+      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Plan</span>
+        <span style="font-size:22px;font-weight:800;color:var(--accent,#c8a84b);line-height:1;">${escWeb(letter)}</span>
+        <span style="font-size:13px;font-weight:700;">${escWeb(desc)}</span>
+      </div>
+
       <ul style="list-style:none;margin:9px 0 0;padding:0;">
         ${bullets.map(b => `<li style="font-size:12px;line-height:1.5;color:var(--text-secondary);padding:2px 0 2px 16px;position:relative;">
           <span style="position:absolute;left:0;color:var(--text-success);font-weight:800;">\u00b7</span>${escWeb(b)}</li>`).join('')}
       </ul>
-      ${(() => {
-        const qs = (window._qbMgQuotes || {})[letter] || [];
-        if (!qs.length) return mgManualRow_(letter);
-        return `<div style="margin-top:9px;">
-          <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);">
+
+      <div style="margin-top:auto;padding-top:10px;">
+        ${qs.length ? `<div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);">
             ${qs.length} carrier${qs.length === 1 ? '' : 's'} \u00b7 cheapest first</div>
           ${qs.map(q => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border);">
             <div style="flex:1;min-width:0;">
@@ -10587,226 +10595,23 @@ function mgCardHtml_(p) {
                 q.chart.household_discount_pct ? ' \u00b7 household \u2212' + q.chart.household_discount_pct + '%' : ''}</div>
             </div>
             <div style="font-size:15px;font-weight:800;color:var(--accent,#1d3557);white-space:nowrap;">$${q.rate.toFixed(2)}</div>
-            <button type="button" class="btn ${mgAddedSlot_(letter) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
+            <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
               onclick="event.stopPropagation();qbMgAddPlan_('${escWeb(letter)}','${escWeb(q.product_id)}')">Add</button>
-          </div>`).join('')}
-          ${(window._qbMgManualOpen || {})[letter]
-            ? mgManualRow_(letter, true)
-            : `<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;font-size:11px;"
-                 onclick="event.stopPropagation();mgManualOpen_('${escWeb(letter)}')">+ Another carrier / type a rate</button>`}
-        </div>`;
-      })()}
-      <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
-        <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
-          onclick="event.stopPropagation();qbMgAddPlan_('${escWeb(letter)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
-        <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();openMgDetail_('${escWeb(letter)}')">Plan details</button>
+          </div>`).join('')}` : ''}
+
+        ${manualOpen ? mgManualRow_(letter, !!qs.length) : `<button type="button" class="btn btn-outline btn-sm"
+            style="width:100%;font-size:11px;margin-top:8px;" onclick="event.stopPropagation();mgManualOpen_('${escWeb(letter)}')">
+            + Another carrier / type a rate</button>`}
+
+        ${slot >= 0
+          ? `<button type="button" class="btn btn-outline btn-sm" style="width:100%;margin-top:8px;"
+               onclick="event.stopPropagation();qbMgAddPlan_('${escWeb(letter)}')">\u2713 Added \u2014 remove</button>`
+          : (qs.length ? '' : `<button type="button" class="btn btn-primary btn-sm" style="width:100%;margin-top:8px;"
+               onclick="event.stopPropagation();qbMgAddManual_('${escWeb(letter)}')">+ Add to quote</button>`)}
       </div>
     </div>`;
 }
 
-window._qbMgCmp = window._qbMgCmp || new Set();
-
-// A product's code carries the letter: "Plan G", "HD Plan G".
-function mgLetterOf_(product) {
-  const code = String(product.product_code || product.name || '');
-  const m = code.match(/^(HD )?Plan\s+([A-N])$/i);
-  if (!m) return null;
-  return (m[1] ? 'HD' : '') + m[2].toUpperCase();
-}
-
-// For every lettered plan, which of YOUR carriers quote it in their state and
-// at what price. One pass over the charts rather than a query per product.
-async function qbMgLoadRates_() {
-  const prof = qbMgProfile_();
-  window._qbMgRates = {};
-  window._qbMgQuotes = {};
-  if (!prof.state || prof.age == null) { if (document.getElementById('qb-mg-picker')) renderMedigapPicker_(); return; }
-
-  const { data: prods } = await supabaseClient.from('carrier_products')
-    .select('id,name,product_code,carrier_id,is_active,line_of_business')
-    .eq('line_of_business', 'Medicare Supplement').eq('is_active', true);
-  const products = (prods || []).filter(p => mgLetterOf_(p));
-  if (!products.length) { if (document.getElementById('qb-mg-picker')) renderMedigapPicker_(); return; }
-
-  const { data: charts } = await supabaseClient.from('rate_charts')
-    .select('*').in('product_id', products.map(p => p.id))
-    .eq('is_active', true).eq('state', prof.state);
-  if (!charts || !charts.length) { if (document.getElementById('qb-mg-picker')) renderMedigapPicker_(); return; }
-
-  const { data: rows } = await supabaseClient.from('rate_rows')
-    .select('*').in('chart_id', charts.map(c => c.id))
-    .lte('age_min', prof.age).gte('age_max', prof.age);
-
-  const carriers = window._qbCarriers || [];
-  const zp = String(prof.zip || '').slice(0, 3);
-  const g = prof.gender === 'F' ? 'F' : 'M';
-
-  products.forEach(p => {
-    const mine = (charts || []).filter(c => c.product_id === p.id);
-    if (!mine.length) return;
-    const chart = mine.find(c => c.zip_prefixes && zp && c.zip_prefixes.split(',').map(x => x.trim()).includes(zp))
-      || mine.find(c => !c.zip_prefixes) || mine[0];
-    const rr = (rows || []).filter(r => r.chart_id === chart.id);
-    const pick = rr.find(r => r.gender === g && r.tobacco === prof.tobacco)
-      || rr.find(r => r.gender === 'U' && r.tobacco === prof.tobacco)
-      || rr.find(r => r.gender === g && !r.tobacco)
-      || rr.find(r => r.gender === 'U' && !r.tobacco);
-    if (!pick) return;
-    const letter = mgLetterOf_(p);
-    const carrier = carriers.find(c => c.id === p.carrier_id);
-    (window._qbMgQuotes[letter] = window._qbMgQuotes[letter] || []).push({
-      letter: letter, product_id: p.id, product_name: p.name,
-      carrier_id: p.carrier_id, carrier_name: (carrier && carrier.name) || 'Carrier',
-      rate: Number(pick.monthly_rate), chart: chart,
-      appointed: !!carrier,
-    });
-  });
-
-  Object.keys(window._qbMgQuotes).forEach(L => {
-    window._qbMgQuotes[L].sort((a, b) => a.rate - b.rate);
-    window._qbMgRates[L] = window._qbMgQuotes[L][0].rate;   // the cheapest, for the card
-  });
-  if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
-}
-
-function mgCmpToggle_(letter, cb) {
-  if (cb.checked) {
-    if (window._qbMgCmp.size >= 4) { cb.checked = false; showToast('Compare up to 4 plans at a time.'); return; }
-    window._qbMgCmp.add(letter);
-  } else window._qbMgCmp.delete(letter);
-  renderMedigapPicker_();
-}
-
-function mgCmpClear_() { window._qbMgCmp.clear(); renderMedigapPicker_(); }
-
-// Built to match the Medicare Advantage comparison, because an agent should
-// not have to learn a different screen for every product line. High-deductible
-// versions get their own column \u2014 they are a real choice, not a footnote.
-function openMgCompare_() {
-  const picked = [...window._qbMgCmp];
-  if (picked.length < 2) { showToast('Tick \u2696\ufe0f Compare on at least 2 plans first.'); return; }
-  const order = ['A','B','C','D','F','HDF','G','HDG','K','L','M','N'];
-  const letters = order.filter(L => picked.includes(L)).concat(picked.filter(L => !order.includes(L)));
-
-  let ov = document.getElementById('qb-mg-compare');
-  if (!ov) {
-    ov = document.createElement('div');
-    ov.id = 'qb-mg-compare';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--surface-0);display:flex;flex-direction:column;';
-    document.body.appendChild(ov);
-  }
-
-  const th = 'position:sticky;left:0;background:var(--surface-0);z-index:2;text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);min-width:230px;';
-  const td = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:170px;text-align:center;';
-  const row = (label, fn) => `<tr><th style="${th}">${label}</th>${letters.map(L => `<td style="${td}">${fn(L)}</td>`).join('')}</tr>`;
-  const baseOf = L => String(L).replace(/^HD/, '');
-  const cheapest = L => {
-    const qs = (window._qbMgQuotes || {})[L] || [];
-    return qs.length ? qs[0] : null;
-  };
-
-  ov.innerHTML = `
-    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="font-weight:800;font-size:15px;">\u2696\ufe0f Comparing ${letters.length} supplement plans</div>
-      <div style="font-size:12px;color:var(--text-muted);">${escWeb(qbMgProfile_().state || '')}${qbMgProfile_().age ? ' \u00b7 age ' + qbMgProfile_().age : ''}</div>
-      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="mgCmpClear_();document.getElementById('qb-mg-compare').style.display='none';">Clear picks</button>
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('qb-mg-compare').style.display='none'">\u2715 Back</button>
-    </div>
-
-    <div style="flex:1;overflow:auto;padding:14px 18px;">
-      <table style="border-collapse:collapse;width:100%;">
-        <thead><tr><th style="${th}"></th>
-          ${letters.map(L => {
-            const q = cheapest(L);
-            const slot = mgAddedSlot_(L);
-            return `<td style="${td}border-bottom:1.5px solid var(--border);">
-              <div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Plan</div>
-              <div style="font-size:24px;font-weight:800;color:var(--accent,#c8a84b);line-height:1.1;">${escWeb(L)}</div>
-              ${String(L).indexOf('HD') === 0 ? '<div style="font-size:10px;color:var(--text-warning);">high deductible</div>' : ''}
-              ${q ? `<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-top:6px;">${escWeb(q.carrier_name)}</div>
-                     <div style="font-size:19px;font-weight:800;color:var(--accent,#1d3557);">$${q.rate.toFixed(2)}<span style="font-size:10px;font-weight:500;color:var(--text-muted);"> /mo</span></div>`
-                  : '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">no rate chart</div>'}
-              <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="width:100%;margin-top:8px;"
-                onclick="qbMgAddPlan_('${escWeb(L)}'${q ? ",'" + escWeb(q.product_id) + "'" : ''});openMgCompare_();">
-                ${slot >= 0 ? '\u2713 On the quote' : '+ Add to quote'}</button>
-            </td>`;
-          }).join('')}
-        </tr></thead>
-        <tbody>
-          ${MEDIGAP_GRID.rows.map(([label, byLetter]) =>
-            row(escWeb(label), L => MEDIGAP_MARK[byLetter[baseOf(L)] || 'none'])).join('')}
-          ${row('Yearly out-of-pocket limit', L => (baseOf(L) === 'K' || baseOf(L) === 'L')
-            ? '<span style="color:var(--text-success);font-weight:800;">\u2713</span>' : MEDIGAP_MARK.none)}
-          ${letters.some(L => String(L).indexOf('HD') === 0)
-            ? row('Yearly deductible first', L => String(L).indexOf('HD') === 0
-              ? '<span style="color:var(--text-warning);font-weight:700;">Yes</span>' : MEDIGAP_MARK.none) : ''}
-          ${letters.some(L => cheapest(L)) ? row('How the price changes', L => {
-            const q = cheapest(L);
-            const t = q && { 'attained-age': 'Rises with age', 'issue-age': 'Set at the age they buy', 'community': 'Same at every age' }[q.chart.rating_method];
-            return t ? escWeb(t) : MEDIGAP_MARK.none;
-          }) : ''}
-        </tbody>
-      </table>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.5;">
-        These benefits are set by federal law \u2014 the same letter covers the same things at every carrier. Plan N also
-        has copays of up to $20 for office visits and $50 for an emergency room visit that does not lead to admission.
-        A high-deductible plan behaves exactly like its letter once the yearly deductible is met.
-      </div>
-    </div>`;
-  ov.style.display = 'flex';
-}
-
-// Everything about one lettered plan, in one place.
-function openMgDetail_(letter) {
-  const p = MEDIGAP_PLANS.find(x => x[0] === letter);
-  if (!p) return;
-  const base = letter.replace(/^HD/, '');
-  let dr = document.getElementById('qb-mg-detail');
-  if (!dr) {
-    dr = document.createElement('div');
-    dr.id = 'qb-mg-detail';
-    dr.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:min(520px,92vw);z-index:99995;background:var(--surface-1);border-left:1px solid var(--border);box-shadow:-12px 0 40px rgba(15,23,42,.18);display:flex;flex-direction:column;';
-    document.body.appendChild(dr);
-  }
-  const rate = (window._qbMgRates || {})[letter];
-  const row = (label, val) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
-      <span style="color:var(--text-muted);">${escWeb(label)}</span><span style="font-weight:600;text-align:right;">${val}</span></div>`;
-  const covered = MEDIGAP_GRID.rows.filter(([, by]) => by[base] && by[base] !== 'none');
-  const notCovered = MEDIGAP_GRID.rows.filter(([, by]) => !by[base] || by[base] === 'none');
-
-  dr.style.display = 'flex';
-  dr.innerHTML = `<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
-      <div style="font-weight:800;font-size:16px;flex:1;min-width:0;">Plan ${escWeb(letter)}</div>
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('qb-mg-detail').style.display='none'">\u2715 Close</button>
-    </div>
-    <div style="padding:16px 20px;overflow:auto;">
-      <div style="font-size:13px;color:var(--text-secondary);line-height:1.55;">${escWeb(p[1])}</div>
-      ${rate != null ? `<div style="font-size:24px;font-weight:800;color:var(--accent,#1d3557);margin-top:10px;">$${Number(rate).toFixed(2)}<span style="font-size:11px;font-weight:500;color:var(--text-muted);"> /mo</span></div>` : ''}
-      ${letter.indexOf('HD') === 0 ? `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:10px;">
-        High-deductible version: they pay everything themselves until the yearly deductible is met, then it behaves
-        exactly like Plan ${escWeb(base)}.</div>` : ''}
-
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin:16px 0 4px;">What it pays</div>
-      ${covered.map(([label, by]) => row(label, MEDIGAP_MARK[by[base]])).join('')}
-      ${base === 'K' || base === 'L' ? row('Yearly out-of-pocket limit', '<span style="color:var(--text-success);font-weight:800;">\u2713</span>') : ''}
-
-      ${notCovered.length ? `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin:16px 0 4px;">What it does not pay</div>
-      ${notCovered.map(([label]) => row(label, '<span style="color:var(--text-muted);">\u2014</span>')).join('')}` : ''}
-
-      <div style="font-size:11px;color:var(--text-muted);margin-top:14px;line-height:1.5;">
-        These benefits are fixed by federal law \u2014 Plan ${escWeb(base)} covers the same at every carrier. Only the
-        premium, the rate increase history and the service differ.
-      </div>
-      <button class="btn ${mgAddedSlot_(letter) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="width:100%;margin-top:14px;"
-        onclick="qbMgAddPlan_('${escWeb(letter)}');openMgDetail_('${escWeb(letter)}');">
-        ${mgAddedSlot_(letter) >= 0 ? '\u2713 On the quote \u2014 remove' : '+ Add Plan ' + escWeb(letter) + ' to the quote'}</button>
-    </div>`;
-}
-
-// Everything needed to quote this letter, on the card itself: who is writing
-// it and for how much. The carrier list is yours, but an agent can always type
-// one we don't have \u2014 the system should never be the reason a quote can't be
-// written.
 function mgManualRow_(letter, secondary) {
   const carriers = (window._qbCarriers || []).slice()
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -10832,8 +10637,6 @@ function mgManualRow_(letter, secondary) {
             onblur="mgManualMoney_('${escWeb(letter)}',this)"
             style="width:96px;padding-left:18px;font-size:12px;text-align:right;" />
         </span>
-        <button type="button" class="btn btn-primary btn-sm"
-          onclick="event.stopPropagation();qbMgAddManual_('${escWeb(letter)}')">+ Add</button>
       </div>
     </div>`;
 }
