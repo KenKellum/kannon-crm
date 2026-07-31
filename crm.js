@@ -11135,6 +11135,9 @@ function qbMgAddManual_(letter) {
 function renderMedigapPicker_() {
   const el = document.getElementById('qb-mg-picker');
   if (!el) return;
+  if (!window._qbListsFilled && !(window._qbAcaMeds || []).length) {
+    qbAcaFillListsFromClient_().then(renderMedigapPicker_); return;
+  }
   const prof = qbMgProfile_();
   const letters = medigapLetters_(prof);
   const w = medigapWindow_(prof);
@@ -11158,6 +11161,8 @@ function renderMedigapPicker_() {
       <div class="pk-bar ${w.tone === 'ok' ? 'ok' : (w.tone === 'warn' ? 'warn' : 'muted')}" style="border-radius:8px;border:1px solid;">${w.note}</div>
       ${w.extra.filter(x => x.tone !== 'muted').map(x => `<div class="pk-bar ${x.tone === 'ok' ? 'ok' : 'warn'}" style="border-radius:8px;border:1px solid;margin-top:5px;">${x.text}</div>`).join('')}
     </div>
+
+    <div id="qb-med-basis" data-kind="MEDIGAP" style="background:var(--surface-1);border-bottom:1px solid var(--border);">${qbMedBasisHtml_('MEDIGAP')}</div>
 
     <div style="flex:1;overflow:auto;padding:14px 18px;">
       ${medFactsHtml_('Medicare Supplement')}
@@ -13922,7 +13927,7 @@ async function qbAcaInit_() {
   const zipEl = document.getElementById('qb-aca-zip');
   if (zipEl) zipEl.value = (c && c.zip) || '';
   if (!(await qbAcaLoadCounties_())) return;
-  window._qbAcaDocs = []; window._qbAcaMeds = [];
+  window._qbAcaDocs = []; window._qbAcaMeds = []; window._qbListsFilled = false;
   qbAcaRenderChips_();
   qbAcaSepStatus_(null, null);
   qbAcaPrefillFromIntake_();
@@ -14540,20 +14545,13 @@ function qbMedSet_(rxcui, field, value) {
   const n = parseFloat(value);
   m[field] = isNaN(n) || n <= 0 ? null : n;
   m.days_supply = qbMedDays_(m);
-  const c = (window._qbCmsMeds || []).find(x => String(x.rxcui) === String(rxcui));
-  if (c) { c.quantity = m.quantity; c.doses_per_day = m.doses_per_day; c.days_supply = m.days_supply; }
-  qbAcaRenderChips_();
-  qbAcaSyncPicksToIntake_();
-  qbSaveClientLists_();
-  if ((window._qbCmsPlans || []).length) qbCmsDrugCheck_();   // the year changes
+  qbPkListsChanged_();
 }
 
 function qbAcaRemoveChip_(kind, key) {
   if (kind === 'doc') window._qbAcaDocs = (window._qbAcaDocs || []).filter(d => String(d.npi) !== key);
   else window._qbAcaMeds = (window._qbAcaMeds || []).filter(m => String(m.rxcui) !== key);
-  qbAcaRenderChips_();
-  qbAcaCheckCoverage_();
-  qbAcaSyncPicksToIntake_();
+  qbPkListsChanged_();
 }
 
 async function qbAcaSearch_(kind) {
@@ -14682,6 +14680,96 @@ function qbAcaRenderMatches_() {
     "qbAcaPick_('doc', {i})", !!window._qbAcaShowFar, 'qbAcaToggleFar_()');
 }
 
+// Whatever changed, this puts it everywhere it belongs: on screen, on the
+// client's record, back into their intake, and through whichever coverage
+// check the plans on screen can actually answer.
+function qbPkListsChanged_() {
+  qbAcaRenderChips_();
+  qbSaveClientLists_();
+  qbAcaSyncPicksToIntake_();
+  if ((window._qbAcaPlans || []).length) qbAcaCheckCoverage_();
+  if ((window._qbCmsPlans || []).length) {
+    window._qbCmsMeds = (window._qbAcaMeds || []).filter(m => m.rxcui).map(m => ({
+      rxcui: String(m.rxcui), name: m.name, quantity: m.quantity,
+      doses_per_day: m.doses_per_day, days_supply: qbMedDays_(m),
+    }));
+    qbCmsDrugCheck_();
+  }
+  if (document.getElementById('qb-med-basis')) qbMedBasisPaint_();
+}
+
+// The finder, on a Medicare picker. Clients are vague on intake forms and
+// thorough on the phone, so the agent needs to fix the list where they are
+// rather than close everything and start again.
+// The Medicare pickers can be reached without the ACA strip ever running, so
+// the client's own lists have to be fetched before the finder can show them.
+async function qbAcaFillListsFromClient_() {
+  window._qbListsFilled = true;
+  const lists = await qbLoadClientLists_();
+  window._qbAcaDocs = (lists.providers || []).filter(d => d.npi).map(d => ({ npi: d.npi, name: d.name }));
+  window._qbAcaMeds = (lists.medications || []).filter(m => m.rxcui).map(m => ({
+    rxcui: m.rxcui, name: m.name, quantity: m.quantity,
+    doses_per_day: m.doses_per_day, days_supply: m.days_supply,
+  }));
+}
+
+function qbMedBasisToggle_() {
+  window._qbMedBasisOpen = !window._qbMedBasisOpen;
+  qbMedBasisPaint_();
+}
+
+const QB_BASIS_TITLE = {
+  MAPD: 'What these plans are checked against',
+  PDP: 'What these plans are checked against',
+  MEDIGAP: 'Their medications — nothing here changes these plans',
+};
+
+const QB_BASIS_NOTE = {
+  MAPD: 'Drugs are re-checked against every plan\u2019s formulary as you add them, and the yearly figures move with them. '
+      + 'Doctors are saved to their record \u2014 Medicare Advantage networks are not published to us, so those cannot be checked here.',
+  PDP: 'Drugs are re-checked against every plan\u2019s drug list as you add them, and the yearly figures move with them.',
+  MEDIGAP: 'A Medicare Supplement has no network and no drug list, so nothing here changes these plans. '
+         + 'It is here so their record is right while you have them \u2014 and a Part D quote is ready when you need one.',
+};
+
+function qbMedBasisHtml_(kind) {
+  const docs = window._qbAcaDocs || [], meds = window._qbAcaMeds || [];
+  const open = !!window._qbMedBasisOpen;
+  const withDocs = kind === 'MAPD';
+  const summary = [
+    meds.length ? meds.length + ' medication' + (meds.length === 1 ? '' : 's') : 'no medications on file',
+    withDocs && docs.length ? docs.length + ' doctor' + (docs.length === 1 ? '' : 's') : '',
+  ].filter(Boolean).join('  \u00b7  ');
+
+  const head = `<button type="button" onclick="qbMedBasisToggle_()" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:8px 18px;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--text-secondary);">
+      <span style="font-weight:800;color:var(--text-primary);">${open ? '\u25BE' : '\u25B8'} \u{1F48A} ${QB_BASIS_TITLE[kind] || QB_BASIS_TITLE.MAPD}</span>
+      <span style="color:var(--text-muted);">${escWeb(summary)}</span>
+      <span style="margin-left:auto;color:var(--accent,#1d3557);font-weight:700;">${open ? 'Hide' : 'Add or edit'}</span>
+    </button>`;
+  if (!open) return head;
+  setTimeout(qbAcaRenderChips_, 0);
+
+  return `${head}
+    <div style="padding:0 18px 12px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <span><input type="text" id="qbpk-aca-med-q" placeholder="Medication" style="width:150px;"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();qbAcaSearch_('med');}" />
+          <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('med')">Find Medication</button></span>
+        ${withDocs ? `<span><input type="text" id="qbpk-aca-doc-q" placeholder="Doctor, clinic or hospital" style="width:180px;"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();qbAcaSearch_('doc');}" />
+          <button type="button" class="btn btn-outline btn-sm" onclick="qbAcaSearch_('doc')">Find Provider/Facility</button></span>` : ''}
+      </div>
+      <div id="qbpk-aca-matches" style="font-size:12px;margin-top:6px;"></div>
+      <div id="qbpk-aca-chips" style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:7px;line-height:1.5;">${QB_BASIS_NOTE[kind] || ''}</div>
+    </div>`;
+}
+
+function qbMedBasisPaint_() {
+  const el = document.getElementById('qb-med-basis');
+  if (el) el.innerHTML = qbMedBasisHtml_(el.dataset.kind || 'MAPD');
+}
+
 function qbAcaPick_(kind, i) {
   const x = (window._qbAcaMatches || [])[i];
   if (!x) return;
@@ -14695,9 +14783,7 @@ function qbAcaPick_(kind, i) {
     const mq = _acaFld_('aca-med-q'); if (mq) mq.value = '';
   }
   const mt = _acaFld_('aca-matches'); if (mt) mt.innerHTML = '';
-  qbAcaRenderChips_();
-  qbAcaCheckCoverage_();
-  qbAcaSyncPicksToIntake_();
+  qbPkListsChanged_();
 }
 
 function _covIsYes_(v) {
@@ -16573,6 +16659,9 @@ function renderCmsPicker_() {
   const el = document.getElementById('qb-cms-picker');
   if (!el) return;
   if (!window._planYearAmts) { planYearAmts_().then(renderCmsPicker_); return; }
+  if (!window._qbListsFilled && !(window._qbAcaMeds || []).length) {
+    qbAcaFillListsFromClient_().then(renderCmsPicker_); return;
+  }
   const all = window._qbCmsPlans || [];
   const list = cmsPkFiltered_();
   const pk = window._qbCmsPk;
@@ -16640,6 +16729,8 @@ function renderCmsPicker_() {
         </label>
       </div>
     </div>
+
+    <div id="qb-med-basis" data-kind="${isPdp ? 'PDP' : 'MAPD'}" style="background:var(--surface-1);border-bottom:1px solid var(--border);">${qbMedBasisHtml_(isPdp ? 'PDP' : 'MAPD')}</div>
 
     <div style="flex:1;overflow:auto;padding:14px 18px;">
       ${medFactsHtml_(isPdp ? 'Part D (PDP)' : 'Medicare Advantage')}
