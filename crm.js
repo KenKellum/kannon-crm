@@ -15804,6 +15804,31 @@ async function qbCmsDrugCheck_() {
       meds.forEach(m => { out[m.rxcui] = cover[fid + '|' + m.rxcui] || false; });
       p._drugCov = out;
     });
+
+    // what each plan charges per fill, by tier \u2014 so the card can say what a
+    // year actually costs rather than just what the premium is
+    const { data: tiers } = await supabaseClient.from('pdp_tier_cost')
+      .select('contract_id,plan_id,segment_id,tier,cost_type,amount')
+      .in('contract_id', [...new Set(plans.map(p => p.contract_id))]);
+    const priceOf = {};
+    (tiers || []).forEach(t => { priceOf[t.contract_id + '|' + t.plan_id + '|' + t.segment_id + '|' + t.tier] = t; });
+
+    plans.forEach((p, i) => {
+      p._estYear = null; p._estCoins = false; p._estMissing = 0;
+      if (!p._drugCov) return;
+      let monthly = 0;
+      meds.forEach(m => {
+        const hit = p._drugCov[m.rxcui];
+        if (!hit) { p._estMissing++; return; }
+        const t = priceOf[keys[i].split('|')[0] + '|' + keys[i].split('|')[1] + '|' + keys[i].split('|')[2] + '|' + hit.tier];
+        if (!t) return;
+        if (t.cost_type === 2) { p._estCoins = true; return; }   // a share of a price we don't hold
+        monthly += Number(t.amount) || 0;
+      });
+      const prem = Number(cmsPremium_(p)) || 0;
+      p._estMonthly = monthly;
+      p._estYear = (prem + monthly) * 12;
+    });
   } catch (e) {
     console.error('drug check:', e);
   }
@@ -15962,7 +15987,8 @@ function cmsPkFiltered_() {
   if (pk.zero) list = list.filter(p => Number(cmsPremium_(p) || 0) === 0);
   if (pk.stars) list = list.filter(p => parseFloat(p.star_rating || 0) >= pk.stars);
   const num = v => (v == null ? Infinity : Number(v));
-  if (pk.sort === 'premium') list.sort((a, b) => num(cmsPremium_(a)) - num(cmsPremium_(b)));
+  if (pk.sort === 'year') list.sort((a, b) => (a._estYear == null ? Infinity : a._estYear) - (b._estYear == null ? Infinity : b._estYear));
+  else if (pk.sort === 'premium') list.sort((a, b) => num(cmsPremium_(a)) - num(cmsPremium_(b)));
   else if (pk.sort === 'moop') list.sort((a, b) => num(a.moop) - num(b.moop));
   else if (pk.sort === 'stars') list.sort((a, b) => parseFloat(b.star_rating || 0) - parseFloat(a.star_rating || 0));
   else list.sort((a, b) => String(a.org_name).localeCompare(String(b.org_name)));
@@ -16073,6 +16099,17 @@ function pdpCardHtml_(p) {
         </div>` : ''}
       </div>` : `<div style="font-size:11.5px;color:var(--text-muted);">No prescriptions on file \u2014 add them to their intake and this compares drug lists too.</div>`}
 
+      ${p._estYear != null ? `<div style="margin-top:9px;padding:7px 10px;border-radius:9px;background:var(--bg-info);border:1px solid var(--border-info);">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-info);">Estimated cost for the year</div>
+        <div style="font-size:17px;font-weight:800;color:var(--text-info);">${p._estCoins || p._estMissing ? 'from ' : ''}${money(p._estYear)}</div>
+        <div style="font-size:10.5px;color:var(--text-info);opacity:.85;line-height:1.45;">
+          premium ${money(cmsPremium_(p))}/mo${p._estMonthly ? ' + ' + money(p._estMonthly) + '/mo in copays' : ' \u00b7 their drugs cost nothing per fill'}${
+            p._estMissing ? ' \u00b7 <strong>' + p._estMissing + ' drug' + (p._estMissing === 1 ? '' : 's') + ' not on this list</strong>, so not counted' : ''}${
+            p._estCoins ? ' \u00b7 <strong>one or more priced as a % of the drug\u2019s cost</strong>, which we cannot total' : ''}${
+            Number(p.drug_deductible) ? ' \u00b7 before the ' + money(p.drug_deductible) + ' deductible' : ''}
+        </div>
+      </div>` : ''}
+
       <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-top:10px;">
         <div>
           <div style="font-size:22px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">${money(p.part_d_premium)}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
@@ -16157,6 +16194,7 @@ function renderCmsPicker_() {
           Sort
           <select onchange="cmsPkSort_(this.value)" style="width:auto;">
             <option value="premium"${pk.sort === 'premium' ? ' selected' : ''}>Lowest premium</option>
+        <option value="year"${pk.sort === 'year' ? ' selected' : ''}>Lowest cost for the year</option>
             <option value="moop"${pk.sort === 'moop' ? ' selected' : ''}>Lowest max out-of-pocket</option>
             <option value="stars"${pk.sort === 'stars' ? ' selected' : ''}>Best star rating</option>
             <option value="carrier"${pk.sort === 'carrier' ? ' selected' : ''}>Carrier A\u2013Z</option>
