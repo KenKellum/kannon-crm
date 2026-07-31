@@ -6860,6 +6860,7 @@ async function renderAdmin() {
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-weight:700;font-size:14px;">&#127970; Carriers <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— reference for appointments, SOA forms &amp; future per-carrier features</span></div>
+        <button class="btn btn-outline btn-sm" onclick="openProductWizard_()">&#128196; Add products from a brochure</button>
         <button class="btn btn-primary btn-sm" onclick="openCarrierModal(null)">+ Add Carrier</button>
       </div>
       ${window._allCarriers.length === 0
@@ -12114,6 +12115,332 @@ async function openMyCarriers() {
     if (currentAgent.role === 'agent') renderSettings();
     else { renderAdmin(); renderSettings(); }
   });
+}
+
+// ============================================================
+// PRODUCT WALKTHROUGH — brochure in, products out
+//
+// Five steps, one at a time, because the alternative is a form with thirty
+// fields and no order to it. Nothing the reading proposes is saved until the
+// last step: a rate or a benefit figure becomes something we tell a client,
+// so a person looks at it first.
+// ============================================================
+let _pw = null;   // the walkthrough's state, alive only while the modal is open
+
+function openProductWizard_() {
+  _pw = { step: 1, companies: [], carriers: [], companyIds: [], carrierId: null,
+          newCarrier: '', file: null, kind: 'brochure', hint: '', doc: null,
+          run: null, busy: false, chosen: {} };
+  showModal('Add products from a brochure', '<div id="pw-body"></div>', null,
+    { hideConfirm: true, cancelLabel: 'Close', wide: true });
+  pwLoad_();
+}
+
+async function pwLoad_() {
+  const [co, ca] = await Promise.all([
+    supabaseClient.from('companies').select('id,name,slug').order('name'),
+    supabaseClient.from('carriers').select('id,name,brand,is_active').eq('is_active', true).order('name'),
+  ]);
+  _pw.companies = co.data || [];
+  _pw.carriers = ca.data || [];
+  pwPaint_();
+}
+
+function pwStep_(n) { _pw.step = n; pwPaint_(); }
+
+function pwPaint_() {
+  const host = document.getElementById('pw-body');
+  if (!host || !_pw) return;
+  const steps = ['Company', 'Carrier', 'The document', 'What it found', 'Save'];
+  const rail = steps.map((s, i) => {
+    const n = i + 1, on = _pw.step === n, done = _pw.step > n;
+    return `<div style="display:flex;align-items:center;gap:7px;opacity:${on || done ? 1 : 0.45};">
+      <span style="width:21px;height:21px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+        font-size:11px;font-weight:800;background:${done ? 'var(--fill-success)' : on ? 'var(--accent,#c8a84b)' : 'var(--surface-3)'};
+        color:${done || on ? '#000' : 'var(--text-muted)'};">${done ? '✓' : n}</span>
+      <span style="font-size:12px;font-weight:${on ? '800' : '400'};">${s}</span>
+      ${n < steps.length ? '<span style="color:var(--text-muted);">→</span>' : ''}
+    </div>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--surface-1);">${rail}</div>
+    <div style="padding:18px 20px;min-height:220px;">${
+      _pw.step === 1 ? pwStep1_() : _pw.step === 2 ? pwStep2_() :
+      _pw.step === 3 ? pwStep3_() : _pw.step === 4 ? pwStep4_() : pwStep5_()}</div>`;
+}
+
+// ---------------------------------------------------------------- 1. company
+function pwStep1_() {
+  return `<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+      Which of our companies can write this carrier? Tick both if both can.</p>
+    ${_pw.companies.map(c => `
+      <label style="display:flex;gap:9px;align-items:center;padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:7px;cursor:pointer;font-weight:400;">
+        <input type="checkbox" style="width:auto;" ${_pw.companyIds.includes(c.id) ? 'checked' : ''}
+          onchange="pwToggleCompany_('${c.id}')" />
+        <span style="font-weight:700;">${escWeb(c.name)}</span>
+      </label>`).join('')}
+    <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-primary" ${_pw.companyIds.length ? '' : 'disabled'} onclick="pwStep_(2)">Next →</button>
+    </div>`;
+}
+
+function pwToggleCompany_(id) {
+  const i = _pw.companyIds.indexOf(id);
+  if (i >= 0) _pw.companyIds.splice(i, 1); else _pw.companyIds.push(id);
+  pwPaint_();
+}
+
+// ---------------------------------------------------------------- 2. carrier
+function pwStep2_() {
+  return `<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+      Pick the carrier this brochure is from, or type a new one. Use the name on the cover — if a
+      different company underwrites it, the reading will pick that up and note it.</p>
+    <label>Existing carrier</label>
+    <select id="pw-carrier" onchange="pwPickCarrier_(this.value)">
+      <option value="">— none / new carrier below —</option>
+      ${_pw.carriers.map(c => `<option value="${c.id}" ${_pw.carrierId === c.id ? 'selected' : ''}>${escWeb(c.name)}</option>`).join('')}
+    </select>
+    <label style="margin-top:11px;">…or a new carrier's name</label>
+    <input type="text" id="pw-newcarrier" value="${escWeb(_pw.newCarrier)}" placeholder="e.g. Allstate Health Solutions"
+      oninput="_pw.newCarrier = this.value; _pw.carrierId = null;" />
+    <div style="display:flex;justify-content:space-between;margin-top:16px;">
+      <button class="btn btn-outline" onclick="pwStep_(1)">← Back</button>
+      <button class="btn btn-primary" onclick="pwGoUpload_()">Next →</button>
+    </div>`;
+}
+
+function pwPickCarrier_(id) { _pw.carrierId = id || null; if (id) _pw.newCarrier = ''; }
+
+function pwGoUpload_() {
+  const sel = document.getElementById('pw-carrier');
+  _pw.carrierId = (sel && sel.value) || null;
+  _pw.newCarrier = (document.getElementById('pw-newcarrier') || {}).value || '';
+  if (!_pw.carrierId && !_pw.newCarrier.trim()) { showToast('Pick a carrier or type a new one.'); return; }
+  pwStep_(3);
+}
+
+// --------------------------------------------------------------- 3. document
+function pwStep3_() {
+  const f = _pw.file;
+  return `<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+      A brochure, a rate sheet, or one document that is both. <strong>A brochure with no rates is still
+      worth uploading</strong> — the benefits, exclusions and issue rules are most of what an agent needs.</p>
+    <input type="file" id="pw-file" accept=".pdf,.png,.jpg,.jpeg" onchange="pwPickFile_(this)"
+      style="padding:9px;border:1px dashed var(--border);border-radius:9px;width:100%;" />
+    ${f ? `<div style="font-size:12.5px;color:var(--text-success);margin-top:7px;">✓ ${escWeb(f.name)} · ${(f.size / 1048576).toFixed(1)} MB</div>` : ''}
+    <label style="margin-top:12px;">What is it?</label>
+    <select id="pw-kind" onchange="_pw.kind = this.value">
+      <option value="brochure" ${_pw.kind === 'brochure' ? 'selected' : ''}>A brochure — benefits and exclusions</option>
+      <option value="rate_sheet" ${_pw.kind === 'rate_sheet' ? 'selected' : ''}>A rate sheet — premiums</option>
+      <option value="both" ${_pw.kind === 'both' ? 'selected' : ''}>Both in one document</option>
+    </select>
+    <label style="margin-top:11px;">Anything worth telling it? (optional)</label>
+    <input type="text" id="pw-hint" value="${escWeb(_pw.hint)}" oninput="_pw.hint = this.value"
+      placeholder="e.g. Montana only, ignore the association plans at the back" />
+    <div style="display:flex;justify-content:space-between;margin-top:16px;">
+      <button class="btn btn-outline" onclick="pwStep_(2)">← Back</button>
+      <button class="btn btn-primary" ${f && !_pw.busy ? '' : 'disabled'} onclick="pwRun_()">
+        ${_pw.busy ? 'Reading…' : 'Read it →'}</button>
+    </div>
+    ${_pw.busy ? `<div class="pk-bar muted" style="margin-top:12px;border-radius:8px;border:1px solid;">
+      Reading the document — this usually takes twenty seconds or so for a full brochure.</div>` : ''}
+    ${_pw.error ? `<div class="pk-bar warn" style="margin-top:12px;border-radius:8px;border:1px solid;">⚠️ ${escWeb(_pw.error)}</div>` : ''}`;
+}
+
+function pwPickFile_(el) { _pw.file = el.files && el.files[0]; _pw.error = null; pwPaint_(); }
+
+async function pwRun_() {
+  _pw.busy = true; _pw.error = null; pwPaint_();
+  try {
+    // A new carrier only comes into being once there is a document to attach.
+    if (!_pw.carrierId) {
+      const { data: nc, error } = await supabaseClient.from('carriers')
+        .insert({ name: _pw.newCarrier.trim(), is_active: true }).select('id').single();
+      if (error) throw new Error('Could not create the carrier: ' + error.message);
+      _pw.carrierId = nc.id;
+      await supabaseClient.from('carrier_companies')
+        .insert(_pw.companyIds.map(cid => ({ carrier_id: _pw.carrierId, company_id: cid })));
+    }
+
+    const f = _pw.file;
+    const buf = await f.arrayBuffer();
+    const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+    const sha = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // The same file twice costs nothing and changes nothing.
+    const { data: seen } = await supabaseClient.from('product_documents')
+      .select('id').eq('sha256', sha).maybeSingle();
+
+    let docId;
+    if (seen) {
+      docId = seen.id;
+    } else {
+      const path = _pw.carrierId + '/' + Date.now() + '-' + f.name.replace(/[^A-Za-z0-9._-]/g, '_');
+      const { error: upErr } = await supabaseClient.storage.from('product-docs')
+        .upload(path, f, { contentType: f.type || 'application/pdf', upsert: false });
+      if (upErr) throw new Error('Upload failed: ' + upErr.message);
+      const { data: doc, error: dErr } = await supabaseClient.from('product_documents').insert({
+        carrier_id: _pw.carrierId, storage_path: path, filename: f.name,
+        byte_size: f.size, sha256: sha, kind: _pw.kind, uploaded_by: currentAgent.id,
+      }).select('id').single();
+      if (dErr) throw new Error('Could not record the document: ' + dErr.message);
+      docId = doc.id;
+    }
+    _pw.doc = docId;
+
+    const { data, error } = await supabaseClient.functions.invoke('product-extract',
+      { body: { document_id: docId, hint: _pw.hint } });
+    if (error) throw new Error(error.message || 'The reading failed.');
+    if (data && data.status === 'failed') throw new Error(data.error || 'The reading failed.');
+
+    const { data: run } = await supabaseClient.from('extraction_runs')
+      .select('*').eq('id', data.run_id).single();
+    _pw.run = run;
+    (((run || {}).proposal || {}).products || []).forEach((_, i) => { _pw.chosen[i] = true; });
+    _pw.busy = false;
+    pwStep_(4);
+  } catch (e) {
+    _pw.busy = false;
+    _pw.error = e.message || String(e);
+    pwPaint_();
+  }
+}
+
+// ------------------------------------------------------------- 4. the review
+function pwStep4_() {
+  const p = (_pw.run || {}).proposal || {};
+  const f = (_pw.run || {}).findings || {};
+  const prods = p.products || [];
+  const carrier = p.carrier || {};
+  const shared = p.shared || {};
+  const charts = p.charts || [];
+
+  const chip = (t, tone) => `<span style="font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 7px;
+    background:var(--bg-${tone});color:var(--text-${tone});border:1px solid var(--border-${tone === 'info' ? 'info' : tone});">${t}</span>`;
+
+  const worries = [].concat(f.consistency || [], f.unsure || []);
+
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      ${chip(prods.length + ' product' + (prods.length === 1 ? '' : 's'), 'success')}
+      ${chip(charts.length ? charts.length + ' rate chart' + (charts.length === 1 ? '' : 's') : 'no rates in this document', charts.length ? 'success' : 'info')}
+      ${carrier.underwriter ? chip('underwritten by ' + escWeb(carrier.underwriter), 'info') : ''}
+      ${(carrier.states || []).length ? chip('for ' + carrier.states.join(', '), 'info') : ''}
+      ${carrier.revision_label ? chip(escWeb(carrier.revision_label), 'info') : ''}
+    </div>
+
+    ${worries.length ? `<div class="pk-bar warn" style="border-radius:9px;border:1px solid;margin-bottom:12px;">
+      <strong>⚠️ Read these before saving</strong>
+      <ul style="margin:6px 0 0 18px;padding:0;font-size:12px;line-height:1.6;">
+        ${worries.map(w => `<li>${escWeb(String(w))}</li>`).join('')}</ul></div>` : ''}
+
+    <div style="max-height:340px;overflow:auto;">
+      ${prods.map((pr, i) => {
+        const dims = Object.entries(pr.dimensions || {});
+        return `<div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:9px;">
+          <label style="display:flex;gap:9px;align-items:flex-start;font-weight:400;margin:0;cursor:pointer;">
+            <input type="checkbox" style="width:auto;margin-top:3px;" ${_pw.chosen[i] ? 'checked' : ''} onchange="pwToggleProduct_(${i})" />
+            <span style="flex:1;min-width:0;">
+              <input type="text" value="${escWeb(pr.name || '')}" onchange="pwEdit_(${i},'name',this.value)"
+                style="font-weight:800;font-size:14px;width:100%;margin:0 0 5px;" />
+              <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;">${escWeb(pr.line_of_business || '')}${pr.product_code ? ' · ' + escWeb(pr.product_code) : ''}</div>
+              ${pr.summary ? `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;margin-bottom:6px;">${escWeb(pr.summary)}</div>` : ''}
+              ${dims.length ? `<div style="font-size:11.5px;color:var(--text-secondary);">
+                ${dims.map(([k, d]) => `<div><strong>${escWeb((d && d.label) || k)}:</strong> ${escWeb(((d && d.values) || []).join(' · '))}</div>`).join('')}
+              </div>` : '<div style="font-size:11.5px;color:var(--text-muted);">No priced choices read from this plan.</div>'}
+              ${(pr.key_benefits || []).length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
+                ${(pr.key_benefits || []).slice(0, 4).map(b => '• ' + escWeb(b)).join('<br>')}</div>` : ''}
+            </span>
+          </label>
+        </div>`;
+      }).join('') || '<div style="font-size:13px;color:var(--text-muted);">Nothing was found to save.</div>'}
+    </div>
+
+    ${(shared.compliance_notes || []).length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">
+      <strong>Applies to all of them:</strong> ${(shared.compliance_notes || []).map(x => escWeb(x)).join(' · ')}</div>` : ''}
+
+    <div style="display:flex;justify-content:space-between;margin-top:16px;">
+      <button class="btn btn-outline" onclick="pwStep_(3)">← Different document</button>
+      <button class="btn btn-primary" ${prods.length ? '' : 'disabled'} onclick="pwStep_(5)">Next →</button>
+    </div>`;
+}
+
+function pwToggleProduct_(i) { _pw.chosen[i] = !_pw.chosen[i]; }
+function pwEdit_(i, field, value) {
+  const prods = ((_pw.run || {}).proposal || {}).products || [];
+  if (prods[i]) prods[i][field] = value;
+}
+
+// --------------------------------------------------------------- 5. save it
+function pwStep5_() {
+  const prods = ((_pw.run || {}).proposal || {}).products || [];
+  const keep = prods.filter((_, i) => _pw.chosen[i]);
+  return `<p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+      ${keep.length} product${keep.length === 1 ? '' : 's'} will be created against this carrier.
+      Nothing has been saved yet.</p>
+    <ul style="font-size:13px;line-height:1.8;margin:0 0 14px 18px;padding:0;">
+      ${keep.map(p => `<li><strong>${escWeb(p.name)}</strong> <span style="color:var(--text-muted);">${escWeb(p.line_of_business || '')}</span></li>`).join('')}
+    </ul>
+    <div style="font-size:11.5px;color:var(--text-muted);line-height:1.6;">
+      Rates are not created here. For short-term medical there usually are none to create — you will
+      quote at the carrier and bring the premium back to the option.
+    </div>
+    ${_pw.error ? `<div class="pk-bar warn" style="margin-top:12px;border-radius:8px;border:1px solid;">⚠️ ${escWeb(_pw.error)}</div>` : ''}
+    <div style="display:flex;justify-content:space-between;margin-top:16px;">
+      <button class="btn btn-outline" onclick="pwStep_(4)">← Back</button>
+      <button class="btn btn-primary" ${_pw.busy ? 'disabled' : ''} onclick="pwSave_()">${_pw.busy ? 'Saving…' : 'Create ' + keep.length + ' product' + (keep.length === 1 ? '' : 's')}</button>
+    </div>`;
+}
+
+async function pwSave_() {
+  _pw.busy = true; _pw.error = null; pwPaint_();
+  try {
+    const proposal = (_pw.run || {}).proposal || {};
+    const prods = proposal.products || [];
+    const shared = proposal.shared || {};
+    const carrier = proposal.carrier || {};
+    const keep = prods.filter((_, i) => _pw.chosen[i]);
+
+    const rows = keep.map(p => ({
+      carrier_id: _pw.carrierId,
+      name: p.name,
+      product_code: p.product_code || null,
+      line_of_business: p.line_of_business || 'Other',
+      states: (carrier.states && carrier.states.length) ? carrier.states : null,
+      is_active: true,
+      notes: p.summary || null,
+      metadata: {
+        bullets: p.key_benefits || [],
+        limitations: [].concat(p.limitations || [], shared.limitations || []),
+        eligibility: shared.eligibility || [],
+        compliance_notes: shared.compliance_notes || [],
+        dimensions: p.dimensions || {},
+        facts: p.facts || {},
+        underwriter: carrier.underwriter || null,
+        policy_form: carrier.policy_form || null,
+        from_document: _pw.doc,
+      },
+    }));
+
+    const { data: made, error } = await supabaseClient.from('carrier_products').insert(rows).select('id');
+    if (error) throw new Error(error.message);
+
+    await supabaseClient.from('extraction_runs')
+      .update({ status: 'approved', reviewed_by: currentAgent.id, approved_at: new Date().toISOString() })
+      .eq('id', _pw.run.id);
+    if (made && made.length) {
+      await supabaseClient.from('product_documents').update({ product_id: made[0].id }).eq('id', _pw.doc);
+    }
+
+    showToast('Created ' + rows.length + ' product' + (rows.length === 1 ? '' : 's') + '.');
+    closeModal();
+    renderAdmin();
+  } catch (e) {
+    _pw.busy = false;
+    _pw.error = e.message || String(e);
+    pwPaint_();
+  }
 }
 
 // Licensed states have been written both as an array and as a loose string
