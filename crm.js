@@ -10575,11 +10575,7 @@ function mgCardHtml_(p) {
       </ul>
       ${(() => {
         const qs = (window._qbMgQuotes || {})[letter] || [];
-        if (!qs.length) {
-          return `<div style="margin-top:9px;font-size:11.5px;color:var(--text-muted);">
-            No rate chart loaded for this letter in ${escWeb(qbMgProfile_().state || 'their state')} \u2014
-            add one under <strong>Admin \u2192 Carriers &amp; Products</strong>, or type the premium on the option.</div>`;
-        }
+        if (!qs.length) return mgManualRow_(letter);
         return `<div style="margin-top:9px;">
           <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);">
             ${qs.length} carrier${qs.length === 1 ? '' : 's'} \u00b7 cheapest first</div>
@@ -10594,6 +10590,7 @@ function mgCardHtml_(p) {
             <button type="button" class="btn ${mgAddedSlot_(letter) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
               onclick="event.stopPropagation();qbMgAddPlan_('${escWeb(letter)}','${escWeb(q.product_id)}')">Add</button>
           </div>`).join('')}
+          ${mgManualRow_(letter, true)}
         </div>`;
       })()}
       <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
@@ -10803,6 +10800,78 @@ function openMgDetail_(letter) {
     </div>`;
 }
 
+// Everything needed to quote this letter, on the card itself: who is writing
+// it and for how much. The carrier list is yours, but an agent can always type
+// one we don't have \u2014 the system should never be the reason a quote can't be
+// written.
+function mgManualRow_(letter, secondary) {
+  const carriers = (window._qbCarriers || []).slice()
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const st = window._qbMgManual = window._qbMgManual || {};
+  const cur = st[letter] || {};
+  const typing = cur.carrier_id === '_other';
+  return `<div style="margin-top:${secondary ? '8' : '9'}px;padding-top:${secondary ? '8' : '0'}px;${secondary ? 'border-top:1px dashed var(--border);' : ''}"
+       onclick="event.stopPropagation();">
+      ${secondary ? '<div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:5px;">Or another carrier</div>' : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <select onchange="mgManualSet_('${escWeb(letter)}','carrier_id',this.value)" style="flex:1;min-width:130px;width:auto;font-size:12px;">
+          <option value="">&mdash; carrier &mdash;</option>
+          ${carriers.map(c => `<option value="${escWeb(c.id)}" ${cur.carrier_id === c.id ? 'selected' : ''}>${escWeb(c.name)}</option>`).join('')}
+          <option value="_other" ${typing ? 'selected' : ''}>+ type another carrier\u2026</option>
+        </select>
+        ${typing ? `<input type="text" placeholder="Carrier name" value="${escWeb(cur.carrier_name || '')}"
+          oninput="mgManualSet_('${escWeb(letter)}','carrier_name',this.value,true)"
+          style="flex:1;min-width:130px;width:auto;font-size:12px;" />` : ''}
+        <span style="position:relative;display:inline-flex;align-items:center;">
+          <span style="position:absolute;left:8px;font-size:12px;color:var(--text-muted);">$</span>
+          <input type="text" inputmode="decimal" placeholder="0.00" value="${escWeb(cur.rate || '')}"
+            oninput="mgManualSet_('${escWeb(letter)}','rate',this.value,true)"
+            onblur="mgManualMoney_('${escWeb(letter)}',this)"
+            style="width:96px;padding-left:18px;font-size:12px;text-align:right;" />
+        </span>
+        <button type="button" class="btn btn-primary btn-sm"
+          onclick="event.stopPropagation();qbMgAddManual_('${escWeb(letter)}')">+ Add</button>
+      </div>
+    </div>`;
+}
+
+function mgManualSet_(letter, field, value, quiet) {
+  const st = window._qbMgManual = window._qbMgManual || {};
+  const cur = st[letter] = st[letter] || {};
+  cur[field] = value;
+  if (field === 'carrier_id' && value && value !== '_other') {
+    const c = (window._qbCarriers || []).find(x => x.id === value);
+    cur.carrier_name = c ? c.name : '';
+    // if a chart already prices this carrier for this letter, use it
+    const hit = ((window._qbMgQuotes || {})[letter] || []).find(q => q.carrier_id === value);
+    if (hit) cur.rate = Number(hit.rate).toFixed(2);
+  }
+  if (!quiet) renderMedigapPicker_();
+}
+
+function mgManualMoney_(letter, el) {
+  const n = parseFloat(String(el.value).replace(/[^0-9.]/g, ''));
+  const st = window._qbMgManual = window._qbMgManual || {};
+  st[letter] = st[letter] || {};
+  if (isNaN(n)) { el.value = ''; st[letter].rate = ''; return; }
+  el.value = n.toFixed(2);
+  st[letter].rate = el.value;
+}
+
+function qbMgAddManual_(letter) {
+  const cur = (window._qbMgManual || {})[letter] || {};
+  const name = cur.carrier_id === '_other' ? String(cur.carrier_name || '').trim()
+    : ((window._qbCarriers || []).find(c => c.id === cur.carrier_id) || {}).name;
+  if (!name) { showToast('Choose a carrier, or type one in.'); return; }
+  const rate = parseFloat(String(cur.rate || '').replace(/[^0-9.]/g, ''));
+  const known = ((window._qbMgQuotes || {})[letter] || []).find(q => q.carrier_id === cur.carrier_id);
+  qbMgAddPlan_(letter, known ? known.product_id : null, {
+    carrier_id: cur.carrier_id === '_other' ? null : cur.carrier_id,
+    carrier_name: name,
+    rate: isNaN(rate) ? null : rate,
+  });
+}
+
 function renderMedigapPicker_() {
   const el = document.getElementById('qb-mg-picker');
   if (!el) return;
@@ -10866,7 +10935,7 @@ function qbMgOptionView_(i) {
     return;
   }
   const needsTyping = p.rate == null;
-  const carPicked = !!p.carrier_id || !!(document.getElementById('qb-car-' + i) || {}).value;
+  const carPicked = !!p.carrier_name || !!p.carrier_id || !!(document.getElementById('qb-car-' + i) || {}).value;
   if (manual) manual.style.display = needsTyping ? '' : 'none';
   if (carprod) carprod.style.display = carPicked ? 'none' : '';
 
@@ -10933,10 +11002,10 @@ function qbMgRemoveSlot_(i) {
   if (document.getElementById('qb-mg-picker')) renderMedigapPicker_();
 }
 
-function qbMgAddPlan_(letter, productId) {
+function qbMgAddPlan_(letter, productId, override) {
   const at = mgAddedSlot_(letter);
-  if (at >= 0 && !productId) { qbMgRemoveSlot_(at); return; }
-  if (at >= 0 && productId) { qbMgRemoveSlot_(at); }   // swapping carrier
+  if (at >= 0 && !productId && !override) { qbMgRemoveSlot_(at); return; }
+  if (at >= 0) { qbMgRemoveSlot_(at); }   // swapping carrier or rate
   const p = MEDIGAP_PLANS.find(x => x[0] === letter);
   if (!p) return;
 
@@ -10964,13 +11033,15 @@ function qbMgAddPlan_(letter, productId) {
   qbRenumberOptions_();
   const prof = qbMgProfile_();
   const quotes = (window._qbMgQuotes || {})[letter] || [];
-  const q = productId ? quotes.find(x => x.product_id === productId) : quotes[0];
-  const rate = q ? q.rate : (window._qbMgRates || {})[letter];
+  const q = productId ? quotes.find(x => x.product_id === productId) : (override ? null : quotes[0]);
+  const rate = (override && override.rate != null) ? override.rate
+    : (q ? q.rate : (window._qbMgRates || {})[letter]);
   window._qbMgSel = window._qbMgSel || {};
   window._qbMgSel[slot] = {
     letter: letter, title: p[1], bullets: p[2], state: prof.state,
     rate: rate != null ? rate : null,
-    carrier_id: q ? q.carrier_id : null, carrier_name: q ? q.carrier_name : null,
+    carrier_id: (override ? override.carrier_id : null) || (q ? q.carrier_id : null),
+    carrier_name: (override ? override.carrier_name : null) || (q ? q.carrier_name : null),
     product_id: q ? q.product_id : null,
     rating_method: q ? q.chart.rating_method : null,
   };
@@ -10979,6 +11050,11 @@ function qbMgAddPlan_(letter, productId) {
   if (ol && ol.value !== 'Medicare Supplement') { ol.value = 'Medicare Supplement'; qbOptLineChanged_(slot); }
 
   // point the option at the real carrier and product so the quote records them
+  const carId = (override && override.carrier_id) || (q && q.carrier_id);
+  if (carId && !q) {
+    const car = document.getElementById('qb-car-' + slot);
+    if (car) { car.value = carId; qbFillProducts_(slot); }
+  }
   if (q) {
     const car = document.getElementById('qb-car-' + slot);
     if (car) {
@@ -10994,7 +11070,8 @@ function qbMgAddPlan_(letter, productId) {
   }
 
   const nm = document.getElementById('qb-name-' + slot);
-  if (nm) nm.value = (q ? q.carrier_name + ' \u2014 ' : '') + 'Medicare Supplement Plan ' + letter;
+  const carrierLabel = (override && override.carrier_name) || (q && q.carrier_name) || '';
+  if (nm) nm.value = (carrierLabel ? carrierLabel + ' \u2014 ' : '') + 'Medicare Supplement Plan ' + letter;
   if (rate != null) { const pr = document.getElementById('qb-prem-' + slot); if (pr) pr.value = Number(rate).toFixed(2); }
   const bul = document.getElementById('qb-bul-' + slot);
   if (bul) { const ro = bul.readOnly; bul.readOnly = false; bul.value = p[2].join('\n'); bul.readOnly = ro; }
@@ -12067,7 +12144,8 @@ async function openQuoteBuilder(dealId, opts) {
       const car = (window._qbCarriers || []).find(c => c.id === carId);
       const cmsSel = (window._qbCmsSel || {})[i];
       const acaSel = (window._qbAcaSel || {})[i];
-      if (!car && !cmsSel && !acaSel) {
+      const mgHasCarrier = !!(((window._qbMgSel || {})[i] || {}).carrier_name);
+      if (!car && !cmsSel && !acaSel && !mgHasCarrier) {
         showToast((window._qbMgSel || {})[i]
           ? 'Option ' + qbOptionNo_(i) + ': choose the carrier writing this supplement plan.'
           : 'Option ' + qbOptionNo_(i) + ': pick a carrier or an official plan.');
@@ -12137,7 +12215,10 @@ async function openQuoteBuilder(dealId, opts) {
       }
       options.push({
         carrier_id: carId, product_id: prodId,
-        carrier_name: car ? car.name : (cmsSel ? (cmsSel.org_name || 'Medicare Plan') : (acaSel.issuer || 'Marketplace Plan')),
+        carrier_name: car ? car.name
+          : (((window._qbMgSel || {})[i] || {}).carrier_name
+             || (cmsSel ? (cmsSel.org_name || 'Medicare Plan')
+                        : (acaSel ? (acaSel.issuer || 'Marketplace Plan') : 'Carrier'))),
         display_name: name, monthly_premium: prem, benefit_bullets: bullets,
         agent_note: document.getElementById('qb-note-' + i).value.trim() || null,
         is_recommended: document.getElementById('qb-rec-' + i).checked,
