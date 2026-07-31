@@ -12638,6 +12638,7 @@ async function pwSave_() {
         compliance_notes: shared.compliance_notes || [],
         dimensions: p.dimensions || {},
         facts: p.facts || {},
+        benefits: p.benefits || null,
         network: p.network || null,
         prescription: p.prescription || null,
         oop_includes_deductible: (p.oop_includes_deductible === true || p.oop_includes_deductible === false)
@@ -13036,6 +13037,53 @@ function ppChoiceLabel_(p, key, d) {
   return said.join(' \u00b7 ');
 }
 
+// The benefit rows a medical plan is actually compared on. Carriers all word
+// these differently, so the reading maps each brochure onto these names and
+// keeps the carrier's own wording as the value. Without a shared vocabulary a
+// comparison is just two lists side by side.
+//
+// The order is the order they matter in a conversation: what you use often
+// first, what you dread further down, and the money questions last.
+const PP_BENEFITS = [
+  ['office_visit_primary', 'Primary care visit'],
+  ['office_visit_specialist', 'Specialist visit'],
+  ['preventive_care', 'Preventive care'],
+  ['telehealth', 'Telehealth'],
+  ['urgent_care', 'Urgent care'],
+  ['emergency_room', 'Emergency room'],
+  ['ambulance', 'Ambulance'],
+  ['inpatient_hospital', 'Hospital stay'],
+  ['outpatient_surgery', 'Outpatient surgery'],
+  ['diagnostic_lab', 'Diagnostic and lab'],
+  ['imaging', 'Imaging (X-ray, MRI, CT)'],
+  ['therapy_rehab', 'Physical therapy and rehab'],
+  ['mental_health', 'Mental health'],
+  ['substance_use', 'Substance use treatment'],
+  ['maternity', 'Maternity'],
+  ['durable_medical_equipment', 'Equipment and supplies'],
+  ['organ_transplant', 'Transplant'],
+  ['coverage_period_maximum', 'Coverage period maximum'],
+  ['prescription_drugs', 'Prescriptions'],
+];
+
+// How a single benefit reads. "not covered" is said plainly rather than left
+// blank, because on a short-term plan the gaps are the point.
+function ppBenefitCell_(p, key) {
+  const b = ((ppMeta_(p) || {}).benefits || {})[key];
+  if (!b) return null;
+  if (typeof b === 'string') return escWeb(b);
+  const covered = b.covered;
+  const said = [b.value, b.limit].filter(Boolean).map(x => escWeb(String(x))).join(' \u00b7 ');
+  if (covered === false || /^(no|none|not covered)$/i.test(String(b.value || ''))) {
+    return `<span style="color:var(--text-warning);">Not covered</span>${said && !/not covered/i.test(said) ? ' \u00b7 ' + said : ''}`;
+  }
+  return said || (covered ? 'Covered' : null);
+}
+
+function ppBenefitRows_(p) {
+  return PP_BENEFITS.map(([k, label]) => [label, ppBenefitCell_(p, k)]).filter(r => r[1]);
+}
+
 function ppCardHtml_(p) {
   const pp = ppState_();
   const dims = ppDims_(p);
@@ -13275,6 +13323,13 @@ function ppDetail_(prodId) {
           <div style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">${escWeb(k.replace(/_/g, ' '))}</div>
           <div style="font-size:14px;font-weight:800;">${escWeb(String(v))}</div></div>`).join('')}
       </div>` : ''}
+      ${ppBenefitRows_(p).length ? `<div style="margin-top:14px;">
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">What it pays, item by item</div>
+        <table style="border-collapse:collapse;margin-top:6px;width:100%;max-width:620px;">
+          ${ppBenefitRows_(p).map(([label, cell]) => `<tr>
+            <td style="padding:5px 10px 5px 0;font-size:12.5px;color:var(--text-muted);vertical-align:top;width:210px;">${escWeb(label)}</td>
+            <td style="padding:5px 0;font-size:12.5px;vertical-align:top;">${cell}</td></tr>`).join('')}
+        </table></div>` : ''}
       ${list('What it covers', meta.bullets)}
       ${list('Limits and exclusions', meta.limitations, 'warning')}
       ${list('Eligibility', meta.eligibility)}
@@ -13357,6 +13412,9 @@ function openProductCompare_() {
         ${listRow('Limits and exclusions', 'limitations', 'warning')}
         ${listRow('Eligibility', 'eligibility')}
         ${listRow('Say this out loud', 'compliance_notes', 'warning')}
+        ${PP_BENEFITS.filter(([k]) => picked.some(p => ppBenefitCell_(p, k)))
+          .map(([k, label]) => `<tr><th style="${TH}">${escWeb(label)}</th>${picked.map(p =>
+            `<td style="${TD}">${ppBenefitCell_(p, k) || dash}</td>`).join('')}</tr>`).join('')}
         <tr><th style="${TH}">Network</th>${picked.map(p =>
           `<td style="${TD}">${ppNetworkHtml_(p, true) || dash}</td>`).join('')}</tr>
         <tr><th style="${TH}">Prescriptions</th>${picked.map(p =>
