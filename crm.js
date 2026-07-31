@@ -11977,14 +11977,56 @@ async function openCarrierProducts(crId) {
   window._crProds = prods || [];
   const rows = window._crProds.length ? window._crProds.map(p => `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);${p.is_active ? '' : 'opacity:.5;'}">
-      <div style="flex:1;min-width:0;font-size:13px;"><strong>${escWeb(p.name)}</strong> <span style="font-size:11px;color:var(--text-muted);">&middot; ${escWeb(p.line_of_business)}${p.product_code ? ' &middot; ' + escWeb(p.product_code) : ''}${p.plan_year ? ' &middot; ' + p.plan_year : ''}${p.is_active ? '' : ' &middot; inactive'}</span></div>
+      <div style="flex:1;min-width:0;font-size:13px;"><strong>${escWeb(p.name)}</strong> <span style="font-size:11px;color:var(--text-muted);">&middot; ${escWeb(p.line_of_business)}${p.product_code ? ' &middot; ' + escWeb(p.product_code) : ''}${p.plan_year ? ' &middot; ' + p.plan_year : ''}${
+        p.discontinued_on ? ' &middot; <span style="color:var(--text-warning);">retired ' + escWeb(p.discontinued_on) + (p.discontinued_reason ? ', ' + escWeb(p.discontinued_reason) : '') + '</span>'
+        : (p.is_active ? '' : ' &middot; inactive')}</span></div>
       <button class="btn btn-outline btn-sm" onclick="openRateCharts('${p.id}')">Rates</button>
       <button class="btn btn-outline btn-sm" onclick="openCarrierProductModal('${crId}','${p.id}')">Edit</button>
+      ${p.discontinued_on
+        ? `<button class="btn btn-outline btn-sm" onclick="productRetire_('${crId}','${p.id}',false)">Bring back</button>`
+        : `<button class="btn btn-outline btn-sm" style="color:var(--text-warning);border-color:var(--border-warning);" onclick="productRetire_('${crId}','${p.id}',true)">Retire</button>`}
     </div>`).join('')
     : '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No products yet for this carrier.</div>';
   showModal('Products \u2014 ' + escWeb(cr.name), `
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px;"><button class="btn btn-primary btn-sm" onclick="openCarrierProductModal('${crId}', null)">+ Add Product</button></div>
     ${rows}`, null, { hideConfirm: true });
+}
+
+// Retiring one product, without touching the carrier. Never a delete: quotes
+// already sent point at this product and have to keep rendering.
+function productRetire_(crId, prodId, retire) {
+  const p = (window._crProds || []).find(x => x.id === prodId) || {};
+  if (!retire) {
+    showModal('Bring back ' + escWeb(p.name || 'this product'), `
+      <p style="font-size:13px;line-height:1.6;">This will offer <strong>${escWeb(p.name || '')}</strong> again
+      and clear the retirement note${p.discontinued_reason ? ' (\u201c' + escWeb(p.discontinued_reason) + '\u201d)' : ''}.</p>`,
+      async () => {
+        const { error } = await supabaseClient.from('carrier_products')
+          .update({ is_active: true, discontinued_on: null, discontinued_reason: null }).eq('id', prodId);
+        if (error) { showToast('Error: ' + error.message); return false; }
+        showToast('Back in the list.');
+        openCarrierProducts(crId);
+      }, { confirmLabel: 'Bring it back' });
+    return;
+  }
+  showModal('Retire ' + escWeb(p.name || 'this product'), `
+    <p style="font-size:13px;line-height:1.6;margin-bottom:10px;">
+      It stops being offered on new quotes. <strong>Nothing is deleted</strong> \u2014 quotes already sent
+      still show it, and you can bring it back later.</p>
+    <label>Why? (goes on the record)</label>
+    <input type="text" id="pr-reason" placeholder="e.g. carrier withdrew it in MT from 1 January" />
+    <label style="margin-top:10px;">From when?</label>
+    <input type="date" id="pr-date" value="${new Date().toISOString().slice(0, 10)}" />
+  `, async () => {
+    const { error } = await supabaseClient.from('carrier_products').update({
+      is_active: false,
+      discontinued_on: (document.getElementById('pr-date') || {}).value || new Date().toISOString().slice(0, 10),
+      discontinued_reason: (document.getElementById('pr-reason') || {}).value.trim() || null,
+    }).eq('id', prodId);
+    if (error) { showToast('Error: ' + error.message); return false; }
+    showToast('Retired. Existing quotes are untouched.');
+    openCarrierProducts(crId);
+  }, { confirmLabel: 'Retire it' });
 }
 
 function openCarrierProductModal(crId, prodId) {
@@ -12570,6 +12612,343 @@ async function pwSave_() {
   } catch (e) { _pw.busy = false; _pw.error = e.message || String(e); pwPaint_(); }
 }
 
+// ============================================================
+// PRODUCT PICKER — carrier products, side by side
+//
+// One picker, not one per line. What a product is priced by lives on the
+// product itself (metadata.dimensions), and how a rate becomes a premium lives
+// on its rate chart (rate_basis). So this serves short-term medical today and
+// term life, disability or hospital indemnity the moment products exist for
+// them — data, not new code.
+//
+// Where there is no rate chart — which is most short-term medical — the card
+// says so and sends the agent to the carrier's own quoting page, then takes
+// the premium they bring back.
+// ============================================================
+
+function ppState_() {
+  window._qbPp = window._qbPp || { line: null, cmp: new Set(), sel: {}, choice: {}, prem: {} };
+  return window._qbPp;
+}
+
+async function openProductPicker_(line) {
+  const pp = ppState_();
+  pp.line = line || (document.getElementById('qb-line') || {}).value || null;
+  pp.cmp = new Set();
+  qbCloseWorkbench_();
+  const host = document.getElementById('qb-pp-picker') || (() => {
+    const d = document.createElement('div');
+    d.id = 'qb-pp-picker';
+    d.className = 'pk-panel';
+    d.style.cssText = 'position:fixed;inset:4% 5%;z-index:100000;background:var(--surface-0);border:1px solid var(--border);'
+      + 'border-radius:14px;box-shadow:0 30px 90px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;';
+    document.body.appendChild(d);
+    return d;
+  })();
+  host.style.display = 'flex';
+  host.innerHTML = '<div style="padding:22px;font-size:13px;color:var(--text-muted);">Loading products…</div>';
+
+  await planYearAmts_().catch(() => {});
+  const carriers = (window._qbCarriers || []).map(c => c.id);
+  const { data: prods } = await supabaseClient.from('carrier_products')
+    .select('*').eq('is_active', true).is('discontinued_on', null)
+    .in('carrier_id', carriers).eq('line_of_business', pp.line);
+  // rate charts, where a carrier actually gave us one
+  const ids = (prods || []).map(p => p.id);
+  const { data: charts } = ids.length
+    ? await supabaseClient.from('rate_charts').select('*').in('product_id', ids).eq('is_active', true)
+    : { data: [] };
+  pp.products = prods || [];
+  pp.charts = charts || [];
+  renderProductPicker_();
+}
+
+function closeProductPicker_() {
+  const el = document.getElementById('qb-pp-picker');
+  if (el) el.style.display = 'none';
+}
+
+function ppDims_(p) { return ((p.metadata || {}).dimensions) || {}; }
+function ppMeta_(p) { return p.metadata || {}; }
+
+// The combination the agent has chosen for this product, as a plain object
+function ppChoice_(p) {
+  const pp = ppState_();
+  return pp.choice[p.id] || (pp.choice[p.id] = {});
+}
+
+function ppChoose_(prodId, key, value) {
+  const pp = ppState_();
+  (pp.choice[prodId] = pp.choice[prodId] || {})[key] = value;
+  renderProductPicker_();
+}
+
+function ppSetPrem_(prodId, value) {
+  const pp = ppState_();
+  const n = parseFloat(String(value).replace(/[^0-9.]/g, ''));
+  pp.prem[prodId] = isNaN(n) ? null : n;
+}
+
+// A chart turns a chosen combination into a premium. Most short-term products
+// have no chart at all, and saying so plainly beats an empty price.
+function ppRate_(p) {
+  const pp = ppState_();
+  const chart = (pp.charts || []).find(c => c.product_id === p.id);
+  if (!chart) return { kind: 'none' };
+  return { kind: 'chart', chart: chart, basis: chart.rate_basis || 'flat' };
+}
+
+function ppCardHtml_(p) {
+  const pp = ppState_();
+  const dims = ppDims_(p);
+  const meta = ppMeta_(p);
+  const choice = ppChoice_(p);
+  const carrier = (window._qbCarriers || []).find(c => c.id === p.carrier_id) || {};
+  const st = (typeof _acaClientState_ === 'function') ? _acaClientState_() : '';
+  const fit = productFit_(p, st, p.carrier_id);
+  const rate = ppRate_(p);
+  const slot = ppAddedSlot_(p.id);
+  const typed = pp.prem[p.id];
+
+  const dimRows = Object.entries(dims).map(([key, d]) => {
+    const values = (d && d.values) || [];
+    if (!values.length) return '';
+    return `<div style="margin-top:7px;">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">${escWeb((d && d.label) || key)}</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;">
+        ${values.map(v => `<button type="button" onclick="ppChoose_('${escWeb(p.id)}','${escWeb(key)}',${JSON.stringify(String(v)).replace(/"/g, '&quot;')})"
+          class="fx-chip${String(choice[key]) === String(v) ? ' on' : ''}" style="font-size:11px;">${escWeb(String(v))}${d && d.unit === '$' && /^\d+$/.test(String(v)) ? '' : ''}</button>`).join('')}
+      </div></div>`;
+  }).join('');
+
+  const facts = Object.entries(meta.facts || {}).slice(0, 4).map(([k, v]) =>
+    `<span style="font-size:11px;color:var(--text-muted);">${escWeb(k.replace(/_/g, ' '))}: <strong style="color:var(--text-secondary);">${escWeb(String(v))}</strong></span>`).join(' · ');
+
+  return `<div style="border:1px solid ${slot >= 0 ? 'var(--border-selected)' : 'var(--border)'};border-radius:11px;padding:13px 15px;background:${slot >= 0 ? 'var(--bg-selected-card)' : 'var(--surface-1)'};">
+    <div style="display:flex;justify-content:space-between;gap:9px;align-items:flex-start;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(carrier.name || '')}</div>
+        <div style="font-size:14.5px;font-weight:800;margin:2px 0 3px;">${slot >= 0 ? `<span class="pk-sel-badge">✓ Option ${qbOptionNo_(slot)}</span>` : ''}${escWeb(p.name)}</div>
+        ${meta.underwriter && meta.underwriter !== carrier.name
+          ? `<div style="font-size:10.5px;color:var(--text-muted);">Underwritten by ${escWeb(meta.underwriter)}</div>` : ''}
+      </div>
+      <label style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-muted);cursor:pointer;white-space:nowrap;">
+        <input type="checkbox" ${pp.cmp.has(p.id) ? 'checked' : ''} onchange="ppCmpToggle_('${escWeb(p.id)}')" style="width:13px;height:13px;" /> ⚖️ Compare</label>
+    </div>
+
+    ${p.notes ? `<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:6px;">${escWeb(p.notes)}</div>` : ''}
+    ${facts ? `<div style="margin-top:6px;">${facts}</div>` : ''}
+    ${dimRows}
+
+    ${fit.warnings.length ? fit.warnings.map(w =>
+      `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:8px;font-size:11px;">⚠️ ${w.text}</div>`).join('') : ''}
+
+    <div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--border);">
+      ${rate.kind === 'none' ? `
+        <div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;">
+          No rate chart on file — quote it at the carrier and put the premium here.</div>
+        <div style="display:flex;gap:7px;align-items:center;margin-top:7px;flex-wrap:wrap;">
+          ${carrierQuotingBtn_(p.carrier_id, p.id, 'Quote at the carrier')}
+          <span style="display:inline-flex;align-items:center;gap:4px;">
+            <span style="font-size:12px;color:var(--text-muted);">$</span>
+            <input type="text" inputmode="decimal" value="${typed != null ? typed : ''}" placeholder="premium"
+              oninput="ppSetPrem_('${escWeb(p.id)}', this.value)" style="width:90px;font-size:12px;margin:0;" />
+            <span style="font-size:11px;color:var(--text-muted);">/mo</span>
+          </span>
+        </div>` : `
+        <div style="font-size:17px;font-weight:800;color:var(--accent,#1d3557);">${ppPriceLabel_(p, rate)}</div>`}
+      <div style="display:flex;gap:7px;margin-top:9px;">
+        <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="ppAdd_('${escWeb(p.id)}')">
+          ${slot >= 0 ? '✓ On the quote' : '＋ Add to quote'}</button>
+        <button class="btn btn-outline btn-sm" onclick="ppDetail_('${escWeb(p.id)}')">Details</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function ppPriceLabel_(p, rate) {
+  const pp = ppState_();
+  const chart = rate.chart;
+  const basis = rate.basis;
+  if (basis !== 'flat') {
+    const inp = chart.benefit_input || {};
+    return `<span style="font-size:12px;font-weight:400;color:var(--text-muted);">Priced per ${escWeb(
+      basis === 'per_1000_face' ? '$1,000 of cover' : basis === 'per_100_benefit' ? '$100 of monthly benefit' : 'unit')}
+      — enter ${escWeb(inp.label || 'the amount')} in the option</span>`;
+  }
+  const typed = pp.prem[p.id];
+  return typed != null ? '$' + Number(typed).toFixed(2) + '<span style="font-size:11px;font-weight:500;color:var(--text-muted);">/mo</span>'
+    : '<span style="font-size:12px;font-weight:400;color:var(--text-muted);">Rate chart on file — pick the options above</span>';
+}
+
+function ppCmpToggle_(id) {
+  const pp = ppState_();
+  if (pp.cmp.has(id)) pp.cmp.delete(id); else if (pp.cmp.size < 4) pp.cmp.add(id);
+  renderProductPicker_();
+}
+
+function ppAddedSlot_(prodId) {
+  const pp = ppState_();
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if (pp.sel[i] === prodId) return i;
+  return -1;
+}
+
+function ppAdd_(prodId) {
+  const pp = ppState_();
+  const p = (pp.products || []).find(x => x.id === prodId);
+  if (!p) return;
+  const existing = ppAddedSlot_(prodId);
+  if (existing >= 0) {
+    delete pp.sel[existing];
+    ['qb-name-', 'qb-prem-', 'qb-bul-', 'qb-note-'].forEach(pref => {
+      const el = document.getElementById(pref + existing); if (el) el.value = '';
+    });
+    const pr0 = document.getElementById('qb-prod-' + existing); if (pr0) pr0.value = '';
+    const rec = document.getElementById('qb-rec-' + existing); if (rec) rec.checked = false;
+    qbTidyOptions_();
+    renderProductPicker_();
+    return;
+  }
+
+  let slot = -1;
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if (!qbOptionFilled_(i)) { slot = i; break; }
+  if (slot === -1) { showToast('All ' + QB_MAX_OPTIONS + ' option slots are full — remove one first.'); return; }
+  const wrap = document.getElementById('qb-opt-wrap-' + slot);
+  if (wrap) wrap.style.display = 'block';
+  pp.sel[slot] = prodId;
+
+  const meta = ppMeta_(p);
+  const choice = ppChoice_(p);
+  const chosen = Object.entries(choice).map(([k, v]) => {
+    const d = ppDims_(p)[k] || {};
+    return (d.label || k) + ': ' + v;
+  });
+
+  const ol = document.getElementById('qb-optline-' + slot);
+  if (ol) { ol.value = p.line_of_business; qbOptLineChanged_(slot); }
+  const car = document.getElementById('qb-car-' + slot);
+  if (car) { car.value = p.carrier_id; qbFillProducts_(slot); }
+  const pr = document.getElementById('qb-prod-' + slot);
+  if (pr) pr.value = p.id;
+  const nm = document.getElementById('qb-name-' + slot);
+  if (nm) nm.value = p.name + (chosen.length ? ' — ' + chosen.map(c => c.split(': ')[1]).join(' / ') : '');
+  const prem = document.getElementById('qb-prem-' + slot);
+  if (prem && pp.prem[prodId] != null) prem.value = Number(pp.prem[prodId]).toFixed(2);
+  const bul = document.getElementById('qb-bul-' + slot);
+  if (bul) bul.value = [].concat(chosen, meta.bullets || []).join('\n');
+
+  qbRenumberOptions_();
+  qbSectionSummary_();
+  if (typeof qbQuoteLinkPaint_ === 'function') qbQuoteLinkPaint_(slot);
+  showToast('Added as Option ' + qbOptionNo_(slot) + '.');
+  renderProductPicker_();
+}
+
+function ppDetail_(prodId) {
+  const pp = ppState_();
+  const p = (pp.products || []).find(x => x.id === prodId);
+  if (!p) return;
+  const meta = ppMeta_(p);
+  const list = (title, arr, tone) => (arr || []).length ? `
+    <div style="margin-top:12px;">
+      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-${tone || 'muted'});">${title}</div>
+      <ul style="margin:5px 0 0 18px;padding:0;font-size:12.5px;line-height:1.65;">${(arr || []).map(x => '<li>' + escWeb(String(x)) + '</li>').join('')}</ul>
+    </div>` : '';
+  const ao = meta.agent_only || {};
+  showModal(escWeb(p.name), `
+    <div style="padding:4px 2px;">
+      ${p.notes ? `<div style="font-size:13px;line-height:1.6;">${escWeb(p.notes)}</div>` : ''}
+      ${meta.underwriter ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">Underwritten by <strong>${escWeb(meta.underwriter)}</strong>${meta.policy_form ? ' · form ' + escWeb(meta.policy_form) : ''}</div>` : ''}
+      ${list('What it covers', meta.bullets)}
+      ${list('Limits and exclusions', meta.limitations, 'warning')}
+      ${list('Eligibility', meta.eligibility)}
+      ${list('Say this out loud', meta.compliance_notes, 'warning')}
+      ${(ao.exclusions || []).length || (ao.riders || []).length ? `
+        <div style="margin-top:14px;border:1px solid var(--border-warning);background:var(--bg-warning);border-radius:9px;padding:10px 13px;">
+          <div style="font-size:11.5px;font-weight:800;color:var(--text-warning);">\u{1F512} Agent reference only — never shown to a client</div>
+          ${list('Full policy exclusions', ao.exclusions, 'warning')}
+          ${list('Riders', ao.riders, 'warning')}
+          ${(ao.caveats || []).length ? `<div style="font-size:11px;color:var(--text-warning);opacity:.9;margin-top:7px;">${escWeb((ao.caveats || []).join(' '))}</div>` : ''}
+        </div>` : ''}
+      <div style="margin-top:14px;">
+        <a href="#" onclick="event.preventDefault();productDocOpen_('${escWeb(p.id)}')" style="font-size:12.5px;color:var(--link);">\u{1F4C4} Open the brochure</a>
+        <a href="#" onclick="event.preventDefault();productDocCopy_('${escWeb(p.id)}')" style="font-size:12.5px;color:var(--link);margin-left:12px;">Copy a link for the client</a>
+      </div>
+    </div>`, null, { hideConfirm: true, wide: true });
+}
+
+function renderProductPicker_() {
+  const el = document.getElementById('qb-pp-picker');
+  if (!el) return;
+  const pp = ppState_();
+  const list = pp.products || [];
+  const withRates = list.filter(p => ppRate_(p).kind === 'chart').length;
+
+  el.innerHTML = `
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div style="font-weight:800;font-size:15px;">\u{1F4CB} ${escWeb(pp.line || 'Products')}</div>
+      <div style="font-size:12px;color:var(--text-muted);">${list.length} product${list.length === 1 ? '' : 's'} you can write${
+        withRates ? ' · ' + withRates + ' with rates on file' : ' · none with rates on file'}</div>
+      ${pp.cmp.size ? `<button class="btn ${pp.cmp.size >= 2 ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-left:auto;"
+        ${pp.cmp.size >= 2 ? '' : 'disabled'} onclick="openProductCompare_()">⚖️ Compare (${pp.cmp.size})</button>` : ''}
+      <button class="btn btn-outline btn-sm" ${pp.cmp.size ? '' : 'style="margin-left:auto;"'} onclick="closeProductPicker_()">✕ Done</button>
+    </div>
+
+    <div id="qb-med-basis" data-kind="MAPD" style="display:none;"></div>
+
+    <div style="flex:1;overflow:auto;padding:14px 18px;">
+      ${list.length
+        ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;">${list.map(ppCardHtml_).join('')}</div>`
+        : `<div style="font-size:13px;color:var(--text-muted);line-height:1.6;">
+             No ${escWeb(pp.line || '')} products on file for the carriers you are appointed with.<br>
+             Add them from <strong>Admin → Carriers → Add products from a brochure</strong>.</div>`}
+    </div>`;
+}
+
+// Side by side — the comparison Ken wanted: two carriers' short-term plans
+// against each other, benefits and exclusions included.
+function openProductCompare_() {
+  const pp = ppState_();
+  const picked = (pp.products || []).filter(p => pp.cmp.has(p.id));
+  if (picked.length < 2) return;
+  const carrierOf = id => ((window._qbCarriers || []).find(c => c.id === id) || {}).name || '';
+  const rowsFor = key => {
+    const any = picked.some(p => ((ppMeta_(p)[key]) || []).length);
+    if (!any) return '';
+    const label = { bullets: 'What it covers', limitations: 'Limits and exclusions', eligibility: 'Eligibility' }[key] || key;
+    return `<tr><th style="${TH}">${label}</th>${picked.map(p =>
+      `<td style="${TD}">${((ppMeta_(p)[key]) || []).map(x => '• ' + escWeb(String(x))).join('<br>') || '<span style="color:var(--text-muted);">—</span>'}</td>`).join('')}</tr>`;
+  };
+  const TH = 'position:sticky;left:0;background:var(--surface-0);text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);min-width:170px;vertical-align:top;';
+  const TD = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:200px;line-height:1.55;';
+
+  const dimKeys = [...new Set(picked.flatMap(p => Object.keys(ppDims_(p))))];
+  const factKeys = [...new Set(picked.flatMap(p => Object.keys(ppMeta_(p).facts || {})))];
+
+  showModal('Side by side', `
+    <div style="overflow:auto;max-height:70vh;">
+      <table style="border-collapse:collapse;width:100%;">
+        <thead><tr><th style="${TH}"></th>${picked.map(p => `<td style="${TD}font-weight:800;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(carrierOf(p.carrier_id))}</div>
+          ${escWeb(p.name)}</td>`).join('')}</tr></thead>
+        <tbody>
+          ${dimKeys.map(k => `<tr><th style="${TH}">${escWeb(((picked.map(p => ppDims_(p)[k]).find(Boolean) || {}).label) || k)}</th>
+            ${picked.map(p => {
+              const d = ppDims_(p)[k];
+              return `<td style="${TD}">${d && (d.values || []).length ? escWeb((d.values || []).join(' · ')) : '<span style="color:var(--text-muted);">—</span>'}</td>`;
+            }).join('')}</tr>`).join('')}
+          ${factKeys.map(k => `<tr><th style="${TH}">${escWeb(k.replace(/_/g, ' '))}</th>
+            ${picked.map(p => `<td style="${TD}">${escWeb(String((ppMeta_(p).facts || {})[k] || '—'))}</td>`).join('')}</tr>`).join('')}
+          ${rowsFor('bullets')}
+          ${rowsFor('limitations')}
+          ${rowsFor('eligibility')}
+          <tr><th style="${TH}">Underwritten by</th>${picked.map(p =>
+            `<td style="${TD}">${escWeb(ppMeta_(p).underwriter || carrierOf(p.carrier_id))}</td>`).join('')}</tr>
+        </tbody>
+      </table>
+    </div>`, null, { hideConfirm: true, wide: true });
+}
+
 // Licensed states have been written both as an array and as a loose string
 // over the life of this system, so read either and hand back a clean set.
 function agentStates_(agent) {
@@ -12956,7 +13335,8 @@ async function openQuoteBuilder(dealId, opts) {
     return;
   }
   const { data: prods } = await supabaseClient.from('carrier_products')
-    .select('*').eq('is_active', true).in('carrier_id', myCarriers.map(c => c.id));
+    .select('*').eq('is_active', true).is('discontinued_on', null)
+    .in('carrier_id', myCarriers.map(c => c.id));
   window._qbCarriers = myCarriers;
   window._qbProds = prods || [];
   window._qbContact = contact;
@@ -13074,6 +13454,7 @@ async function openQuoteBuilder(dealId, opts) {
     <div id="qb-auto-card" style="display:none;"></div>
     <div id="qb-strip-holder" style="display:none;"></div>
     <div id="qb-med-note" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">Medicare line: benefit bullets are locked to the owner-curated product text (compliance). Pick a product for each option.</div>
+    <div id="qb-pp-strip" style="display:none;"></div>
     <div id="qb-aca-strip" style="display:none;background:var(--surface-1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">&#127963;&#65039; ACA Marketplace — household &amp; subsidy</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;font-size:13px;">
@@ -13533,6 +13914,21 @@ function qbAutoSources_() {
     { key: 'rate', el: 'qb-rate-strip', line: 'Medicare Supplement',
       title: '\u{1F4CA} Medigap rate lookup',
       blurb: 'Rates from the charts you\u2019ve loaded, by age, gender and tobacco.' },
+    // One entry per line we hold products for. The picker itself is generic \u2014
+    // it reads what each product is priced by \u2014 so adding a line here is the
+    // whole job.
+    { key: 'stm', el: 'qb-pp-strip', line: 'Short-Term Medical',
+      title: '\u{1F4CB} Short-Term Medical plans',
+      blurb: 'Products from your carriers side by side, with their benefits and exclusions.' },
+    { key: 'hosp', el: 'qb-pp-strip', line: 'Hospital Indemnity',
+      title: '\u{1F3E5} Hospital indemnity plans',
+      blurb: 'Products from your carriers, compared on what they actually pay.' },
+    { key: 'acc', el: 'qb-pp-strip', line: 'Accident',
+      title: '\u{1FA79} Accident plans',
+      blurb: 'Products from your carriers, compared side by side.' },
+    { key: 'ci', el: 'qb-pp-strip', line: 'Cancer/Critical Illness',
+      title: '\u{1F397}\ufe0f Cancer and critical illness',
+      blurb: 'Products from your carriers, compared side by side.' },
   ];
 }
 
@@ -13576,13 +13972,39 @@ function qbCloseWorkbench_() {
 }
 
 // Move the chosen source's panel into the workbench; park every other one
+// The product picker's own strip. It says what we hold for this line and opens
+// the picker; everything else about the line lives on the products themselves.
+async function qbPpStripPaint_(line) {
+  const el = document.getElementById('qb-pp-strip');
+  if (!el) return;
+  el.innerHTML = `<div style="font-size:12.5px;color:var(--text-muted);">Counting products…</div>`;
+  const carriers = (window._qbCarriers || []).map(c => c.id);
+  let n = 0, carrierCount = 0;
+  if (carriers.length) {
+    const { data } = await supabaseClient.from('carrier_products')
+      .select('carrier_id').eq('is_active', true).is('discontinued_on', null)
+      .in('carrier_id', carriers).eq('line_of_business', line);
+    n = (data || []).length;
+    carrierCount = new Set((data || []).map(x => x.carrier_id)).size;
+  }
+  el.innerHTML = n
+    ? `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;">
+         <strong>${n}</strong> ${escWeb(line)} product${n === 1 ? '' : 's'} from
+         <strong>${carrierCount}</strong> carrier${carrierCount === 1 ? '' : 's'} you can write.</div>
+       <button type="button" class="btn btn-primary btn-sm" style="margin-top:8px;"
+         onclick="openProductPicker_(${JSON.stringify(line).replace(/"/g, '&quot;')})">Open the plan picker</button>`
+    : `<div style="font-size:12.5px;color:var(--text-muted);line-height:1.55;">
+         No ${escWeb(line)} products on file for the carriers you are appointed with.<br>
+         Load a carrier's brochure from <strong>Admin → Carriers → Add products from a brochure</strong>.</div>`;
+}
+
 function qbMountSource_() {
   const sources = qbAutoSources_();
   const active = sources.find(x => x.key === window._qbWbActive) || sources[0];
   const body = document.getElementById('qb-wb-body');
   const holder = document.getElementById('qb-strip-holder');
   if (!body || !holder) return;
-  ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip'].forEach(id => {
+  ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip', 'qb-pp-strip'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     if (active && active.el === id) {
@@ -13590,6 +14012,7 @@ function qbMountSource_() {
       el.style.display = 'block';
       el.style.border = 'none'; el.style.background = 'transparent';
       el.style.padding = '0'; el.style.margin = '0';
+      if (id === 'qb-pp-strip') qbPpStripPaint_(active.line);
     } else {
       if (el.parentElement !== holder) holder.appendChild(el);
       el.style.display = 'none';
@@ -13711,7 +14134,7 @@ function qbSyncWorkbench_() {
     // a panel belongs on screen ONLY while it's the one open in the workbench.
     // Otherwise it parks, or it leaks back onto the dialog (qbLineChanged_
     // sets display:block on whichever strip matches the working line).
-    ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip'].forEach(id => {
+    ['qb-aca-strip', 'qb-cms-strip', 'qb-rate-strip', 'qb-pp-strip'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       if (wbOpen && id === activeEl) return;
@@ -13770,7 +14193,10 @@ function qbMgCarrierPicked_(i) {
 
 function qbFillProducts_(i) {
   const carId = document.getElementById('qb-car-' + i).value;
-  const line = document.getElementById('qb-line').value;
+  // This option's own coverage type decides which products fit it. The quote's
+  // overall line is only a fallback for options that have not chosen one yet.
+  const line = (document.getElementById('qb-optline-' + i) || {}).value
+    || (document.getElementById('qb-line') || {}).value;
   const sel = document.getElementById('qb-prod-' + i);
   let list = (window._qbProds || []).filter(p => p.carrier_id === carId);
   const inLine = list.filter(p => p.line_of_business === line);
