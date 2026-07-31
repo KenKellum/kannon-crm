@@ -12675,45 +12675,76 @@ async function pwSave_() {
 // ============================================================
 // PRODUCT PICKER — carrier products, side by side
 //
-// One picker, not one per line. What a product is priced by lives on the
-// product itself (metadata.dimensions), and how a rate becomes a premium lives
-// on its rate chart (rate_basis). So this serves short-term medical today and
-// term life, disability or hospital indemnity the moment products exist for
-// them — data, not new code.
+// Built to the same shape as the ACA picker: a full-screen panel, a
+// collapsible "what these are based on" bar the agent can edit in place, cards
+// of equal height with their actions on the same line, and compare/detail as
+// their own overlays ABOVE the picker rather than modals behind it.
 //
-// Where there is no rate chart — which is most short-term medical — the card
-// says so and sends the agent to the carrier's own quoting page, then takes
-// the premium they bring back.
+// One picker, not one per line. What a product is priced by lives on the
+// product (metadata.dimensions); how a rate becomes a premium lives on its
+// chart (rate_basis). Short-term medical today, hospital indemnity, accident
+// or critical illness the moment products exist for them.
 // ============================================================
 
 function ppState_() {
-  window._qbPp = window._qbPp || { line: null, cmp: new Set(), sel: {}, choice: {}, prem: {} };
+  window._qbPp = window._qbPp || { line: null, cmp: new Set(), sel: {}, choice: {}, prem: {}, basisOpen: false };
   return window._qbPp;
+}
+
+// What these products are being quoted against. Same facts the ACA tool uses,
+// editable here so the agent never has to close the picker to fix a birth date.
+function ppProfile_() {
+  const c = window._qbContact || {};
+  const zipEl = document.getElementById('qb-pp-zip');
+  const dobEl = document.getElementById('qb-pp-dob');
+  const zip = (zipEl && zipEl.value) || c.zip || '';
+  const dob = (dobEl && dobEl.value) || c.date_of_birth || null;
+  return {
+    zip: zip,
+    state: (zipToState_(zip) || c.state || '').toUpperCase(),
+    dob: dob,
+    age: dob ? qbAgeFrom_(dob) : null,
+    household: window._qbPpHH || [],
+  };
 }
 
 async function openProductPicker_(line) {
   const pp = ppState_();
   pp.line = line || (document.getElementById('qb-line') || {}).value || null;
   pp.cmp = new Set();
-  qbCloseWorkbench_();
-  const host = document.getElementById('qb-pp-picker') || (() => {
-    const d = document.createElement('div');
-    d.id = 'qb-pp-picker';
-    d.className = 'pk-panel';
-    d.style.cssText = 'position:fixed;inset:4% 5%;z-index:100000;background:var(--surface-0);border:1px solid var(--border);'
-      + 'border-radius:14px;box-shadow:0 30px 90px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;';
-    document.body.appendChild(d);
-    return d;
-  })();
-  host.style.display = 'flex';
-  host.innerHTML = '<div style="padding:22px;font-size:13px;color:var(--text-muted);">Loading products…</div>';
+  qbWorkbenchOpen_(false);          // the picker IS the screen now
 
-  await planYearAmts_().catch(() => {});
+  // seed the household from whatever the ACA tool or the intake already knows
+  if (!window._qbPpHH) {
+    const c = window._qbContact || {};
+    const rows = [...document.querySelectorAll('#qb-aca-members > div')];
+    window._qbPpHH = rows.length
+      ? rows.map(d => ({
+          relationship: (d.querySelector('.aca-rel') || {}).value || 'Self',
+          dob: (d.querySelector('.aca-dob') || {}).value || null,
+          applying: !(d.querySelector('.aca-app')) || d.querySelector('.aca-app').checked,
+        }))
+      : (Array.isArray(c.household_members) && c.household_members.length
+          ? c.household_members.map(m => ({ relationship: m.relationship || 'Member', dob: m.dob || null, applying: m.applying !== false }))
+          : [{ relationship: 'Self', dob: c.date_of_birth || null, applying: true }]);
+  }
+
+  let el = document.getElementById('qb-pp-picker');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'qb-pp-picker';
+    el.style.cssText = 'position:fixed;inset:0;z-index:99990;background:var(--surface-0);display:flex;flex-direction:column;';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  el.innerHTML = '<div style="padding:24px;font-size:13px;color:var(--text-muted);">Loading products…</div>';
+
   const carriers = (window._qbCarriers || []).map(c => c.id);
-  const { data: prods } = await supabaseClient.from('carrier_products')
-    .select('*').eq('is_active', true).is('discontinued_on', null)
-    .in('carrier_id', carriers).eq('line_of_business', pp.line);
-  // rate charts, where a carrier actually gave us one
+  const { data: prods } = carriers.length
+    ? await supabaseClient.from('carrier_products').select('*')
+        .eq('is_active', true).is('discontinued_on', null)
+        .in('carrier_id', carriers).eq('line_of_business', pp.line)
+    : { data: [] };
   const ids = (prods || []).map(p => p.id);
   const { data: charts } = ids.length
     ? await supabaseClient.from('rate_charts').select('*').in('product_id', ids).eq('is_active', true)
@@ -12730,12 +12761,7 @@ function closeProductPicker_() {
 
 function ppDims_(p) { return ((p.metadata || {}).dimensions) || {}; }
 function ppMeta_(p) { return p.metadata || {}; }
-
-// The combination the agent has chosen for this product, as a plain object
-function ppChoice_(p) {
-  const pp = ppState_();
-  return pp.choice[p.id] || (pp.choice[p.id] = {});
-}
+function ppChoice_(p) { const pp = ppState_(); return pp.choice[p.id] || (pp.choice[p.id] = {}); }
 
 function ppChoose_(prodId, key, value) {
   const pp = ppState_();
@@ -12747,25 +12773,101 @@ function ppSetPrem_(prodId, value) {
   const pp = ppState_();
   const n = parseFloat(String(value).replace(/[^0-9.]/g, ''));
   pp.prem[prodId] = isNaN(n) ? null : n;
+  const el = document.getElementById('pp-added-' + prodId);
+  if (el) el.textContent = '';           // repaint on add, not on every keystroke
 }
 
-// A chart turns a chosen combination into a premium. Most short-term products
-// have no chart at all, and saying so plainly beats an empty price.
 function ppRate_(p) {
   const pp = ppState_();
   const chart = (pp.charts || []).find(c => c.product_id === p.id);
-  if (!chart) return { kind: 'none' };
-  return { kind: 'chart', chart: chart, basis: chart.rate_basis || 'flat' };
+  return chart ? { kind: 'chart', chart: chart, basis: chart.rate_basis || 'flat' } : { kind: 'none' };
 }
 
+// ------------------------------------------------------------- the basis bar
+function ppBasisToggle_() { const pp = ppState_(); pp.basisOpen = !pp.basisOpen; renderProductPicker_(); }
+
+function ppHHSet_(i, field, value) {
+  const hh = window._qbPpHH || [];
+  if (hh[i]) hh[i][field] = (field === 'applying') ? !!value : value;
+}
+function ppHHAdd_() { (window._qbPpHH = window._qbPpHH || []).push({ relationship: 'Dependent', dob: null, applying: true }); renderProductPicker_(); }
+function ppHHDel_(i) { (window._qbPpHH || []).splice(i, 1); renderProductPicker_(); }
+function ppProfileChanged_() { renderProductPicker_(); }
+
+function ppBasisHtml_() {
+  const pp = ppState_();
+  const prof = ppProfile_();
+  const hh = window._qbPpHH || [];
+  const applying = hh.filter(m => m.applying !== false).length;
+  const summary = [
+    prof.zip ? prof.zip + (prof.state ? ' · ' + prof.state : '') : 'no ZIP',
+    prof.age != null ? 'age ' + prof.age : 'no date of birth',
+    hh.length ? applying + ' of ' + hh.length + ' applying' : '',
+  ].filter(Boolean).join('  ·  ');
+
+  const head = `<button type="button" onclick="ppBasisToggle_()" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:9px 20px;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--text-secondary);">
+      <span style="font-weight:800;color:var(--text-primary);">${pp.basisOpen ? '▾' : '▸'} What these plans are based on</span>
+      <span style="color:var(--text-muted);">${escWeb(summary)}</span>
+      <span style="margin-left:auto;color:var(--accent,#c8a84b);font-weight:700;">${pp.basisOpen ? 'Hide' : 'Edit'}</span>
+    </button>`;
+  if (!pp.basisOpen) return `<div style="background:var(--surface-1);border-bottom:1px solid var(--border);">${head}</div>`;
+
+  return `<div style="background:var(--surface-1);border-bottom:1px solid var(--border);">
+    ${head}
+    <div style="padding:0 20px 14px;display:grid;grid-template-columns:minmax(230px,1fr) minmax(300px,1.5fr);gap:20px;align-items:start;">
+      <div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <div><label style="font-size:10px;margin:0 0 2px;">ZIP code</label>
+            <input type="text" id="qb-pp-zip" maxlength="5" value="${escWeb(prof.zip || '')}" onchange="ppProfileChanged_()" style="width:90px;" /></div>
+          <div><label style="font-size:10px;margin:0 0 2px;">Date of birth</label>
+            <input type="date" id="qb-pp-dob" value="${escWeb(prof.dob || '')}" onchange="ppProfileChanged_()" style="width:150px;" /></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:7px;line-height:1.5;">
+          ${prof.state ? escWeb(prof.state) : 'No state yet'}${prof.age != null ? ' · age ' + prof.age : ' · no age yet'}
+          — these decide which products are filed for them and what you can write.
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="ppSaveProfile_()">Save to their record</button>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">Who is being covered</div>
+        ${hh.map((m, i) => `
+          <div style="display:flex;gap:7px;align-items:center;margin-bottom:5px;flex-wrap:wrap;">
+            <input type="text" value="${escWeb(m.relationship || '')}" onchange="ppHHSet_(${i},'relationship',this.value)" placeholder="Self / Spouse / Child" style="width:130px;font-size:12px;margin:0;" />
+            <input type="date" value="${escWeb(m.dob || '')}" onchange="ppHHSet_(${i},'dob',this.value);ppProfileChanged_()" style="width:140px;font-size:12px;margin:0;" />
+            <label style="display:flex;gap:4px;align-items:center;font-size:11.5px;color:var(--text-muted);font-weight:400;margin:0;">
+              <input type="checkbox" ${m.applying !== false ? 'checked' : ''} onchange="ppHHSet_(${i},'applying',this.checked);ppProfileChanged_()" style="width:auto;" /> applying</label>
+            <button type="button" class="btn btn-outline btn-sm" onclick="ppHHDel_(${i})" style="padding:1px 7px;">✕</button>
+          </div>`).join('')}
+        <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="ppHHAdd_()">+ Add someone</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function ppSaveProfile_() {
+  const c = window._qbContact;
+  if (!c) return;
+  const prof = ppProfile_();
+  const patch = {};
+  if (prof.zip && prof.zip !== c.zip) patch.zip = prof.zip;
+  if (prof.dob && prof.dob !== c.date_of_birth) patch.date_of_birth = prof.dob;
+  if ((window._qbPpHH || []).length) patch.household_members = window._qbPpHH;
+  if (!Object.keys(patch).length) { showToast('Nothing changed.'); return; }
+  const { error } = await supabaseClient.from('contacts').update(patch).eq('id', c.id);
+  if (error) { showToast('Could not save: ' + error.message); return; }
+  Object.assign(c, patch);
+  showToast('Saved to their record.');
+}
+
+// ------------------------------------------------------------------ the card
 function ppCardHtml_(p) {
   const pp = ppState_();
   const dims = ppDims_(p);
   const meta = ppMeta_(p);
   const choice = ppChoice_(p);
   const carrier = (window._qbCarriers || []).find(c => c.id === p.carrier_id) || {};
-  const st = (typeof _acaClientState_ === 'function') ? _acaClientState_() : '';
-  const fit = productFit_(p, st, p.carrier_id);
+  const prof = ppProfile_();
+  const fit = productFit_(p, prof.state, p.carrier_id);
   const rate = ppRate_(p);
   const slot = ppAddedSlot_(p.id);
   const typed = pp.prem[p.id];
@@ -12773,22 +12875,25 @@ function ppCardHtml_(p) {
   const dimRows = Object.entries(dims).map(([key, d]) => {
     const values = (d && d.values) || [];
     if (!values.length) return '';
-    return `<div style="margin-top:7px;">
-      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">${escWeb((d && d.label) || key)}</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;">
+    return `<div style="margin-top:8px;">
+      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">${escWeb((d && d.label) || key)}</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">
         ${values.map(v => `<button type="button" onclick="ppChoose_('${escWeb(p.id)}','${escWeb(key)}',${JSON.stringify(String(v)).replace(/"/g, '&quot;')})"
-          class="fx-chip${String(choice[key]) === String(v) ? ' on' : ''}" style="font-size:11px;">${escWeb(String(v))}${d && d.unit === '$' && /^\d+$/.test(String(v)) ? '' : ''}</button>`).join('')}
+          class="fx-chip${String(choice[key]) === String(v) ? ' on' : ''}" style="font-size:11px;">${escWeb(ppFmt_(v, d))}</button>`).join('')}
       </div></div>`;
   }).join('');
 
   const facts = Object.entries(meta.facts || {}).slice(0, 4).map(([k, v]) =>
-    `<span style="font-size:11px;color:var(--text-muted);">${escWeb(k.replace(/_/g, ' '))}: <strong style="color:var(--text-secondary);">${escWeb(String(v))}</strong></span>`).join(' · ');
+    `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:2px 0;">
+       <span style="color:var(--text-muted);">${escWeb(k.replace(/_/g, ' '))}</span>
+       <strong style="color:var(--text-secondary);">${escWeb(String(v))}</strong></div>`).join('');
 
-  return `<div style="border:1px solid ${slot >= 0 ? 'var(--border-selected)' : 'var(--border)'};border-radius:11px;padding:13px 15px;background:${slot >= 0 ? 'var(--bg-selected-card)' : 'var(--surface-1)'};">
-    <div style="display:flex;justify-content:space-between;gap:9px;align-items:flex-start;">
+  return `<div style="display:flex;flex-direction:column;border:1px solid ${slot >= 0 ? 'var(--border-selected)' : 'var(--border)'};border-radius:11px;padding:13px 15px;background:${slot >= 0 ? 'var(--bg-selected-card)' : 'var(--surface-1)'};">
+
+    <div style="display:flex;justify-content:space-between;gap:9px;align-items:flex-start;min-height:52px;">
       <div style="flex:1;min-width:0;">
-        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(carrier.name || '')}</div>
-        <div style="font-size:14.5px;font-weight:800;margin:2px 0 3px;">${slot >= 0 ? `<span class="pk-sel-badge">✓ Option ${qbOptionNo_(slot)}</span>` : ''}${escWeb(p.name)}</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(carrier.name || '')}</div>
+        <div style="font-size:14.5px;font-weight:800;margin:2px 0 2px;">${escWeb(p.name)}</div>
         ${meta.underwriter && meta.underwriter !== carrier.name
           ? `<div style="font-size:10.5px;color:var(--text-muted);">Underwritten by ${escWeb(meta.underwriter)}</div>` : ''}
       </div>
@@ -12796,54 +12901,64 @@ function ppCardHtml_(p) {
         <input type="checkbox" ${pp.cmp.has(p.id) ? 'checked' : ''} onchange="ppCmpToggle_('${escWeb(p.id)}')" style="width:13px;height:13px;" /> ⚖️ Compare</label>
     </div>
 
-    ${p.notes ? `<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:6px;">${escWeb(p.notes)}</div>` : ''}
-    ${facts ? `<div style="margin-top:6px;">${facts}</div>` : ''}
-    ${dimRows}
+    ${slot >= 0 ? `<div style="margin:6px 0 2px;"><span class="pk-sel-badge">✓ Selected · Option ${qbOptionNo_(slot)}</span></div>` : ''}
 
-    ${fit.warnings.length ? fit.warnings.map(w =>
-      `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:8px;font-size:11px;">⚠️ ${w.text}</div>`).join('') : ''}
+    <div style="min-height:34px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;">${p.notes ? escWeb(p.notes) : ''}</div>
 
-    <div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--border);">
+    <div style="min-height:52px;margin-top:5px;">${facts}</div>
+
+    <div style="min-height:74px;">${dimRows}</div>
+
+    <div style="min-height:26px;margin-top:7px;">
+      ${fit.warnings.map(w => `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-bottom:4px;font-size:11px;">⚠️ ${w.text}</div>`).join('')}
+    </div>
+
+    <div style="margin-top:auto;padding-top:10px;border-top:1px solid var(--border);">
       ${rate.kind === 'none' ? `
-        <div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;">
-          No rate chart on file — quote it at the carrier and put the premium here.</div>
-        <div style="display:flex;gap:7px;align-items:center;margin-top:7px;flex-wrap:wrap;">
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.45;">No rate chart on file — quote it at the carrier, then put the premium here.</div>
+        <div style="display:flex;gap:7px;align-items:center;margin-top:6px;flex-wrap:wrap;">
           ${carrierQuotingBtn_(p.carrier_id, p.id, 'Quote at the carrier')}
           <span style="display:inline-flex;align-items:center;gap:4px;">
             <span style="font-size:12px;color:var(--text-muted);">$</span>
             <input type="text" inputmode="decimal" value="${typed != null ? typed : ''}" placeholder="premium"
-              oninput="ppSetPrem_('${escWeb(p.id)}', this.value)" style="width:90px;font-size:12px;margin:0;" />
-            <span style="font-size:11px;color:var(--text-muted);">/mo</span>
-          </span>
+              oninput="ppSetPrem_('${escWeb(p.id)}', this.value)" style="width:88px;font-size:12px;margin:0;" />
+            <span style="font-size:11px;color:var(--text-muted);">/mo</span></span>
         </div>` : `
-        <div style="font-size:17px;font-weight:800;color:var(--accent,#1d3557);">${ppPriceLabel_(p, rate)}</div>`}
+        <div style="font-size:18px;font-weight:800;color:var(--accent,#c8a84b);line-height:1.2;">${ppPriceLabel_(p, rate)}</div>`}
       <div style="display:flex;gap:7px;margin-top:9px;">
-        <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="ppAdd_('${escWeb(p.id)}')">
-          ${slot >= 0 ? '✓ On the quote' : '＋ Add to quote'}</button>
+        <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="flex:1;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}" onclick="ppAdd_('${escWeb(p.id)}')">
+          ${slot >= 0 ? '✓ Option ' + qbOptionNo_(slot) : '＋ Add'}</button>
         <button class="btn btn-outline btn-sm" onclick="ppDetail_('${escWeb(p.id)}')">Details</button>
       </div>
     </div>
   </div>`;
 }
 
+function ppFmt_(v, d) {
+  if (d && d.unit === '$' && /^\d+(\.\d+)?$/.test(String(v))) return '$' + Number(v).toLocaleString('en-US');
+  if (d && d.unit === '%' && /^\d+(\.\d+)?$/.test(String(v))) return v + '%';
+  return String(v);
+}
+
 function ppPriceLabel_(p, rate) {
   const pp = ppState_();
-  const chart = rate.chart;
-  const basis = rate.basis;
-  if (basis !== 'flat') {
-    const inp = chart.benefit_input || {};
+  if (rate.basis !== 'flat') {
+    const inp = (rate.chart && rate.chart.benefit_input) || {};
     return `<span style="font-size:12px;font-weight:400;color:var(--text-muted);">Priced per ${escWeb(
-      basis === 'per_1000_face' ? '$1,000 of cover' : basis === 'per_100_benefit' ? '$100 of monthly benefit' : 'unit')}
-      — enter ${escWeb(inp.label || 'the amount')} in the option</span>`;
+      rate.basis === 'per_1000_face' ? '$1,000 of cover'
+      : rate.basis === 'per_100_benefit' ? '$100 of monthly benefit' : 'unit')} — enter ${escWeb(inp.label || 'the amount')} on the option</span>`;
   }
   const typed = pp.prem[p.id];
-  return typed != null ? '$' + Number(typed).toFixed(2) + '<span style="font-size:11px;font-weight:500;color:var(--text-muted);">/mo</span>'
-    : '<span style="font-size:12px;font-weight:400;color:var(--text-muted);">Rate chart on file — pick the options above</span>';
+  return typed != null
+    ? '$' + Number(typed).toFixed(2) + '<span style="font-size:11px;font-weight:500;color:var(--text-muted);">/mo</span>'
+    : '<span style="font-size:12px;font-weight:400;color:var(--text-muted);">Rate chart on file — choose the options above</span>';
 }
 
 function ppCmpToggle_(id) {
   const pp = ppState_();
-  if (pp.cmp.has(id)) pp.cmp.delete(id); else if (pp.cmp.size < 4) pp.cmp.add(id);
+  if (pp.cmp.has(id)) pp.cmp.delete(id);
+  else if (pp.cmp.size >= 4) { showToast('Four at a time is the most that reads well.'); return; }
+  else pp.cmp.add(id);
   renderProductPicker_();
 }
 
@@ -12857,6 +12972,7 @@ function ppAdd_(prodId) {
   const pp = ppState_();
   const p = (pp.products || []).find(x => x.id === prodId);
   if (!p) return;
+
   const existing = ppAddedSlot_(prodId);
   if (existing >= 0) {
     delete pp.sel[existing];
@@ -12881,7 +12997,7 @@ function ppAdd_(prodId) {
   const choice = ppChoice_(p);
   const chosen = Object.entries(choice).map(([k, v]) => {
     const d = ppDims_(p)[k] || {};
-    return (d.label || k) + ': ' + v;
+    return ((d.label || k) + ': ' + ppFmt_(v, d));
   });
 
   const ol = document.getElementById('qb-optline-' + slot);
@@ -12891,7 +13007,7 @@ function ppAdd_(prodId) {
   const pr = document.getElementById('qb-prod-' + slot);
   if (pr) pr.value = p.id;
   const nm = document.getElementById('qb-name-' + slot);
-  if (nm) nm.value = p.name + (chosen.length ? ' — ' + chosen.map(c => c.split(': ')[1]).join(' / ') : '');
+  if (nm) nm.value = p.name;
   const prem = document.getElementById('qb-prem-' + slot);
   if (prem && pp.prem[prodId] != null) prem.value = Number(pp.prem[prodId]).toFixed(2);
   const bul = document.getElementById('qb-bul-' + slot);
@@ -12904,37 +13020,124 @@ function ppAdd_(prodId) {
   renderProductPicker_();
 }
 
+// ---------------------------------------- detail and compare, ABOVE the picker
+function ppOverlay_(id, title, bodyHtml) {
+  let ov = document.getElementById(id);
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = id;
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99996;background:var(--surface-0);display:flex;flex-direction:column;';
+    document.body.appendChild(ov);
+  }
+  ov.style.display = 'flex';
+  ov.innerHTML = `
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+      <div style="font-weight:800;font-size:15px;">${title}</div>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="document.getElementById('${id}').style.display='none'">✕ Close</button>
+    </div>
+    <div style="flex:1;overflow:auto;padding:16px 20px;">${bodyHtml}</div>`;
+}
+
 function ppDetail_(prodId) {
   const pp = ppState_();
   const p = (pp.products || []).find(x => x.id === prodId);
   if (!p) return;
   const meta = ppMeta_(p);
-  const list = (title, arr, tone) => (arr || []).length ? `
-    <div style="margin-top:12px;">
-      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-${tone || 'muted'});">${title}</div>
-      <ul style="margin:5px 0 0 18px;padding:0;font-size:12.5px;line-height:1.65;">${(arr || []).map(x => '<li>' + escWeb(String(x)) + '</li>').join('')}</ul>
-    </div>` : '';
   const ao = meta.agent_only || {};
-  showModal(escWeb(p.name), `
-    <div style="padding:4px 2px;">
-      ${p.notes ? `<div style="font-size:13px;line-height:1.6;">${escWeb(p.notes)}</div>` : ''}
-      ${meta.underwriter ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">Underwritten by <strong>${escWeb(meta.underwriter)}</strong>${meta.policy_form ? ' · form ' + escWeb(meta.policy_form) : ''}</div>` : ''}
+  const carrier = (window._qbCarriers || []).find(c => c.id === p.carrier_id) || {};
+  const list = (title, arr, tone) => (arr || []).length ? `
+    <div style="margin-top:14px;">
+      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-${tone || 'muted'});">${title}</div>
+      <ul style="margin:5px 0 0 18px;padding:0;font-size:13px;line-height:1.7;">${(arr || []).map(x => '<li>' + escWeb(String(x)) + '</li>').join('')}</ul>
+    </div>` : '';
+
+  ppOverlay_('qb-pp-detail', escWeb(p.name), `
+    <div style="max-width:820px;">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(carrier.name || '')}</div>
+      ${p.notes ? `<div style="font-size:13.5px;line-height:1.6;margin-top:6px;">${escWeb(p.notes)}</div>` : ''}
+      ${meta.underwriter ? `<div style="font-size:12px;color:var(--text-muted);margin-top:7px;">Underwritten by <strong>${escWeb(meta.underwriter)}</strong>${meta.policy_form ? ' · form ' + escWeb(meta.policy_form) : ''}</div>` : ''}
+      ${Object.keys(meta.facts || {}).length ? `<div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;">
+        ${Object.entries(meta.facts).map(([k, v]) => `<div style="border:1px solid var(--border);border-radius:9px;padding:8px 11px;">
+          <div style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">${escWeb(k.replace(/_/g, ' '))}</div>
+          <div style="font-size:14px;font-weight:800;">${escWeb(String(v))}</div></div>`).join('')}
+      </div>` : ''}
       ${list('What it covers', meta.bullets)}
       ${list('Limits and exclusions', meta.limitations, 'warning')}
       ${list('Eligibility', meta.eligibility)}
       ${list('Say this out loud', meta.compliance_notes, 'warning')}
-      ${(ao.exclusions || []).length || (ao.riders || []).length ? `
-        <div style="margin-top:14px;border:1px solid var(--border-warning);background:var(--bg-warning);border-radius:9px;padding:10px 13px;">
-          <div style="font-size:11.5px;font-weight:800;color:var(--text-warning);">\u{1F512} Agent reference only — never shown to a client</div>
+      ${(ao.exclusions || []).length || (ao.riders || []).length || (ao.benefit_detail || []).length ? `
+        <div style="margin-top:16px;border:1px solid var(--border-warning);background:var(--bg-warning);border-radius:10px;padding:12px 15px;">
+          <div style="font-size:12px;font-weight:800;color:var(--text-warning);">🔒 Agent reference only — never shown to a client</div>
           ${list('Full policy exclusions', ao.exclusions, 'warning')}
+          ${list('How the benefits are worded', ao.benefit_detail, 'warning')}
           ${list('Riders', ao.riders, 'warning')}
-          ${(ao.caveats || []).length ? `<div style="font-size:11px;color:var(--text-warning);opacity:.9;margin-top:7px;">${escWeb((ao.caveats || []).join(' '))}</div>` : ''}
+          ${(ao.caveats || []).length ? `<div style="font-size:11.5px;color:var(--text-warning);opacity:.9;margin-top:9px;">${escWeb((ao.caveats || []).join(' '))}</div>` : ''}
         </div>` : ''}
-      <div style="margin-top:14px;">
-        <a href="#" onclick="event.preventDefault();productDocOpen_('${escWeb(p.id)}')" style="font-size:12.5px;color:var(--link);">\u{1F4C4} Open the brochure</a>
-        <a href="#" onclick="event.preventDefault();productDocCopy_('${escWeb(p.id)}')" style="font-size:12.5px;color:var(--link);margin-left:12px;">Copy a link for the client</a>
+      <div style="margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;">
+        <a href="#" onclick="event.preventDefault();productDocOpen_('${escWeb(p.id)}')" style="font-size:13px;color:var(--link);">📄 Open the brochure</a>
+        <a href="#" onclick="event.preventDefault();productDocCopy_('${escWeb(p.id)}')" style="font-size:13px;color:var(--link);">Copy a link for the client</a>
       </div>
-    </div>`, null, { hideConfirm: true, wide: true });
+    </div>`);
+}
+
+function openProductCompare_() {
+  const pp = ppState_();
+  const picked = (pp.products || []).filter(p => pp.cmp.has(p.id));
+  if (picked.length < 2) { showToast('Tick ⚖️ Compare on at least 2 plans first.'); return; }
+  const carrierOf = id => ((window._qbCarriers || []).find(c => c.id === id) || {}).name || '';
+  const TH = 'position:sticky;left:0;background:var(--surface-0);text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);min-width:180px;vertical-align:top;z-index:1;';
+  const TD = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:210px;line-height:1.6;';
+  const dash = '<span style="color:var(--text-muted);">—</span>';
+
+  // Every choice and every stated fact across the picked plans, so the rows
+  // line up even when one carrier names something the others do not.
+  const dimKeys = [...new Set(picked.flatMap(p => Object.keys(ppDims_(p))))];
+  const factKeys = [...new Set(picked.flatMap(p => Object.keys(ppMeta_(p).facts || {})))];
+  const listRow = (label, key, tone) => {
+    if (!picked.some(p => ((ppMeta_(p)[key]) || []).length)) return '';
+    return `<tr><th style="${TH}">${label}</th>${picked.map(p => {
+      const arr = ppMeta_(p)[key] || [];
+      return `<td style="${TD}${tone ? 'color:var(--text-' + tone + ');' : ''}">${arr.length ? arr.map(x => '• ' + escWeb(String(x))).join('<br>') : dash}</td>`;
+    }).join('')}</tr>`;
+  };
+
+  ppOverlay_('qb-pp-compare', '⚖️ Side by side · ' + escWeb(pp.line || ''), `
+    <table style="border-collapse:collapse;width:100%;">
+      <thead><tr><th style="${TH}"></th>${picked.map(p => `<td style="${TD}font-weight:800;font-size:14px;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);font-weight:800;">${escWeb(carrierOf(p.carrier_id))}</div>
+        ${escWeb(p.name)}</td>`).join('')}</tr></thead>
+      <tbody>
+        <tr><th style="${TH}">Premium</th>${picked.map(p => {
+          const t = pp.prem[p.id];
+          return `<td style="${TD}font-weight:800;font-size:15px;color:var(--accent,#c8a84b);">${t != null ? '$' + Number(t).toFixed(2) + '/mo' : dash}</td>`;
+        }).join('')}</tr>
+        ${dimKeys.map(k => {
+          const label = ((picked.map(p => ppDims_(p)[k]).find(Boolean) || {}).label) || k;
+          return `<tr><th style="${TH}">${escWeb(label)}</th>${picked.map(p => {
+            const d = ppDims_(p)[k];
+            const chosen = (pp.choice[p.id] || {})[k];
+            if (!d || !(d.values || []).length) return `<td style="${TD}">${dash}</td>`;
+            return `<td style="${TD}">${(d.values || []).map(v =>
+              String(v) === String(chosen)
+                ? '<strong style="color:var(--text-selected,var(--accent));">' + escWeb(ppFmt_(v, d)) + ' ←</strong>'
+                : escWeb(ppFmt_(v, d))).join('<br>')}</td>`;
+          }).join('')}</tr>`;
+        }).join('')}
+        ${factKeys.map(k => `<tr><th style="${TH}">${escWeb(k.replace(/_/g, ' '))}</th>
+          ${picked.map(p => `<td style="${TD}">${escWeb(String((ppMeta_(p).facts || {})[k] || '')) || dash}</td>`).join('')}</tr>`).join('')}
+        ${listRow('What it covers', 'bullets')}
+        ${listRow('Limits and exclusions', 'limitations', 'warning')}
+        ${listRow('Eligibility', 'eligibility')}
+        ${listRow('Say this out loud', 'compliance_notes', 'warning')}
+        <tr><th style="${TH}">Underwritten by</th>${picked.map(p =>
+          `<td style="${TD}">${escWeb(ppMeta_(p).underwriter || carrierOf(p.carrier_id))}</td>`).join('')}</tr>
+        <tr><th style="${TH}"></th>${picked.map(p => {
+          const slot = ppAddedSlot_(p.id);
+          return `<td style="${TD}"><button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="ppAdd_('${escWeb(p.id)}');openProductCompare_();">
+            ${slot >= 0 ? '✓ Option ' + qbOptionNo_(slot) : '＋ Add to quote'}</button></td>`;
+        }).join('')}</tr>
+      </tbody>
+    </table>`);
 }
 
 function renderProductPicker_() {
@@ -12942,71 +13145,28 @@ function renderProductPicker_() {
   if (!el) return;
   const pp = ppState_();
   const list = pp.products || [];
+  const prof = ppProfile_();
   const withRates = list.filter(p => ppRate_(p).kind === 'chart').length;
 
   el.innerHTML = `
     <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="font-weight:800;font-size:15px;">\u{1F4CB} ${escWeb(pp.line || 'Products')}</div>
-      <div style="font-size:12px;color:var(--text-muted);">${list.length} product${list.length === 1 ? '' : 's'} you can write${
+      <div style="font-weight:800;font-size:15px;">📋 ${escWeb(pp.line || 'Products')}${prof.state ? ' · ' + escWeb(prof.state) : ''}</div>
+      <div style="font-size:12px;color:var(--text-muted);">${list.length} product${list.length === 1 ? '' : 's'}${
         withRates ? ' · ' + withRates + ' with rates on file' : ' · none with rates on file'}</div>
       ${pp.cmp.size ? `<button class="btn ${pp.cmp.size >= 2 ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-left:auto;"
         ${pp.cmp.size >= 2 ? '' : 'disabled'} onclick="openProductCompare_()">⚖️ Compare (${pp.cmp.size})</button>` : ''}
       <button class="btn btn-outline btn-sm" ${pp.cmp.size ? '' : 'style="margin-left:auto;"'} onclick="closeProductPicker_()">✕ Done</button>
     </div>
 
-    <div id="qb-med-basis" data-kind="MAPD" style="display:none;"></div>
+    ${ppBasisHtml_()}
 
     <div style="flex:1;overflow:auto;padding:14px 18px;">
       ${list.length
-        ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;">${list.map(ppCardHtml_).join('')}</div>`
+        ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;align-items:stretch;">${list.map(ppCardHtml_).join('')}</div>`
         : `<div style="font-size:13px;color:var(--text-muted);line-height:1.6;">
              No ${escWeb(pp.line || '')} products on file for the carriers you are appointed with.<br>
              Add them from <strong>Admin → Carriers → Add products from a brochure</strong>.</div>`}
     </div>`;
-}
-
-// Side by side — the comparison Ken wanted: two carriers' short-term plans
-// against each other, benefits and exclusions included.
-function openProductCompare_() {
-  const pp = ppState_();
-  const picked = (pp.products || []).filter(p => pp.cmp.has(p.id));
-  if (picked.length < 2) return;
-  const carrierOf = id => ((window._qbCarriers || []).find(c => c.id === id) || {}).name || '';
-  const rowsFor = key => {
-    const any = picked.some(p => ((ppMeta_(p)[key]) || []).length);
-    if (!any) return '';
-    const label = { bullets: 'What it covers', limitations: 'Limits and exclusions', eligibility: 'Eligibility' }[key] || key;
-    return `<tr><th style="${TH}">${label}</th>${picked.map(p =>
-      `<td style="${TD}">${((ppMeta_(p)[key]) || []).map(x => '• ' + escWeb(String(x))).join('<br>') || '<span style="color:var(--text-muted);">—</span>'}</td>`).join('')}</tr>`;
-  };
-  const TH = 'position:sticky;left:0;background:var(--surface-0);text-align:left;font-size:11.5px;font-weight:700;color:var(--text-muted);padding:9px 12px;border-bottom:1px solid var(--border);min-width:170px;vertical-align:top;';
-  const TD = 'padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:top;min-width:200px;line-height:1.55;';
-
-  const dimKeys = [...new Set(picked.flatMap(p => Object.keys(ppDims_(p))))];
-  const factKeys = [...new Set(picked.flatMap(p => Object.keys(ppMeta_(p).facts || {})))];
-
-  showModal('Side by side', `
-    <div style="overflow:auto;max-height:70vh;">
-      <table style="border-collapse:collapse;width:100%;">
-        <thead><tr><th style="${TH}"></th>${picked.map(p => `<td style="${TD}font-weight:800;">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(carrierOf(p.carrier_id))}</div>
-          ${escWeb(p.name)}</td>`).join('')}</tr></thead>
-        <tbody>
-          ${dimKeys.map(k => `<tr><th style="${TH}">${escWeb(((picked.map(p => ppDims_(p)[k]).find(Boolean) || {}).label) || k)}</th>
-            ${picked.map(p => {
-              const d = ppDims_(p)[k];
-              return `<td style="${TD}">${d && (d.values || []).length ? escWeb((d.values || []).join(' · ')) : '<span style="color:var(--text-muted);">—</span>'}</td>`;
-            }).join('')}</tr>`).join('')}
-          ${factKeys.map(k => `<tr><th style="${TH}">${escWeb(k.replace(/_/g, ' '))}</th>
-            ${picked.map(p => `<td style="${TD}">${escWeb(String((ppMeta_(p).facts || {})[k] || '—'))}</td>`).join('')}</tr>`).join('')}
-          ${rowsFor('bullets')}
-          ${rowsFor('limitations')}
-          ${rowsFor('eligibility')}
-          <tr><th style="${TH}">Underwritten by</th>${picked.map(p =>
-            `<td style="${TD}">${escWeb(ppMeta_(p).underwriter || carrierOf(p.carrier_id))}</td>`).join('')}</tr>
-        </tbody>
-      </table>
-    </div>`, null, { hideConfirm: true, wide: true });
 }
 
 // Licensed states have been written both as an array and as a loose string
