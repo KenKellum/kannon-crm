@@ -12881,6 +12881,32 @@ function ppSorted_(entries) {
 // one narrows the next \u2014 a deductible that carries its own coinsurance. The
 // linked kind is stored as combos so nothing has to be parsed back out of a label.
 function ppCombos_(d) { return (d && Array.isArray(d.combos)) ? d.combos : null; }
+
+// Keys on a combination that are NOT in "parts" are consequences of the choice
+// rather than choices themselves — the out-of-pocket that comes with a
+// particular deductible and coinsurance. Shown, never picked.
+function ppShownKeys_(d) {
+  const c = ppCombos_(d);
+  if (!c || !c.length) return [];
+  const parts = ppParts_(d);
+  return Object.keys(c[0]).filter(k => parts.indexOf(k) < 0);
+}
+
+// What the choice has settled so far. Only shown once it IS settled — showing
+// a range here would read as a promise the plan has not made.
+function ppComboShown_(d, chosen) {
+  const shown = ppShownKeys_(d);
+  if (!shown.length) return '';
+  const open = ppOpenCombos_(d, chosen);
+  if (!open.length) return '';
+  const settled = shown.filter(k => new Set(open.map(c => String(c[k]))).size === 1);
+  if (!settled.length) return '';
+  return `<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;">
+    ${settled.map(k => `<span style="font-size:11px;color:var(--text-muted);">${escWeb(k)}:
+      <strong style="color:var(--text-secondary);">${escWeb(String(open[0][k]))}</strong></span>`).join('')}
+  </div>`;
+}
+
 function ppParts_(d) {
   if (d && Array.isArray(d.parts) && d.parts.length) return d.parts;
   const c = ppCombos_(d);
@@ -12920,6 +12946,7 @@ function ppComboPickers_(p, key, d) {
           </select></label>`;
       }).join('')}
     </div>
+    ${ppComboShown_(d, chosen)}
     ${ppComboNote_(d, chosen)}
   </div>`;
 }
@@ -12960,7 +12987,14 @@ function ppChoiceLabel_(p, key, d) {
   const chosen = (ppChoice_(p)[key] || {});
   const parts = ppParts_(d);
   const said = parts.filter(pt => chosen[pt]).map(pt => pt + ' ' + chosen[pt]);
-  return said.length ? said.join(' \u00b7 ') : null;
+  if (!said.length) return null;
+  // whatever the choice settles \u2014 the out-of-pocket that goes with it \u2014 rides along
+  const open = ppOpenCombos_(d, chosen);
+  ppShownKeys_(d).forEach(k => {
+    const vals = new Set(open.map(c => String(c[k])));
+    if (vals.size === 1) said.push(k + ' ' + [...vals][0]);
+  });
+  return said.join(' \u00b7 ');
 }
 
 function ppCardHtml_(p) {
@@ -13229,9 +13263,11 @@ function openProductCompare_() {
               const said = ppChoiceLabel_(p, k, d);
               if (said) return `<td style="${TD}"><strong style="color:var(--text-selected,var(--accent));">${escWeb(said)}</strong>
                 <div style="font-size:11px;color:var(--text-muted);">chosen from ${(ppCombos_(d) || []).length} combinations</div></td>`;
-              const parts = ppParts_(d);
+              const parts = ppParts_(d), shown = ppShownKeys_(d);
               return `<td style="${TD}">${(ppCombos_(d) || []).map(c =>
-                escWeb(parts.map(pt => c[pt]).join(' · '))).join('<br>')}</td>`;
+                escWeb(parts.map(pt => c[pt]).join(' · '))
+                + (shown.length ? ' <span style="color:var(--text-muted);">('
+                    + escWeb(shown.map(k => c[k]).join(' · ')) + ')</span>' : '')).join('<br>')}</td>`;
             }
             const chosen = (pp.choice[p.id] || {})[k];
             if (!(d.values || []).length) return `<td style="${TD}">${dash}</td>`;
