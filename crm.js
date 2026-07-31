@@ -12947,7 +12947,7 @@ function ppComboPickers_(p, key, d) {
       }).join('')}
     </div>
     ${ppComboShown_(d, chosen)}
-    ${ppExposure_(d, chosen)}
+    ${ppExposure_(p, d, chosen)}
     ${ppComboNote_(d, chosen)}
   </div>`;
 }
@@ -12963,7 +12963,10 @@ function ppMoney_(v) {
   return isNaN(n) ? null : n;
 }
 
-function ppExposure_(d, chosen) {
+function ppExposure_(p, d, chosen) {
+  // Carriers word this differently. Where the stated out-of-pocket already
+  // includes the deductible, adding them would count it twice.
+  if (p && (ppMeta_(p) || {}).oop_includes_deductible === true) return '';
   const open = ppOpenCombos_(d, chosen);
   if (open.length !== 1) return '';
   const c = open[0];
@@ -13074,6 +13077,7 @@ function ppCardHtml_(p) {
     ${slot >= 0 ? `<div style="margin:6px 0 2px;"><span class="pk-sel-badge">✓ Selected · Option ${qbOptionNo_(slot)}</span></div>` : ''}
 
     <div style="min-height:34px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;">${p.notes ? escWeb(p.notes) : ''}</div>
+    <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
 
     <div style="min-height:52px;margin-top:5px;">${facts}</div>
 
@@ -13102,6 +13106,21 @@ function ppCardHtml_(p) {
         <button class="btn btn-outline btn-sm" onclick="ppDetail_('${escWeb(p.id)}')">Details</button>
       </div>
     </div>
+  </div>`;
+}
+
+// Which network the plan runs on, and the way to check whether their doctor is
+// in it. We cannot query these directories the way we query the Marketplace,
+// so the next best thing is one click to the carrier's own search.
+function ppNetworkHtml_(p, big) {
+  const n = (ppMeta_(p) || {}).network;
+  if (!n || !(n.name || n.provided_by)) return '';
+  const label = escWeb(n.name || (n.provided_by + ' network'));
+  const url = n.provider_search_url;
+  return `<div style="font-size:${big ? '13' : '11'}px;color:var(--text-muted);">
+    &#127973; ${label}
+    ${url ? `<a href="${escWeb(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link);margin-left:6px;">check a doctor &#8599;</a>` : ''}
+    ${big && n.size ? `<div style="margin-top:2px;">${escWeb(n.size)}</div>` : ''}
   </div>`;
 }
 
@@ -13227,6 +13246,7 @@ function ppDetail_(prodId) {
     <div style="max-width:820px;">
       <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(carrier.name || '')}</div>
       ${p.notes ? `<div style="font-size:13.5px;line-height:1.6;margin-top:6px;">${escWeb(p.notes)}</div>` : ''}
+      ${ppNetworkHtml_(p, true)}
       ${meta.underwriter ? `<div style="font-size:12px;color:var(--text-muted);margin-top:7px;">Underwritten by <strong>${escWeb(meta.underwriter)}</strong>${meta.policy_form ? ' · form ' + escWeb(meta.policy_form) : ''}</div>` : ''}
       ${Object.keys(meta.facts || {}).length ? `<div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;">
         ${ppSorted_(Object.entries(meta.facts)).map(([k, v]) => `<div style="border:1px solid var(--border);border-radius:9px;padding:8px 11px;">
