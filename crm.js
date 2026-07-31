@@ -6970,6 +6970,73 @@ async function renderAdmin() {
       </div>`;
   }
 
+  // The plan-year facts. Most of them we can work out ourselves; two are
+  // published by CMS in a press release each autumn and have to be typed in
+  // once a year. The card says plainly which is which, and what is missing.
+  let _planYearSection = '';
+  {
+    const thisYear = new Date().getFullYear();
+    const { data: rows } = await supabaseClient.from('plan_year_config')
+      .select('*').order('plan_year', { ascending: false });
+    const years = rows || [];
+    window._planYears = years;
+    const cfg = years[0] || null;
+    const yr = cfg ? cfg.plan_year : thisYear;
+
+    // derived: the statutory deductible ceiling shows up in the plan data itself
+    const { data: dm } = await supabaseClient.from('cms_plans')
+      .select('drug_deductible').eq('plan_year', yr)
+      .order('drug_deductible', { ascending: false }).limit(1);
+    const maxDed = dm && dm[0] ? Number(dm[0].drug_deductible) : null;
+    window._pyMaxDed = maxDed;
+
+    const money = v => v == null ? null : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const missing = [];
+    if (!cfg || cfg.part_d_oop_cap == null) missing.push('Part D out-of-pocket limit');
+    if (!cfg || cfg.part_b_premium == null) missing.push('Part B premium');
+    if (!cfg || cfg.part_b_deductible == null) missing.push('Part B deductible');
+
+    const known = (label, value, note) => `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:12.5px;">
+        <span style="color:var(--text-muted);min-width:190px;">${label}</span>
+        <span style="font-weight:700;">${value}</span>
+        ${note ? `<span style="font-size:11px;color:var(--text-muted);">${note}</span>` : ''}
+      </div>`;
+
+    _planYearSection = `
+      <div style="border:1px solid ${missing.length ? 'var(--border-warning)' : 'var(--border)'};border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:14px;">&#128197; Plan year ${yr}${
+            missing.length ? ' <span style="color:var(--text-warning);font-size:12px;">\u00b7 ' + missing.length + ' to fill in</span>'
+                           : ' <span style="color:var(--text-success);font-size:12px;">\u00b7 complete</span>'}</div>
+          <div style="display:flex;gap:6px;">
+            ${!years.some(y => y.plan_year === thisYear + 1)
+              ? `<button class="btn btn-outline btn-sm" onclick="planYearStart_(${thisYear + 1})">Start ${thisYear + 1}</button>` : ''}
+            <button class="btn btn-primary btn-sm" onclick="planYearEdit_(${yr})">Edit</button>
+          </div>
+        </div>
+
+        <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-top:4px;">Worked out for you</div>
+        ${known('Annual enrollment', cfg && cfg.aep_start
+          ? new Date(cfg.aep_start + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+            + ' \u2013 ' + new Date(cfg.aep_end + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+          : '\u2014', 'fixed by law')}
+        ${known('Highest Part D deductible', maxDed != null ? money(maxDed) : '\u2014', 'from the ' + yr + ' plan data')}
+        ${known('CMS disclaimers', cfg && cfg.tpmo_disclaimer ? '\u2713 on file' : '\u2014', 'wording set by CMS')}
+
+        <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-top:10px;">CMS publishes these \u2014 type them once a year</div>
+        ${known('Part D out-of-pocket limit', cfg && cfg.part_d_oop_cap != null ? money(cfg.part_d_oop_cap)
+          : '<span style="color:var(--text-warning);">not set \u2014 drug cost estimates run high without it</span>')}
+        ${known('Part B premium', cfg && cfg.part_b_premium != null ? money(cfg.part_b_premium) + '/mo' : '<span style="color:var(--text-muted);">not set</span>')}
+        ${known('Part B deductible', cfg && cfg.part_b_deductible != null ? money(cfg.part_b_deductible) : '<span style="color:var(--text-muted);">not set</span>')}
+
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5;">
+          The two Part B figures and the Part D limit come from CMS\u2019s annual release each autumn
+          (<a href="https://www.cms.gov/newsroom/fact-sheets" target="_blank" rel="noopener" style="color:var(--accent,#c8a84b);">cms.gov newsroom</a>).
+          Everything else here looks after itself.
+        </div>
+      </div>`;
+  }
+
   const cmsSection = `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
@@ -7141,7 +7208,7 @@ async function renderAdmin() {
       ${carriersSection}
       ${baaSection}
       ${nppSection}
-      ${_reviewSection}${cmsSection}
+      ${_planYearSection}${_reviewSection}${cmsSection}
       ${agentRows || '<div class="empty-state" style="padding:20px;"><p>No active agents yet.</p></div>'}
     </div>
 
@@ -11526,6 +11593,61 @@ async function carrierDelete_(id) {
   if (error) { showToast('Could not delete: ' + error.message); return; }
   showToast('Deleted ' + (cr.name || 'the carrier') + (prods.length ? ' and its products.' : '.'));
   renderAdmin();
+}
+
+function planYearEdit_(year) {
+  const cfg = (window._planYears || []).find(x => x.plan_year === year) || {};
+  showModal('Plan year ' + year, `
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">
+      These three come from CMS\u2019s annual release. Everything else about the plan year is worked out
+      from the data or fixed by law, so there is nothing else to keep up to date.
+    </p>
+    <label>Part D annual out-of-pocket limit ($)</label>
+    <input type="number" step="0.01" id="py-oop" value="${cfg.part_d_oop_cap != null ? cfg.part_d_oop_cap : ''}" placeholder="e.g. 2100" />
+    <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Once a client reaches this, covered drugs cost them nothing for the rest of the year. Drug cost estimates read high until it is set.</div>
+    <label>Part B monthly premium ($)</label>
+    <input type="number" step="0.01" id="py-bprem" value="${cfg.part_b_premium != null ? cfg.part_b_premium : ''}" />
+    <label>Part B annual deductible ($)</label>
+    <input type="number" step="0.01" id="py-bded" value="${cfg.part_b_deductible != null ? cfg.part_b_deductible : ''}" />
+  `, async () => {
+    const num = id => {
+      const v = parseFloat((document.getElementById(id) || {}).value);
+      return isNaN(v) ? null : v;
+    };
+    const patch = {
+      plan_year: year,
+      part_d_oop_cap: num('py-oop'),
+      part_b_premium: num('py-bprem'),
+      part_b_deductible: num('py-bded'),
+      aep_start: year - 1 + '-10-15',
+      aep_end: year - 1 + '-12-07',
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabaseClient.from('plan_year_config')
+      .upsert(patch, { onConflict: 'plan_year' }).select('plan_year');
+    if (error) { showToast('Could not save: ' + error.message); return false; }
+    window._qbPartDCap = undefined;      // quoting picks the new figure up
+    showToast('Plan year ' + year + ' saved.');
+    renderAdmin();
+  }, { confirmLabel: 'Save' });
+}
+
+// A new year starts from the last one's wording, with the CMS figures blank
+// so nobody carries a stale dollar amount forward by accident.
+async function planYearStart_(year) {
+  const prev = (window._planYears || [])[0] || {};
+  const { error } = await supabaseClient.from('plan_year_config').upsert({
+    plan_year: year,
+    aep_start: year - 1 + '-10-15',
+    aep_end: year - 1 + '-12-07',
+    oep_note: prev.oep_note || null,
+    tpmo_disclaimer: prev.tpmo_disclaimer || null,
+    not_gov_disclaimer: prev.not_gov_disclaimer || null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'plan_year' }).select('plan_year');
+  if (error) { showToast('Could not start ' + year + ': ' + error.message); return; }
+  showToast('Started plan year ' + year + ' \u2014 add the CMS figures when they publish.');
+  planYearEdit_(year);
 }
 
 function openCarrierModal(id) {
