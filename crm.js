@@ -10590,7 +10590,10 @@ function mgCardHtml_(p) {
             <button type="button" class="btn ${mgAddedSlot_(letter) >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
               onclick="event.stopPropagation();qbMgAddPlan_('${escWeb(letter)}','${escWeb(q.product_id)}')">Add</button>
           </div>`).join('')}
-          ${mgManualRow_(letter, true)}
+          ${(window._qbMgManualOpen || {})[letter]
+            ? mgManualRow_(letter, true)
+            : `<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;font-size:11px;"
+                 onclick="event.stopPropagation();mgManualOpen_('${escWeb(letter)}')">+ Another carrier / type a rate</button>`}
         </div>`;
       })()}
       <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
@@ -10833,6 +10836,12 @@ function mgManualRow_(letter, secondary) {
           onclick="event.stopPropagation();qbMgAddManual_('${escWeb(letter)}')">+ Add</button>
       </div>
     </div>`;
+}
+
+function mgManualOpen_(letter) {
+  window._qbMgManualOpen = window._qbMgManualOpen || {};
+  window._qbMgManualOpen[letter] = true;
+  renderMedigapPicker_();
 }
 
 function mgManualSet_(letter, field, value, quiet) {
