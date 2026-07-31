@@ -10832,6 +10832,24 @@ function medFactsHtml_(line) {
   </div>`;
 }
 
+// What the quote was worked out from, whatever kind of quote it is. The ACA
+// tool already records income and household; this adds the part that is true
+// of every quote \u2014 where they live, and the doctors and drugs we checked.
+function qbBasisSnapshot_() {
+  const c = window._qbContact || {};
+  const docs = (window._qbAcaDocs || []).filter(d => d.npi);
+  const meds = (window._qbAcaMeds || []).filter(m => m.rxcui);
+  if (!docs.length && !meds.length && !c.zip) return null;
+  return {
+    zip: c.zip || null,
+    checked_at: new Date().toISOString(),
+    doctors: docs.map(d => d.name),
+    // the supply is worth showing: it is why the yearly figures say what they say
+    medications_detail: meds.map(m => ({ name: m.name, days_supply: qbMedDays_(m) })),
+    medications: meds.map(m => m.name),
+  };
+}
+
 // Frozen into the quote so the client page draws the amounts that were true
 // the day it was sent, not whatever is current when they open it.
 function medFactsSnapshot_(lines) {
@@ -12691,8 +12709,14 @@ async function openQuoteBuilder(dealId, opts) {
       quote_inputs: (() => {
         const base = (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null;
         const facts = medFactsSnapshot_([...new Set(options.map(o => o.line || line))]);
-        if (!facts) return base;
-        return Object.assign({}, base || {}, { medicare_facts: facts });
+        const basis = qbBasisSnapshot_();
+        if (!base && !facts && !basis) return null;
+        // the ACA tool's own record wins where the two overlap
+        const out = Object.assign({}, basis || {}, base || {});
+        if (basis && basis.medications_detail) out.medications_detail = basis.medications_detail;
+        if (basis && basis.checked_at) out.checked_at = basis.checked_at;
+        if (facts) out.medicare_facts = facts;
+        return out;
       })(),
       intake_session_id: window._qbIntakeSessionId || null,
     }).select().single();

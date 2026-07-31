@@ -225,6 +225,74 @@ const medMoney = v => '$' + Number(v).toLocaleString('en-US',
 // What Medicare itself charges. Set out separately from the plans on purpose:
 // no plan on this page changes these numbers, and they must never read as if
 // one of them did.
+// What the quote was worked out from. The headline is always visible — that is
+// where the credibility is — and the detail is a click away so it does not push
+// the plans down the page.
+let basisOpen = false;
+function toggleBasis() { basisOpen = !basisOpen; renderBasis(); }
+
+function renderBasis() {
+  const qi = quote && quote.quote_inputs;
+  const host = document.getElementById('q-inputs');
+  if (!host) return;
+  if (!qi) { host.innerHTML = ''; return; }
+
+  const hh = qi.household || [];
+  const docs = qi.doctors || [];
+  const meds = (qi.medications_detail && qi.medications_detail.length)
+    ? qi.medications_detail : (qi.medications || []).map(n => ({ name: n }));
+  const money0 = v => '$' + Number(v).toLocaleString();
+  const person = m => esc(m.relationship || 'Member') + (m.age != null ? ' (' + m.age + ')' : '');
+  const applying = hh.filter(m => m.applying), notApplying = hh.filter(m => !m.applying);
+
+  // A Medicare Supplement has no network and no drug list, so nothing on this
+  // page was checked against these names. Say so rather than claim a check.
+  const CHECKABLE = ['Health — Individual', 'Medicare Advantage', 'Part D (PDP)'];
+  const checked = (allOpts || []).some(o => CHECKABLE.includes(o.line || quote.line));
+  const verb = checked ? ' checked' : ' on file';
+
+  const headline = [
+    (qi.zip || qi.county) ? esc([qi.zip, qi.county].filter(Boolean).join(' · ')) : '',
+    hh.length ? 'household of ' + (qi.household_count || hh.length) : '',
+    docs.length ? docs.length + ' doctor' + (docs.length === 1 ? '' : 's') + verb : '',
+    meds.length ? meds.length + ' medication' + (meds.length === 1 ? '' : 's') + verb : '',
+  ].filter(Boolean).join(' · ');
+  if (!headline) { host.innerHTML = ''; return; }
+
+  const rows = [
+    qi.income != null ? `<span>&#128181; Household income <strong>${money0(qi.income)}/yr</strong></span>` : '',
+    applying.length ? `<span>&#9989; Applying for coverage: <strong>${applying.map(person).join(', ')}</strong></span>` : '',
+    notApplying.length ? `<span>&#10060; Not applying: ${notApplying.map(person).join(', ')}</span>` : '',
+    (qi.aptc != null && qi.aptc > 0) ? `<span>&#127775; Estimated tax credit <strong style="color:#15803d;">$${Number(qi.aptc).toFixed(0)}/mo</strong></span>` : '',
+    csrPct(qi.csr) ? `<span>✨ <strong style="color:#15803d;">${esc(csrLabel(qi.csr))}</strong> applied to Silver</span>` : '',
+  ].filter(Boolean).join('');
+
+  const list = (icon, label, items) => items.length ? `
+    <div style="margin-top:11px;">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;">${icon} ${label}</div>
+      <div style="font-size:13px;color:#334155;margin-top:3px;line-height:1.75;">${items.join('<br>')}</div>
+    </div>` : '';
+
+  host.innerHTML = `
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;margin:6px 0 18px;">
+      <button type="button" onclick="toggleBasis()" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:13px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font:inherit;">
+        <span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#64748b;">&#128203; What these quotes are based on</span>
+        <span style="font-size:13px;color:#334155;">${headline}</span>
+        <span style="margin-left:auto;font-size:12.5px;font-weight:700;color:var(--brand,#1d3557);">${basisOpen ? 'Hide' : 'Show details'}</span>
+      </button>
+      ${basisOpen ? `<div style="padding:0 18px 15px;">
+        ${rows ? `<div style="display:flex;gap:8px 26px;flex-wrap:wrap;font-size:13px;color:#334155;">${rows}</div>` : ''}
+        ${list('\u{1FA7A}', checked ? 'Doctors and facilities we checked' : 'Doctors and facilities on file', docs.map(d => esc(d)))}
+        ${list('\u{1F48A}', checked ? 'Medications we checked' : 'Medications on file', meds.map(m => esc(m.name)
+          + (m.days_supply ? ` <span style="color:#94a3b8;">· ${m.days_supply}-day supply</span>` : '')))}
+        <div style="font-size:11.5px;color:#94a3b8;margin-top:13px;line-height:1.55;">
+          ${checked ? 'Every plan on this page was checked against this. ' : ''}If any of this looks wrong or has changed,
+          tell me — it changes the prices${qi.income != null ? ' and the tax credit' : ''}.
+        </div>
+      </div>` : ''}
+    </div>`;
+}
+
 function medFactsHtml(line) {
   const f = quote && quote.quote_inputs && quote.quote_inputs.medicare_facts;
   const keys = MED_FACTS_FOR[line];
@@ -986,29 +1054,7 @@ async function init() {
     + (quote.agent_phone ? '<br><a href="tel:' + esc(quote.agent_phone.replace(/[^0-9+]/g, '')) + '" style="color:var(--brand);text-decoration:none;font-weight:600;">' + esc(quote.agent_phone) + '</a>' : '') + '</span>';
   if (quote.valid_until) document.getElementById('q-valid').textContent =
     'These quotes are valid through ' + new Date(quote.valid_until + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) + '.';
-  const qi = quote.quote_inputs;
-  if (qi && (qi.income != null || (qi.household || []).length)) {
-    const money0 = v => '$' + Number(v).toLocaleString();
-    const hh = qi.household || [];
-    const applying = hh.filter(m => m.applying), notApplying = hh.filter(m => !m.applying);
-    const person = m => esc(m.relationship || 'Member') + (m.age != null ? ' (' + m.age + ')' : '');
-    document.getElementById('q-inputs').innerHTML = `
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 18px;margin:6px 0 18px;">
-        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#64748b;margin-bottom:8px;">&#128203; What these quotes are based on</div>
-        <div style="display:flex;gap:8px 26px;flex-wrap:wrap;font-size:13px;color:#334155;">
-          ${qi.zip || qi.county ? `<span>&#128205; ${esc([qi.zip, qi.county].filter(Boolean).join(' · '))}</span>` : ''}
-          ${qi.income != null ? `<span>&#128181; Household income <strong>${money0(qi.income)}/yr</strong></span>` : ''}
-          ${hh.length ? `<span>&#128106; Household of <strong>${qi.household_count || hh.length}</strong></span>` : ''}
-          ${applying.length ? `<span>&#9989; Applying for coverage: <strong>${applying.map(person).join(', ')}</strong></span>` : ''}
-          ${notApplying.length ? `<span>&#10060; Not applying: ${notApplying.map(person).join(', ')}</span>` : ''}
-          ${qi.aptc != null && qi.aptc > 0 ? `<span>&#127775; Estimated tax credit <strong style="color:#15803d;">$${Number(qi.aptc).toFixed(0)}/mo</strong></span>` : ''}
-          ${csrPct(qi.csr) ? `<span>✨ <strong style="color:#15803d;">${esc(csrLabel(qi.csr))}</strong> applied to Silver</span>` : ''}
-          ${(qi.doctors || []).length ? `<span>\u{1FA7A} Checked for: ${esc((qi.doctors || []).join(', '))}</span>` : ''}
-          ${(qi.medications || []).length ? `<span>\u{1F48A} Checked for: ${esc((qi.medications || []).join(', '))}</span>` : ''}
-        </div>
-        <div style="font-size:11.5px;color:#94a3b8;margin-top:8px;">If any of this looks wrong or has changed, tell me — it changes the prices and the tax credit.</div>
-      </div>`;
-  }
+  renderBasis();
   const _secCount = sectionsOf(allOpts).length;
   if (_secCount > 1) {
     document.getElementById('q-title').textContent = 'Your Coverage Proposal';
