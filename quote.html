@@ -203,6 +203,57 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnN
 const MEDICARE_LINES = ['Medicare Advantage', 'Medicare Supplement', 'Part D (PDP)'];
 const TPMO = 'We do not offer every plan available in your area. Any information we provide is limited to those plans we do offer in your area. Please contact Medicare.gov, 1-800-MEDICARE, or your local State Health Insurance Assistance Program (SHIP) to get information on all of your options.';
 const NOT_GOV = 'Not connected with or endorsed by the United States government or the federal Medicare program.';
+const MED_FACT_LABEL = {
+  part_a_deductible:     ['Hospital deductible', 'each benefit period'],
+  part_a_coins_61_90:    ['Hospital days 61\u201390', 'a day'],
+  part_a_coins_lifetime: ['Lifetime reserve days', 'a day'],
+  part_a_snf_coins:      ['Nursing home days 21\u2013100', 'a day'],
+  part_b_deductible:     ['Part B deductible', 'a year'],
+  part_b_premium:        ['Part B premium', 'a month'],
+  part_d_oop_cap:        ['Drug out-of-pocket limit', 'then $0 for covered drugs'],
+  part_d_max_deductible: ['Most a drug plan may charge', 'deductible'],
+};
+const MED_FACTS_FOR = {
+  'Medicare Supplement': ['part_a_deductible', 'part_a_coins_61_90', 'part_a_coins_lifetime',
+                          'part_a_snf_coins', 'part_b_deductible', 'part_b_premium'],
+  'Medicare Advantage':  ['part_b_premium', 'part_b_deductible', 'part_d_oop_cap'],
+  'Part D (PDP)':        ['part_d_oop_cap', 'part_d_max_deductible', 'part_b_premium'],
+};
+const medMoney = v => '$' + Number(v).toLocaleString('en-US',
+  { minimumFractionDigits: Number(v) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+
+// What Medicare itself charges. Set out separately from the plans on purpose:
+// no plan on this page changes these numbers, and they must never read as if
+// one of them did.
+function medFactsHtml(line) {
+  const f = quote && quote.quote_inputs && quote.quote_inputs.medicare_facts;
+  const keys = MED_FACTS_FOR[line];
+  if (!f || !keys || !f.cur) return '';
+  const have = keys.filter(k => f.cur[k] != null);
+  if (!have.length) return '';
+  const nx = f.next;
+  const changed = nx ? have.filter(k => nx[k] != null && Number(nx[k]) !== Number(f.cur[k])) : [];
+
+  return `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;padding:13px 17px;margin:0 0 14px;">
+    <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#64748b;margin-bottom:9px;">
+      What Medicare itself charges in ${f.year}
+    </div>
+    <div style="display:flex;gap:12px 28px;flex-wrap:wrap;">
+      ${have.map(k => `<div>
+        <div style="font-size:17px;font-weight:800;color:#1e293b;line-height:1.1;">${medMoney(f.cur[k])}</div>
+        <div style="font-size:11.5px;color:#64748b;">${MED_FACT_LABEL[k][0]}<br><span style="color:#94a3b8;">${MED_FACT_LABEL[k][1]}</span></div>
+      </div>`).join('')}
+    </div>
+    ${changed.length ? `<div style="font-size:12px;color:#475569;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0;">
+      <strong>Changing in ${nx.year}:</strong> ${changed.map(k => MED_FACT_LABEL[k][0] + ' ' + medMoney(nx[k])).join(' \u00b7 ')}
+    </div>` : ''}
+    <div style="font-size:11.5px;color:#94a3b8;margin-top:9px;line-height:1.5;">
+      These are Medicare\u2019s own amounts \u2014 they are the same no matter which plan you choose, and they are not part of
+      any plan\u2019s price below. They are here so you can see what the plans are helping with.
+    </div>
+  </div>`;
+}
+
 let qid = null, quote = null, allOpts = [];
 const compareSet = new Set(), discussSet = new Set();
 
@@ -517,9 +568,13 @@ function renderCards() {
   host.removeAttribute('style');
 
   if (secs.length === 1) {                       // single coverage type: as before
-    host.className = 'grid' + (allOpts.length <= 2 ? ' few' : '');
-    host.innerHTML = allOpts.map(o =>
+    const facts = medFactsHtml(secs[0].line);
+    host.className = facts ? '' : 'grid' + (allOpts.length <= 2 ? ' few' : '');
+    const cards = allOpts.map(o =>
       `<div class="opt${o.is_recommended ? ' rec' : ''}" id="card-${o.id}">${optCardHtml(o, false)}</div>`).join('');
+    host.innerHTML = facts
+      ? facts + `<div class="grid${allOpts.length <= 2 ? ' few' : ''}">${cards}</div>`
+      : cards;
     refreshBar();
     return;
   }
@@ -533,6 +588,7 @@ function renderCards() {
         <span class="howmany">${sec.opts.length === 1 ? 'one option' : 'choose one of ' + sec.opts.length}</span>
         ${picked ? `<span class="sec-done">\u2713 ${picked} picked</span>` : ''}
       </div>
+      ${medFactsHtml(sec.line)}
       <div class="grid${sec.opts.length <= 2 ? ' few' : ''}">
         ${sec.opts.map(o => `<div class="opt${o.is_recommended ? ' rec' : ''}" id="card-${o.id}">${optCardHtml(o, false)}</div>`).join('')}
       </div>`;

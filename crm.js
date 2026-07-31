@@ -10730,17 +10730,98 @@ function mgLetterOf_(product) {
 
 // For every lettered plan, which of YOUR carriers quote it in their state and
 // at what price. One pass over the charts rather than a query per product.
-// The year's Medicare dollar amounts, fetched once. Held on window so the
-// grid \u2014 which is drawn synchronously \u2014 can read them.
+// What Original Medicare costs this year. These are the same for everyone \u2014
+// no plan changes them \u2014 so they are context for a quote, never part of it.
+// Which ones matter depends on what is being shopped for.
+const MED_FACT_LABEL = {
+  part_a_deductible:     ['Hospital deductible', 'each benefit period'],
+  part_a_coins_61_90:    ['Hospital days 61\u201390', 'a day'],
+  part_a_coins_lifetime: ['Lifetime reserve days', 'a day'],
+  part_a_snf_coins:      ['Nursing home days 21\u2013100', 'a day'],
+  part_b_deductible:     ['Part B deductible', 'a year'],
+  part_b_premium:        ['Part B premium', 'a month'],
+  part_d_oop_cap:        ['Drug out-of-pocket limit', 'then $0 for covered drugs'],
+  part_d_max_deductible: ['Most a drug plan may charge', 'deductible'],
+};
+
+const MED_FACTS_FOR = {
+  'Medicare Supplement': ['part_a_deductible', 'part_a_coins_61_90', 'part_a_coins_lifetime',
+                          'part_a_snf_coins', 'part_b_deductible', 'part_b_premium'],
+  'Medicare Advantage':  ['part_b_premium', 'part_b_deductible', 'part_d_oop_cap'],
+  'Part D (PDP)':        ['part_d_oop_cap', 'part_d_max_deductible', 'part_b_premium'],
+};
+
+const medFactMoney_ = v => '$' + Number(v).toLocaleString('en-US',
+  { minimumFractionDigits: Number(v) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+
+// The year's amounts, fetched once. Held on window so the Medigap grid \u2014
+// which is drawn synchronously \u2014 can read them. Keeps next year too: during
+// annual enrolment both are live and the difference is the conversation.
 async function planYearAmts_() {
   if (window._planYearAmts) return window._planYearAmts;
+  window._planYearAmts = {};
+  window._planYearNext = null;
   try {
+    const thisYear = new Date().getFullYear();
     const { data } = await supabaseClient.from('plan_year_config')
-      .select('*').lte('plan_year', new Date().getFullYear())
-      .order('plan_year', { ascending: false }).limit(1).maybeSingle();
-    window._planYearAmts = data || {};
-  } catch (e) { window._planYearAmts = {}; }
+      .select('*').order('plan_year', { ascending: false }).limit(4);
+    const rows = data || [];
+    window._planYearAmts = rows.find(r => r.plan_year <= thisYear) || rows[rows.length - 1] || {};
+    const cur = window._planYearAmts.plan_year || thisYear;
+    const nxt = rows.find(r => r.plan_year === cur + 1);
+    // only worth showing once it actually holds figures
+    window._planYearNext = (nxt && Object.keys(MED_FACT_LABEL).some(k => nxt[k] != null)) ? nxt : null;
+
+    // the deductible ceiling comes from the plan data, not from CMS prose
+    const { data: dm } = await supabaseClient.from('cms_plans')
+      .select('drug_deductible').eq('plan_year', cur)
+      .order('drug_deductible', { ascending: false }).limit(1);
+    if (dm && dm[0]) window._planYearAmts.part_d_max_deductible = Number(dm[0].drug_deductible);
+  } catch (e) {}
   return window._planYearAmts;
+}
+
+// The strip that goes above the cards in a plan picker.
+function medFactsHtml_(line) {
+  const keys = MED_FACTS_FOR[line];
+  const cur = window._planYearAmts || {};
+  if (!keys || !cur.plan_year) return '';
+  const have = keys.filter(k => cur[k] != null);
+  if (!have.length) return '';
+
+  const next = window._planYearNext;
+  const changed = next ? have.filter(k => next[k] != null && Number(next[k]) !== Number(cur[k])) : [];
+
+  return `<div style="border:1px solid var(--border-info);background:var(--bg-info);border-radius:10px;padding:10px 13px;margin-bottom:12px;">
+    <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-info);margin-bottom:7px;">
+      What Original Medicare costs in ${cur.plan_year} \u00b7 the same whichever plan they pick
+    </div>
+    <div style="display:flex;gap:8px 20px;flex-wrap:wrap;">
+      ${have.map(k => `<div>
+        <div style="font-size:14.5px;font-weight:800;color:var(--text-info);line-height:1.15;">${medFactMoney_(cur[k])}</div>
+        <div style="font-size:10.5px;color:var(--text-info);opacity:.8;">${MED_FACT_LABEL[k][0]} \u00b7 ${MED_FACT_LABEL[k][1]}</div>
+      </div>`).join('')}
+    </div>
+    ${changed.length ? `<div style="font-size:11px;color:var(--text-info);opacity:.9;margin-top:7px;padding-top:6px;border-top:1px solid var(--border-info);">
+      In ${next.plan_year}: ${changed.map(k => MED_FACT_LABEL[k][0] + ' <strong>' + medFactMoney_(next[k]) + '</strong>').join(' \u00b7 ')}
+    </div>` : ''}
+  </div>`;
+}
+
+// Frozen into the quote so the client page draws the amounts that were true
+// the day it was sent, not whatever is current when they open it.
+function medFactsSnapshot_(lines) {
+  const cur = window._planYearAmts || {};
+  if (!cur.plan_year) return null;
+  const keys = [...new Set(lines.flatMap(l => MED_FACTS_FOR[l] || []))];
+  if (!keys.length) return null;
+  const pick = row => keys.reduce((o, k) => { if (row[k] != null) o[k] = Number(row[k]); return o; }, {});
+  const next = window._planYearNext;
+  return {
+    year: cur.plan_year,
+    cur: pick(cur),
+    next: next ? Object.assign({ year: next.plan_year }, pick(next)) : null,
+  };
 }
 
 async function qbMgLoadRates_() {
@@ -11055,6 +11136,7 @@ function renderMedigapPicker_() {
     </div>
 
     <div style="flex:1;overflow:auto;padding:14px 18px;">
+      ${medFactsHtml_('Medicare Supplement')}
       ${window._qbMgShowGrid
         ? mgGridHtml_(gridLetters)
         : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">${letters.map(mgCardHtml_).join('')}</div>`}
@@ -12577,7 +12659,12 @@ async function openQuoteBuilder(dealId, opts) {
       line: line, lines: [...new Set(options.map(o => o.line || line))],
       brand: document.getElementById('qb-brand').value,
       valid_until: document.getElementById('qb-valid').value || null,
-      quote_inputs: (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null,
+      quote_inputs: (() => {
+        const base = (line === 'Health — Individual' && window._qbAcaInputs) ? window._qbAcaInputs : null;
+        const facts = medFactsSnapshot_([...new Set(options.map(o => o.line || line))]);
+        if (!facts) return base;
+        return Object.assign({}, base || {}, { medicare_facts: facts });
+      })(),
       intake_session_id: window._qbIntakeSessionId || null,
     }).select().single();
     if (error) { showToast('Error: ' + error.message); return false; }
@@ -16382,6 +16469,7 @@ function pdpCardHtml_(p) {
 function renderCmsPicker_() {
   const el = document.getElementById('qb-cms-picker');
   if (!el) return;
+  if (!window._planYearAmts) { planYearAmts_().then(renderCmsPicker_); return; }
   const all = window._qbCmsPlans || [];
   const list = cmsPkFiltered_();
   const pk = window._qbCmsPk;
@@ -16451,6 +16539,7 @@ function renderCmsPicker_() {
     </div>
 
     <div style="flex:1;overflow:auto;padding:14px 18px;">
+      ${medFactsHtml_(isPdp ? 'Part D (PDP)' : 'Medicare Advantage')}
       ${list.length
         ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;">${list.map(cmsCardHtml_).join('')}</div>`
         : '<div style="color:var(--text-muted);font-size:13px;padding:20px 0;">Nothing matches those filters.</div>'}
