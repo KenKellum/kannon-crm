@@ -12083,6 +12083,10 @@ async function openMyCarriers() {
       <input type="checkbox" id="appt-${i}" style="width:auto;flex-shrink:0;" ${m && m.is_active ? 'checked' : ''} />
       <label for="appt-${i}" style="flex:1;min-width:0;font-size:13px;font-weight:600;cursor:pointer;">${escWeb(c.name)} <span style="font-weight:400;font-size:11px;color:var(--text-muted);">${(c.lines_of_business || []).join(', ')}</span></label>
       <input type="text" id="appt-wn-${i}" value="${m ? escWeb(m.writing_number || '') : ''}" placeholder="writing #" style="width:110px;font-size:12px;flex-shrink:0;" />
+      <input type="url" id="appt-url-${i}" value="${m ? escWeb(m.quoting_url || '') : ''}"
+        placeholder="your quoting page at this carrier"
+        title="Your own quoting link — it becomes a one-click button in the plan pickers"
+        style="width:230px;font-size:12px;flex-shrink:0;" />
     </div>`;
   }).join('');
   showModal('My Carrier Appointments', `
@@ -12092,13 +12096,17 @@ async function openMyCarriers() {
       const c = allowed[i], m = mineBy[c.id];
       const on = document.getElementById('appt-' + i).checked;
       const wn = document.getElementById('appt-wn-' + i).value.trim() || null;
+      const url = document.getElementById('appt-url-' + i).value.trim() || null;
+      if (url && !/^https?:\/\//i.test(url)) {
+        showToast('The quoting page for ' + c.name + ' needs to start with https://'); return false;
+      }
       if (on && !m) {
         const { error } = await supabaseClient.from('carrier_appointments')
-          .insert({ agent_id: currentAgent.id, carrier_id: c.id, writing_number: wn });
+          .insert({ agent_id: currentAgent.id, carrier_id: c.id, writing_number: wn, quoting_url: url });
         if (error) { showToast('Error: ' + error.message); return false; }
-      } else if (m && (on !== m.is_active || wn !== (m.writing_number || null))) {
+      } else if (m && (on !== m.is_active || wn !== (m.writing_number || null) || url !== (m.quoting_url || null))) {
         const { error } = await supabaseClient.from('carrier_appointments')
-          .update({ is_active: on, writing_number: wn }).eq('id', m.id);
+          .update({ is_active: on, writing_number: wn, quoting_url: url }).eq('id', m.id);
         if (error) { showToast('Error: ' + error.message); return false; }
       }
     }
@@ -12106,6 +12114,44 @@ async function openMyCarriers() {
     if (currentAgent.role === 'agent') renderSettings();
     else { renderAdmin(); renderSettings(); }
   });
+}
+
+// Where this agent goes to quote this carrier. Their own link first, then the
+// product's page, then the carrier's general broker portal.
+function carrierQuotingUrl_(carrierId, productId) {
+  const appt = (window._qbAppts || []).find(a => a.carrier_id === carrierId && a.is_active !== false);
+  if (appt && appt.quoting_url) return { url: appt.quoting_url, whose: 'your page' };
+  const prod = (window._qbProducts || []).find(p => p.id === productId);
+  if (prod && prod.quoting_url) return { url: prod.quoting_url, whose: 'the product page' };
+  const car = (window._qbCarriers || []).find(c => c.id === carrierId);
+  if (car && car.broker_portal_url) return { url: car.broker_portal_url, whose: 'the broker portal' };
+  return null;
+}
+
+// For carriers whose rates we cannot hold — no sheet, no feed, quoted on their
+// own site. Taking the agent there in one click is the honest answer; it beats
+// pretending we can price it.
+function carrierQuotingBtn_(carrierId, productId, label) {
+  const hit = carrierQuotingUrl_(carrierId, productId);
+  if (!hit) return '';
+  return `<a href="${escWeb(hit.url)}" target="_blank" rel="noopener noreferrer"
+      class="btn btn-outline btn-sm" style="text-decoration:none;"
+      title="Opens ${escWeb(hit.whose)} in a new tab">↗ ${escWeb(label || 'Quote at the carrier')}</a>`;
+}
+
+// Shows the way out to the carrier's own site once a carrier is chosen. For
+// short-term medical and most supplemental products this is how a real premium
+// is actually obtained — there is no sheet to hold and no feed to read.
+function qbQuoteLinkPaint_(i) {
+  const host = document.getElementById('qb-quotelink-' + i);
+  if (!host) return;
+  const carId = (document.getElementById('qb-car-' + i) || {}).value || null;
+  const prodId = (document.getElementById('qb-prod-' + i) || {}).value || null;
+  if (!carId) { host.innerHTML = ''; return; }
+  const btn = carrierQuotingBtn_(carId, prodId, 'Quote this at the carrier');
+  host.innerHTML = btn
+    ? btn + `<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">then bring the premium back to this option</span>`
+    : `<span style="font-size:11px;color:var(--text-muted);">No quoting page saved for this carrier — add yours in Settings → My Carrier Appointments.</span>`;
 }
 
 // ============================================================
@@ -12351,7 +12397,8 @@ async function openQuoteBuilder(dealId, opts) {
   // Carriers the agent can quote: their active appointments; owners fall back to full master
   const { data: master } = await supabaseClient.from('carriers').select('*').eq('is_active', true).order('name');
   const { data: myAppts } = await supabaseClient.from('carrier_appointments')
-    .select('carrier_id').eq('agent_id', currentAgent.id).eq('is_active', true);
+    .select('carrier_id,quoting_url,is_active').eq('agent_id', currentAgent.id).eq('is_active', true);
+  window._qbAppts = myAppts || [];        // the pickers read their quoting links from here
   const apptIds = new Set((myAppts || []).map(a => a.carrier_id));
   const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner';
   let myCarriers = (master || []).filter(c => apptIds.has(c.id));
@@ -12441,9 +12488,10 @@ async function openQuoteBuilder(dealId, opts) {
       <div id="qb-aca-warn-${i}" style="display:none;font-size:11.5px;line-height:1.5;border-radius:8px;padding:8px 10px;margin:6px 0;"></div>
       <div id="qb-carprod-${i}">
         <label>Carrier <span id="qb-car-opt-${i}" style="display:none;font-size:10px;color:var(--text-muted);">(optional when an official plan is picked)</span></label>
-        <select id="qb-car-${i}" onchange="qbFillProducts_(${i});qbMgCarrierPicked_(${i});">${carOpts}</select>
+        <select id="qb-car-${i}" onchange="qbFillProducts_(${i});qbMgCarrierPicked_(${i});qbQuoteLinkPaint_(${i});">${carOpts}</select>
         <label>Product (from carrier's catalog — optional)</label>
-        <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i})"><option value="">— none / type manually —</option></select>
+        <select id="qb-prod-${i}" onchange="qbApplyProduct_(${i});qbQuoteLinkPaint_(${i});"><option value="">— none / type manually —</option></select>
+        <div id="qb-quotelink-${i}" style="margin-top:6px;"></div>
       </div>
       <div id="qb-aca-card-${i}" style="display:none;"></div>
       <div id="qb-cms-card-${i}" style="display:none;"></div>
