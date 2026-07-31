@@ -11729,13 +11729,73 @@ const CARRIER_LINES = ['Life','Health — Individual','Short-Term Medical','Priv
 // Retiring is the normal thing: the carrier stops being offered but every
 // quote that used it still makes sense. Deleting is only for something added
 // by mistake, and only while nothing points at it.
+// Retiring a carrier retires everything they write \u2014 nothing can be sold
+// through a carrier we no longer hold. Bringing them back is NOT the mirror
+// image: a carrier returns with whatever line-up they have now, and some of
+// those products were retired for their own reasons. So the products come back
+// one at a time, chosen, with the reason each was retired in view.
 async function carrierSetActive_(id, makeActive) {
-  const { error } = await supabaseClient.from('carriers')
-    .update({ is_active: makeActive }).eq('id', id).select('id');
-  if (error) { showToast('Could not update: ' + error.message); return; }
-  await supabaseClient.from('carrier_products').update({ is_active: makeActive }).eq('carrier_id', id);
-  showToast(makeActive ? 'Carrier restored, with its products.' : 'Carrier retired \u2014 its quotes and history are untouched.');
-  renderAdmin();
+  const cr = (window._allCarriers || []).find(c => c.id === id) || {};
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!makeActive) {
+    const { error } = await supabaseClient.from('carriers')
+      .update({ is_active: false }).eq('id', id).select('id');
+    if (error) { showToast('Could not update: ' + error.message); return; }
+    // Products already retired keep their own reason \u2014 it is the truer one.
+    const { data: hit } = await supabaseClient.from('carrier_products').update({
+      is_active: false, discontinued_on: today,
+      discontinued_reason: 'Carrier retired ' + today,
+    }).eq('carrier_id', id).is('discontinued_on', null).select('id');
+    showToast('Carrier retired' + ((hit || []).length ? ' with ' + hit.length + ' product'
+      + (hit.length === 1 ? '' : 's') : '') + ' \u2014 quotes and history are untouched.');
+    renderAdmin();
+    return;
+  }
+
+  const { data: prods } = await supabaseClient.from('carrier_products')
+    .select('id,name,line_of_business,is_active,discontinued_on,discontinued_reason')
+    .eq('carrier_id', id).order('name');
+  const retired = (prods || []).filter(p => p.discontinued_on || !p.is_active);
+
+  if (!retired.length) {
+    const { error } = await supabaseClient.from('carriers')
+      .update({ is_active: true }).eq('id', id).select('id');
+    if (error) { showToast('Could not update: ' + error.message); return; }
+    showToast('Carrier restored.');
+    renderAdmin();
+    return;
+  }
+
+  showModal('Bring back ' + escWeb(cr.name || 'this carrier'), `
+    <p style="font-size:13px;line-height:1.6;margin-bottom:10px;">
+      The carrier comes back either way. <strong>Choose which products come back with it</strong> \u2014
+      a carrier usually returns with a different line-up, and some of these were retired for
+      reasons of their own.</p>
+    ${retired.map((p, i) => `
+      <label style="display:flex;gap:9px;align-items:flex-start;padding:8px 11px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;font-weight:400;cursor:pointer;">
+        <input type="checkbox" id="cr-un-${i}" style="width:auto;margin-top:3px;" />
+        <span><strong>${escWeb(p.name)}</strong>
+          <span style="font-size:11.5px;color:var(--text-muted);"> ${escWeb(p.line_of_business || '')}</span>
+          ${p.discontinued_reason ? `<div style="font-size:11.5px;color:var(--text-warning);">retired: ${escWeb(p.discontinued_reason)}</div>` : ''}
+        </span></label>`).join('')}
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">
+      Anything left unticked stays retired \u2014 you can bring it back later from the carrier's product list.</div>
+  `, async () => {
+    const { error } = await supabaseClient.from('carriers')
+      .update({ is_active: true }).eq('id', id).select('id');
+    if (error) { showToast('Could not update: ' + error.message); return false; }
+    const back = retired.filter((_, i) => (document.getElementById('cr-un-' + i) || {}).checked);
+    if (back.length) {
+      const { error: e2 } = await supabaseClient.from('carrier_products')
+        .update({ is_active: true, discontinued_on: null, discontinued_reason: null })
+        .in('id', back.map(p => p.id));
+      if (e2) { showToast('Carrier restored, but the products failed: ' + e2.message); return false; }
+    }
+    showToast('Carrier restored' + (back.length ? ' with ' + back.length + ' product'
+      + (back.length === 1 ? '' : 's') : ', products left retired') + '.');
+    renderAdmin();
+  }, { confirmLabel: 'Restore' });
 }
 
 async function carrierDelete_(id) {
