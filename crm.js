@@ -7018,8 +7018,8 @@ async function renderAdmin() {
         <div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-top:4px;">Worked out for you</div>
         ${known('Annual enrollment', cfg && cfg.aep_start
           ? new Date(cfg.aep_start + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
-            + ' \u2013 ' + new Date(cfg.aep_end + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
-          : '\u2014', 'fixed by law')}
+            + ' \u2013 ' + new Date(cfg.aep_end + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+          : '\u2014', 'fixed by law \u2014 the autumn before the year starts')}
         ${known('Highest Part D deductible', maxDed != null ? money(maxDed) : '\u2014', 'from the ' + yr + ' plan data')}
         ${known('CMS disclaimers', cfg && cfg.tpmo_disclaimer ? '\u2713 on file' : '\u2014', 'wording set by CMS')}
 
@@ -7028,6 +7028,14 @@ async function renderAdmin() {
           : '<span style="color:var(--text-warning);">not set \u2014 drug cost estimates run high without it</span>')}
         ${known('Part B premium', cfg && cfg.part_b_premium != null ? money(cfg.part_b_premium) + '/mo' : '<span style="color:var(--text-muted);">not set</span>')}
         ${known('Part B deductible', cfg && cfg.part_b_deductible != null ? money(cfg.part_b_deductible) : '<span style="color:var(--text-muted);">not set</span>')}
+
+        ${years.length > 1 ? `<div style="font-size:11px;color:var(--text-muted);margin-top:9px;padding-top:7px;border-top:1px solid var(--border);">
+          Also on file: ${years.slice(1).map(y => {
+            const gaps = ['part_d_oop_cap', 'part_b_premium', 'part_b_deductible'].filter(k => y[k] == null).length;
+            return `<strong>${y.plan_year}</strong> <a href="#" onclick="event.preventDefault();planYearEdit_(${y.plan_year})" style="color:var(--link);">`
+              + (gaps ? gaps + ' to fill in' : 'complete') + '</a>';
+          }).join(' \u00b7 ')}
+        </div>` : ''}
 
         <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5;">
           The two Part B figures and the Part D limit come from CMS\u2019s annual release each autumn
