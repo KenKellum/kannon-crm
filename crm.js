@@ -6850,6 +6850,10 @@ async function renderAdmin() {
             </div>
             <button class="btn btn-outline btn-sm" onclick="openCarrierProducts('${cr.id}')">Products (${(window._allCarrierProducts||[]).filter(p => p.carrier_id === cr.id).length})</button>
             <button class="btn btn-outline btn-sm" onclick="openCarrierModal('${cr.id}')">Edit</button>
+            <button class="btn btn-outline btn-sm" onclick="carrierSetActive_('${cr.id}', ${cr.is_active ? 'false' : 'true'})"
+              title="${cr.is_active ? 'Stop offering this carrier, keeping its history' : 'Offer this carrier again'}">${cr.is_active ? 'Retire' : 'Restore'}</button>
+            <button class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);"
+              onclick="carrierDelete_('${cr.id}')" title="Delete for good \u2014 only possible if nothing uses it">&#128465;</button>
           </div>`).join('')}
     </div>`;
 
@@ -11474,6 +11478,56 @@ const MEDIGAP_PLANS = [
 
 const CARRIER_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Auto/Home','Commercial','Other'];
 
+// Retiring is the normal thing: the carrier stops being offered but every
+// quote that used it still makes sense. Deleting is only for something added
+// by mistake, and only while nothing points at it.
+async function carrierSetActive_(id, makeActive) {
+  const { error } = await supabaseClient.from('carriers')
+    .update({ is_active: makeActive }).eq('id', id).select('id');
+  if (error) { showToast('Could not update: ' + error.message); return; }
+  await supabaseClient.from('carrier_products').update({ is_active: makeActive }).eq('carrier_id', id);
+  showToast(makeActive ? 'Carrier restored, with its products.' : 'Carrier retired \u2014 its quotes and history are untouched.');
+  renderAdmin();
+}
+
+async function carrierDelete_(id) {
+  const cr = (window._allCarriers || []).find(c => c.id === id) || {};
+  const prods = (window._allCarrierProducts || []).filter(p => p.carrier_id === id);
+
+  // anything pointing at this carrier means retire, not delete
+  const [{ count: onQuotes }, { count: appts }] = await Promise.all([
+    supabaseClient.from('quote_options').select('id', { count: 'exact', head: true }).eq('carrier_id', id),
+    supabaseClient.from('carrier_appointments').select('id', { count: 'exact', head: true }).eq('carrier_id', id),
+  ]);
+  if (onQuotes || appts) {
+    showToast('\u26a0\ufe0f ' + (cr.name || 'This carrier') + ' is used on ' + (onQuotes || 0) + ' quote option'
+      + ((onQuotes || 0) === 1 ? '' : 's') + ' and ' + (appts || 0) + ' appointment'
+      + ((appts || 0) === 1 ? '' : 's') + ' \u2014 retire it instead so that history still reads correctly.');
+    return;
+  }
+
+  const names = prods.map(p => p.name).join(', ');
+  if (!confirm('Delete ' + (cr.name || 'this carrier')
+      + (prods.length ? ' and its ' + prods.length + ' product' + (prods.length === 1 ? '' : 's') + ' (' + names + ')' : '')
+      + ' for good?\n\nNothing uses it, so nothing else changes. This cannot be undone.')) return;
+
+  // rate charts hang off the products, so they go first
+  if (prods.length) {
+    const ids = prods.map(p => p.id);
+    const { data: charts } = await supabaseClient.from('rate_charts').select('id').in('product_id', ids);
+    if (charts && charts.length) {
+      await supabaseClient.from('rate_rows').delete().in('chart_id', charts.map(c => c.id));
+      await supabaseClient.from('rate_charts').delete().in('product_id', ids);
+    }
+    const { error: ep } = await supabaseClient.from('carrier_products').delete().in('id', ids).select('id');
+    if (ep) { showToast('Could not delete the products: ' + ep.message); return; }
+  }
+  const { error } = await supabaseClient.from('carriers').delete().eq('id', id).select('id');
+  if (error) { showToast('Could not delete: ' + error.message); return; }
+  showToast('Deleted ' + (cr.name || 'the carrier') + (prods.length ? ' and its products.' : '.'));
+  renderAdmin();
+}
+
 function openCarrierModal(id) {
   const cr = id ? (window._allCarriers || []).find(x => x.id === id) : null;
   const lines = new Set((cr && cr.lines_of_business) || []);
@@ -12464,6 +12518,9 @@ function qbAutoSources_() {
     { key: 'cms', el: 'qb-cms-strip', line: 'Medicare Advantage',
       title: '\u{1F3DB}\uFE0F Medicare Advantage Plans',
       blurb: 'Official CMS plan data \u2014 Advantage and Part D plans where they live.' },
+    { key: 'pdp', el: 'qb-cms-strip', line: 'Part D (PDP)',
+      title: '\u{1F48A} Part D drug plans',
+      blurb: 'Standalone drug plans where they live, checked against their prescriptions.' },
     { key: 'rate', el: 'qb-rate-strip', line: 'Medicare Supplement',
       title: '\u{1F4CA} Medigap rate lookup',
       blurb: 'Rates from the charts you\u2019ve loaded, by age, gender and tobacco.' },
@@ -12489,6 +12546,10 @@ function qbEnsureWorkbench_() {
 
 function qbWorkbenchOpen_(open, key) {
   const wb = qbEnsureWorkbench_();
+  if (open && key === 'pdp') {
+    const kind = document.getElementById('qb-cms-kind');
+    if (kind) kind.value = 'PDP';
+  }
   if (open && key) {
     window._qbWbActive = key;
     const src = qbAutoSources_().find(x => x.key === key);
@@ -12532,7 +12593,8 @@ function qbMountSource_() {
 // Live summary of a source that's already been used
 function qbSourceUsed_(key) {
   if (key === 'aca') return ((window._qbAcaPlans || []).length > 0);
-  if (key === 'cms') return ((window._qbCmsPlans || []).length > 0);
+  if (key === 'cms') return ((window._qbCmsPlans || []).length > 0 && window._qbCmsKind !== 'PDP');
+  if (key === 'pdp') return ((window._qbCmsPlans || []).length > 0 && window._qbCmsKind === 'PDP');
   if (key === 'rate') return (window._qbRateAge != null);
   return false;
 }
@@ -12634,6 +12696,7 @@ function qbSyncWorkbench_() {
   const wb0 = document.getElementById('qb-workbench');
   const wbOpen = !!(wb0 && wb0.style.display !== 'none');
   const activeEl = (sources.find(x => x.key === window._qbWbActive) || {}).el;
+  window._qbPdpMode = window._qbWbActive === 'pdp';
   if (holder) {
     // Every tool is on offer now, so "offered" can't decide visibility:
     // a panel belongs on screen ONLY while it's the one open in the workbench.
@@ -15907,6 +15970,7 @@ function cmsPkFiltered_() {
 }
 
 function cmsCardHtml_(p) {
+  if (p.category === 'PDP') return pdpCardHtml_(p);
   const slot = cmsAddedSlot_(p.id);
   const prem = cmsPremium_(p);
   const money = cmsUsd_;
@@ -15971,6 +16035,66 @@ function cmsPkChip_(id) {
   renderCmsPicker_();
 }
 
+// A drug plan is judged on the drugs. Premium and deductible matter, but the
+// first question is always "is my prescription on it, and on what tier".
+function pdpCardHtml_(p) {
+  const slot = cmsAddedSlot_(p.id);
+  const money = cmsUsd_;
+  const meds = window._qbCmsMeds || [];
+  const cov = p._drugCov;
+  const covered = cov ? meds.filter(m => cov[m.rxcui]).length : null;
+  const flagged = cov ? meds.filter(m => cov[m.rxcui] && (cov[m.rxcui].prior_auth || cov[m.rxcui].step_therapy)).length : 0;
+  const tone = covered === null ? 'var(--text-muted)'
+    : (covered === meds.length && !flagged ? 'var(--text-success)' : 'var(--text-warning)');
+
+  return `<div class="pk-card ${slot >= 0 ? 'is-selected' : ''}"
+      style="border-radius:12px;padding:12px 14px;cursor:pointer;display:flex;flex-direction:column;height:100%;"
+      onclick="openCmsDetail_('${escWeb(p.id)}')">
+      ${slot >= 0 ? `<div class="pk-sel-badge">\u2713 OPTION ${qbOptionNo_(slot)}</div>` : ''}
+      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${escWeb(p.org_name || '')}</div>
+      <div style="font-size:14.5px;font-weight:700;margin:1px 0 8px;">${escWeb(p.plan_name)}</div>
+
+      ${meds.length ? `<div style="border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--surface-2);">
+        <div style="font-size:12px;font-weight:700;color:${tone};">\u{1F48A} ${
+          covered === null ? (window._qbCmsDrugBusy ? 'checking their prescriptions\u2026' : 'not checked yet')
+          : covered + ' of ' + meds.length + ' of their prescriptions covered'
+            + (flagged ? ' \u00b7 ' + flagged + ' with conditions' : '')}</div>
+        ${cov ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;">
+          ${meds.map(m => {
+            const hit = cov[m.rxcui];
+            if (!hit) return '<span class="pk-pill bad">\u2717 ' + escWeb(m.name) + '</span>';
+            const notes = [];
+            if (hit.prior_auth) notes.push('prior auth');
+            if (hit.step_therapy) notes.push('step therapy');
+            return '<span class="pk-pill ' + (notes.length ? 'unk' : 'ok') + '">' + (notes.length ? '\u26a0' : '\u2713')
+              + ' ' + escWeb(m.name) + ' <strong>T' + (hit.tier || '?') + '</strong>'
+              + (notes.length ? ' <span style="opacity:.75;">' + notes.join(', ') + '</span>' : '') + '</span>';
+          }).join(' ')}
+        </div>` : ''}
+      </div>` : `<div style="font-size:11.5px;color:var(--text-muted);">No prescriptions on file \u2014 add them to their intake and this compares drug lists too.</div>`}
+
+      <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-top:10px;">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">${money(p.part_d_premium)}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
+          <div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;">plan premium</div>
+        </div>
+        <div style="margin-left:auto;text-align:right;">
+          <div style="font-size:10px;color:var(--text-muted);">Yearly drug deductible</div>
+          <div style="font-size:13px;font-weight:700;">${money(p.drug_deductible)}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:auto;padding-top:10px;flex-wrap:wrap;">
+        <button type="button" class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm"
+          onclick="event.stopPropagation();qbCmsAddPlan_('${escWeb(p.id)}')">${slot >= 0 ? '\u2713 Added \u2014 remove' : '+ Add to quote'}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();openCmsDetail_('${escWeb(p.id)}')">Details</button>
+        <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="event.stopPropagation();">
+          <input type="checkbox" ${window._qbCmsPk.cmp.has(cmsKey_(p)) ? 'checked' : ''} onclick="event.stopPropagation();"
+            onchange="cmsCmpToggle_('${escWeb(cmsKey_(p))}', this)" style="width:13px;height:13px;" /> \u2696\ufe0f Compare</label>
+      </div>
+    </div>`;
+}
+
 function renderCmsPicker_() {
   const el = document.getElementById('qb-cms-picker');
   if (!el) return;
@@ -15995,8 +16119,9 @@ function renderCmsPicker_() {
   if (pk.carriers.size) active.push([...pk.carriers].join(', '));
   const chosen = [];
   for (let i = 0; i < QB_MAX_OPTIONS; i++) if ((window._qbCmsSel || {})[i]) chosen.push({ i: i, p: window._qbCmsSel[i] });
+  const isPdp = window._qbCmsKind === 'PDP';
   const kind = CMS_KIND_LABEL[window._qbCmsKind || 'MAPD'];
-  const where = window._qbCmsKind === 'PDP' ? window._qbCmsState : (window._qbCmsCounty + ' County, ' + window._qbCmsState);
+  const where = isPdp ? (window._qbCmsState + ' \u00b7 priced statewide') : (window._qbCmsCounty + ' County, ' + window._qbCmsState);
 
   el.innerHTML = `
     <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
