@@ -12860,6 +12860,109 @@ async function ppSaveProfile_() {
 }
 
 // ------------------------------------------------------------------ the card
+// Some things always read better in the same place, whatever a carrier calls
+// them. Pharmacy last, the coverage maximum just above it, everything else in
+// the order the document gave. Used by the card, the details and the compare
+// so all three agree.
+function ppOrder_(key, label) {
+  const t = ((label || '') + ' ' + (key || '')).toLowerCase().replace(/[_-]+/g, ' ');
+  if (/pharmac|prescription|\brx\b|drug/.test(t)) return 100;
+  if (/coverage period max|coverage max|policy max|maximum benefit|lifetime max/.test(t)) return 90;
+  return 0;
+}
+function ppSorted_(entries) {
+  return entries
+    .map((e, i) => ({ e: e, i: i, w: ppOrder_(e[0], (e[1] || {}).label) }))
+    .sort((a, b) => (a.w - b.w) || (a.i - b.i))
+    .map(x => x.e);
+}
+
+// A dimension is either a plain list of values, or linked parts where choosing
+// one narrows the next \u2014 a deductible that carries its own coinsurance. The
+// linked kind is stored as combos so nothing has to be parsed back out of a label.
+function ppCombos_(d) { return (d && Array.isArray(d.combos)) ? d.combos : null; }
+function ppParts_(d) {
+  if (d && Array.isArray(d.parts) && d.parts.length) return d.parts;
+  const c = ppCombos_(d);
+  return c && c.length ? Object.keys(c[0]) : [];
+}
+
+// The combinations still open once the earlier parts have been chosen.
+function ppOpenCombos_(d, chosen) {
+  const combos = ppCombos_(d) || [];
+  const parts = ppParts_(d);
+  return combos.filter(c => parts.every(pt => {
+    const want = (chosen || {})[pt];
+    return !want || String(c[pt]) === String(want);
+  }));
+}
+
+// One dropdown per part. Each is filled from what the parts before it allow, so
+// a coinsurance list only ever offers levels the chosen deductible really has.
+function ppComboPickers_(p, key, d) {
+  const chosen = (ppChoice_(p)[key] || {});
+  const parts = ppParts_(d);
+  return `<div style="margin-top:8px;">
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">${escWeb(d.label || key)}</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:4px;">
+      ${parts.map((pt, idx) => {
+        const before = {};
+        parts.slice(0, idx).forEach(k => { if (chosen[k]) before[k] = chosen[k]; });
+        const open = [...new Set(ppOpenCombos_(d, before).map(c => String(c[pt])))];
+        const val = chosen[pt] || '';
+        const stale = val && !open.includes(String(val));
+        return `<label style="display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:var(--text-muted);font-weight:400;margin:0;">
+          ${escWeb(pt)}
+          <select onchange="ppComboSet_('${escWeb(p.id)}','${escWeb(key)}','${escWeb(pt)}',this.value)"
+            style="width:auto;min-width:96px;font-size:12px;margin:0;${stale ? 'border-color:var(--border-warning);' : ''}">
+            <option value="">\u2014 any \u2014</option>
+            ${open.map(v => `<option value="${escWeb(v)}"${String(val) === String(v) ? ' selected' : ''}>${escWeb(v)}</option>`).join('')}
+          </select></label>`;
+      }).join('')}
+    </div>
+    ${ppComboNote_(d, chosen)}
+  </div>`;
+}
+
+function ppComboNote_(d, chosen) {
+  const parts = ppParts_(d);
+  const open = ppOpenCombos_(d, chosen);
+  const done = parts.every(pt => chosen[pt]);
+  if (done) return '';
+  return `<div style="font-size:10.5px;color:var(--text-muted);margin-top:4px;">${open.length} combination${open.length === 1 ? '' : 's'} this plan offers</div>`;
+}
+
+// Choosing an earlier part drops any later one it no longer allows, rather
+// than leaving a pairing on screen the carrier does not sell.
+function ppComboSet_(prodId, key, part, value) {
+  const pp = ppState_();
+  const p = (pp.products || []).find(x => x.id === prodId);
+  if (!p) return;
+  const d = ppDims_(p)[key] || {};
+  const choice = (pp.choice[prodId] = pp.choice[prodId] || {});
+  const sel = (choice[key] = choice[key] || {});
+  if (value) sel[part] = value; else delete sel[part];
+
+  const parts = ppParts_(d);
+  const after = parts.slice(parts.indexOf(part) + 1);
+  after.forEach(pt => {
+    if (!sel[pt]) return;
+    const before = {};
+    parts.slice(0, parts.indexOf(pt)).forEach(k => { if (sel[k]) before[k] = sel[k]; });
+    const open = ppOpenCombos_(d, before).map(c => String(c[pt]));
+    if (!open.includes(String(sel[pt]))) delete sel[pt];
+  });
+  renderProductPicker_();
+}
+
+// How a chosen combination reads, wherever it is shown.
+function ppChoiceLabel_(p, key, d) {
+  const chosen = (ppChoice_(p)[key] || {});
+  const parts = ppParts_(d);
+  const said = parts.filter(pt => chosen[pt]).map(pt => pt + ' ' + chosen[pt]);
+  return said.length ? said.join(' \u00b7 ') : null;
+}
+
 function ppCardHtml_(p) {
   const pp = ppState_();
   const dims = ppDims_(p);
@@ -12872,7 +12975,8 @@ function ppCardHtml_(p) {
   const slot = ppAddedSlot_(p.id);
   const typed = pp.prem[p.id];
 
-  const dimRows = Object.entries(dims).map(([key, d]) => {
+  const dimRows = ppSorted_(Object.entries(dims)).map(([key, d]) => {
+    if (ppCombos_(d)) return ppComboPickers_(p, key, d);
     const values = (d && d.values) || [];
     if (!values.length) return '';
     return `<div style="margin-top:8px;">
@@ -12883,7 +12987,7 @@ function ppCardHtml_(p) {
       </div></div>`;
   }).join('');
 
-  const facts = Object.entries(meta.facts || {}).slice(0, 4).map(([k, v]) =>
+  const facts = ppSorted_(Object.entries(meta.facts || {})).slice(0, 4).map(([k, v]) =>
     `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:2px 0;">
        <span style="color:var(--text-muted);">${escWeb(k.replace(/_/g, ' '))}</span>
        <strong style="color:var(--text-secondary);">${escWeb(String(v))}</strong></div>`).join('');
@@ -12998,8 +13102,9 @@ function ppAdd_(prodId) {
   const choice = ppChoice_(p);
   const chosen = Object.entries(choice).map(([k, v]) => {
     const d = ppDims_(p)[k] || {};
+    if (ppCombos_(d)) { const said = ppChoiceLabel_(p, k, d); return said ? said : null; }
     return ((d.label || k) + ': ' + ppFmt_(v, d));
-  });
+  }).filter(Boolean);
 
   const ol = document.getElementById('qb-optline-' + slot);
   if (ol) { ol.value = p.line_of_business; qbOptLineChanged_(slot); }
@@ -13058,7 +13163,7 @@ function ppDetail_(prodId) {
       ${p.notes ? `<div style="font-size:13.5px;line-height:1.6;margin-top:6px;">${escWeb(p.notes)}</div>` : ''}
       ${meta.underwriter ? `<div style="font-size:12px;color:var(--text-muted);margin-top:7px;">Underwritten by <strong>${escWeb(meta.underwriter)}</strong>${meta.policy_form ? ' · form ' + escWeb(meta.policy_form) : ''}</div>` : ''}
       ${Object.keys(meta.facts || {}).length ? `<div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;">
-        ${Object.entries(meta.facts).map(([k, v]) => `<div style="border:1px solid var(--border);border-radius:9px;padding:8px 11px;">
+        ${ppSorted_(Object.entries(meta.facts)).map(([k, v]) => `<div style="border:1px solid var(--border);border-radius:9px;padding:8px 11px;">
           <div style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">${escWeb(k.replace(/_/g, ' '))}</div>
           <div style="font-size:14px;font-weight:800;">${escWeb(String(v))}</div></div>`).join('')}
       </div>` : ''}
@@ -13092,8 +13197,9 @@ function openProductCompare_() {
 
   // Every choice and every stated fact across the picked plans, so the rows
   // line up even when one carrier names something the others do not.
-  const dimKeys = [...new Set(picked.flatMap(p => Object.keys(ppDims_(p))))];
-  const factKeys = [...new Set(picked.flatMap(p => Object.keys(ppMeta_(p).facts || {})))];
+  const dimKeys = ppSorted_([...new Set(picked.flatMap(p => Object.keys(ppDims_(p))))]
+    .map(k => [k, (picked.map(p => ppDims_(p)[k]).find(Boolean) || {})])).map(e => e[0]);
+  const factKeys = ppSorted_([...new Set(picked.flatMap(p => Object.keys(ppMeta_(p).facts || {})))].map(k => [k, {}])).map(e => e[0]);
   const listRow = (label, key, tone) => {
     if (!picked.some(p => ((ppMeta_(p)[key]) || []).length)) return '';
     return `<tr><th style="${TH}">${label}</th>${picked.map(p => {
@@ -13116,8 +13222,19 @@ function openProductCompare_() {
           const label = ((picked.map(p => ppDims_(p)[k]).find(Boolean) || {}).label) || k;
           return `<tr><th style="${TH}">${escWeb(label)}</th>${picked.map(p => {
             const d = ppDims_(p)[k];
+            if (!d) return `<td style="${TD}">${dash}</td>`;
+            // linked parts: the agent's pick if they made one, otherwise every
+            // combination the plan actually offers
+            if (ppCombos_(d)) {
+              const said = ppChoiceLabel_(p, k, d);
+              if (said) return `<td style="${TD}"><strong style="color:var(--text-selected,var(--accent));">${escWeb(said)}</strong>
+                <div style="font-size:11px;color:var(--text-muted);">chosen from ${(ppCombos_(d) || []).length} combinations</div></td>`;
+              const parts = ppParts_(d);
+              return `<td style="${TD}">${(ppCombos_(d) || []).map(c =>
+                escWeb(parts.map(pt => c[pt]).join(' · '))).join('<br>')}</td>`;
+            }
             const chosen = (pp.choice[p.id] || {})[k];
-            if (!d || !(d.values || []).length) return `<td style="${TD}">${dash}</td>`;
+            if (!(d.values || []).length) return `<td style="${TD}">${dash}</td>`;
             return `<td style="${TD}">${(d.values || []).map(v =>
               String(v) === String(chosen)
                 ? '<strong style="color:var(--text-selected,var(--accent));">' + escWeb(ppFmt_(v, d)) + ' ←</strong>'
