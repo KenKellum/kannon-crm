@@ -10819,8 +10819,20 @@ function mgManualRow_(letter, secondary) {
   const carriers = (window._qbCarriers || []).slice()
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const st = window._qbMgManual = window._qbMgManual || {};
+  const slot = mgAddedSlot_(letter);
+  if (!st[letter] && slot >= 0) {
+    const sel = (window._qbMgSel || {})[slot] || {};
+    st[letter] = {
+      carrier_id: sel.carrier_id || (sel.carrier_name ? '_other' : ''),
+      carrier_name: sel.carrier_name || '',
+      rate: sel.rate != null ? Number(sel.rate).toFixed(2)
+        : (parseFloat((document.getElementById('qb-prem-' + slot) || {}).value) > 0
+            ? Number((document.getElementById('qb-prem-' + slot) || {}).value).toFixed(2) : ''),
+    };
+  }
   const cur = st[letter] || {};
   const typing = cur.carrier_id === '_other';
+  const onQuote = slot >= 0;
   return `<div style="margin-top:${secondary ? '8' : '9'}px;padding-top:${secondary ? '8' : '0'}px;${secondary ? 'border-top:1px dashed var(--border);' : ''}"
        onclick="event.stopPropagation();">
       ${secondary ? '<div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:5px;">Or another carrier</div>' : ''}
@@ -10840,6 +10852,8 @@ function mgManualRow_(letter, secondary) {
             onblur="mgManualMoney_('${escWeb(letter)}',this)"
             style="width:96px;padding-left:18px;font-size:12px;text-align:right;" />
         </span>
+        ${onQuote ? `<button type="button" class="btn btn-outline btn-sm" style="font-size:11px;"
+          onclick="event.stopPropagation();qbMgAddManual_('${escWeb(letter)}')">Update</button>` : ''}
       </div>
     </div>`;
 }
@@ -11007,6 +11021,8 @@ function qbMgOptionView_(i) {
 
 function qbMgRemoveSlot_(i) {
   if (!(window._qbMgSel || {})[i]) return;
+  const letter = window._qbMgSel[i].letter;
+  if (letter && window._qbMgManual) delete window._qbMgManual[letter];
   delete window._qbMgSel[i];
   ['qb-name-' + i, 'qb-prem-' + i, 'qb-bul-' + i].forEach(id => {
     const el = document.getElementById(id);
