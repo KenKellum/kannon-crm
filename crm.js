@@ -12116,6 +12116,51 @@ async function openMyCarriers() {
   });
 }
 
+// Licensed states have been written both as an array and as a loose string
+// over the life of this system, so read either and hand back a clean set.
+function agentStates_(agent) {
+  const raw = (agent || {}).licensed_states;
+  const parts = Array.isArray(raw) ? raw : String(raw || '').split(/[^A-Za-z]+/);
+  return new Set(parts.map(x => String(x).trim().toUpperCase()).filter(x => x.length === 2));
+}
+
+// Can this agent sell this product to someone in this state? Three separate
+// questions, and they fail differently:
+//   - the product is not filed there    -> nobody can sell it, full stop
+//   - the agent is not licensed there   -> they may quote it, not write it
+//   - the appointment misses that state -> same, and usually a quick fix
+//
+// It warns, it never blocks. An agent seeing everything and being told what
+// they cannot yet write beats a list that quietly hides options from them.
+function productFit_(product, state, carrierId) {
+  const out = { ok: true, filed: true, warnings: [] };
+  const st = String(state || '').toUpperCase();
+  if (!st || !/^[A-Z]{2}$/.test(st)) return out;      // no state known, nothing to judge
+
+  const filed = (product && product.states) || [];
+  if (filed.length && !filed.map(x => String(x).toUpperCase()).includes(st)) {
+    out.ok = false; out.filed = false;
+    out.warnings.push({ tone: 'warn', text: '<strong>' + escWeb(product.name || 'This product')
+      + '</strong> is not filed in <strong>' + escWeb(st) + '</strong>' + (filed.length <= 8
+        ? ' — only ' + filed.map(x => escWeb(String(x).toUpperCase())).join(', ') : '') + '.' });
+  }
+
+  const me = (window.allAgents || []).find(a => a.id === (window.currentAgent || {}).id) || window.currentAgent || {};
+  if (!agentStates_(me).has(st)) {
+    out.ok = false;
+    out.warnings.push({ tone: 'warn', text: 'You are not showing a license in <strong>' + escWeb(st)
+      + '</strong>. You can quote this, but you cannot write it until that is in place.' });
+  }
+
+  const appt = (window._qbAppts || []).find(a => a.carrier_id === carrierId);
+  if (appt && (appt.states || []).length && !appt.states.map(x => String(x).toUpperCase()).includes(st)) {
+    out.ok = false;
+    out.warnings.push({ tone: 'warn', text: 'Your appointment with this carrier does not cover <strong>'
+      + escWeb(st) + '</strong> yet.' });
+  }
+  return out;
+}
+
 // Where this agent goes to quote this carrier. Their own link first, then the
 // product's page, then the carrier's general broker portal.
 function carrierQuotingUrl_(carrierId, productId) {
@@ -12149,9 +12194,15 @@ function qbQuoteLinkPaint_(i) {
   const prodId = (document.getElementById('qb-prod-' + i) || {}).value || null;
   if (!carId) { host.innerHTML = ''; return; }
   const btn = carrierQuotingBtn_(carId, prodId, 'Quote this at the carrier');
-  host.innerHTML = btn
+  const line = btn
     ? btn + `<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">then bring the premium back to this option</span>`
     : `<span style="font-size:11px;color:var(--text-muted);">No quoting page saved for this carrier — add yours in Settings → My Carrier Appointments.</span>`;
+
+  const prod = (window._qbProds || []).find(p => p.id === prodId);
+  const st = (typeof _acaClientState_ === 'function') ? _acaClientState_() : '';
+  const fit = prod ? productFit_(prod, st, carId) : { warnings: [] };
+  host.innerHTML = line + fit.warnings.map(w =>
+    `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:5px;font-size:11.5px;">⚠️ ${w.text}</div>`).join('');
 }
 
 // ============================================================
@@ -13227,8 +13278,16 @@ function qbFillProducts_(i) {
   let list = (window._qbProds || []).filter(p => p.carrier_id === carId);
   const inLine = list.filter(p => p.line_of_business === line);
   if (inLine.length) list = inLine;
+  // Products not filed in the client's state stay on the list, marked. Hiding
+  // them would leave an agent wondering where a product they know exists went.
+  const st = (typeof _acaClientState_ === 'function') ? _acaClientState_() : '';
   sel.innerHTML = '<option value="">— none / type manually —</option>'
-    + list.map(p => `<option value="${p.id}">${escWeb(p.name)}${p.plan_year ? ' (' + p.plan_year + ')' : ''}</option>`).join('');
+    + list.map(p => {
+        const filed = (p.states || []).map(x => String(x).toUpperCase());
+        const off = st && filed.length && !filed.includes(st);
+        return `<option value="${p.id}">${escWeb(p.name)}${p.plan_year ? ' (' + p.plan_year + ')' : ''}`
+          + (off ? ' — not filed in ' + escWeb(st) : '') + '</option>';
+      }).join('');
 }
 
 function qbApplyProduct_(i) {
