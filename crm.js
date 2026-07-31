@@ -10822,8 +10822,12 @@ function mgManualRow_(letter, secondary) {
   const slot = mgAddedSlot_(letter);
   if (!st[letter] && slot >= 0) {
     const sel = (window._qbMgSel || {})[slot] || {};
+    const byName = sel.carrier_name
+      ? (window._qbCarriers || []).find(c => String(c.name).toLowerCase() === String(sel.carrier_name).toLowerCase())
+      : null;
+    if (byName && !sel.carrier_id) sel.carrier_id = byName.id;
     st[letter] = {
-      carrier_id: sel.carrier_id || (sel.carrier_name ? '_other' : ''),
+      carrier_id: sel.carrier_id || (byName ? byName.id : (sel.carrier_name ? '_other' : '')),
       carrier_name: sel.carrier_name || '',
       rate: sel.rate != null ? Number(sel.rate).toFixed(2)
         : (parseFloat((document.getElementById('qb-prem-' + slot) || {}).value) > 0
