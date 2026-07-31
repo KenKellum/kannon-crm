@@ -12909,11 +12909,12 @@ function ppCardHtml_(p) {
 
     <div style="min-height:74px;">${dimRows}</div>
 
-    <div style="min-height:26px;margin-top:7px;">
-      ${fit.warnings.map(w => `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-bottom:4px;font-size:11px;">⚠️ ${w.text}</div>`).join('')}
+    <div style="margin-top:auto;min-height:26px;">
+      ${fit.warnings.filter(w => w.scope !== 'agent').map(w =>
+        `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-bottom:4px;font-size:11px;">⚠️ ${w.text}</div>`).join('')}
     </div>
 
-    <div style="margin-top:auto;padding-top:10px;border-top:1px solid var(--border);">
+    <div style="padding-top:10px;border-top:1px solid var(--border);">
       ${rate.kind === 'none' ? `
         <div style="font-size:11px;color:var(--text-muted);line-height:1.45;">No rate chart on file — quote it at the carrier, then put the premium here.</div>
         <div style="display:flex;gap:7px;align-items:center;margin-top:6px;flex-wrap:wrap;">
@@ -13140,6 +13141,17 @@ function openProductCompare_() {
     </table>`);
 }
 
+// The one warning that is about the agent and the state rather than any single
+// plan. Said once, above everything, instead of repeated on every card.
+function ppAgentBar_(prof) {
+  const bar = html => `<div class="pk-bar warn" style="border-radius:0;border:0;border-bottom:1px solid var(--border);">⚠️ ${html}</div>`;
+  if (!prof.state) return bar('No ZIP code yet, so we cannot tell which products are filed for them. Add it below.');
+  const me = (window.allAgents || []).find(a => a.id === (window.currentAgent || {}).id) || window.currentAgent || {};
+  if (agentStates_(me).has(prof.state)) return '';
+  return bar('You are not showing a license in <strong>' + escWeb(prof.state) + '</strong>. You can quote '
+    + 'everything here, but you cannot write any of it until that is in place.');
+}
+
 function renderProductPicker_() {
   const el = document.getElementById('qb-pp-picker');
   if (!el) return;
@@ -13158,6 +13170,7 @@ function renderProductPicker_() {
       <button class="btn btn-outline btn-sm" ${pp.cmp.size ? '' : 'style="margin-left:auto;"'} onclick="closeProductPicker_()">✕ Done</button>
     </div>
 
+    ${ppAgentBar_(prof)}
     ${ppBasisHtml_()}
 
     <div style="flex:1;overflow:auto;padding:14px 18px;">
@@ -13201,7 +13214,7 @@ function productFit_(product, state, carrierId) {
   const me = (window.allAgents || []).find(a => a.id === (window.currentAgent || {}).id) || window.currentAgent || {};
   if (!agentStates_(me).has(st)) {
     out.ok = false;
-    out.warnings.push({ tone: 'warn', text: 'You are not showing a license in <strong>' + escWeb(st)
+    out.warnings.push({ tone: 'warn', scope: 'agent', text: 'You are not showing a license in <strong>' + escWeb(st)
       + '</strong>. You can quote this, but you cannot write it until that is in place.' });
   }
 
