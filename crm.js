@@ -12415,6 +12415,7 @@ function pwStepReview_() {
       ${(carrier.states || []).length ? chip('for ' + carrier.states.join(', '), 'info') : ''}
       ${carrier.revision_label ? chip(escWeb(carrier.revision_label), 'info') : ''}
     </div>
+    ${pwAgentOnlyHtml_(p)}
     ${worries.length ? `<div class="pk-bar warn" style="border-radius:9px;border:1px solid;margin-bottom:12px;">
       <strong>⚠️ Worth a look before saving</strong>
       <ul style="margin:6px 0 0 18px;padding:0;font-size:12px;line-height:1.6;">
@@ -12447,6 +12448,29 @@ function pwStepReview_() {
       <button class="btn btn-outline" onclick="pwStep_(2)">← Different document</button>
       <button class="btn btn-primary" ${prods.length ? '' : 'disabled'} onclick="pwStep_(5)">Next →</button>
     </div>`;
+}
+
+// Carrier policy documents are usually stamped "not for consumer use" and are
+// often not state-specific either. What they say is gold for an agent and must
+// never be handed to a client, so it is kept apart and labelled as such.
+function pwAgentOnlyHtml_(p) {
+  const a = p.agent_only || {};
+  const docs = (p.documents || []).filter(d => d.internal_use_only);
+  const counts = [
+    (a.exclusions || []).length ? (a.exclusions || []).length + ' exclusions' : '',
+    (a.benefit_detail || []).length ? (a.benefit_detail || []).length + ' benefit details' : '',
+    (a.riders || []).length ? (a.riders || []).length + ' rider terms' : '',
+  ].filter(Boolean);
+  if (!docs.length && !counts.length) return '';
+  return `<div style="border:1px solid var(--border-warning);background:var(--bg-warning);border-radius:9px;padding:10px 13px;margin-bottom:12px;">
+    <div style="font-size:12.5px;font-weight:800;color:var(--text-warning);">&#128274; Agent reference only &mdash; never shown to a client</div>
+    <div style="font-size:11.5px;color:var(--text-warning);opacity:.9;line-height:1.55;margin-top:4px;">
+      ${docs.length ? escWeb(docs.map(d => d.filename).join(', ')) + ' ' + (docs.length === 1 ? 'is' : 'are') + ' marked not for consumer use. ' : ''}
+      ${counts.length ? 'Kept on the product for you: ' + escWeb(counts.join(', ')) + '. ' : ''}
+      ${(a.caveats || []).length ? escWeb((a.caveats || []).join(' ')) + ' ' : ''}
+      Client-facing benefits come only from the consumer brochure.
+    </div>
+  </div>`;
 }
 
 function pwToggleProduct_(i) { _pw.chosen[i] = !_pw.chosen[i]; }
@@ -12498,8 +12522,16 @@ async function pwSave_() {
       is_active: true,
       notes: p.summary || null,
       metadata: {
+        // bullets and limitations are consumer-facing: they reach the quote card.
         bullets: p.key_benefits || [],
         limitations: [].concat(p.limitations || [], shared.limitations || []),
+        // This half came out of documents the carrier says are not for consumers.
+        // It is for the agent and must never be rendered to a client.
+        agent_only: proposal.agent_only || null,
+        documents: (proposal.documents || []).map(d => ({
+          filename: d.filename, what_it_is: d.what_it_is,
+          internal_use_only: !!d.internal_use_only, states: d.states_it_covers || null,
+        })),
         eligibility: shared.eligibility || [],
         compliance_notes: shared.compliance_notes || [],
         dimensions: p.dimensions || {},
@@ -12583,6 +12615,40 @@ function productFit_(product, state, carrierId) {
   return out;
 }
 
+// The uploaded documents stay in object storage, not in the database, so
+// keeping every brochure costs the database nothing. A link is minted on
+// demand and expires, rather than the file being made public.
+//
+// Documents a carrier stamped "not for consumer use" are never shareable. The
+// storage rules enforce that too; this is the polite half.
+async function productDocLink_(productId, opts) {
+  const days = (opts && opts.days) || 7;
+  const { data: docs } = await supabaseClient.from('product_documents')
+    .select('id,storage_path,filename,internal_use_only,kind')
+    .eq('product_id', productId).order('created_at', { ascending: false });
+  const share = (docs || []).find(d => !d.internal_use_only);
+  if (!share) return null;
+  const { data, error } = await supabaseClient.storage.from('product-docs')
+    .createSignedUrl(share.storage_path, days * 86400);
+  if (error || !data) return null;
+  return { url: data.signedUrl, filename: share.filename, days: days };
+}
+
+async function productDocOpen_(productId) {
+  const hit = await productDocLink_(productId);
+  if (!hit) { showToast('No client-safe brochure on file for this product.'); return; }
+  window.open(hit.url, '_blank', 'noopener');
+}
+
+async function productDocCopy_(productId) {
+  const hit = await productDocLink_(productId);
+  if (!hit) { showToast('No client-safe brochure on file for this product.'); return; }
+  try {
+    await navigator.clipboard.writeText(hit.url);
+    showToast('Link copied \u2014 good for ' + hit.days + ' days.');
+  } catch (e) { window.prompt('Copy this link (good for ' + hit.days + ' days):', hit.url); }
+}
+
 // Where this agent goes to quote this carrier. Their own link first, then the
 // product's page, then the carrier's general broker portal.
 function carrierQuotingUrl_(carrierId, productId) {
@@ -12623,7 +12689,11 @@ function qbQuoteLinkPaint_(i) {
   const prod = (window._qbProds || []).find(p => p.id === prodId);
   const st = (typeof _acaClientState_ === 'function') ? _acaClientState_() : '';
   const fit = prod ? productFit_(prod, st, carId) : { warnings: [] };
-  host.innerHTML = line + fit.warnings.map(w =>
+  const broch = prodId
+    ? ` <a href="#" onclick="event.preventDefault();productDocOpen_('${escWeb(prodId)}')" style="font-size:11px;color:var(--link);margin-left:8px;">\u{1F4C4} Brochure</a>`
+      + ` <a href="#" onclick="event.preventDefault();productDocCopy_('${escWeb(prodId)}')" style="font-size:11px;color:var(--link);margin-left:6px;">copy link for the client</a>`
+    : '';
+  host.innerHTML = line + broch + fit.warnings.map(w =>
     `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:5px;font-size:11.5px;">⚠️ ${w.text}</div>`).join('');
 }
 
