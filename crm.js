@@ -11720,7 +11720,10 @@ const MEDIGAP_PLANS = [
     'Only available if Medicare-eligible before Jan 1, 2020']],
 ];
 
-const CARRIER_LINES = ['Life','Health — Individual','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Auto/Home','Commercial','Other'];
+const CARRIER_LINES = ['Life','Health — Individual','Short-Term Medical','Private/Off-Market Medical',
+  'Health Share','Health — Group','Medicare Advantage','Medicare Supplement','Part D (PDP)',
+  'Hospital Indemnity','Accident','Cancer/Critical Illness','Dental/Vision/Hearing','Disability',
+  'Auto/Home','Commercial','Other'];
 
 // Retiring is the normal thing: the carrier stops being offered but every
 // quote that used it still makes sense. Deleting is only for something added
@@ -12112,7 +12115,37 @@ async function openMyCarriers() {
 // ============================================================
 const QB_MAX_OPTIONS = 10; // agents sometimes compare 10+ carriers
 // Group health is deliberately absent \u2014 it gets its own quoting engine.
-const QUOTE_LINES = ['Life','Health — Individual','Medicare Advantage','Medicare Supplement','Part D (PDP)','Dental/Vision/Hearing','Disability','Other'];
+const QUOTE_LINE_GROUPS = [
+  ['Major medical', [
+    ['Health — Individual', 'ACA Marketplace'],
+    ['Short-Term Medical', 'Short-Term Medical'],
+    ['Private/Off-Market Medical', 'Private / off-market medical'],
+    ['Health Share', 'Health share (not insurance)'],
+  ]],
+  ['Medicare', [
+    ['Medicare Advantage', 'Medicare Advantage'],
+    ['Medicare Supplement', 'Medicare Supplement'],
+    ['Part D (PDP)', 'Part D (PDP)'],
+  ]],
+  ['Supplemental', [
+    ['Hospital Indemnity', 'Hospital indemnity'],
+    ['Accident', 'Accident / excess accident'],
+    ['Cancer/Critical Illness', 'Cancer / critical illness'],
+    ['Dental/Vision/Hearing', 'Dental / vision / hearing'],
+  ]],
+  ['Life and income', [
+    ['Life', 'Life'],
+    ['Disability', 'Disability'],
+  ]],
+  ['Other', [['Other', 'Other']]],
+];
+
+// Flat list, still in the order above \u2014 anything that just needs the values.
+const QUOTE_LINES = QUOTE_LINE_GROUPS.flatMap(g => g[1].map(x => x[0]));
+
+// Major medical that is not ACA cannot be quoted from the Marketplace and does
+// not carry its protections. Named here so the dialog can say so.
+const NON_ACA_MAJOR_MEDICAL = ['Short-Term Medical', 'Private/Off-Market Medical', 'Health Share'];
 const MEDICARE_QUOTE_LINES = ['Medicare Advantage','Medicare Supplement','Part D (PDP)'];
 
 async function requoteFromQuote_(quoteId, dealId) {
@@ -12371,7 +12404,10 @@ async function openQuoteBuilder(dealId, opts) {
 
   const carOpts = '<option value="">— pick carrier —</option>'
     + myCarriers.map(c => `<option value="${c.id}">${escWeb(c.name)}</option>`).join('');
-  const lineOpts = QUOTE_LINES.map(l => `<option value="${l}">${l}</option>`).join('');
+  const lineOpts = QUOTE_LINE_GROUPS.map(([group, items]) =>
+    `<optgroup label="${escWeb(group)}">`
+    + items.map(([value, label]) => `<option value="${escWeb(value)}">${escWeb(label)}</option>`).join('')
+    + '</optgroup>').join('');
   const _forIntake = (window._qbIntakeChoices || []).find(x => x.id === window._qbIntakeSessionId);
   const intakeNote = _forIntake
     ? '\u{1F91D} Filed under their <strong>' + escWeb(INTAKE_TYPE_LABELS[_forIntake.form_type] || _forIntake.form_type)
@@ -12393,6 +12429,7 @@ async function openQuoteBuilder(dealId, opts) {
         <option value="">&mdash; choose coverage type &mdash;</option>${lineOpts}</select>
       <div id="qb-optline-hint-${i}" style="display:none;font-size:11px;color:var(--text-danger);margin-top:3px;">
         &#9888;&#65039; Required &mdash; what is this option quoting?</div>
+      <div id="qb-optwarn-${i}" style="display:none;font-size:11px;color:var(--text-warning);background:var(--bg-warning);border:1px solid var(--border-warning);border-radius:7px;padding:6px 9px;margin-top:4px;line-height:1.5;"></div>
       <div id="qb-cms-wrap-${i}" style="display:none;">
         <label id="qb-cms-label-${i}">Medicare Advantage plan</label>
         <select id="qb-cms-${i}" onchange="qbApplyCmsPlan_(${i})"><option value="">&mdash; pick a plan &mdash;</option></select>
@@ -12765,10 +12802,22 @@ function qbOptRequiredMark_(i) {
   if (hint) hint.style.display = missing ? 'block' : 'none';
 }
 
+const NON_ACA_NOTE = {
+  'Short-Term Medical': 'Short-term medical is <strong>not ACA-compliant</strong> — it can be declined for health, will not cover pre-existing conditions, and does not carry the Marketplace protections.',
+  'Private/Off-Market Medical': 'An off-market plan carries <strong>no premium tax credit</strong> and may be medically underwritten.',
+  'Health Share': 'A health share is <strong>not insurance</strong>. Sharing is not guaranteed and it is not regulated as an insurance product.',
+};
+
 // Only show a field when the option's own coverage type can use it.
 function qbOptFields_(i) {
   const sel = document.getElementById('qb-optline-' + i);
   if (!sel) return;
+  const warn = document.getElementById('qb-optwarn-' + i);
+  if (warn) {
+    const note = NON_ACA_NOTE[sel.value];
+    warn.innerHTML = note || '';
+    warn.style.display = note ? 'block' : 'none';
+  }
   const acaWrap = document.getElementById('qb-aca-wrap-' + i);
   const cmsWrap = document.getElementById('qb-cms-wrap-' + i);
   const carOpt = document.getElementById('qb-car-opt-' + i);
