@@ -13077,25 +13077,26 @@ function ppChoiceLabel_(p, key, d) {
 // The order is the order they matter in a conversation: what you use often
 // first, what you dread further down, and the money questions last.
 const PP_BENEFITS = [
-  ['office_visit_primary', 'Primary care visit'],
-  ['office_visit_specialist', 'Specialist visit'],
-  ['preventive_care', 'Preventive care'],
-  ['telehealth', 'Telehealth'],
-  ['urgent_care', 'Urgent care'],
-  ['emergency_room', 'Emergency room'],
-  ['ambulance', 'Ambulance'],
-  ['inpatient_hospital', 'Hospital stay'],
-  ['outpatient_surgery', 'Outpatient surgery'],
-  ['diagnostic_lab', 'Diagnostic and lab'],
-  ['imaging', 'Imaging (X-ray, MRI, CT)'],
-  ['therapy_rehab', 'Physical therapy and rehab'],
-  ['mental_health', 'Mental health'],
-  ['substance_use', 'Substance use treatment'],
-  ['maternity', 'Maternity'],
-  ['durable_medical_equipment', 'Equipment and supplies'],
-  ['organ_transplant', 'Transplant'],
-  ['coverage_period_maximum', 'Coverage period maximum'],
-  ['prescription_drugs', 'Prescriptions'],
+  ['office_visit_primary', 'Primary care visit', '\u{1FA7A}'],
+  ['office_visit_specialist', 'Specialist visit', '\u{1F52C}'],
+  ['preventive_care', 'Preventive care', '\u{1F6E1}\uFE0F'],
+  ['telehealth', 'Telehealth', '\u{1F4F1}'],
+  ['urgent_care', 'Urgent care', '\u{1F3E5}'],
+  ['emergency_room', 'Emergency room', '\u{1F691}'],
+  ['ambulance', 'Ambulance', '\u{1F6A8}'],
+  ['inpatient_hospital', 'Hospital stay', '\u{1F6CF}\uFE0F'],
+  ['outpatient_surgery', 'Outpatient surgery', '\u2702\uFE0F'],
+  ['diagnostic_lab', 'Diagnostic and lab', '\u{1F9EA}'],
+  ['imaging', 'Imaging (X-ray, MRI, CT)', '\u{1FA7B}'],
+  ['therapy_rehab', 'Physical therapy and rehab', '\u{1F9BE}'],
+  ['mental_health', 'Mental health', '\u{1F9E0}'],
+  ['substance_use', 'Substance use treatment', '\u{1F91D}'],
+  ['maternity', 'Maternity', '\u{1F930}'],
+  ['durable_medical_equipment', 'Equipment and supplies', '\u{1F9BD}'],
+  ['organ_transplant', 'Transplant', '\u2764\uFE0F'],
+  ['coverage_period_maximum', 'Coverage period maximum', '\u{1F4CF}'],
+  // prescriptions last of the benefit rows, always
+  ['prescription_drugs', 'Prescriptions', '\u{1F48A}'],
 ];
 
 // How a single benefit reads. "not covered" is said plainly rather than left
@@ -13113,7 +13114,8 @@ function ppBenefitCell_(p, key) {
 }
 
 function ppBenefitRows_(p) {
-  return PP_BENEFITS.map(([k, label]) => [label, ppBenefitCell_(p, k)]).filter(r => r[1]);
+  return PP_BENEFITS.filter(([k]) => k !== 'coverage_period_maximum')
+    .map(([k, label, icon]) => [label, ppBenefitCell_(p, k), icon]).filter(r => r[1]);
 }
 
 function ppCardHtml_(p) {
@@ -13165,7 +13167,6 @@ function ppCardHtml_(p) {
       overflow:hidden;display:-webkit-box;-webkit-line-clamp:${ppNoteLines_()};-webkit-box-orient:vertical;"
       title="${p.notes ? escWeb(p.notes) : ''}">${p.notes ? escWeb(p.notes) : ''}</div>
     <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
-    <div style="min-height:18px;">${ppRxHtml_(p)}</div>
 
     <div style="min-height:${ppBenefitHeight_()}px;margin-top:7px;">${ppBenefitList_(p)}</div>
     <div style="min-height:22px;margin-top:5px;">${facts}</div>
@@ -13241,9 +13242,10 @@ function ppRxHtml_(p, big) {
 function ppBenefitList_(p) {
   const rows = ppBenefitRows_(p);
   if (!rows.length) return '<span style="font-size:11px;color:var(--text-muted);">No benefit detail read from the brochure yet.</span>';
-  return rows.map(([label, cell]) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:1.5px 0;">
-    <span style="color:var(--text-muted);white-space:nowrap;">${escWeb(label)}</span>
-    <span style="color:var(--text-secondary);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cell}</span>
+  return rows.map(([label, cell, icon]) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:1.5px 0;">
+    <span style="color:var(--text-muted);white-space:nowrap;">${icon || ''} ${escWeb(label)}</span>
+    <span title="${escWeb(label)}: ${escWeb(String(cell).replace(/<[^>]+>/g, ''))}"
+      style="color:var(--text-secondary);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help;">${cell}</span>
   </div>`).join('');
 }
 
@@ -13476,8 +13478,6 @@ function openProductCompare_() {
             `<td style="${TD}">${ppBenefitCell_(p, k) || dash}</td>`).join('')}</tr>`).join('')}
         <tr><th style="${TH}">Network</th>${picked.map(p =>
           `<td style="${TD}">${ppNetworkHtml_(p, true) || dash}</td>`).join('')}</tr>
-        <tr><th style="${TH}">Prescriptions</th>${picked.map(p =>
-          `<td style="${TD}">${ppRxHtml_(p, true) || dash}</td>`).join('')}</tr>
         <tr><th style="${TH}">Underwritten by</th>${picked.map(p =>
           `<td style="${TD}">${escWeb(ppMeta_(p).underwriter || carrierOf(p.carrier_id))}</td>`).join('')}</tr>
         <tr><th style="${TH}"></th>${picked.map(p => {
