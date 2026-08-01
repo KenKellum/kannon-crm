@@ -13151,7 +13151,8 @@ function ppCardHtml_(p) {
       </div></div>`;
   }).join('');
 
-  return `<div style="display:flex;flex-direction:column;border:1px solid ${slot >= 0 ? 'var(--border-selected)' : 'var(--border)'};border-radius:11px;padding:13px 15px;background:${slot >= 0 ? 'var(--bg-selected-card)' : 'var(--surface-1)'};">
+  return `<div onclick="ppDetail_('${escWeb(p.id)}')" title="Open the full details"
+    style="display:flex;flex-direction:column;cursor:pointer;border:1px solid ${slot >= 0 ? 'var(--border-selected)' : 'var(--border)'};border-radius:11px;padding:13px 15px;background:${slot >= 0 ? 'var(--bg-selected-card)' : 'var(--surface-1)'};">
 
     <div style="display:flex;justify-content:space-between;gap:9px;align-items:flex-start;min-height:52px;">
       <div style="flex:1;min-width:0;">
@@ -13417,9 +13418,9 @@ function ppDetail_(prodId) {
       ${ppBenefitRows_(p).length ? `<div style="margin-top:14px;">
         <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">What it pays, item by item</div>
         <table style="border-collapse:collapse;margin-top:6px;width:100%;max-width:620px;">
-          ${ppBenefitRows_(p).map(([label, cell]) => `<tr>
-            <td style="padding:5px 10px 5px 0;font-size:12.5px;color:var(--text-muted);vertical-align:top;width:210px;">${escWeb(label)}</td>
-            <td style="padding:5px 0;font-size:12.5px;vertical-align:top;">${cell}</td></tr>`).join('')}
+          ${ppBenefitRows_(p).map(([label, cell, icon]) => `<tr>
+            <td style="padding:5px 10px 5px 0;font-size:12.5px;color:var(--text-muted);vertical-align:top;width:230px;">${icon || ''} ${escWeb(label)}</td>
+            <td style="padding:5px 0;font-size:12.5px;vertical-align:top;line-height:1.5;">${cell}</td></tr>`).join('')}
         </table></div>` : ''}
       ${list('What it covers', meta.bullets)}
       ${list('Limits and exclusions', meta.limitations, 'warning')}
