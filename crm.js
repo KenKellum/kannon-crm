@@ -13151,12 +13151,6 @@ function ppCardHtml_(p) {
       </div></div>`;
   }).join('');
 
-  const isMax = k => /coverage period max|coverage max|policy max/i.test(String(k).replace(/[_-]+/g, ' '));
-  const facts = ppSorted_(Object.entries(meta.facts || {}).filter(([k]) => !isMax(k))).slice(0, 4).map(([k, v]) =>
-    `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:2px 0;">
-       <span style="color:var(--text-muted);">${escWeb(k.replace(/_/g, ' '))}</span>
-       <strong style="color:var(--text-secondary);">${escWeb(String(v))}</strong></div>`).join('');
-
   return `<div style="display:flex;flex-direction:column;border:1px solid ${slot >= 0 ? 'var(--border-selected)' : 'var(--border)'};border-radius:11px;padding:13px 15px;background:${slot >= 0 ? 'var(--bg-selected-card)' : 'var(--surface-1)'};">
 
     <div style="display:flex;justify-content:space-between;gap:9px;align-items:flex-start;min-height:52px;">
@@ -13182,7 +13176,6 @@ function ppCardHtml_(p) {
       : ''}</div>
 
     <div style="min-height:${ppBenefitHeight_()}px;margin-top:7px;">${ppBenefitList_(p)}</div>
-    <div style="min-height:22px;margin-top:5px;">${facts}</div>
 
 
     <div style="margin-top:auto;">
@@ -13253,23 +13246,27 @@ function ppRxHtml_(p, big) {
 // What the plan actually pays, on the card. Kept short: the full wording is in
 // the details. Every card gets the same room so the rows below stay level.
 function ppBenefitList_(p) {
-  const rows = ppBenefitRows_(p);
+  const ben = (ppMeta_(p) || {}).benefits || {};
+  const rows = PP_BENEFITS.filter(([k]) => k !== 'coverage_period_maximum' && ben[k]);
   if (!rows.length) return '<span style="font-size:11px;color:var(--text-muted);">No benefit detail read from the brochure yet.</span>';
-  return `<table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:11.5px;">
-    ${rows.map(([label, cell, icon]) => `<tr>
-      <td style="width:44%;padding:2px 8px 2px 0;color:var(--text-muted);vertical-align:top;">${icon || ''} ${escWeb(label)}</td>
-      <td style="padding:2px 0;color:var(--text-secondary);vertical-align:top;line-height:1.4;">${cell}</td>
-    </tr>`).join('')}
-  </table>`;
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px 10px;">
+    ${rows.map(([k, label]) => {
+      const b = ben[k];
+      const yes = !(b && (b.covered === false || /^(no|none|not covered|not applicable)$/i.test(String(b.value || ''))));
+      return `<div style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        color:${yes ? 'var(--text-secondary)' : 'var(--text-muted)'};">
+        <span style="color:${yes ? 'var(--text-success)' : 'var(--text-muted)'};font-weight:800;">${yes ? '✓' : '✕'}</span>
+        ${escWeb(label)}</div>`;
+    }).join('')}
+  </div>`;
 }
 
 function ppBenefitHeight_() {
   const pp = ppState_();
-  const perLine = 30;                     // roughly what fits in the value column
-  const linesFor = x => ppBenefitRows_(x).reduce((n, [, cell]) =>
-    n + Math.max(1, Math.ceil(String(cell).replace(/<[^>]+>/g, '').length / perLine)), 0);
-  const most = (pp.products || []).reduce((n, x) => Math.max(n, linesFor(x)), 0);
-  return most ? most * 16 + 6 : 18;
+  const count = x => PP_BENEFITS.filter(([k]) =>
+    k !== 'coverage_period_maximum' && (((ppMeta_(x) || {}).benefits) || {})[k]).length;
+  const most = (pp.products || []).reduce((n, x) => Math.max(n, count(x)), 0);
+  return most ? Math.ceil(most / 2) * 17 + 4 : 18;   // two columns of ticks
 }
 
 function ppFmt_(v, d) {
