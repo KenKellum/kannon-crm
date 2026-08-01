@@ -12037,7 +12037,7 @@ async function openCarrierProducts(crId) {
   window._crProds = prods || [];
   const rows = window._crProds.length ? window._crProds.map(p => `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--border);${p.is_active ? '' : 'opacity:.5;'}">
-      <div style="flex:1;min-width:0;font-size:13px;"><strong>${escWeb(p.name)}</strong> <span style="font-size:11px;color:var(--text-muted);">&middot; ${escWeb(p.line_of_business)}${p.product_code ? ' &middot; ' + escWeb(p.product_code) : ''}${p.plan_year ? ' &middot; ' + p.plan_year : ''}${
+      <div style="flex:1;min-width:0;font-size:13px;"><strong>${escWeb(p.name)}</strong> <span style="font-size:11px;color:var(--text-muted);">&middot; ${escWeb(p.line_of_business)}${p.product_code ? ' &middot; ' + escWeb(p.product_code) : ''}${p.plan_year ? ' &middot; ' + p.plan_year : ''}${(p.states || []).length ? ' &middot; ' + escWeb((p.states || []).join(', ')) : ' &middot; <span style="color:var(--text-warning);">no states recorded</span>'}${
         p.discontinued_on ? ' &middot; <span style="color:var(--text-warning);">retired ' + escWeb(p.discontinued_on) + (p.discontinued_reason ? ', ' + escWeb(p.discontinued_reason) : '') + '</span>'
         : (p.is_active ? '' : ' &middot; inactive')}</span></div>
       <button class="btn btn-outline btn-sm" onclick="openRateCharts('${p.id}')">Rates</button>
@@ -12657,10 +12657,25 @@ async function pwSave_() {
       keep.map(p => p.matches_existing).filter(Boolean),
       (proposal.withdrawn || []).map(w => w.name).filter(Boolean));
     if (retireNames.length) {
-      await supabaseClient.from('carrier_products').update({
-        is_active: false, discontinued_on: today,
-        discontinued_reason: 'Replaced from ' + (carrier.revision_label || 'a newer brochure'),
-      }).eq('carrier_id', _pw.carrierId).in('name', retireNames);
+      // A plan name is only unique WITHIN a state: carriers file the same name
+      // separately in each one, with different benefits. Only retire rows whose
+      // states this document actually covers, or a Texas brochure would quietly
+      // replace the Montana version of the same plan.
+      const docStates = (carrier.states || []).map(x => String(x).toUpperCase());
+      const { data: cands } = await supabaseClient.from('carrier_products')
+        .select('id,name,states').eq('carrier_id', _pw.carrierId).in('name', retireNames);
+      const hit = (cands || []).filter(c => {
+        const filed = (c.states || []).map(x => String(x).toUpperCase());
+        if (!docStates.length || !filed.length) return true;   // nothing to tell them apart
+        return filed.some(x => docStates.includes(x));
+      });
+      if (hit.length) {
+        await supabaseClient.from('carrier_products').update({
+          is_active: false, discontinued_on: today,
+          discontinued_reason: 'Replaced from ' + (carrier.revision_label || 'a newer brochure')
+            + (docStates.length ? ' (' + docStates.join(', ') + ')' : ''),
+        }).in('id', hit.map(c => c.id));
+      }
     }
 
     await supabaseClient.from('extraction_runs')
@@ -12754,7 +12769,15 @@ async function openProductPicker_(line) {
   const { data: charts } = ids.length
     ? await supabaseClient.from('rate_charts').select('*').in('product_id', ids).eq('is_active', true)
     : { data: [] };
-  pp.products = prods || [];
+  const st = ppProfile_().state;
+  const all = prods || [];
+  pp.hidden = 0;
+  pp.products = !st ? all : all.filter(p => {
+    const filed = (p.states || []).map(x => String(x).toUpperCase());
+    const ok = !filed.length || filed.includes(st);
+    if (!ok) pp.hidden++;
+    return ok;
+  });
   pp.charts = charts || [];
   const { data: docs } = carriers.length
     ? await supabaseClient.from('product_documents').select('product_id,carrier_id')
@@ -13704,6 +13727,8 @@ function renderProductPicker_() {
     <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-weight:800;font-size:15px;">📋 ${escWeb(pp.line || 'Products')}${prof.state ? ' · ' + escWeb(prof.state) : ''}</div>
       <div style="font-size:12px;color:var(--text-muted);">${list.length} product${list.length === 1 ? '' : 's'}${
+        prof.state ? ' filed in ' + escWeb(prof.state) : ''}${
+        pp.hidden ? ' · ' + pp.hidden + ' not filed here' : ''}${
         withRates ? ' · ' + withRates + ' with rates on file' : ' · none with rates on file'}</div>
       ${pp.cmp.size ? `<button class="btn ${pp.cmp.size >= 2 ? 'btn-primary' : 'btn-outline'} btn-sm" style="margin-left:auto;"
         ${pp.cmp.size >= 2 ? '' : 'disabled'} onclick="openProductCompare_()">⚖️ Compare (${pp.cmp.size})</button>` : ''}
@@ -13717,8 +13742,13 @@ function renderProductPicker_() {
       ${list.length
         ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;align-items:stretch;">${list.map(ppCardHtml_).join('')}</div>`
         : `<div style="font-size:13px;color:var(--text-muted);line-height:1.6;">
-             No ${escWeb(pp.line || '')} products on file for the carriers you are appointed with.<br>
-             Add them from <strong>Admin → Carriers → Add products from a brochure</strong>.</div>`}
+             ${pp.hidden
+               ? 'None of the ' + pp.hidden + ' ' + escWeb(pp.line || '') + ' product' + (pp.hidden === 1 ? ' is' : 's are')
+                 + ' filed in <strong>' + escWeb(prof.state) + '</strong>. Carriers file a separate version of a plan in '
+                 + 'each state, so the one you are thinking of may exist under the same name for somewhere else.<br>'
+                 + 'Upload that state’s brochure from <strong>Admin → Carriers → Add products from a brochure</strong>.'
+               : 'No ' + escWeb(pp.line || '') + ' products on file for the carriers you are appointed with.<br>'
+                 + 'Add them from <strong>Admin → Carriers → Add products from a brochure</strong>.'}</div>`}
     </div>
 
     ${chosen.length ? `<div class="pk-tray" style="padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
