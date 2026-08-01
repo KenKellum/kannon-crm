@@ -12951,10 +12951,27 @@ function ppComboPickers_(p, key, d) {
           </select></label>`;
       }).join('')}
     </div>
-    ${ppComboShown_(d, chosen)}
-    ${ppExposure_(p, d, chosen)}
-    ${ppComboNote_(d, chosen)}
   </div>`;
+}
+
+// Everything a choice explains, gathered so it can sit at the foot of the card
+// instead of in the middle. The eye then runs: choices, what they mean, price.
+function ppComboSummary_(p) {
+  return Object.entries(ppDims_(p)).map(([key, d]) => {
+    if (!ppCombos_(d)) return '';
+    const chosen = ppChoice_(p)[key] || {};
+    return ppComboShown_(d, chosen) + ppExposure_(p, d, chosen) + ppComboNote_(d, chosen);
+  }).join('');
+}
+
+// Every card gives its description the same room, sized to the longest one on
+// screen, so everything below it starts at the same height across the row.
+function ppNoteHeight_() {
+  const pp = ppState_();
+  const longest = (pp.products || []).reduce((n, x) => Math.max(n, String(x.notes || '').length), 0);
+  if (!longest) return 0;
+  const perLine = 44;                     // roughly what fits at this card width
+  return Math.min(6, Math.ceil(longest / perLine)) * 18 + 4;
 }
 
 // Deductible plus the coinsurance cap is what a person actually faces on
@@ -13128,7 +13145,7 @@ function ppCardHtml_(p) {
 
     ${slot >= 0 ? `<div style="margin:6px 0 2px;"><span class="pk-sel-badge">✓ Selected · Option ${qbOptionNo_(slot)}</span></div>` : ''}
 
-    <div style="min-height:34px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;">${p.notes ? escWeb(p.notes) : ''}</div>
+    <div style="min-height:${ppNoteHeight_()}px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;">${p.notes ? escWeb(p.notes) : ''}</div>
     <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
     <div style="min-height:18px;">${ppRxHtml_(p)}</div>
 
@@ -13136,9 +13153,12 @@ function ppCardHtml_(p) {
 
     <div style="min-height:74px;">${dimRows}</div>
 
-    <div style="margin-top:auto;min-height:26px;">
-      ${fit.warnings.filter(w => w.scope !== 'agent').map(w =>
-        `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-bottom:4px;font-size:11px;">⚠️ ${w.text}</div>`).join('')}
+    <div style="margin-top:auto;">
+      <div style="min-height:26px;">
+        ${fit.warnings.filter(w => w.scope !== 'agent').map(w =>
+          `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-bottom:4px;font-size:11px;">⚠️ ${w.text}</div>`).join('')}
+      </div>
+      ${ppComboSummary_(p)}
     </div>
 
     <div style="padding-top:10px;border-top:1px solid var(--border);">
@@ -13557,7 +13577,16 @@ function ppVsAca_(prodId) {
             <td style="${TD}color:var(--text-warning);">${escWeb(stm)}</td>
             <td style="${TD}color:var(--text-success);">${escWeb(aca)}</td></tr>`).join('')}
 
-          <tr><th style="${TH}border-top:2px solid var(--border);">Deductible</th>
+          <tr><th style="${TH}border-top:2px solid var(--border);">Monthly premium</th>
+            <td style="${TD}border-top:2px solid var(--border);font-weight:800;font-size:15px;">${
+              pp.prem[p.id] != null ? '$' + Number(pp.prem[p.id]).toFixed(2)
+                : '<span style="font-size:12px;font-weight:400;color:var(--text-muted);">not quoted yet</span>'}</td>
+            <td style="${TD}border-top:2px solid var(--border);font-weight:800;font-size:15px;">${
+              a.net != null ? '$' + Number(a.net).toFixed(2)
+                : (a.premium != null ? '$' + Number(a.premium).toFixed(2) : dash)}${
+              a.net != null && a.premium != null && Number(a.premium) > Number(a.net)
+                ? `<div style="font-size:11px;font-weight:400;color:var(--text-muted);">full $${Number(a.premium).toFixed(0)}, less the tax credit</div>` : ''}</td></tr>
+          <tr><th style="${TH}">Deductible</th>
             <td style="${TD}border-top:2px solid var(--border);">${ppDeductibleSaid_(p)}</td>
             <td style="${TD}border-top:2px solid var(--border);">${money(a.deductible)}</td></tr>
           <tr><th style="${TH}">Yearly out-of-pocket limit</th>
