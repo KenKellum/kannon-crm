@@ -10599,7 +10599,7 @@ function openSoaModal(dealId) {
 // Federally standardized Medigap plans: the letter defines the benefits
 // at EVERY carrier, so the product form fills itself from this list.
 // The picker: one card per lettered plan they may actually buy, with the
-// standardised benefits spelled out and a grid to compare them side by side.
+// standardized benefits spelled out and a grid to compare them side by side.
 window._qbMgSel = window._qbMgSel || {};
 
 function openMedigapPicker_() {
@@ -11238,7 +11238,7 @@ function qbMgOptionView_(i) {
         <span style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Plan</span>
         <span style="font-size:22px;font-weight:800;color:var(--accent,#c8a84b);line-height:1;">${escWeb(p.letter)}</span>
         ${p.letter.indexOf('HD') === 0 ? '<span style="font-size:10px;color:var(--text-warning);border:1px solid var(--border-warning);border-radius:6px;padding:2px 6px;">high deductible</span>' : ''}
-        <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">standardised by law</span>
+        <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:2px 6px;">standardized by law</span>
       </div>
       ${p.carrier_name
         ? `<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:7px;">${escWeb(p.carrier_name)}</div>`
@@ -11371,7 +11371,7 @@ function qbMgAddPlan_(letter, productId, override) {
 
 // "Medicare Supplement Plan G", "... High-Deductible Plan G" \u2014 the letter is
 // right there in the name, so an option saved before we recorded a snapshot
-// can still be recognised.
+// can still be recognized.
 function mgLetterFromName_(name) {
   const t = String(name || '');
   let m = t.match(/High[- ]?Deductible Plan\s+([A-N])\b/i) || t.match(/\bHD Plan\s+([A-N])\b/i);
@@ -11561,7 +11561,7 @@ function qbMgRefresh_() {
 // ============================================================
 // MEDICARE SUPPLEMENT \u2014 what the law fixes, we can automate.
 //
-// Medigap letters are standardised by federal law: Plan G from one carrier
+// Medigap letters are standardized by federal law: Plan G from one carrier
 // covers exactly what Plan G from any other covers. Only price and service
 // differ. So the benefit grid, who may buy which letter, and when they can
 // buy without answering health questions are all knowable without a single
@@ -11592,7 +11592,7 @@ const MEDIGAP_MARK = {
   none: '<span style="color:var(--text-muted);">\u2014</span>',
 };
 
-// Massachusetts, Minnesota and Wisconsin standardise differently; the letter
+// Massachusetts, Minnesota and Wisconsin standardize differently; the letter
 // grid above does not describe their plans.
 const MEDIGAP_WAIVER_STATES = { MA: 'Massachusetts', MN: 'Minnesota', WI: 'Wisconsin' };
 
@@ -11668,7 +11668,7 @@ function medigapWindow_(profile) {
   if (MEDIGAP_BIRTHDAY_RULES[st]) out.extra.push({ tone: 'ok', text: '\u{1F382} <strong>' + st + ' birthday rule:</strong> ' + MEDIGAP_BIRTHDAY_RULES[st] });
   if (MEDIGAP_WAIVER_STATES[st]) {
     out.extra.push({ tone: 'warn', text: '\u26a0\ufe0f <strong>' + MEDIGAP_WAIVER_STATES[st]
-      + '</strong> standardises Medigap differently \u2014 the lettered plans below do not apply there.' });
+      + '</strong> standardizes Medigap differently \u2014 the lettered plans below do not apply there.' });
   }
   out.extra.push({ tone: 'muted', text: 'Guaranteed issue also applies when they lose employer coverage, when a Medicare Advantage plan leaves the area, or within the first 12 months of trying Medicare Advantage for the first time.' });
   return out;
@@ -15589,7 +15589,7 @@ function qbTidyOptions_() {
 
 // A quote with eight options should not be eight screens of scrolling. Each
 // option folds down to one line that says what it is; the one being worked on
-// stays open. An agent's own choice always wins over the automatic behaviour.
+// stays open. An agent's own choice always wins over the automatic behavior.
 function qbOptToggle_(i, force) {
   window._qbOptOpen = window._qbOptOpen || {};
   const body = document.getElementById('qb-opt-body-' + i);
@@ -16435,7 +16435,7 @@ function qbMedDays_(m) {
   return (d === 60 || d === 90) ? d : 30;
 }
 
-// What the client would recognise on the label
+// What the client would recognize on the label
 function medSupplyNote_(m) {
   const worked = medDaysFrom_(m && m.quantity, m && m.doses_per_day);
   if (worked) return worked + '-day supply';
