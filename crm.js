@@ -12871,7 +12871,9 @@ async function ppSaveProfile_() {
 // so all three agree.
 function ppOrder_(key, label) {
   const t = ((label || '') + ' ' + (key || '')).toLowerCase().replace(/[_-]+/g, ' ');
-  if (/pharmac|prescription|\brx\b|drug/.test(t)) return 100;
+  // The drug benefit and the coverage maximum each have their own place on the
+  // card now, so nothing needs pinning to the end of a list any more. Detail
+  // and compare still keep the maximum low, where it reads as a summary.
   if (/coverage period max|coverage max|policy max|maximum benefit|lifetime max/.test(t)) return 90;
   return 0;
 }
@@ -12956,6 +12958,18 @@ function ppComboPickers_(p, key, d) {
 
 // Everything a choice explains, gathered so it can sit at the foot of the card
 // instead of in the middle. The eye then runs: choices, what they mean, price.
+// The coverage period maximum is the number a plan is really judged on, so it
+// sits with the other decisions at the foot of the card rather than lost in a
+// strip of facts near the top.
+function ppMaxHtml_(p) {
+  const facts = (ppMeta_(p) || {}).facts || {};
+  const key = Object.keys(facts).find(k => /coverage period max|coverage max|policy max/i.test(k.replace(/[_-]+/g, ' ')));
+  if (!key) return '';
+  return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;margin-top:7px;">
+    <span style="color:var(--text-muted);">Coverage period maximum</span>
+    <strong style="color:var(--text-secondary);">${escWeb(String(facts[key]))}</strong></div>`;
+}
+
 function ppComboSummary_(p) {
   return Object.entries(ppDims_(p)).map(([key, d]) => {
     if (!ppCombos_(d)) return '';
@@ -13125,7 +13139,8 @@ function ppCardHtml_(p) {
       </div></div>`;
   }).join('');
 
-  const facts = ppSorted_(Object.entries(meta.facts || {})).slice(0, 4).map(([k, v]) =>
+  const isMax = k => /coverage period max|coverage max|policy max/i.test(String(k).replace(/[_-]+/g, ' '));
+  const facts = ppSorted_(Object.entries(meta.facts || {}).filter(([k]) => !isMax(k))).slice(0, 4).map(([k, v]) =>
     `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:2px 0;">
        <span style="color:var(--text-muted);">${escWeb(k.replace(/_/g, ' '))}</span>
        <strong style="color:var(--text-secondary);">${escWeb(String(v))}</strong></div>`).join('');
@@ -13151,13 +13166,14 @@ function ppCardHtml_(p) {
 
     <div style="min-height:52px;margin-top:5px;">${facts}</div>
 
-    <div style="min-height:74px;">${dimRows}</div>
 
     <div style="margin-top:auto;">
       <div style="min-height:26px;">
         ${fit.warnings.filter(w => w.scope !== 'agent').map(w =>
           `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-bottom:4px;font-size:11px;">⚠️ ${w.text}</div>`).join('')}
       </div>
+      ${ppMaxHtml_(p)}
+      ${dimRows}
       ${ppComboSummary_(p)}
     </div>
 
@@ -13192,7 +13208,7 @@ function ppNetworkHtml_(p, big) {
   if (!n || !(n.name || n.provided_by)) return '';
   const label = escWeb(n.name || (n.provided_by + ' network'));
   const url = n.provider_search_url;
-  return `<div style="font-size:${big ? '13' : '11'}px;color:var(--text-muted);">
+  return `<div style="font-size:${big ? '13' : '11'}px;color:var(--text-muted);white-space:${big ? 'normal' : 'nowrap'};overflow:hidden;text-overflow:ellipsis;">
     &#127973; ${label}
     ${url ? `<a href="${escWeb(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link);margin-left:6px;">check a doctor &#8599;</a>` : ''}
     ${big && n.size ? `<div style="margin-top:2px;">${escWeb(n.size)}</div>` : ''}
