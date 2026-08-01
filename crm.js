@@ -238,7 +238,7 @@ async function showApp() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  const roleLabels = { system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' };
+  const roleLabels = { system_owner: 'System Owner', broker_owner: 'Broker Owner', agency_owner: 'Broker Owner', agent: 'Agent' };
   const roleLabel = roleLabels[currentAgent.role] || currentAgent.role;
 
   // Topbar user info
@@ -264,7 +264,7 @@ async function showApp() {
       sw.style.cssText = 'display:flex;gap:2px;background:var(--surface-0);padding:2px;border-radius:8px;border:0.5px solid var(--border);margin-left:12px;';
       sw.innerHTML = `
         <button id="rsw-owner" onclick="switchPreviewRole('system_owner')" style="padding:4px 11px;border-radius:6px;font-size:11px;border:none;cursor:pointer;background:var(--surface-2);color:var(--text-primary);font-weight:500;">System owner</button>
-        <button id="rsw-agency" onclick="switchPreviewRole('agency_owner')" style="padding:4px 11px;border-radius:6px;font-size:11px;border:none;cursor:pointer;background:none;color:var(--text-muted);">Agency owner</button>
+        <button id="rsw-agency" onclick="switchPreviewRole('broker_owner')" style="padding:4px 11px;border-radius:6px;font-size:11px;border:none;cursor:pointer;background:none;color:var(--text-muted);">Agency owner</button>
         <button id="rsw-agent" onclick="switchPreviewRole('agent')" style="padding:4px 11px;border-radius:6px;font-size:11px;border:none;cursor:pointer;background:none;color:var(--text-muted);">Agent</button>
       `;
       right.insertAdjacentElement('afterend', sw);
@@ -407,7 +407,11 @@ function renderSidebarNav() {
     ],
   };
 
-  const sections = navConfig[role] || navConfig.agent;
+  // 'broker_owner' is the name now; records written before the rename still say
+  // 'agency_owner', and both must find the same menu rather than falling
+  // through to the agent one.
+  const roleKey = (role === 'broker_owner') ? 'agency_owner' : role;
+  const sections = navConfig[roleKey] || navConfig.agent;
   container.innerHTML = sections.map(sec => `
     <div class="sidebar-section-label">${sec.label}</div>
     ${sec.items.map(item => `
@@ -429,7 +433,7 @@ async function loadData() {
 
   if (currentAgent.role === 'agent') {
     cq = cq.eq('agent_id', currentAgent.id);
-  } else if (currentAgent.role === 'agency_owner') {
+  } else if (currentAgent.role === 'broker_owner') {
     // Fetch all agents in this agency so contacts without agency_id are included
     const { data: agencyAgentRows } = await supabaseClient
       .from('agents').select('id').eq('agency_id', currentAgent.agency_id);
@@ -443,13 +447,13 @@ async function loadData() {
 
   let dq = supabaseClient.from('deals').select('*');
   if (currentAgent.role === 'agent') dq = dq.eq('agent_id', currentAgent.id);
-  else if (currentAgent.role === 'agency_owner') dq = dq.in('agent_id', agencyAgentIds);
+  else if (currentAgent.role === 'broker_owner') dq = dq.in('agent_id', agencyAgentIds);
 
   const queries = [
     cq.order('created_at', { ascending: false }).limit(10000),
     dq.order('created_at', { ascending: false })
   ];
-  if (currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner') {
+  if (currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner') {
     queries.push(supabaseClient.from('agent_applications').select('*').order('created_at', { ascending: false }));
   }
   const results = await Promise.all(queries);
@@ -459,7 +463,7 @@ async function loadData() {
   dealActivities = actData || [];
   applications = (results[2] && results[2].data) || [];
   // Agency owner: scope deals to only those linked to their contacts (deals table has no agent_id)
-  if (currentAgent.role === 'agency_owner') {
+  if (currentAgent.role === 'broker_owner') {
     const contactIds = new Set(contacts.map(c => c.id));
     deals = deals.filter(d => !d.contact_id || contactIds.has(d.contact_id));
   }
@@ -468,7 +472,7 @@ async function loadData() {
   let cntQ = supabaseClient.from('contacts').select('*', { count: 'exact', head: true });
   if (currentAgent.role === 'agent') {
     cntQ = cntQ.eq('agent_id', currentAgent.id);
-  } else if (currentAgent.role === 'agency_owner') {
+  } else if (currentAgent.role === 'broker_owner') {
     cntQ = cntQ.in('agent_id', agencyAgentIds);
   }
   // system_owner: no filter
@@ -485,7 +489,7 @@ function renderDashboard() {
   const role = previewRole || currentAgent.role;
   if (role === 'system_owner') {
     renderDashboardOwner();
-  } else if (role === 'agency_owner') {
+  } else if (role === 'broker_owner') {
     renderDashboardAgency();
   } else {
     renderDashboardAgent();
@@ -971,7 +975,7 @@ async function loadLeadSourceWidget(filterAgentId) {
   const el = document.getElementById('dash-lead-sources');
   if (!el) return;
   try {
-    // Build agent dropdown options for agency owner
+    // Build agent dropdown options for broker owner
     const agencyAgents = (allAgents || []).filter(a => a.agency_id === currentAgent.agency_id && a.status === 'active');
     const agentDropdown = `
       <select onchange="loadLeadSourceWidget(this.value||undefined)"
@@ -1122,7 +1126,7 @@ function renderDashboard_UNUSED() {
 
   const scopeNote = currentAgent.role === 'agent'
     ? `<span style="font-size:13px;color:var(--muted);margin-left:10px;">Your contacts only</span>`
-    : currentAgent.role === 'agency_owner'
+    : currentAgent.role === 'broker_owner'
     ? `<span style="font-size:13px;color:var(--muted);margin-left:10px;">${currentAgent.agencies?.name || 'Your agency'}</span>`
     : '';
 
@@ -1150,7 +1154,7 @@ function renderDashboard_UNUSED() {
       <button class="qa-btn" onclick="showPage('pipelines')">&#128202; Pipelines</button>
       <button class="qa-btn" onclick="showPage('contacts')">&#128101; All Contacts</button>
       <button class="qa-btn" onclick="syncGoogleContacts()">&#128257; Sync Google</button>
-      ${(currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner') ? `<button class="qa-btn" onclick="showPage('admin')">&#9881;&#65039; Admin</button>` : ''}
+      ${(currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner') ? `<button class="qa-btn" onclick="showPage('admin')">&#9881;&#65039; Admin</button>` : ''}
     </div>
 
     <div class="dash-grid">
@@ -1225,7 +1229,7 @@ function switchPreviewRole(role) {
   ['owner','agency','agent'].forEach(r => {
     const btn = document.getElementById('rsw-' + (r === 'owner' ? 'owner' : r === 'agency' ? 'agency' : 'agent'));
     if (!btn) return;
-    const isActive = (role === 'system_owner' && r === 'owner') || (role === 'agency_owner' && r === 'agency') || (role === 'agent' && r === 'agent');
+    const isActive = (role === 'system_owner' && r === 'owner') || (role === 'broker_owner' && r === 'agency') || (role === 'agent' && r === 'agent');
     btn.style.background = isActive ? 'var(--surface-2)' : 'none';
     btn.style.color = isActive ? 'var(--text-primary)' : 'var(--text-muted)';
     btn.style.fontWeight = isActive ? '500' : '400';
@@ -4968,7 +4972,7 @@ async function loadNotificationBell() {
   if (wrap) wrap.style.display = '';
   try {
     let data;
-    if (role === 'agency_owner' && currentAgent.agency_id) {
+    if (role === 'broker_owner' && currentAgent.agency_id) {
       // Agency owners see notifications for all agents in their agency
       ({ data } = await supabaseClient.rpc('get_agency_unread_notifications', {
         p_agency_id: currentAgent.agency_id,
@@ -5048,7 +5052,7 @@ function _renderNotificationDropdown() {
   if (items.length === 0) {
     html += '<div style="padding:24px 16px;text-align:center;font-size:13px;color:var(--text-muted);">All caught up! 🎉</div>';
   } else {
-    const isAgencyOwner = currentAgent && (previewRole || currentAgent.role) === 'agency_owner';
+    const isAgencyOwner = currentAgent && (previewRole || currentAgent.role) === 'broker_owner';
     html += items.slice(0, 10).map(n => {
       const meta = typeLabel[n.activity_type] || { icon: '🔔', label: n.activity_type, color: '#94a3b8' };
       const cName = n.contact_name || n.contact_id || 'Unknown';
@@ -6263,7 +6267,7 @@ async function renderContacts() {
   // Query Supabase directly — bypasses PostgREST row cap entirely
   let q = supabaseClient.from('contacts').select('*');
   if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
-  else if (currentAgent.role === 'agency_owner') {
+  else if (currentAgent.role === 'broker_owner') {
     // Match loadData: query by agent_id IN [...] to catch contacts without agency_id set
     const agencyIds = [...new Set([currentAgent.id, ...allAgents.filter(a => a.agency_id === currentAgent.agency_id).map(a => a.id)])];
     q = q.in('agent_id', agencyIds);
@@ -6394,7 +6398,7 @@ async function renderContacts() {
 
 function openAddContact() {
   const typeOptions = CONTACT_TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
-  // Agent picker for agency_owner and system_owner
+  // Agent picker for broker owners and the system owner
   const canAssign = currentAgent.role !== 'agent';
   const agentOptions = canAssign
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
@@ -6837,7 +6841,7 @@ async function verifyAllEmails() {
 // ADMIN PANEL (system_owner only)
 // ============================================================
 async function renderAdmin() {
-  if (currentAgent.role !== 'system_owner' && currentAgent.role !== 'agency_owner') { document.getElementById('page-admin').innerHTML = '<div class="empty-state"><div class="emoji">&#128274;</div><p>Access denied.</p></div>'; return; }
+  if (currentAgent.role !== 'system_owner' && currentAgent.role !== 'broker_owner') { document.getElementById('page-admin').innerHTML = '<div class="empty-state"><div class="emoji">&#128274;</div><p>Access denied.</p></div>'; return; }
 
   const totalContacts = (await supabaseClient.from('contacts').select('id', { count: 'exact', head: true })).count || 0;
   const { data: _carriers } = await supabaseClient.from('carriers')
@@ -6853,7 +6857,7 @@ async function renderAdmin() {
         <div style="font-weight:700;font-size:16px;">&#9997;&#65039; My Carrier Appointments</div>
         <button class="btn btn-primary btn-sm" onclick="openMyCarriers()">Manage</button>
       </div>
-      ${currentAgent.role === 'agency_owner' ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Your active appointments define which carriers the agents in your agency can select.</div>' : ''}
+      ${currentAgent.role === 'broker_owner' ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Your active appointments define which carriers the agents in your agency can select.</div>' : ''}
       ${carrierApptsSummaryHtml_(_myApptsAdm)}
     </div>`;
   const carriersSection = `
@@ -7153,8 +7157,8 @@ async function renderAdmin() {
 
   const agentRows = activeAgents.map(a => {
     const agencyName = a.agencies?.name || '—';
-    const roleBadge = a.role === 'system_owner' ? 'badge-sys' : a.role === 'agency_owner' ? 'badge-owner' : 'badge-agent';
-    const roleLabel = { system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' }[a.role] || a.role;
+    const roleBadge = a.role === 'system_owner' ? 'badge-sys' : a.role === 'broker_owner' ? 'badge-owner' : 'badge-agent';
+    const roleLabel = { system_owner: 'System Owner', broker_owner: 'Broker Owner', agency_owner: 'Broker Owner', agent: 'Agent' }[a.role] || a.role;
     return `<div class="agent-row">
       <div class="agent-info">
         <div class="agent-name">${a.name}</div>
@@ -7212,7 +7216,7 @@ async function renderAdmin() {
 
   document.getElementById('page-admin').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h2 class="section-title" style="margin:0;">&#9881;&#65039; ${currentAgent.role === 'agency_owner' ? 'Agency Admin' : 'System Admin'}</h2>
+      <h2 class="section-title" style="margin:0;">&#9881;&#65039; ${currentAgent.role === 'broker_owner' ? 'Agency Admin' : 'System Admin'}</h2>
     </div>
 
     <div class="admin-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
@@ -7290,7 +7294,7 @@ async function recruitContact(contactId) {
     <label>Role</label>
     <select id="rec-role">
       <option value="agent">Agent</option>
-      <option value="agency_owner">Agency Owner</option>
+      <option value="broker_owner">Broker Owner</option>
     </select>
     <label>Notes (optional)</label>
     <textarea id="rec-notes" placeholder="Any notes about this recruit..."></textarea>
@@ -7350,7 +7354,7 @@ function openAddAgent() {
     <label>Role</label>
     <select id="ag-role">
       <option value="agent">Agent</option>
-      <option value="agency_owner">Agency Owner</option>
+      <option value="broker_owner">Broker Owner</option>
       <option value="system_owner">System Owner</option>
     </select>
     <label>Agency</label>
@@ -7407,7 +7411,7 @@ function editAgent(id) {
     <label>Role</label>
     <select id="ag-role">
       <option value="agent" ${a.role==='agent'?'selected':''}>Agent</option>
-      <option value="agency_owner" ${a.role==='agency_owner'?'selected':''}>Agency Owner</option>
+      <option value="broker_owner" ${a.role==='broker_owner'||a.role==='agency_owner'?'selected':''}>Broker Owner</option>
       <option value="system_owner" ${a.role==='system_owner'?'selected':''}>System Owner</option>
     </select>
     <label>Agency</label>
@@ -7834,7 +7838,7 @@ async function renderSettings() {
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Contact your system admin to change your login email.</div>
         </div>
         <div style="margin-top:10px;padding:10px;background:var(--surface-1);border-radius:8px;border:0.5px solid var(--border);font-size:12px;color:var(--text-muted);">
-          <strong style="color:var(--text-secondary);">Role:</strong> ${({ system_owner: 'System Owner', agency_owner: 'Agency Owner', agent: 'Agent' }[currentAgent.role] || currentAgent.role)}
+          <strong style="color:var(--text-secondary);">Role:</strong> ${({ system_owner: 'System Owner', broker_owner: 'Broker Owner', agency_owner: 'Broker Owner', agent: 'Agent' }[currentAgent.role] || currentAgent.role)}
           &nbsp;&middot;&nbsp;
           <strong style="color:var(--text-secondary);">Agency:</strong> ${agencyName}
         </div>
@@ -8116,7 +8120,7 @@ async function renderOversight() {
     return a ? a.name : '—';
   }
 
-  var isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner';
+  var isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner';
   var FINAL_STAGES = ['Enrolled', 'Active Client', 'Contracted', 'Active Agent'];
 
   // ── EXCEPTION SETS ──
@@ -8320,7 +8324,7 @@ async function renderAppointments() {
   const role = previewRole || currentAgent.role;
   if (role === 'agent') {
     q = q.eq('agent_id', currentAgent.id);
-  } else if (role === 'agency_owner') {
+  } else if (role === 'broker_owner') {
     const ids = [...new Set([currentAgent.id, ...allAgents.filter(a=>a.agency_id===currentAgent.agency_id).map(a=>a.id)])];
     q = q.in('agent_id', ids);
   }
@@ -12020,8 +12024,8 @@ function toggleCarrierSoaFields_() {
 
 // ============================================================
 // CARRIER PRODUCTS + APPOINTMENTS
-// Master list (system owner) -> agency owner appointments ->
-// agent appointments limited to their agency owner's list.
+// Master list (system owner) -> broker owner appointments ->
+// agent appointments limited to their broker owner's list.
 // ============================================================
 function carrierApptsSummaryHtml_(appts) {
   const act = (appts || []).filter(a => a.is_active);
@@ -12148,7 +12152,7 @@ function openCarrierProductModal(crId, prodId) {
 }
 
 async function openMyCarriers() {
-  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner';
+  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner';
   const { data: master } = await supabaseClient.from('carriers')
     .select('*').eq('is_active', true).order('name');
   let allowed = master || [];
@@ -12157,7 +12161,7 @@ async function openMyCarriers() {
     let ownerIds = [];
     if (currentAgent.agency_id) {
       const { data: owners } = await supabaseClient.from('agents').select('id')
-        .eq('agency_id', currentAgent.agency_id).in('role', ['agency_owner', 'system_owner']);
+        .eq('agency_id', currentAgent.agency_id).in('role', ['broker_owner', 'system_owner']);
       ownerIds = (owners || []).map(o => o.id);
     }
     if (ownerIds.length) {
@@ -12172,7 +12176,7 @@ async function openMyCarriers() {
   if (!allowed.length) {
     showModal('My Carrier Appointments', `<p style="font-size:13px;line-height:1.6;">${isOwner
       ? 'The master carrier list is empty (or inactive). Add carriers in the Admin page first.'
-      : "Your agency's carrier list isn't set up yet. Your agency owner needs to record their carrier appointments first \u2014 then you can select yours from that list."}</p>`, null, { hideConfirm: true });
+      : "Your agency's carrier list isn't set up yet. Your broker owner needs to record their carrier appointments first \u2014 then you can select yours from that list."}</p>`, null, { hideConfirm: true });
     return;
   }
   const { data: mine } = await supabaseClient.from('carrier_appointments')
@@ -14162,7 +14166,7 @@ async function openQuoteBuilder(dealId, opts) {
     .select('carrier_id,quoting_url,is_active').eq('agent_id', currentAgent.id).eq('is_active', true);
   window._qbAppts = myAppts || [];        // the pickers read their quoting links from here
   const apptIds = new Set((myAppts || []).map(a => a.carrier_id));
-  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'agency_owner';
+  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner';
   let myCarriers = (master || []).filter(c => apptIds.has(c.id));
   if (!myCarriers.length && isOwner) myCarriers = master || [];
   if (!myCarriers.length) {
@@ -14202,7 +14206,7 @@ async function openQuoteBuilder(dealId, opts) {
   window._qbAgencyCarrierNames = [];
   try {
     const { data: owners } = await supabaseClient.from('agents').select('id')
-      .eq('agency_id', currentAgent.agency_id).in('role', ['agency_owner', 'system_owner']);
+      .eq('agency_id', currentAgent.agency_id).in('role', ['broker_owner', 'system_owner']);
     const oIds = (owners || []).map(a => a.id);
     if (oIds.length) {
       const { data: agAppts } = await supabaseClient.from('carrier_appointments')
