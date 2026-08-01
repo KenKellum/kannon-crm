@@ -12944,7 +12944,7 @@ function ppOpenCombos_(d, chosen) {
 function ppComboPickers_(p, key, d) {
   const chosen = (ppChoice_(p)[key] || {});
   const parts = ppParts_(d);
-  return `<div style="margin-top:8px;">
+  return `<div style="margin-top:8px;" onclick="event.stopPropagation();">
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">${escWeb(d.label || key)}</div>
     <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:4px;">
       ${parts.map((pt, idx) => {
@@ -13160,7 +13160,7 @@ function ppCardHtml_(p) {
         ${meta.underwriter && meta.underwriter !== carrier.name
           ? `<div style="font-size:10.5px;color:var(--text-muted);">Underwritten by ${escWeb(meta.underwriter)}</div>` : ''}
       </div>
-      <label style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-muted);cursor:pointer;white-space:nowrap;">
+      <label onclick="event.stopPropagation();" style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-muted);cursor:pointer;white-space:nowrap;">
         <input type="checkbox" ${pp.cmp.has(p.id) ? 'checked' : ''} onchange="ppCmpToggle_('${escWeb(p.id)}')" style="width:13px;height:13px;" /> ⚖️ Compare</label>
     </div>
 
@@ -13169,8 +13169,8 @@ function ppCardHtml_(p) {
     <div style="height:${ppNoteHeight_()}px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;
       overflow:hidden;display:-webkit-box;-webkit-line-clamp:${ppNoteLines_()};-webkit-box-orient:vertical;"
       title="${p.notes ? escWeb(p.notes) : ''}">${p.notes ? escWeb(p.notes) : ''}</div>
-    <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
-    <div style="min-height:18px;">${(ppState_().docFor || new Set()).has(p.id)
+    <div style="min-height:18px;" onclick="event.stopPropagation();">${ppNetworkHtml_(p)}</div>
+    <div style="min-height:18px;" onclick="event.stopPropagation();">${(ppState_().docFor || new Set()).has(p.id)
       ? `<a href="#" onclick="event.preventDefault();productDocOpen_('${escWeb(p.id)}')" style="font-size:11px;color:var(--link);">&#128196; Brochure</a>
          <a href="#" onclick="event.preventDefault();productDocCopy_('${escWeb(p.id)}')" style="font-size:11px;color:var(--link);margin-left:10px;">copy link for the client</a>`
       : ''}</div>
@@ -13191,7 +13191,7 @@ function ppCardHtml_(p) {
     <div style="padding-top:10px;border-top:1px solid var(--border);">
       ${rate.kind === 'none' ? `
         <div style="font-size:11px;color:var(--text-muted);line-height:1.45;">No rate chart on file — quote it at the carrier, then put the premium here.</div>
-        <div style="display:flex;gap:7px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+        <div style="display:flex;gap:7px;align-items:center;margin-top:6px;flex-wrap:wrap;" onclick="event.stopPropagation();">
           ${carrierQuotingBtn_(p.carrier_id, p.id, 'Quote at the carrier')}
           <span style="display:inline-flex;align-items:center;gap:4px;">
             <span style="font-size:12px;color:var(--text-muted);">$</span>
@@ -13200,8 +13200,8 @@ function ppCardHtml_(p) {
             <span style="font-size:11px;color:var(--text-muted);">/mo</span></span>
         </div>` : `
         <div style="font-size:18px;font-weight:800;color:var(--accent,#c8a84b);line-height:1.2;">${ppPriceLabel_(p, rate)}</div>`}
-      <div style="display:flex;gap:7px;margin-top:9px;">
-        <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="flex:1;${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}" onclick="ppAdd_('${escWeb(p.id)}')">
+      <div style="display:flex;gap:7px;margin-top:9px;" onclick="event.stopPropagation();">
+        <button class="btn ${slot >= 0 ? 'btn-outline' : 'btn-primary'} btn-sm" style="${slot >= 0 ? 'color:var(--success);border-color:var(--success);' : ''}" onclick="ppAdd_('${escWeb(p.id)}')">
           ${slot >= 0 ? '✓ Option ' + qbOptionNo_(slot) : '＋ Add'}</button>
         <button class="btn btn-outline btn-sm" onclick="ppDetail_('${escWeb(p.id)}')">Details</button>
         ${ppAcaOnQuote_().length ? `<button class="btn btn-outline btn-sm" title="Against the Marketplace plan already on this quote"
@@ -13348,6 +13348,22 @@ function ppAdd_(prodId) {
   if (prem && pp.prem[prodId] != null) prem.value = Number(pp.prem[prodId]).toFixed(2);
   const bul = document.getElementById('qb-bul-' + slot);
   if (bul) bul.value = [].concat(chosen, meta.bullets || []).join('\n');
+
+  // The snapshot the client page reads. Without it a short-term option shows
+  // only its bullets and the comparison has nothing on the short-term side.
+  window._qbPpMeta = window._qbPpMeta || {};
+  window._qbPpMeta[slot] = {
+    src: 'stm', product_id: p.id, name: p.name,
+    carrier_name: ((window._qbCarriers || []).find(c => c.id === p.carrier_id) || {}).name || null,
+    underwriter: meta.underwriter || null,
+    network: meta.network || null,
+    benefits: meta.benefits || null,
+    prescription: meta.prescription || null,
+    facts: meta.facts || null,
+    chosen: choice,
+    limitations: meta.limitations || null,
+    compliance_notes: meta.compliance_notes || null,
+  };
 
   qbRenumberOptions_();
   qbSectionSummary_();
@@ -13676,6 +13692,11 @@ function renderProductPicker_() {
   const pp = ppState_();
   const list = pp.products || [];
   const prof = ppProfile_();
+  const chosen = [];
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    const p = (list).find(x => x.id === pp.sel[i]);
+    if (p) chosen.push({ slot: i, p: p });
+  }
   const withRates = list.filter(p => ppRate_(p).kind === 'chart').length;
 
   el.innerHTML = `
@@ -13697,7 +13718,21 @@ function renderProductPicker_() {
         : `<div style="font-size:13px;color:var(--text-muted);line-height:1.6;">
              No ${escWeb(pp.line || '')} products on file for the carriers you are appointed with.<br>
              Add them from <strong>Admin → Carriers → Add products from a brochure</strong>.</div>`}
-    </div>`;
+    </div>
+
+    ${chosen.length ? `<div class="pk-tray" style="padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span class="pk-tray-label">On the quote · ${chosen.length}</span>
+      ${chosen.map(x => `<div class="pk-tray-item">
+        <span class="num">${qbOptionNo_(x.slot)}</span>
+        <span class="who">
+          <span class="carrier">${escWeb(((window._qbCarriers || []).find(c => c.id === x.p.carrier_id) || {}).name || '')}</span>
+          <span class="pname">${escWeb(x.p.name)}</span>
+        </span>
+        ${pp.prem[x.p.id] != null ? `<span class="price">$${Number(pp.prem[x.p.id]).toFixed(2)}</span>` : ''}
+        <button class="rm" onclick="ppAdd_('${escWeb(x.p.id)}')" title="Take off the quote">✕</button>
+      </div>`).join('')}
+      <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="closeProductPicker_()">Done — back to the quote</button>
+    </div>` : ''}`;
 }
 
 // Licensed states have been written both as an array and as a loose string
@@ -14420,6 +14455,9 @@ async function openQuoteBuilder(dealId, opts) {
           formulary_id: cmsSel._formularyId || null,
           coverage: qbCmsCoverageSnapshot_(cmsSel),
         };
+      } else if ((window._qbPpMeta || {})[i]) {
+        // Added from the product picker
+        planMeta = window._qbPpMeta[i];
       } else {
         // Re-quoted option left untouched: reuse the previous quote's snapshot
         const rq = (window._qbRequoteOpt || {})[i];
