@@ -12980,13 +12980,14 @@ function ppComboSummary_(p) {
 
 // Every card gives its description the same room, sized to the longest one on
 // screen, so everything below it starts at the same height across the row.
-function ppNoteHeight_() {
+function ppNoteLines_() {
   const pp = ppState_();
   const longest = (pp.products || []).reduce((n, x) => Math.max(n, String(x.notes || '').length), 0);
   if (!longest) return 0;
-  const perLine = 44;                     // roughly what fits at this card width
-  return Math.min(6, Math.ceil(longest / perLine)) * 18 + 4;
+  const perLine = 42;                     // roughly what fits at this card width
+  return Math.max(2, Math.min(5, Math.ceil(longest / perLine)));   // never a wall of text
 }
+function ppNoteHeight_() { return ppNoteLines_() * 18; }
 
 // Deductible plus the coinsurance cap is what a person actually faces on
 // covered, in-network care before the plan starts paying everything. Worth
@@ -13160,7 +13161,9 @@ function ppCardHtml_(p) {
 
     ${slot >= 0 ? `<div style="margin:6px 0 2px;"><span class="pk-sel-badge">✓ Selected · Option ${qbOptionNo_(slot)}</span></div>` : ''}
 
-    <div style="min-height:${ppNoteHeight_()}px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;">${p.notes ? escWeb(p.notes) : ''}</div>
+    <div style="height:${ppNoteHeight_()}px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:5px;
+      overflow:hidden;display:-webkit-box;-webkit-line-clamp:${ppNoteLines_()};-webkit-box-orient:vertical;"
+      title="${p.notes ? escWeb(p.notes) : ''}">${p.notes ? escWeb(p.notes) : ''}</div>
     <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
     <div style="min-height:18px;">${ppRxHtml_(p)}</div>
 
