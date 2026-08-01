@@ -13605,6 +13605,13 @@ function acaBenefitRow_(plan, key) {
 function ppAcaOnQuote_() {
   const out = [];
   for (let i = 0; i < QB_MAX_OPTIONS; i++) {
+    // A leftover selection is not a plan on the quote. The slot has to be
+    // filled AND still be a Marketplace option, or the agent is offered a
+    // comparison against something they already took off.
+    if (typeof qbOptionFilled_ === 'function' && !qbOptionFilled_(i)) continue;
+    const optLine = (document.getElementById('qb-optline-' + i) || {}).value || '';
+    if (optLine && optLine !== 'Health — Individual') continue;
+
     const live = (window._qbAcaSel || {})[i];
     const saved = ((window._qbRequoteOpt || {})[i] || {}).plan_meta;
     const p = live || (saved && saved.src === 'aca' ? saved : null);
