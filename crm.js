@@ -13347,7 +13347,10 @@ function ppAdd_(prodId) {
 
   let slot = -1;
   for (let i = 0; i < QB_MAX_OPTIONS; i++) if (!qbOptionFilled_(i)) { slot = i; break; }
-  if (slot === -1) { showToast('All ' + QB_MAX_OPTIONS + ' option slots are full — remove one first.'); return; }
+  if (slot === -1) {
+    showToast('All ' + QB_MAX_OPTIONS + ' options on this quote are used — take one off first.');
+    return;
+  }
   const wrap = document.getElementById('qb-opt-wrap-' + slot);
   if (wrap) wrap.style.display = 'block';
   pp.sel[slot] = prodId;
@@ -13908,7 +13911,10 @@ function qbQuoteLinkPaint_(i) {
 // Agent assembles 1-4 options -> client gets a branded page at
 // quote.html?q=<uuid> -> "I'm interested" advances the follow-up.
 // ============================================================
-const QB_MAX_OPTIONS = 10; // agents sometimes compare 10+ carriers
+// A multi-line proposal spends these fast: three Medicare options and a Part D
+// plan leave only six for anything else. The slots are pre-rendered and hidden
+// until used, so the cost of more is a little markup, not speed.
+const QB_MAX_OPTIONS = 20;
 // Group health is deliberately absent \u2014 it gets its own quoting engine.
 const QUOTE_LINE_GROUPS = [
   ['Major medical', [
