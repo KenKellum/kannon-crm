@@ -13167,7 +13167,8 @@ function ppCardHtml_(p) {
     <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
     <div style="min-height:18px;">${ppRxHtml_(p)}</div>
 
-    <div style="min-height:52px;margin-top:5px;">${facts}</div>
+    <div style="min-height:${ppBenefitHeight_()}px;margin-top:7px;">${ppBenefitList_(p)}</div>
+    <div style="min-height:22px;margin-top:5px;">${facts}</div>
 
 
     <div style="margin-top:auto;">
@@ -13233,6 +13234,23 @@ function ppRxHtml_(p, big) {
   return `<div style="font-size:${size}px;color:var(--text-secondary);">&#128138;
     ${escWeb(rx.summary || 'Prescription coverage')}${bits.length && !rx.summary ? ' &middot; ' + bits.join(' &middot; ') : ''}
     ${rx.is_rider ? '<span style="color:var(--text-warning);"> (separate rider)</span>' : ''}</div>`;
+}
+
+// What the plan actually pays, on the card. Kept short: the full wording is in
+// the details. Every card gets the same room so the rows below stay level.
+function ppBenefitList_(p) {
+  const rows = ppBenefitRows_(p);
+  if (!rows.length) return '<span style="font-size:11px;color:var(--text-muted);">No benefit detail read from the brochure yet.</span>';
+  return rows.map(([label, cell]) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:1.5px 0;">
+    <span style="color:var(--text-muted);white-space:nowrap;">${escWeb(label)}</span>
+    <span style="color:var(--text-secondary);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cell}</span>
+  </div>`).join('');
+}
+
+function ppBenefitHeight_() {
+  const pp = ppState_();
+  const most = (pp.products || []).reduce((n, x) => Math.max(n, ppBenefitRows_(x).length), 0);
+  return most ? most * 18 : 18;
 }
 
 function ppFmt_(v, d) {
