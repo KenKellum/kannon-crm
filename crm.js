@@ -12756,6 +12756,15 @@ async function openProductPicker_(line) {
     : { data: [] };
   pp.products = prods || [];
   pp.charts = charts || [];
+  const { data: docs } = carriers.length
+    ? await supabaseClient.from('product_documents').select('product_id,carrier_id')
+        .eq('internal_use_only', false).in('carrier_id', carriers)
+    : { data: [] };
+  pp.docFor = new Set();
+  (docs || []).forEach(d => {
+    if (d.product_id) pp.docFor.add(d.product_id);
+    (prods || []).filter(x => x.carrier_id === d.carrier_id).forEach(x => pp.docFor.add(x.id));
+  });
   renderProductPicker_();
 }
 
@@ -13167,6 +13176,10 @@ function ppCardHtml_(p) {
       overflow:hidden;display:-webkit-box;-webkit-line-clamp:${ppNoteLines_()};-webkit-box-orient:vertical;"
       title="${p.notes ? escWeb(p.notes) : ''}">${p.notes ? escWeb(p.notes) : ''}</div>
     <div style="min-height:18px;">${ppNetworkHtml_(p)}</div>
+    <div style="min-height:18px;">${(ppState_().docFor || new Set()).has(p.id)
+      ? `<a href="#" onclick="event.preventDefault();productDocOpen_('${escWeb(p.id)}')" style="font-size:11px;color:var(--link);">&#128196; Brochure</a>
+         <a href="#" onclick="event.preventDefault();productDocCopy_('${escWeb(p.id)}')" style="font-size:11px;color:var(--link);margin-left:10px;">copy link for the client</a>`
+      : ''}</div>
 
     <div style="min-height:${ppBenefitHeight_()}px;margin-top:7px;">${ppBenefitList_(p)}</div>
     <div style="min-height:22px;margin-top:5px;">${facts}</div>
@@ -13242,17 +13255,21 @@ function ppRxHtml_(p, big) {
 function ppBenefitList_(p) {
   const rows = ppBenefitRows_(p);
   if (!rows.length) return '<span style="font-size:11px;color:var(--text-muted);">No benefit detail read from the brochure yet.</span>';
-  return rows.map(([label, cell, icon]) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:1.5px 0;">
-    <span style="color:var(--text-muted);white-space:nowrap;">${icon || ''} ${escWeb(label)}</span>
-    <span title="${escWeb(label)}: ${escWeb(String(cell).replace(/<[^>]+>/g, ''))}"
-      style="color:var(--text-secondary);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help;">${cell}</span>
-  </div>`).join('');
+  return `<table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:11.5px;">
+    ${rows.map(([label, cell, icon]) => `<tr>
+      <td style="width:44%;padding:2px 8px 2px 0;color:var(--text-muted);vertical-align:top;">${icon || ''} ${escWeb(label)}</td>
+      <td style="padding:2px 0;color:var(--text-secondary);vertical-align:top;line-height:1.4;">${cell}</td>
+    </tr>`).join('')}
+  </table>`;
 }
 
 function ppBenefitHeight_() {
   const pp = ppState_();
-  const most = (pp.products || []).reduce((n, x) => Math.max(n, ppBenefitRows_(x).length), 0);
-  return most ? most * 18 : 18;
+  const perLine = 30;                     // roughly what fits in the value column
+  const linesFor = x => ppBenefitRows_(x).reduce((n, [, cell]) =>
+    n + Math.max(1, Math.ceil(String(cell).replace(/<[^>]+>/g, '').length / perLine)), 0);
+  const most = (pp.products || []).reduce((n, x) => Math.max(n, linesFor(x)), 0);
+  return most ? most * 16 + 6 : 18;
 }
 
 function ppFmt_(v, d) {
@@ -13739,10 +13756,15 @@ function productFit_(product, state, carrierId) {
 // storage rules enforce that too; this is the polite half.
 async function productDocLink_(productId, opts) {
   const days = (opts && opts.days) || 7;
+  const prod = (window._qbProds || []).concat((ppState_().products || []))
+    .find(x => x.id === productId) || {};
   const { data: docs } = await supabaseClient.from('product_documents')
-    .select('id,storage_path,filename,internal_use_only,kind')
-    .eq('product_id', productId).order('created_at', { ascending: false });
-  const share = (docs || []).find(d => !d.internal_use_only);
+    .select('id,storage_path,filename,internal_use_only,kind,product_id,carrier_id')
+    .or('product_id.eq.' + productId + (prod.carrier_id ? ',carrier_id.eq.' + prod.carrier_id : ''))
+    .order('created_at', { ascending: false });
+  const usable = (docs || []).filter(d => !d.internal_use_only);
+  // the one stamped for this product wins; otherwise the carrier's brochure
+  const share = usable.find(d => d.product_id === productId) || usable[0];
   if (!share) return null;
   const { data, error } = await supabaseClient.storage.from('product-docs')
     .createSignedUrl(share.storage_path, days * 86400);
