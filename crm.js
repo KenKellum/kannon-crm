@@ -12763,15 +12763,30 @@ async function openProductPicker_(line) {
   el.style.display = 'flex';
   el.innerHTML = '<div style="padding:24px;font-size:13px;color:var(--text-muted);">Loading products…</div>';
 
-  const carriers = (window._qbCarriers || []).map(c => c.id);
-  const { data: prods } = carriers.length
-    ? await supabaseClient.from('carrier_products').select('*')
-        .eq('is_active', true).is('discontinued_on', null)
-        .in('carrier_id', carriers).eq('line_of_business', pp.line)
-    : { data: [] };
-  const ids = (prods || []).map(p => p.id);
-  const { data: charts } = ids.length
-    ? await supabaseClient.from('rate_charts').select('*').in('product_id', ids).eq('is_active', true)
+  const { data: allowed, error: allowErr } = await supabaseClient
+    .from('my_offerable_products').select('product_id,office').eq('line_of_business', pp.line);
+  const ids = [...new Set((allowed || []).map(x => x.product_id))];
+  pp.offices = [...new Set((allowed || []).map(x => x.office).filter(Boolean))];
+
+  // If that view cannot be read, fall back to the old rule rather than showing
+  // an empty picker and leaving an agent unable to quote.
+  let prods = [];
+  if (allowErr) {
+    const carriers = (window._qbCarriers || []).map(c => c.id);
+    const { data } = carriers.length
+      ? await supabaseClient.from('carrier_products').select('*')
+          .eq('is_active', true).is('discontinued_on', null)
+          .in('carrier_id', carriers).eq('line_of_business', pp.line)
+      : { data: [] };
+    prods = data || [];
+    pp.gateFailed = true;
+  } else if (ids.length) {
+    const { data } = await supabaseClient.from('carrier_products').select('*').in('id', ids);
+    prods = data || [];
+  }
+  const { data: charts } = prods.length
+    ? await supabaseClient.from('rate_charts').select('*')
+        .in('product_id', prods.map(p => p.id)).eq('is_active', true)
     : { data: [] };
   const st = ppProfile_().state;
   const all = prods || [];
@@ -13741,6 +13756,7 @@ function renderProductPicker_() {
     <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-weight:800;font-size:15px;">📋 ${escWeb(pp.line || 'Products')}${prof.state ? ' · ' + escWeb(prof.state) : ''}</div>
       <div style="font-size:12px;color:var(--text-muted);">${list.length} product${list.length === 1 ? '' : 's'}${
+        (pp.offices || []).length ? ' through ' + escWeb(pp.offices.join(' and ')) : ''}${
         prof.state ? ' filed in ' + escWeb(prof.state) : ''}${
         pp.hidden ? ' · ' + pp.hidden + ' not filed here' : ''}${
         withRates ? ' · ' + withRates + ' with rates on file' : ' · none with rates on file'}</div>
@@ -14826,15 +14842,11 @@ async function qbPpStripPaint_(line) {
   const el = document.getElementById('qb-pp-strip');
   if (!el) return;
   el.innerHTML = `<div style="font-size:12.5px;color:var(--text-muted);">Counting products…</div>`;
-  const carriers = (window._qbCarriers || []).map(c => c.id);
-  let n = 0, carrierCount = 0;
-  if (carriers.length) {
-    const { data } = await supabaseClient.from('carrier_products')
-      .select('carrier_id').eq('is_active', true).is('discontinued_on', null)
-      .in('carrier_id', carriers).eq('line_of_business', line);
-    n = (data || []).length;
-    carrierCount = new Set((data || []).map(x => x.carrier_id)).size;
-  }
+  // the same gate the picker uses, so the count never promises more than opens
+  const { data } = await supabaseClient.from('my_offerable_products')
+    .select('product_id,carrier_id').eq('line_of_business', line);
+  const n = new Set((data || []).map(x => x.product_id)).size;
+  const carrierCount = new Set((data || []).map(x => x.carrier_id)).size;
   el.innerHTML = n
     ? `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;">
          <strong>${n}</strong> ${escWeb(line)} product${n === 1 ? '' : 's'} from
