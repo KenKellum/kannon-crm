@@ -135,7 +135,7 @@ async function init() {
   if (session) {
     currentUser = session.user;
     await loadAgentProfile();
-    if (currentAgent) { await mfaGateThenShowApp_(); } else { document.getElementById('auth-screen').style.display = 'flex'; showAuthError('Your account is not set up in the CRM yet. Contact Ken to be added.'); }
+    if (currentAgent) { await mfaGateThenShowApp_(); } else { document.getElementById('auth-screen').style.display = 'flex'; showAuthError(noProfileMessage_()); }
   } else {
     document.getElementById('auth-screen').style.display = 'flex';
   }
@@ -146,7 +146,7 @@ async function init() {
     if (event === 'SIGNED_IN' && session && !_appInitialized) {
       _appInitialized = true;
       await loadAgentProfile();
-      if (currentAgent) { await mfaGateThenShowApp_(); } else { showAuthError('Your account is not set up in the CRM yet. Contact Ken to be added.'); }
+      if (currentAgent) { await mfaGateThenShowApp_(); } else { showAuthError(noProfileMessage_()); }
     }
     // TOKEN_REFRESHED / USER_UPDATED — currentUser already updated above, no re-init needed
   });
@@ -155,21 +155,36 @@ async function init() {
 // ============================================================
 // AGENT PROFILE
 // ============================================================
+// Set when the agent lookup itself errored, as opposed to finding nobody.
+let profileLoadError = null;
+
+// The sign-in worked; we just could not produce a profile. Say which of the two
+// it was, because "you have no account" sends the wrong person looking.
+function noProfileMessage_() {
+  if (!profileLoadError) return 'Your account is not set up in the CRM yet. Contact Ken to be added.';
+  console.error('Agent lookup failed', profileLoadError);
+  return 'Signed in, but the CRM could not load your profile. This is a system fault, not your account. '
+       + 'Show Ken this code: ' + (profileLoadError.code || 'unknown')
+       + (profileLoadError.message ? ' \u2014 ' + profileLoadError.message : '');
+}
 async function loadAgentProfile() {
+  profileLoadError = null;
   // Try by auth_user_id first
-  let { data: agent } = await supabaseClient
+  let { data: agent, error: byIdErr } = await supabaseClient
     .from('agents')
-    .select('*, agencies(name)')
+    .select('*, agencies!agents_agency_id_fkey(name)')
     .eq('auth_user_id', currentUser.id)
     .maybeSingle();
+  if (byIdErr) profileLoadError = byIdErr;
 
   if (!agent) {
     // First login — link by email
-    const { data: byEmail } = await supabaseClient
+    const { data: byEmail, error: byEmailErr } = await supabaseClient
       .from('agents')
-      .select('*, agencies(name)')
+      .select('*, agencies!agents_agency_id_fkey(name)')
       .eq('email', currentUser.email)
       .maybeSingle();
+    if (byEmailErr) profileLoadError = byEmailErr;
     if (byEmail) {
       await supabaseClient.from('agents').update({ auth_user_id: currentUser.id }).eq('id', byEmail.id);
       agent = byEmail;
@@ -188,8 +203,8 @@ async function loadAgentProfile() {
 
     // Load meta tables
     const [{ data: ags }, { data: agc }, { data: cos }] = await Promise.all([
-      supabaseClient.from('agents').select('*, agencies(name)').order('name'),
-      supabaseClient.from('agencies').select('*, companies(name)').order('name'),
+      supabaseClient.from('agents').select('*, agencies!agents_agency_id_fkey(name)').order('name'),
+      supabaseClient.from('agencies').select('*, companies!agencies_company_id_fkey(name)').order('name'),
       supabaseClient.from('companies').select('*').order('name')
     ]);
     allAgents = ags || [];
@@ -217,7 +232,7 @@ async function signIn() {
   if (error) { showAuthError(error.message); return; }
   currentUser = data.user;
   await loadAgentProfile();
-  if (currentAgent) { showApp(); } else { showAuthError('Your account is not yet set up. Contact Ken to be added to the CRM.'); }
+  if (currentAgent) { showApp(); } else { showAuthError(noProfileMessage_()); }
 }
 
 async function signOut() {

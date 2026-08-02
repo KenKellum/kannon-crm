@@ -338,7 +338,7 @@ async function loadAgentProfile() {
   // Try by auth_user_id first
   let { data: agent } = await supabaseClient
     .from('agents')
-    .select('*, agencies(name)')
+    .select('*, agencies!agents_agency_id_fkey(name)')
     .eq('auth_user_id', currentUser.id)
     .maybeSingle();
 
@@ -346,7 +346,7 @@ async function loadAgentProfile() {
     // First login — link by email
     const { data: byEmail } = await supabaseClient
       .from('agents')
-      .select('*, agencies(name)')
+      .select('*, agencies!agents_agency_id_fkey(name)')
       .eq('email', currentUser.email)
       .maybeSingle();
     if (byEmail) {
@@ -367,8 +367,8 @@ async function loadAgentProfile() {
 
     // Load meta tables
     const [{ data: ags }, { data: agc }, { data: cos }] = await Promise.all([
-      supabaseClient.from('agents').select('*, agencies(name)').order('name'),
-      supabaseClient.from('agencies').select('*, companies(name)').order('name'),
+      supabaseClient.from('agents').select('*, agencies!agents_agency_id_fkey(name)').order('name'),
+      supabaseClient.from('agencies').select('*, companies!agencies_company_id_fkey(name)').order('name'),
       supabaseClient.from('companies').select('*').order('name')
     ]);
     allAgents = ags || [];
