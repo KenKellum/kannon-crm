@@ -294,12 +294,194 @@ async function showApp() {
 const PAGE_TITLES = {
   dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
   opens: 'Email Opens', campaigns: 'Email Campaigns', compliance: 'Compliance',
-  admin: 'Admin', dialer: 'Work My Leads', settings: 'Settings', appointments: 'Appointments',
+  admin: 'Admin', office: 'My Office', dialer: 'Work My Leads', settings: 'Settings', appointments: 'Appointments',
   scripts: 'Script Manager', website: 'Website'
 };
 
+// ============================================================
+// MY OFFICE — what a Broker Owner controls
+//
+// The franchise shares a catalogue; an office decides what it carries from it.
+// Everything on this screen is that decision: which divisions the office is a
+// branch of, which carriers it has contracted, which plans within them, and
+// who works here. Nothing here is shared, and nothing shared is edited here.
+// ============================================================
+
+let _officeId = null;
+
+async function renderOffice() {
+  const host = document.getElementById('page-office');
+  if (!host) return;
+  host.innerHTML = '<div style="padding:20px;font-size:13px;color:var(--text-muted);">Loading…</div>';
+
+  // every office this person holds a seat in; owners may look at any of them
+  const { data: seats } = await supabaseClient.from('agent_agencies')
+    .select('agency_id,is_primary').eq('agent_id', currentAgent.id);
+  let ids = (seats || []).map(s => s.agency_id);
+  const isSys = currentAgent.role === 'system_owner';
+  const { data: offices } = isSys
+    ? await supabaseClient.from('agencies').select('*').order('name')
+    : (ids.length ? await supabaseClient.from('agencies').select('*').in('id', ids).order('name')
+                  : { data: [] });
+
+  if (!offices || !offices.length) {
+    host.innerHTML = `<div style="padding:24px;font-size:13.5px;color:var(--text-muted);line-height:1.6;">
+      You are not seated in an office yet. A Broker Owner or the system owner places you in one.</div>`;
+    return;
+  }
+  if (!_officeId || !offices.some(o => o.id === _officeId)) {
+    const primary = (seats || []).find(s => s.is_primary);
+    _officeId = (primary && primary.agency_id) || offices[0].id;
+  }
+  const office = offices.find(o => o.id === _officeId);
+
+  const [{ data: divisions }, { data: allDivisions }, { data: carriers },
+         { data: mine }, { data: people }, { data: prods }, { data: chosenPlans }] = await Promise.all([
+    supabaseClient.from('agency_companies').select('company_id').eq('agency_id', _officeId),
+    supabaseClient.from('companies').select('id,name').order('name'),
+    supabaseClient.from('carriers').select('id,name,lines_of_business').eq('is_active', true).order('name'),
+    supabaseClient.from('agency_carriers').select('carrier_id,is_active').eq('agency_id', _officeId),
+    supabaseClient.from('agents').select('id,name,email,role,status').eq('agency_id', _officeId).order('name'),
+    supabaseClient.from('carrier_products').select('id,carrier_id,name,line_of_business,states')
+      .eq('is_active', true).is('discontinued_on', null).order('name'),
+    supabaseClient.from('agency_products').select('product_id,is_active').eq('agency_id', _officeId),
+  ]);
+
+  const divIds = new Set((divisions || []).map(d => d.company_id));
+  const held = new Set((mine || []).filter(m => m.is_active !== false).map(m => m.carrier_id));
+  const planPicked = new Set((chosenPlans || []).filter(p => p.is_active !== false).map(p => p.product_id));
+  // a carrier with no plan rows means the office carries all of that carrier's
+  const carriersWithPlanRows = new Set((prods || [])
+    .filter(p => planPicked.has(p.id)).map(p => p.carrier_id));
+
+  const canEdit = isSys || currentAgent.role === 'broker_owner';
+  const card = (title, body, note) => `
+    <div style="border:1px solid var(--border);border-radius:11px;padding:15px 17px;margin-bottom:15px;">
+      <div style="font-weight:800;font-size:14px;margin-bottom:${note ? '3px' : '10px'};">${title}</div>
+      ${note ? `<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">${note}</div>` : ''}
+      ${body}</div>`;
+
+  host.innerHTML = `
+    <div style="max-width:1000px;">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+        <div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text-muted);">Office</div>
+          <div style="font-size:20px;font-weight:800;">${escWeb(office.name)}</div>
+        </div>
+        ${offices.length > 1 ? `<select onchange="_officeId=this.value;renderOffice()" style="width:auto;margin-left:8px;">
+          ${offices.map(o => `<option value="${o.id}"${o.id === _officeId ? ' selected' : ''}>${escWeb(o.name)}</option>`).join('')}
+        </select>` : ''}
+        ${canEdit ? `<button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="officeRename_()">Rename</button>` : ''}
+      </div>
+
+      ${card('A branch of', `<div style="display:flex;gap:9px;flex-wrap:wrap;">
+        ${(allDivisions || []).map(d => `
+          <label style="display:flex;gap:7px;align-items:center;padding:8px 13px;border:1px solid ${divIds.has(d.id) ? 'var(--border-selected)' : 'var(--border)'};
+            border-radius:9px;font-weight:400;margin:0;cursor:${canEdit ? 'pointer' : 'default'};background:${divIds.has(d.id) ? 'var(--bg-selected-card)' : 'transparent'};">
+            <input type="checkbox" style="width:auto;" ${divIds.has(d.id) ? 'checked' : ''} ${canEdit ? '' : 'disabled'}
+              onchange="officeDivision_('${d.id}', this.checked)" />
+            ${escWeb(d.name)}</label>`).join('')}
+      </div>`, 'Which divisions of Kannon Financial this office is a branch of. Both means one merged pipeline.')}
+
+      ${card('Carriers this office carries',
+        (carriers || []).length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;">
+          ${(carriers || []).map(c => {
+            const on = held.has(c.id);
+            const cp = (prods || []).filter(p => p.carrier_id === c.id);
+            return `<div style="border:1px solid ${on ? 'var(--border-selected)' : 'var(--border)'};border-radius:9px;padding:9px 12px;">
+              <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:0;cursor:${canEdit ? 'pointer' : 'default'};">
+                <input type="checkbox" style="width:auto;" ${on ? 'checked' : ''} ${canEdit ? '' : 'disabled'}
+                  onchange="officeCarrier_('${c.id}', this.checked)" />
+                <span style="font-weight:700;font-size:13px;">${escWeb(c.name)}</span></label>
+              ${on && cp.length ? `<div style="margin-top:7px;padding-left:22px;">
+                <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">
+                  Plans ${carriersWithPlanRows.has(c.id) ? 'this office offers' : '— all of them'}</div>
+                ${cp.map(p => `<label style="display:flex;gap:7px;align-items:center;font-size:11.5px;font-weight:400;margin:3px 0 0;cursor:${canEdit ? 'pointer' : 'default'};color:var(--text-secondary);">
+                  <input type="checkbox" style="width:auto;" ${carriersWithPlanRows.has(c.id) ? (planPicked.has(p.id) ? 'checked' : '') : 'checked'} ${canEdit ? '' : 'disabled'}
+                    onchange="officePlan_('${p.id}','${c.id}', this.checked)" />
+                  ${escWeb(p.name)} <span style="color:var(--text-muted);">${escWeb((p.states || []).join(', '))}</span></label>`).join('')}
+              </div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>` : '<div style="font-size:13px;color:var(--text-muted);">No carriers in the shared catalogue yet.</div>',
+        'The catalogue is shared across the franchise. Tick what this office has contracted — and, within a carrier, which plans it offers. Leave every plan ticked to carry all of them.')}
+
+      ${card('People in this office',
+        (people || []).length ? (people || []).map(a => `
+          <div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:13px;">
+            <span style="font-weight:600;">${escWeb(a.name)}</span>
+            <span style="font-size:11px;color:var(--text-muted);">${escWeb(a.email || '')}</span>
+            <span style="margin-left:auto;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">
+              ${a.role === 'broker_owner' ? 'Broker Owner' : a.role === 'system_owner' ? 'System Owner' : 'Agent'}</span>
+          </div>`).join('')
+          : '<div style="font-size:13px;color:var(--text-muted);">Nobody seated here yet.</div>',
+        'An agent sees only their own contacts and deals. A Broker Owner sees the whole office.')}
+    </div>`;
+}
+
+async function officeRename_() {
+  const { data: o } = await supabaseClient.from('agencies').select('name').eq('id', _officeId).single();
+  showModal('Rename this office', `
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">The team name clients and agents see.</p>
+    <label>Office name</label><input type="text" id="off-name" value="${escWeb((o || {}).name || '')}" />`,
+  async () => {
+    const nm = (document.getElementById('off-name') || {}).value.trim();
+    if (!nm) { showToast('Give it a name.'); return false; }
+    const { error } = await supabaseClient.from('agencies').update({ name: nm }).eq('id', _officeId);
+    if (error) { showToast('Could not rename: ' + error.message); return false; }
+    showToast('Renamed.'); renderOffice();
+  }, { confirmLabel: 'Save' });
+}
+
+async function officeDivision_(companyId, on) {
+  const q = on
+    ? supabaseClient.from('agency_companies').insert({ agency_id: _officeId, company_id: companyId })
+    : supabaseClient.from('agency_companies').delete().eq('agency_id', _officeId).eq('company_id', companyId);
+  const { error } = await q;
+  if (error) { showToast('Could not change that: ' + error.message); }
+  renderOffice();
+}
+
+async function officeCarrier_(carrierId, on) {
+  const { error } = on
+    ? await supabaseClient.from('agency_carriers')
+        .upsert({ agency_id: _officeId, carrier_id: carrierId, is_active: true }, { onConflict: 'agency_id,carrier_id' })
+    : await supabaseClient.from('agency_carriers')
+        .delete().eq('agency_id', _officeId).eq('carrier_id', carrierId);
+  if (error) { showToast('Could not change that: ' + error.message); }
+  renderOffice();
+}
+
+// No rows for a carrier means the office carries every plan of it. So the first
+// time one is unticked, the others have to be written down explicitly, or
+// "all of them" would silently become "none".
+async function officePlan_(productId, carrierId, on) {
+  const { data: existing } = await supabaseClient.from('agency_products')
+    .select('product_id').eq('agency_id', _officeId);
+  const { data: siblings } = await supabaseClient.from('carrier_products')
+    .select('id').eq('carrier_id', carrierId).eq('is_active', true).is('discontinued_on', null);
+  const have = new Set((existing || []).map(x => x.product_id));
+  const anyForCarrier = (siblings || []).some(s => have.has(s.id));
+
+  if (!on && !anyForCarrier) {
+    const keep = (siblings || []).map(s => s.id).filter(id => id !== productId);
+    if (keep.length) {
+      await supabaseClient.from('agency_products')
+        .upsert(keep.map(id => ({ agency_id: _officeId, product_id: id, is_active: true })),
+                { onConflict: 'agency_id,product_id' });
+    }
+  } else if (on) {
+    await supabaseClient.from('agency_products')
+      .upsert({ agency_id: _officeId, product_id: productId, is_active: true }, { onConflict: 'agency_id,product_id' });
+  } else {
+    await supabaseClient.from('agency_products')
+      .delete().eq('agency_id', _officeId).eq('product_id', productId);
+  }
+  renderOffice();
+}
+
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','office','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -307,6 +489,7 @@ function showPage(page) {
   });
   const titleEl = document.getElementById('topbar-page-title');
   if (titleEl) titleEl.textContent = PAGE_TITLES[page] || page;
+  if (page === 'office')       renderOffice();
   if (page === 'dashboard')    renderDashboard();
   if (page === 'pipelines')    renderPipelines();
   if (page === 'contacts')     renderContacts();
@@ -349,6 +532,7 @@ function renderSidebarNav() {
         { icon: 'ti-bolt',             text: 'Work my leads',      page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
       ]},
       { label: 'Agency & team', items: [
+        { icon: 'ti-briefcase',          text: 'My Office',         page: 'office' },
         { icon: 'ti-building-community', text: 'Agencies & agents', page: 'admin',   badge: b.inactiveAgents || null, badgeType: 'red' },
         { icon: 'ti-alert-triangle',     text: 'Oversight',         page: 'oversight' },
         { icon: 'ti-script',             text: 'Script Manager',    page: 'scripts'   },
@@ -376,6 +560,7 @@ function renderSidebarNav() {
         { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
       ]},
       { label: 'Team', items: [
+        { icon: 'ti-briefcase',          text: 'My Office',        page: 'office' },
         { icon: 'ti-building-community', text: 'Agents & hiring',  page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
         { icon: 'ti-alert-triangle',     text: 'Oversight',        page: 'oversight' },
         { icon: 'ti-shield-check',       text: 'Compliance',       page: 'compliance'},
