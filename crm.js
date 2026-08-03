@@ -13008,7 +13008,7 @@ async function pwRun_(answers) {
     const payload = { document_ids: _pw.docs, mode: _pw.mode, hint: _pw.hint };
     if (answers) { payload.answers = answers; payload.prior_run_id = _pw.run.id; }
 
-    const started = new Date().toISOString();
+    const started = new Date(Date.now() - 120000).toISOString();  // 2 minutes of slack for clock skew
     const { data, error } = await supabaseClient.functions.invoke('product-extract', { body: payload });
     if (error) throw new Error(await pwWhyItFailed_(started, error));
     if (data && data.status === 'failed') throw new Error(data.error || 'The reading failed.');
@@ -13039,9 +13039,11 @@ function pwStepQuestions_() {
         ${(q.options || []).map((o, j) => `
           <label style="display:flex;gap:8px;align-items:flex-start;margin-top:7px;font-weight:400;cursor:pointer;font-size:12.5px;">
             <input type="radio" name="pwq-${i}" style="width:auto;margin-top:3px;"
+              ${_pw.answers[q.id || ('q' + i)] === o ? 'checked' : ''}
               onchange="pwAnswer_('${escWeb(q.id || ('q' + i))}', ${JSON.stringify(o).replace(/"/g, '&quot;')})" />
             <span>${escWeb(o)}</span></label>`).join('')}
         <input type="text" placeholder="…or answer in your own words"
+          value="${(q.options || []).indexOf(_pw.answers[q.id || ('q' + i)]) >= 0 ? '' : escWeb(_pw.answers[q.id || ('q' + i)] || '')}"
           oninput="pwAnswer_('${escWeb(q.id || ('q' + i))}', this.value)"
           style="margin-top:8px;font-size:12.5px;" />
       </div>`).join('')}
