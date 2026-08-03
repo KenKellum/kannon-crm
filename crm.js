@@ -10745,12 +10745,46 @@ function showSetPasswordOverlay() {
   document.body.appendChild(ov);
 }
 
+// Returns how many breaches the password appears in, 0 if none, or null if the
+// service could not be reached -- in which case we let the save proceed rather
+// than locking someone out of their own account over an outage.
+async function passwordBreachCount_(pw) {
+  try {
+    const bytes = new TextEncoder().encode(pw);
+    const digest = await crypto.subtle.digest('SHA-1', bytes);
+    const hex = Array.from(new Uint8Array(digest))
+      .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    const prefix = hex.slice(0, 5), suffix = hex.slice(5);
+
+    const res = await fetch('https://api.pwnedpasswords.com/range/' + prefix,
+                            { headers: { 'Add-Padding': 'true' } });
+    if (!res.ok) return null;
+    const body = await res.text();
+    for (const line of body.split('\n')) {
+      const parts = line.trim().split(':');
+      if (parts[0] === suffix) return parseInt(parts[1], 10) || 1;
+    }
+    return 0;
+  } catch (e) {
+    return null;   // offline, blocked, or no crypto.subtle -- do not block
+  }
+}
+
 async function submitSetPassword() {
   const p1 = document.getElementById('set-pw-1').value;
   const p2 = document.getElementById('set-pw-2').value;
   const msg = document.getElementById('set-pw-msg');
   if (p1.length < 8) { msg.textContent = 'Password must be at least 8 characters.'; return; }
   if (p1 !== p2) { msg.textContent = 'Passwords do not match.'; return; }
+
+  msg.textContent = 'Checking this password...';
+  const breaches = await passwordBreachCount_(p1);
+  if (breaches) {
+    msg.textContent = 'That password has appeared in ' + breaches.toLocaleString()
+      + ' known data breaches, so it is one attackers already try. Please choose a different one.';
+    return;
+  }
+
   msg.textContent = 'Saving...';
   const { error } = await supabaseClient.auth.updateUser({ password: p1 });
   if (error) { msg.textContent = 'Error: ' + error.message; return; }
