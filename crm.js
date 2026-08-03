@@ -15296,7 +15296,9 @@ function kenaiShow_(d) {
       ${d.aca_fetched ? `<div class="pk-bar" style="margin-top:12px;border-radius:9px;border:1px solid var(--border);font-size:12.5px;line-height:1.6;">
         <strong>Ken.ai pulled ${d.aca_fetched} Marketplace plan${d.aca_fetched === 1 ? '' : 's'} from healthcare.gov itself${(d.aca && d.aca.year) ? ' for ' + escWeb(String(d.aca.year)) : ''}${(d.aca && d.aca.county_name) ? ', ' + escWeb(String(d.aca.county_name)) : ''}.</strong>
         ${(d.aca && d.aca.credit_applied)
-          ? 'Prices shown are <strong>after the tax credit</strong>' + ((d.aca && d.aca.aptc) ? ' of about $' + Number(d.aca.aptc).toFixed(0) + '/mo' : '') + ((d.aca && d.aca.csr && !/none/i.test(String(d.aca.csr))) ? ', with extra Silver savings' : '') + '.'
+          ? (d.aca.prices_are_net
+              ? 'Prices shown are <strong>after the tax credit</strong>' + (d.aca.aptc ? ' of about $' + Number(d.aca.aptc).toFixed(0) + '/mo' : '') + ((d.aca.csr && !/none/i.test(String(d.aca.csr))) ? ', with extra Silver savings' : '') + '.'
+              : '<span style="color:var(--text-success);font-weight:700;">Tax credit of about $' + Number(d.aca.aptc || 0).toFixed(0) + '/mo.</span> The prices listed are <strong>before</strong> it \u2014 the green figure on each plan is what they would actually pay.')
           : '<span style="color:var(--text-warning);font-weight:700;">No tax credit applies at this income \u2014 these are full prices.</span>'}
         ${(d.aca && d.aca.income != null) ? '<span style="color:var(--text-muted);"> Based on $' + Number(d.aca.income).toLocaleString() + ' a year' + ((d.aca.applicant_count) ? ' for ' + d.aca.applicant_count + ' ' + (d.aca.applicant_count === 1 ? 'person' : 'people') : '') + '.</span>' : ''}
         ${(d.aca && d.aca.total_available) ? '<span style="color:var(--text-muted);">Cheapest few of each metal level, out of ' + d.aca.total_available + ' available.</span>' : ''}
@@ -15334,6 +15336,8 @@ function kenaiShow_(d) {
               ${pl.monthly_premium != null ? '<span style="color:var(--text-success);"> \u00b7 ' + money(pl.monthly_premium) + '/mo</span>' : ''}
               ${(pl.premium_before_subsidy != null && Number(pl.premium_before_subsidy) > Number(pl.monthly_premium))
                 ? '<span style="color:var(--text-muted);font-size:11.5px;"> <s>' + money(pl.premium_before_subsidy) + '</s> before the credit</span>' : ''}
+              ${(pl.estimated_after_credit != null && Number(pl.estimated_after_credit) < Number(pl.monthly_premium))
+                ? '<span style="color:var(--text-success);font-weight:700;"> → about ' + money(pl.estimated_after_credit) + '/mo after the credit</span>' : ''}
               ${pl.addable ? `<button type="button" class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px;"
                 onclick="kenaiAddPlan_(this, '${escWeb(String(pl.product_id))}')">+ Add to quote</button>` : ''}
               ${(pl.deductible != null || pl.out_of_pocket_max != null) ? '<div style="font-size:11.5px;color:var(--text-muted);padding-left:2px;">'
