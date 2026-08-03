@@ -82,6 +82,16 @@ let dialerQueue = [];
 let dialerIndex = 0;
 let totalContactCountFull = 0; // True DB count bypassing 1000-row cap
 let previewRole = null; // system_owner can preview other role views
+
+// The role the interface should behave as. Identical to the real role for
+// everyone except a system owner who has deliberately switched the preview,
+// so using this in place of the real role changes nothing for a real user.
+//
+// Worth being clear about what the preview is: it reshapes the interface, not
+// the database. The signed-in person is still themselves, so the rows they can
+// reach are still their own. Separation between offices is enforced by row
+// level security, which no amount of switching in the browser can move.
+function activeRole() { return activeRole(); }
 let calView = 'month';  // 'month' | 'week' | 'day'
 let calDate = new Date();
 let calAppointments = [];
@@ -299,7 +309,7 @@ async function showApp() {
     currentAgent.calendar_connected = true;
     renderDashboard();
     showToast('✓ Gmail & Calendar connected!');
-  } else if (currentAgent.role === 'agent' && !currentAgent.gmail_connected) {
+  } else if (activeRole() === 'agent' && !currentAgent.gmail_connected) {
     setTimeout(() => showGmailSetup(false), 500);
   } else if (currentAgent.gmail_connected && !currentAgent.calendar_connected) {
     setTimeout(() => showToast('🗓 Connect your Google Calendar in My Profile → Gmail & Calendar for full sync.'), 1500);
@@ -334,7 +344,7 @@ async function renderOffice() {
   const { data: seats } = await supabaseClient.from('agent_agencies')
     .select('agency_id,is_primary').eq('agent_id', currentAgent.id);
   let ids = (seats || []).map(s => s.agency_id);
-  const isSys = currentAgent.role === 'system_owner';
+  const isSys = activeRole() === 'system_owner';
   const { data: offices } = isSys
     ? await supabaseClient.from('agencies').select('*').order('name')
     : (ids.length ? await supabaseClient.from('agencies').select('*').in('id', ids).order('name')
@@ -370,7 +380,7 @@ async function renderOffice() {
   const carriersWithPlanRows = new Set((prods || [])
     .filter(p => planPicked.has(p.id)).map(p => p.carrier_id));
 
-  const canEdit = isSys || currentAgent.role === 'broker_owner';
+  const canEdit = isSys || activeRole() === 'broker_owner';
   const card = (title, body, note) => `
     <div style="border:1px solid var(--border);border-radius:11px;padding:15px 17px;margin-bottom:15px;">
       <div style="font-weight:800;font-size:14px;margin-bottom:${note ? '3px' : '10px'};">${title}</div>
@@ -496,7 +506,9 @@ async function officePlan_(productId, carrierId, on) {
   renderOffice();
 }
 
+let _currentPage = 'dashboard';
 function showPage(page) {
+  _currentPage = page;
   ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','recruiting','system','office','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
@@ -535,7 +547,7 @@ function getNavBadges() {
 function renderSidebarNav() {
   const container = document.getElementById('sidebar-nav-container');
   if (!container) return;
-  const role = previewRole || currentAgent.role;
+  const role = activeRole();
   const b = getNavBadges();
 
   const myWork = (label) => ({ label: label, items: [
@@ -625,9 +637,9 @@ async function loadData() {
   // agencyAgentIds declared here so count query below can reuse it
   let agencyAgentIds = [currentAgent.id];
 
-  if (currentAgent.role === 'agent') {
+  if (activeRole() === 'agent') {
     cq = cq.eq('agent_id', currentAgent.id);
-  } else if (currentAgent.role === 'broker_owner') {
+  } else if (activeRole() === 'broker_owner') {
     // Fetch all agents in this agency so contacts without agency_id are included
     const { data: agencyAgentRows } = await supabaseClient
       .from('agents').select('id').eq('agency_id', currentAgent.agency_id);
@@ -640,14 +652,14 @@ async function loadData() {
   // system_owner: no filter — sees all
 
   let dq = supabaseClient.from('deals').select('*');
-  if (currentAgent.role === 'agent') dq = dq.eq('agent_id', currentAgent.id);
-  else if (currentAgent.role === 'broker_owner') dq = dq.in('agent_id', agencyAgentIds);
+  if (activeRole() === 'agent') dq = dq.eq('agent_id', currentAgent.id);
+  else if (activeRole() === 'broker_owner') dq = dq.in('agent_id', agencyAgentIds);
 
   const queries = [
     cq.order('created_at', { ascending: false }).limit(10000),
     dq.order('created_at', { ascending: false })
   ];
-  if (currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner') {
+  if (activeRole() === 'system_owner' || activeRole() === 'broker_owner') {
     queries.push(supabaseClient.from('agent_applications').select('*').order('created_at', { ascending: false }));
   }
   const results = await Promise.all(queries);
@@ -657,16 +669,16 @@ async function loadData() {
   dealActivities = actData || [];
   applications = (results[2] && results[2].data) || [];
   // Agency owner: scope deals to only those linked to their contacts (deals table has no agent_id)
-  if (currentAgent.role === 'broker_owner') {
+  if (activeRole() === 'broker_owner') {
     const contactIds = new Set(contacts.map(c => c.id));
     deals = deals.filter(d => !d.contact_id || contactIds.has(d.contact_id));
   }
 
   // Get TRUE total count for ALL roles — bypasses PostgREST 1000-row cap
   let cntQ = supabaseClient.from('contacts').select('*', { count: 'exact', head: true });
-  if (currentAgent.role === 'agent') {
+  if (activeRole() === 'agent') {
     cntQ = cntQ.eq('agent_id', currentAgent.id);
-  } else if (currentAgent.role === 'broker_owner') {
+  } else if (activeRole() === 'broker_owner') {
     cntQ = cntQ.in('agent_id', agencyAgentIds);
   }
   // system_owner: no filter
@@ -680,7 +692,7 @@ async function loadData() {
 // DASHBOARD — role-adaptive
 // ============================================================
 function renderDashboard() {
-  const role = previewRole || currentAgent.role;
+  const role = activeRole();
   if (role === 'system_owner') {
     renderDashboardOwner();
   } else if (role === 'broker_owner') {
@@ -1236,7 +1248,7 @@ async function loadLeadSourceWidget(filterAgentId) {
 async function loadDashEmailOpens() {
   const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
   let openQ = supabaseClient.from('email_opens').select('*').gte('opened_at', cutoff).order('opened_at', { ascending: false }).limit(50);
-  if (currentAgent && currentAgent.role !== 'system_owner') openQ = openQ.eq('agent_id', currentAgent.id);
+  if (currentAgent && activeRole() !== 'system_owner') openQ = openQ.eq('agent_id', currentAgent.id);
   const { data: opens, error } = await openQ;
   window._dashOpens = (error || !opens) ? [] : opens;
   const el = document.getElementById('dash-opens-count');
@@ -1318,9 +1330,9 @@ function renderDashboard_UNUSED() {
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const firstName = (currentAgent.name || '').split(' ')[0] || 'there';
 
-  const scopeNote = currentAgent.role === 'agent'
+  const scopeNote = activeRole() === 'agent'
     ? `<span style="font-size:13px;color:var(--muted);margin-left:10px;">Your contacts only</span>`
-    : currentAgent.role === 'broker_owner'
+    : activeRole() === 'broker_owner'
     ? `<span style="font-size:13px;color:var(--muted);margin-left:10px;">${currentAgent.agencies?.name || 'Your agency'}</span>`
     : '';
 
@@ -1348,7 +1360,7 @@ function renderDashboard_UNUSED() {
       <button class="qa-btn" onclick="showPage('pipelines')">&#128202; Pipelines</button>
       <button class="qa-btn" onclick="showPage('contacts')">&#128101; All Contacts</button>
       <button class="qa-btn" onclick="syncGoogleContacts()">&#128257; Sync Google</button>
-      ${(currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner') ? `<button class="qa-btn" onclick="showPage('recruiting')">&#128101; Recruiting</button>
+      ${(activeRole() === 'system_owner' || activeRole() === 'broker_owner') ? `<button class="qa-btn" onclick="showPage('recruiting')">&#128101; Recruiting</button>
          <button class="qa-btn" onclick="showPage('system')">&#9881;&#65039; System</button>` : ''}
     </div>
 
@@ -1418,7 +1430,7 @@ function renderDashboard_UNUSED() {
   `;
 }
 
-function switchPreviewRole(role) {
+async function switchPreviewRole(role) {
   previewRole = role;
   // Update tab highlight
   ['owner','agency','agent'].forEach(r => {
@@ -1430,8 +1442,37 @@ function switchPreviewRole(role) {
     btn.style.fontWeight = isActive ? '500' : '400';
   });
   renderSidebarNav();
-  renderDashboard();
+  previewBanner_();
+  // The queries themselves are scoped by role, so the lists have to be fetched
+  // again -- otherwise the menu changes while yesterday's rows sit underneath.
+  await loadData();
+  // Leaving you parked on a page the previewed role has no menu item for is
+  // what made the preview look like it did nothing at all.
+  if (!document.getElementById('nav-' + _currentPage)) showPage('dashboard');
+  else showPage(_currentPage);
   loadNotificationBell();
+}
+
+// Says plainly what the preview does and does not prove, so it is never
+// mistaken for a security test.
+function previewBanner_() {
+  let el = document.getElementById('preview-banner');
+  if (!previewRole || previewRole === currentAgent.role) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'preview-banner';
+    el.style.cssText = 'position:sticky;top:48px;z-index:49;padding:7px 16px;font-size:12px;'
+      + 'background:var(--bg-warning);border-bottom:1px solid var(--border-warning);color:var(--text-warning);'
+      + 'display:flex;gap:10px;align-items:center;';
+    const main = document.querySelector('.crm-main main');
+    if (main && main.parentNode) main.parentNode.insertBefore(el, main);
+  }
+  const label = { broker_owner: 'Broker Owner', agent: 'Agent' }[previewRole] || previewRole;
+  el.innerHTML = '<i class="ti ti-eye"></i><span><strong>Previewing as ' + label + '.</strong> '
+    + 'This shows the menus and screens that role gets. The records are still yours &mdash; '
+    + 'what a real ' + label + ' could actually read is enforced by the database, not by this switch.</span>'
+    + '<button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="switchPreviewRole(currentAgent.role)">'
+    + 'Back to my own view</button>';
 }
 
 function shareBookingLink() { manageBookingTypes(); }
@@ -4742,7 +4783,7 @@ function openAiReviewModal(table, segment, result) {
 async function renderOpens() {
   document.getElementById('page-opens').innerHTML = `<div style="color:var(--muted);font-size:14px;padding:40px;text-align:center;">Loading email opens...</div>`;
   let opensQ = supabaseClient.from('email_opens').select('*').order('opened_at', { ascending: false }).limit(1000);
-  if (currentAgent && currentAgent.role !== 'system_owner') opensQ = opensQ.eq('agent_id', currentAgent.id);
+  if (currentAgent && activeRole() !== 'system_owner') opensQ = opensQ.eq('agent_id', currentAgent.id);
   const { data: opens, error } = await opensQ;
   if (error) { document.getElementById('page-opens').innerHTML = `<div class="empty-state"><div class="emoji">&#9888;&#65039;</div><p>Error loading: ${error.message}</p></div>`; return; }
   const all = opens || [];
@@ -5157,7 +5198,7 @@ const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_sh
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
-  const role = previewRole || currentAgent.role;
+  const role = activeRole();
   const wrap = document.getElementById('notif-bell-wrap');
   // System owners don't use the bell — they manage via dashboard/oversight
   if (role === 'system_owner') {
@@ -5247,7 +5288,7 @@ function _renderNotificationDropdown() {
   if (items.length === 0) {
     html += '<div style="padding:24px 16px;text-align:center;font-size:13px;color:var(--text-muted);">All caught up! 🎉</div>';
   } else {
-    const isAgencyOwner = currentAgent && (previewRole || currentAgent.role) === 'broker_owner';
+    const isAgencyOwner = currentAgent && activeRole() === 'broker_owner';
     html += items.slice(0, 10).map(n => {
       const meta = typeLabel[n.activity_type] || { icon: '🔔', label: n.activity_type, color: '#94a3b8' };
       const cName = n.contact_name || n.contact_id || 'Unknown';
@@ -6384,7 +6425,7 @@ async function renderContacts() {
   const PAGE_SIZE = 100;
   const typeClass  = { 'Group/Employer': 'badge-group', 'Individual/Family': 'badge-individual' };
   const seqClass   = { 'Active': 'badge-active', 'Replied': 'badge-replied', 'Completed': 'badge-completed', 'Drip': 'badge-group', 'Not Started': 'badge-agent' };
-  const showOwnerCol = currentAgent.role !== 'agent';
+  const showOwnerCol = activeRole() !== 'agent';
 
   const typeFilterBtns = ['', ...CONTACT_TYPES].map(t =>
     `<button class="pipeline-tab ${contactTypeFilter === t ? 'active' : ''}" onclick="contactTypeFilter='${t}';contactPage=0;renderContacts();">${t || 'All Types'}</button>`
@@ -6461,8 +6502,8 @@ async function renderContacts() {
 
   // Query Supabase directly — bypasses PostgREST row cap entirely
   let q = supabaseClient.from('contacts').select('*');
-  if (currentAgent.role === 'agent') q = q.eq('agent_id', currentAgent.id);
-  else if (currentAgent.role === 'broker_owner') {
+  if (activeRole() === 'agent') q = q.eq('agent_id', currentAgent.id);
+  else if (activeRole() === 'broker_owner') {
     // Match loadData: query by agent_id IN [...] to catch contacts without agency_id set
     const agencyIds = [...new Set([currentAgent.id, ...allAgents.filter(a => a.agency_id === currentAgent.agency_id).map(a => a.id)])];
     q = q.in('agent_id', agencyIds);
@@ -6594,7 +6635,7 @@ async function renderContacts() {
 function openAddContact() {
   const typeOptions = CONTACT_TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
   // Agent picker for broker owners and the system owner
-  const canAssign = currentAgent.role !== 'agent';
+  const canAssign = activeRole() !== 'agent';
   const agentOptions = canAssign
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===currentAgent.id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
@@ -6702,7 +6743,7 @@ function contactPrefillFor_(contactId) {
 function editContact(id, onSave) {
   const c = contacts.find(x => x.id === id); if (!c) return;
   const typeOptions = CONTACT_TYPES.map(t => `<option value="${t}" ${t===c.type?'selected':''}>${t}</option>`).join('');
-  const canAssign = currentAgent.role !== 'agent';
+  const canAssign = activeRole() !== 'agent';
   const agentOptions = canAssign
     ? allAgents.map(a => `<option value="${a.id}" ${a.id===c.agent_id?'selected':''}>${a.name} — ${a.agencies?.name||'No agency'}</option>`).join('')
     : '';
@@ -7036,7 +7077,7 @@ async function verifyAllEmails() {
 // ADMIN PANEL (system_owner only)
 // ============================================================
 async function renderAdmin() {
-  if (currentAgent.role !== 'system_owner' && currentAgent.role !== 'broker_owner') {
+  if (activeRole() !== 'system_owner' && activeRole() !== 'broker_owner') {
     const denied = '<div class="empty-state"><div class="emoji">&#128274;</div><p>Access denied.</p></div>';
     ['page-admin','page-recruiting','page-system'].forEach(id => {
       const el = document.getElementById(id); if (el) el.innerHTML = denied;
@@ -7480,7 +7521,7 @@ async function renderAdmin() {
     </div>`;
   }).join('');
 
-  const sysOnly = currentAgent.role === 'system_owner';
+  const sysOnly = activeRole() === 'system_owner';
 
   // ---- RECRUITING: bringing people in and getting them active -------------
   const recruitPage = document.getElementById('page-recruiting');
@@ -8171,7 +8212,7 @@ async function renderSettings() {
 
       <div class="dash-card" style="margin-bottom:16px;">
         <div class="dash-card-title"><i class="ti ti-building-bank"></i>My Carrier Appointments</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">The carriers you're contracted with. These drive Scope of Appointment rules and, soon, quoting.${currentAgent.role === 'broker_owner' ? ' Your active appointments also define which carriers the agents in your office can select.' : ''}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">The carriers you're contracted with. These drive Scope of Appointment rules and, soon, quoting.${activeRole() === 'broker_owner' ? ' Your active appointments also define which carriers the agents in your office can select.' : ''}</div>
         ${carrierApptsSummaryHtml_(_myApptsSet)}
         <div style="margin-top:12px;"><button class="btn btn-primary" onclick="openMyCarriers()">Manage my carriers</button></div>
       </div>
@@ -8416,7 +8457,7 @@ async function renderOversight() {
     return a ? a.name : '—';
   }
 
-  var isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner';
+  var isOwner = activeRole() === 'system_owner' || activeRole() === 'broker_owner';
   var FINAL_STAGES = ['Enrolled', 'Active Client', 'Contracted', 'Active Agent'];
 
   // ── EXCEPTION SETS ──
@@ -8617,7 +8658,7 @@ async function renderAppointments() {
   pg.innerHTML = `<div style="color:var(--text-muted);padding:40px;text-align:center;"><i class="ti ti-loader" style="font-size:24px;"></i> Loading...</div>`;
 
   let q = supabaseClient.from('booking_intents').select('*').neq('status','cancelled');
-  const role = previewRole || currentAgent.role;
+  const role = activeRole();
   if (role === 'agent') {
     q = q.eq('agent_id', currentAgent.id);
   } else if (role === 'broker_owner') {
@@ -8927,7 +8968,7 @@ function _calDay() {
     return `<div title="${nameTipDv}" onclick="apptDetail('${a.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${a.id}');event.dataTransfer.effectAllowed='move';" style="position:absolute;left:calc(${a._col}/${a._totalCols}*100% + 4px);width:calc(100%/${a._totalCols} - ${a._totalCols>1?6:8}px);top:${top}px;height:${isAllDay?28:58}px;background:${stc.bg};border-left:4px solid ${stc.border};border-radius:6px;padding:5px 10px;cursor:grab;overflow:hidden;z-index:1;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
       <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${name}${isAllDay?' — All Day':''}</div>
       ${typeDiv}
-      ${agentRow && (previewRole||currentAgent.role)!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
+      ${agentRow && activeRole()!=='agent' ? `<div style="font-size:10px;color:var(--text-muted);">${agentRow.name}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -10435,7 +10476,7 @@ async function transferContact(contactId) {
   const contact = contacts.find(c => c.id === contactId);
   if (!contact) { showToast('Contact not found'); return; }
 
-  const role = previewRole || currentAgent.role;
+  const role = activeRole();
   let eligible;
   if (role === 'system_owner') {
     eligible = allAgents.filter(a => a.id !== currentAgent.id && (a.status === 'active' || !a.status));
@@ -10502,7 +10543,7 @@ const WEB_BRAND_LABELS = { kfg: 'Kannon Financial', ia: 'Insured America', both:
 async function renderWebsite() {
   const pg = document.getElementById('page-website');
   if (!pg) return;
-  const role = previewRole || currentAgent.role;
+  const role = activeRole();
   if (role !== 'system_owner') {
     pg.innerHTML = `<div style="color:var(--muted);padding:40px;text-align:center;">Review moderation is limited to the system owner.</div>`;
     return;
@@ -10807,7 +10848,7 @@ async function unenrollMfa_(factorId) {
 // content gating later — AHIP is only required for Advantage + Part D).
 // System owner always sees everything.
 function medicareCertified_() {
-  const role = previewRole || (currentAgent && currentAgent.role);
+  const role = activeRole();
   if (role === 'system_owner') return true;
   if (!currentAgent) return false;
   const iaSide = currentAgent.brand === 'ia' || currentAgent.brand === 'both';
@@ -12448,7 +12489,7 @@ function openCarrierProductModal(crId, prodId) {
 }
 
 async function openMyCarriers() {
-  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner';
+  const isOwner = activeRole() === 'system_owner' || activeRole() === 'broker_owner';
   const { data: master } = await supabaseClient.from('carriers')
     .select('*').eq('is_active', true).order('name');
   let allowed = master || [];
@@ -12514,7 +12555,7 @@ async function openMyCarriers() {
       }
     }
     showToast('Carrier appointments saved.');
-    if (currentAgent.role === 'agent') renderSettings();
+    if (activeRole() === 'agent') renderSettings();
     else { renderAdmin(); renderSettings(); }
   });
 }
@@ -14478,7 +14519,7 @@ async function openQuoteBuilder(dealId, opts) {
     .select('carrier_id,quoting_url,is_active').eq('agent_id', currentAgent.id).eq('is_active', true);
   window._qbAppts = myAppts || [];        // the pickers read their quoting links from here
   const apptIds = new Set((myAppts || []).map(a => a.carrier_id));
-  const isOwner = currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner';
+  const isOwner = activeRole() === 'system_owner' || activeRole() === 'broker_owner';
   let myCarriers = (master || []).filter(c => apptIds.has(c.id));
   if (!myCarriers.length && isOwner) myCarriers = master || [];
   if (!myCarriers.length) {
