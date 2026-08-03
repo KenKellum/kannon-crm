@@ -374,19 +374,13 @@ async function init() {
     renderPage();
 
     // Pull the contact's company from the database so we can pre-fill it correctly
-    if (preEmail && !preCompany) {
+    // Keyed on the contact id our own link carries, not on the email address.
+    // Looking a contact up by email would answer "is this person one of your
+    // clients" for any email anyone cared to try.
+    if (contactId && !preCompany) {
       try {
-        const cRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_contact_for_booking`, {
-          method: 'POST',
-          headers: {
-            'apikey': SUPABASE_ANON,
-            'Authorization': 'Bearer ' + SUPABASE_ANON,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ p_email: preEmail, p_agent_id: agentId })
-        });
-        const contact = await cRes.json();
-        if (contact && contact.company) preCompany = contact.company;
+        const co = await _rpc('booking_contact_company', { p_contact: contactId, p_agent: agentId });
+        if (co) preCompany = co;
       } catch(e) { /* non-fatal — company field just stays blank */ }
     }
   } catch(e) {

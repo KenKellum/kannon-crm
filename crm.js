@@ -83,6 +83,18 @@ let dialerIndex = 0;
 let totalContactCountFull = 0; // True DB count bypassing 1000-row cap
 let previewRole = null; // system_owner can preview other role views
 
+// Headers that prove who is calling. The anon key says only "some visitor";
+// the session token says which signed-in agent, which is what a paid or
+// data-touching endpoint has to check.
+async function fnHeaders_() {
+  let token = SUPABASE_KEY;
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    if (data && data.session && data.session.access_token) token = data.session.access_token;
+  } catch (e) {}
+  return { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + token };
+}
+
 // The role the interface should behave as. Identical to the real role for
 // everyone except a system owner who has deliberately switched the preview,
 // so using this in place of the real role changes nothing for a real user.
@@ -1700,7 +1712,7 @@ Output ONLY the message body text. No labels, no quotes, just the paragraph(s).`
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      headers: await fnHeaders_(),
       body: JSON.stringify({ message: prompt, context: '', history: [] }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -6964,7 +6976,7 @@ async function verifyContactEmail(id) {
   try {
     const res = await fetch(SUPABASE_URL + '/functions/v1/verify-email', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+      headers: await fnHeaders_(),
       body: JSON.stringify({ email: contact.email, contact_id: id })
     });
     const data = await res.json();
@@ -7034,7 +7046,7 @@ async function verifyAllEmails() {
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
+        headers: await fnHeaders_(),
         body: JSON.stringify({ emails, contact_ids: ids })
       });
       const data = await res.json();
@@ -8035,10 +8047,7 @@ async function sendAIMessage(message) {
       `${SUPABASE_URL}/functions/v1/ai-assistant`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_KEY,
-        },
+        headers: await fnHeaders_(),
         body: JSON.stringify({
           message,
           context: buildCRMContext(),
