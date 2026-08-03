@@ -12459,6 +12459,73 @@ function carrierApptsSummaryHtml_(appts) {
   return act.map(a => `<div style="font-size:13px;padding:4px 0;">&#10003; <strong>${escWeb(a.carriers?.name || '')}</strong>${a.writing_number ? ` <span style="font-size:11px;color:var(--text-muted);">&middot; writing #${escWeb(a.writing_number)}</span>` : ''}</div>`).join('');
 }
 
+// Deleting is refused outright while anything a client has seen points at the
+// plan. Retiring keeps that history readable; deleting would leave a quote
+// referring to something that no longer exists.
+async function productDelete_(crId, prodId) {
+  const p = (window._crProds || []).find(x => x.id === prodId);
+  const name = (p && p.name) || 'this plan';
+
+  const [{ count: onQuotes }, { count: charts }, { count: offices }, { count: docs }] = await Promise.all([
+    supabaseClient.from('quote_options').select('id', { count: 'exact', head: true }).eq('product_id', prodId),
+    supabaseClient.from('rate_charts').select('id', { count: 'exact', head: true }).eq('product_id', prodId),
+    supabaseClient.from('agency_products').select('product_id', { count: 'exact', head: true }).eq('product_id', prodId),
+    supabaseClient.from('product_documents').select('id', { count: 'exact', head: true }).eq('product_id', prodId),
+  ]);
+
+  if (onQuotes) {
+    showModal('This plan is on ' + onQuotes + ' quote' + (onQuotes === 1 ? '' : 's'), `
+      <p style="font-size:13.5px;line-height:1.6;">
+        <strong>${escWeb(name)}</strong> has been put in front of a client
+        ${onQuotes} time${onQuotes === 1 ? '' : 's'}. Deleting it would leave
+        ${onQuotes === 1 ? 'that quote' : 'those quotes'} pointing at something that no longer exists.</p>
+      <p style="font-size:13.5px;line-height:1.6;margin-top:8px;">
+        <strong>Retire it instead.</strong> It stops appearing in the picker, and every quote that
+        already used it still reads correctly.</p>`,
+      null, { hideConfirm: true, cancelLabel: 'Close' });
+    return;
+  }
+
+  const goes = [
+    charts ? charts + ' rate chart' + (charts === 1 ? '' : 's') + ' (and every rate in them)' : '',
+    docs ? docs + ' uploaded document link' + (docs === 1 ? '' : 's') : '',
+    offices ? 'the choice ' + offices + ' office' + (offices === 1 ? '' : 's') + ' made to carry it' : '',
+  ].filter(Boolean);
+
+  showModal('Delete \u201c' + escWeb(name) + '\u201d for good?', `
+    <div style="border:1px solid var(--border-danger);background:var(--bg-danger);border-radius:9px;padding:12px 14px;">
+      <div style="font-weight:800;font-size:13.5px;margin-bottom:5px;">This cannot be undone.</div>
+      <div style="font-size:13px;line-height:1.6;">
+        <strong>${escWeb(name)}</strong> will be removed from the catalogue${goes.length ? ', along with:' : '.'}
+        ${goes.length ? '<ul style="margin:6px 0 0 18px;">' + goes.map(g => '<li>' + escWeb(g) + '</li>').join('') + '</ul>' : ''}
+      </div>
+    </div>
+    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;margin-top:10px;">
+      No client has seen this plan, so nothing they hold will change. If you only want it out of the
+      picker, close this and use <strong>Retire</strong> instead \u2014 that keeps it and its history.</p>
+    <label style="margin-top:10px;">Type the plan name to confirm</label>
+    <input type="text" id="pd-confirm" placeholder="${escWeb(name)}" autocomplete="off" />`,
+  async () => {
+    const typed = ((document.getElementById('pd-confirm') || {}).value || '').trim();
+    if (!pwSameText_(typed, name)) { showToast('That did not match the plan name \u2014 nothing deleted.'); return false; }
+
+    if (charts) {
+      const { data: ch } = await supabaseClient.from('rate_charts').select('id').eq('product_id', prodId);
+      if (ch && ch.length) {
+        await supabaseClient.from('rate_rows').delete().in('chart_id', ch.map(c => c.id));
+        await supabaseClient.from('rate_charts').delete().eq('product_id', prodId);
+      }
+    }
+    if (offices) await supabaseClient.from('agency_products').delete().eq('product_id', prodId);
+    if (docs) await supabaseClient.from('product_documents').update({ product_id: null }).eq('product_id', prodId);
+
+    const { error } = await supabaseClient.from('carrier_products').delete().eq('id', prodId).select('id');
+    if (error) { showToast('Could not delete: ' + error.message); return false; }
+    showToast('Deleted ' + name + '.');
+    openCarrierProducts(crId);
+  }, { confirmLabel: 'Delete for good' });
+}
+
 async function openCarrierProducts(crId) {
   const cr = (window._allCarriers || []).find(x => x.id === crId);
   if (!cr) return;
@@ -12475,6 +12542,9 @@ async function openCarrierProducts(crId) {
       ${p.discontinued_on
         ? `<button class="btn btn-outline btn-sm" onclick="productRetire_('${crId}','${p.id}',false)">Bring back</button>`
         : `<button class="btn btn-outline btn-sm" style="color:var(--text-warning);border-color:var(--border-warning);" onclick="productRetire_('${crId}','${p.id}',true)">Retire</button>`}
+      <button class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);"
+        onclick="productDelete_('${crId}','${p.id}')"
+        title="Delete for good &mdash; refused while any client quote uses it">&#128465;</button>
     </div>`).join('')
     : '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No products yet for this carrier.</div>';
   showModal('Products \u2014 ' + escWeb(cr.name), `
@@ -13377,6 +13447,26 @@ function pwStepSave_() {
     </div>`;
 }
 
+// Same sentence, different spacing or a trailing full stop, is the same sentence.
+function pwSameText_(a, b) {
+  const k = (x) => String(x || '').toLowerCase().replace(/[\s.,;:]+/g, ' ').trim();
+  return k(a) === k(b);
+}
+
+// Keep the first of anything said twice, and drop anything that merely repeats a
+// figure already shown in the benefit rows.
+function pwUnique_(list, alsoShown) {
+  const out = [];
+  (list || []).forEach((item) => {
+    const text = String(item || '').trim();
+    if (!text) return;
+    if (out.some((k) => pwSameText_(k, text))) return;
+    if ((alsoShown || []).some((k) => pwSameText_(k, text))) return;
+    out.push(text);
+  });
+  return out;
+}
+
 async function pwSave_() {
   _pw.busy = true; _pw.error = null; pwPaint_();
   try {
@@ -13410,8 +13500,12 @@ async function pwSave_() {
       notes: p.summary || null,
       metadata: {
         // bullets and limitations are consumer-facing: they reach the quote card.
-        bullets: p.key_benefits || [],
-        limitations: [].concat(p.limitations || [], shared.limitations || []),
+        // A benefit already shown as its own row must not appear again as a
+        // selling point, and a limitation stated on the plan must not repeat the
+        // shared one word for word.
+        bullets: pwUnique_(p.key_benefits,
+          Object.values(p.benefits || {}).map(b => (b && b.value) || '')),
+        limitations: pwUnique_([].concat(p.limitations || [], shared.limitations || [])),
         // This half came out of documents the carrier says are not for consumers.
         // It is for the agent and must never be rendered to a client.
         agent_only: proposal.agent_only || null,
@@ -13419,8 +13513,8 @@ async function pwSave_() {
           filename: d.filename, what_it_is: d.what_it_is,
           internal_use_only: !!d.internal_use_only, states: d.states_it_covers || null,
         })),
-        eligibility: shared.eligibility || [],
-        compliance_notes: shared.compliance_notes || [],
+        eligibility: pwUnique_(shared.eligibility),
+        compliance_notes: pwUnique_(shared.compliance_notes),
         dimensions: p.dimensions || {},
         facts: p.facts || {},
         benefits: p.benefits || null,
