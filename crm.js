@@ -15290,6 +15290,10 @@ function kenaiShow_(d) {
         everything below is a comparison against an incomplete shortlist until you do.
       </div>` : ''}
 
+      ${(d.tobacco && !d.tobacco.any_user) ? `<div style="font-size:11.5px;color:var(--text-warning);margin-top:8px;line-height:1.6;">
+        <strong>Tobacco:</strong> ${escWeb(d.tobacco.note)}</div>` : ''}
+      ${(d.tobacco && d.tobacco.any_user) ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">
+        <strong>Tobacco:</strong> ${escWeb(d.tobacco.note)}</div>` : ''}
       ${d.subsidy_cliff ? `<div class="pk-bar warn" style="margin-top:12px;border-radius:9px;border:2px solid var(--danger);font-size:12.5px;line-height:1.65;">
         <div style="font-weight:800;font-size:13.5px;color:var(--text-warning);">\u26a0 Two different incomes are on file, and they give completely different answers.</div>
         <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:7px;">
