@@ -2796,6 +2796,8 @@ const INTAKE_FIELD_DEFS = {
   employer_plan_available:{ label: 'Employer Plan Available?', type: 'select', section: 'Current Coverage',
                             options: ['Yes','No'] },
   coverage_start_date:   { label: 'Desired Start Date',     type: 'date',   section: 'Coverage Needs' },
+  coverage_intent:       { label: 'Why they are looking (their words)', type: 'textarea', section: 'Coverage Needs' },
+  coverage_goals:        { label: 'What good looks like (their words)',  type: 'textarea', section: 'Coverage Needs' },
   care_frequency:        { label: 'Doctor visits in a year',  type: 'select', section: 'Coverage Needs',
                            options: ['Hardly ever','A few times a year','Monthly or more','Ongoing treatment'] },
   planned_care:          { label: 'Planned in next 12 months',type: 'select', section: 'Coverage Needs',
@@ -2863,7 +2865,8 @@ const INTAKE_TYPE_DEFAULTS = {
   'health-individual':['dob','zip','best_time','household_members','aca_income',
                        'currently_insured','current_carrier','current_premium',
                        'employer_plan_available','coverage_start_date','health_priority',
-                       'coverage_duration','care_frequency','planned_care','affordable_shock',
+                       'coverage_duration','coverage_intent','coverage_goals',
+                       'care_frequency','planned_care','affordable_shock',
                        'essential_meds','ongoing_condition','preexisting_conditions',
                        'aca_ichra_offer','aca_ichra_amount',
                        'aca_qle','aca_qle_date','aca_lawful',
@@ -2901,6 +2904,7 @@ const INTAKE_ALL_FIELDS = [
   { section: 'Current Coverage',ids: ['currently_insured','current_carrier','current_premium',
                                        'employer_plan_available','has_current_plan','current_group_carrier'] },
   { section: 'Coverage Needs',  ids: ['coverage_start_date','health_priority','coverage_duration',
+                                       'coverage_intent','coverage_goals',
                                        'care_frequency','planned_care','affordable_shock','essential_meds',
                                        'ongoing_condition','preexisting_conditions','group_start_date',
                                        'cov_medical','cov_dental','cov_vision','cov_life','cov_disability'] },
@@ -3215,7 +3219,8 @@ function _intakeRenderForm() {
       const def = INTAKE_FIELD_DEFS[id];
       const isWide = def.type === 'textarea'
         || ['notes_financial','notes_health','notes_group','notes_career',
-            'why_interested','member_ages','dependents_ages'].includes(id);
+            'why_interested','member_ages','dependents_ages',
+            'coverage_intent','coverage_goals'].includes(id);
       html += `<div style="${isWide ? 'grid-column:1/-1;' : ''}">` +
               _intakeRenderField(id, def, prefill[id] || '') + '</div>';
     }
@@ -15099,6 +15104,10 @@ async function askKenai_() {
           hsa: !!p.hsa_eligible, type: p.type || null,
         })),
         aca_year: window._qbAcaYear || null,
+        county_fips: (() => {
+          const el = document.getElementById('qb-aca-county');
+          return (el && el.value) ? el.value.split('|')[0] : null;
+        })(),
       }),
     });
     const data = await res.json();
@@ -15109,6 +15118,19 @@ async function askKenai_() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '\u{1F9E0} Ask Ken.ai'; }
   }
+}
+
+async function kenaiSetCounty_(fips, name) {
+  const c = window._qbContact;
+  if (!c) return;
+  const { error } = await supabaseClient.from('contacts')
+    .update({ aca_county_fips: fips, aca_county_name: name }).eq('id', c.id);
+  if (error) { showToast('Could not save the county: ' + error.message, 6000); return; }
+  c.aca_county_fips = fips; c.aca_county_name = name;
+  showToast(name + ' saved for ' + (c.name || 'this client') + '. Asking again\u2026');
+  const ov = document.getElementById('kenai-overlay');
+  if (ov) ov.remove();
+  askKenai_();
 }
 
 function kenaiShow_(d) {
@@ -15165,6 +15187,15 @@ function kenaiShow_(d) {
         </div>` : ''}
       </div>` : ''}
 
+      ${(d.county_ask && (d.county_ask.options || []).length > 1) ? `<div class="pk-bar warn" style="margin-top:10px;border-radius:9px;border:1px solid;font-size:12.5px;line-height:1.6;">
+        <strong>Which county are they in?</strong> ZIP ${escWeb(String(d.county_ask.zip || ''))} covers more than one and the prices are not the same.
+        Pick it once and it is remembered for this client.
+        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${(d.county_ask.options || []).map(o => `<button type="button" class="btn btn-sm ${o.fips === d.county_ask.chosen ? 'btn-primary' : 'btn-outline'}"
+            style="font-size:11px;padding:2px 9px;"
+            onclick="kenaiSetCounty_('${escWeb(o.fips)}', '${escWeb((o.name || '').replace(/'/g, ''))}')">${escWeb(o.name || o.fips)}</button>`).join('')}
+        </div>
+      </div>` : ''}
       ${(d.aca_considered && !d.aca_fetched) ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
         Includes ${d.aca_considered} Marketplace plan${d.aca_considered === 1 ? '' : 's'} at their real subsidised price.</div>` : ''}
       ${d.note ? `<div class="pk-bar muted" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12.5px;">${escWeb(d.note)}</div>` : ''}
@@ -18788,11 +18819,16 @@ async function qbAcaGetPlans_() {
     window._qbAcaYear = data.year;
     window._qbAcaFamilyQuote = (data.applicant_count != null ? data.applicant_count : people.filter(m => m.applying).length) > 1;
     window._qbAcaCsr = data.csr || null;
-    if (!c.state && county.split('|')[1]) {
-      const st2 = county.split('|')[1];
-      supabaseClient.from('contacts').update({ state: st2 }).eq('id', c.id)
-        .then(() => { c.state = st2; }, () => {});
-    }
+    const _cySel = document.getElementById('qb-aca-county');
+    const _cyName = (_cySel && _cySel.options[_cySel.selectedIndex]) ? _cySel.options[_cySel.selectedIndex].text : null;
+    const _cyPatch = { aca_county_fips: county.split('|')[0], aca_county_name: _cyName };
+    if (!c.state && county.split('|')[1]) _cyPatch.state = county.split('|')[1];
+    supabaseClient.from('contacts').update(_cyPatch).eq('id', c.id)
+      .then(() => {
+        c.aca_county_fips = _cyPatch.aca_county_fips;
+        c.aca_county_name = _cyPatch.aca_county_name;
+        if (_cyPatch.state) c.state = _cyPatch.state;
+      }, () => {});
     window._qbAcaMedicaid = !!data.medicaid_chip;
     window._qbAcaAptc = (data.aptc != null) ? data.aptc : null;
     qbAcaSyncIncomeToIntake_(income);
