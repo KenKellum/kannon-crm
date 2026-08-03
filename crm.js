@@ -126,7 +126,7 @@ async function fnHeaders_() {
 // the database. The signed-in person is still themselves, so the rows they can
 // reach are still their own. Separation between offices is enforced by row
 // level security, which no amount of switching in the browser can move.
-function activeRole() { return activeRole(); }
+function activeRole() { return previewRole || (currentAgent && currentAgent.role); }
 let calView = 'month';  // 'month' | 'week' | 'day'
 let calDate = new Date();
 let calAppointments = [];
