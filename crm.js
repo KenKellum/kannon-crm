@@ -15148,12 +15148,24 @@ function kenaiShow_(d) {
       </div>` : ''}
 
       ${d.aca_missing ? `<div class="pk-bar warn" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12.5px;line-height:1.6;">
-        <strong>This client can buy a Marketplace plan, and none were looked at.</strong>
+        <strong>This client can buy a Marketplace plan, and none could be priced.</strong>
+        ${d.aca_blocked ? '<br>' + escWeb(d.aca_blocked) : ''}
         Marketplace plans cover pre-existing conditions, prescriptions and maternity by law, and with a
-        subsidy one is often cheaper as well. Run the ACA quote for them, then ask Ken.ai again \u2014
+        subsidy one is often cheaper as well. Fix the above or run the ACA quote by hand, then ask again \u2014
         everything below is a comparison against an incomplete shortlist until you do.
       </div>` : ''}
-      ${d.aca_considered ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
+
+      ${d.aca_fetched ? `<div class="pk-bar" style="margin-top:12px;border-radius:9px;border:1px solid var(--border);font-size:12.5px;line-height:1.6;">
+        <strong>Ken.ai pulled ${d.aca_fetched} Marketplace plan${d.aca_fetched === 1 ? '' : 's'} from healthcare.gov itself${(d.aca && d.aca.year) ? ' for ' + escWeb(String(d.aca.year)) : ''}.</strong>
+        Prices shown are AFTER the tax credit${(d.aca && d.aca.aptc) ? ' (estimated at $' + Number(d.aca.aptc).toFixed(0) + '/mo)' : ''}${(d.aca && d.aca.csr && !/none/i.test(String(d.aca.csr))) ? ', with extra Silver savings' : ''}.
+        ${(d.aca && d.aca.total_available) ? '<span style="color:var(--text-muted);">Cheapest few of each metal level, out of ' + d.aca.total_available + ' available.</span>' : ''}
+        ${(d.aca_assumptions || []).length ? `<div style="margin-top:7px;padding-top:7px;border-top:1px solid var(--border);">
+          <strong style="color:var(--text-warning);">Check these before you quote the price:</strong>
+          ${(d.aca_assumptions || []).map(a => '<div style="margin-top:3px;">\u2022 ' + escWeb(a) + '</div>').join('')}
+        </div>` : ''}
+      </div>` : ''}
+
+      ${(d.aca_considered && !d.aca_fetched) ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
         Includes ${d.aca_considered} Marketplace plan${d.aca_considered === 1 ? '' : 's'} at their real subsidised price.</div>` : ''}
       ${d.note ? `<div class="pk-bar muted" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12.5px;">${escWeb(d.note)}</div>` : ''}
 
@@ -15170,6 +15182,11 @@ function kenaiShow_(d) {
               <span style="color:var(--text-muted);">\u00b7 ${escWeb(pl.carrier || '')} \u00b7 ${escWeb(pl.role || pl.line || '')}</span>
               ${pl.option ? '<span style="color:var(--text-secondary);"> \u2014 ' + escWeb(pl.option) + '</span>' : ''}
               ${pl.monthly_premium != null ? '<span style="color:var(--text-success);"> \u00b7 ' + money(pl.monthly_premium) + '/mo</span>' : ''}
+              ${(pl.deductible != null || pl.out_of_pocket_max != null) ? '<div style="font-size:11.5px;color:var(--text-muted);padding-left:2px;">'
+                + (pl.deductible != null ? money(pl.deductible) + ' deductible' : '')
+                + (pl.deductible != null && pl.out_of_pocket_max != null ? ' \u00b7 ' : '')
+                + (pl.out_of_pocket_max != null ? 'most they could pay in a year ' + money(pl.out_of_pocket_max) : '')
+                + '</div>' : ''}
             </div>`).join('')}
           </div>
           <div style="font-size:12.5px;color:var(--text-secondary);line-height:1.6;margin-top:7px;">${escWeb(p.why || '')}</div>
