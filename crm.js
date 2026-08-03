@@ -12676,6 +12676,7 @@ function openProductWizard_() {
 }
 
 async function pwLoad_() {
+  pwFindResumable_().then(r => { if (_pw) { _pw.resumable = r; if (_pw.step === 0) pwPaint_(); } });
   const [co, ca] = await Promise.all([
     supabaseClient.from('companies').select('id,name,slug').order('name'),
     supabaseClient.from('carriers').select('id,name,brand,is_active').eq('is_active', true).order('name'),
@@ -12722,7 +12723,19 @@ const pwErr_ = () => _pw.error
 
 // ------------------------------------------------------------------ 0. mode
 function pwStepMode_() {
-  return `<p style="font-size:13.5px;margin-bottom:14px;">What would you like to do?</p>
+  const r = _pw.resumable;
+  const waiting = r ? `
+    <div style="border:1px solid var(--border-selected);background:var(--bg-selected-card);border-radius:11px;
+      padding:13px 16px;margin-bottom:14px;">
+      <div style="font-weight:800;font-size:14px;margin-bottom:3px;">Pick up where you left off</div>
+      <div style="font-size:12.5px;color:var(--text-secondary);line-height:1.5;margin-bottom:9px;">
+        ${escWeb(r.filename || 'A document')} was read ${pwWhenAgo_(r.created_at)} \u2014
+        ${r.plans} plan${r.plans === 1 ? '' : 's'} found${r.questions ? ', ' + r.questions + ' question' + (r.questions === 1 ? '' : 's') + ' waiting for you' : ''}.
+        Reading it again costs the same as the first time, so carry on with this one unless something changed.
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="pwResume_('${r.id}')">Carry on with that reading</button>
+    </div>` : '';
+  return waiting + `<p style="font-size:13.5px;margin-bottom:14px;">${r ? 'Or start something new:' : 'What would you like to do?'}</p>
     ${PW_MODES.map(([key, title, blurb]) => `
       <button type="button" onclick="pwSetMode_('${key}')" style="display:block;width:100%;text-align:left;
         background:var(--surface-1);border:1px solid var(--border);border-radius:11px;padding:13px 16px;margin-bottom:9px;cursor:pointer;font:inherit;">
@@ -12732,6 +12745,64 @@ function pwStepMode_() {
 }
 
 function pwSetMode_(m) { _pw.mode = m; pwStep_(1); }
+
+function pwWhenAgo_(iso) {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' minute' + (mins === 1 ? '' : 's') + ' ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + ' hour' + (hrs === 1 ? '' : 's') + ' ago';
+  return new Date(iso).toLocaleDateString();
+}
+
+// Anything read in the last two days that nobody has approved or thrown away yet.
+async function pwFindResumable_() {
+  try {
+    const since = new Date(Date.now() - 2 * 86400000).toISOString();
+    const { data } = await supabaseClient.from('extraction_runs')
+      .select('id,status,created_at,proposal,findings,document_id')
+      .in('status', ['needs_answers', 'needs_review'])
+      .gte('created_at', since)
+      .order('created_at', { ascending: false }).limit(1);
+    const run = data && data[0];
+    if (!run) return null;
+    const plans = (((run.proposal || {}).products) || []).length;
+    if (!plans) return null;
+    let filename = '';
+    if (run.document_id) {
+      const { data: d } = await supabaseClient.from('product_documents')
+        .select('filename').eq('id', run.document_id).maybeSingle();
+      filename = (d || {}).filename || '';
+    }
+    return { id: run.id, created_at: run.created_at, filename, plans,
+             questions: (((run.proposal || {}).questions) || []).length };
+  } catch (e) { return null; }
+}
+
+async function pwResume_(runId) {
+  _pw.busy = true; _pw.error = null; pwPaint_();
+  try {
+    const { data: run } = await supabaseClient.from('extraction_runs')
+      .select('*').eq('id', runId).single();
+    if (!run) throw new Error('That reading is no longer on file.');
+    const f = run.findings || {};
+    _pw.run = run;
+    _pw.mode = f.mode || 'add';
+    _pw.hint = f.hint || '';
+    _pw.docs = f.document_ids || (run.document_id ? [run.document_id] : []);
+    _pw.chosen = {};
+    (((run.proposal || {}).products) || []).forEach((_, i) => { _pw.chosen[i] = true; });
+    if (run.document_id) {
+      const { data: d } = await supabaseClient.from('product_documents')
+        .select('carrier_id').eq('id', run.document_id).maybeSingle();
+      if (d && d.carrier_id) _pw.carrierId = d.carrier_id;
+    }
+    _pw.busy = false;
+    pwStep_(run.status === 'needs_answers' ? 3 : 4);
+  } catch (e) {
+    _pw.busy = false; _pw.error = e.message || String(e); pwPaint_();
+  }
+}
 
 // --------------------------------------------------------------- 1. carrier
 function pwStepCarrier_() {
