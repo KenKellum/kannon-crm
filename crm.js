@@ -24,6 +24,29 @@ window.addEventListener('unhandledrejection', function(e) {
 
 const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
 const GMAIL_SCOPES = 'https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/contacts';
+
+// The Apps Script sends mail through an agent's own Gmail and spends our
+// Marketplace API quota, so it has to know which agent is asking. There are two
+// dozen call sites and more will be added over time; attaching the session token
+// at each one means eventually forgetting at one of them. It is attached here
+// instead, for anything addressed to that script, so no call can leave without it.
+(function attachAgentTokenToAppsScript_() {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = async function (input, init) {
+    try {
+      const href = typeof input === 'string' ? input : (input && input.url) || '';
+      if (href.indexOf(APPS_SCRIPT_URL) === 0 && href.indexOf('tok=') === -1 && supabaseClient) {
+        const { data } = await supabaseClient.auth.getSession();
+        const t = data && data.session && data.session.access_token;
+        if (t) {
+          const withTok = href + (href.indexOf('?') === -1 ? '?' : '&') + 'tok=' + encodeURIComponent(t);
+          input = typeof input === 'string' ? withTok : new Request(withTok, input);
+        }
+      }
+    } catch (e) { /* never block the call on this */ }
+    return _fetch(input, init);
+  };
+})();
 const PIPELINES = {
   'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
