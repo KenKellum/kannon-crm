@@ -118,11 +118,12 @@ function fmt(d) { return d ? new Date(d).toLocaleString('en-US', { dateStyle: 'l
 async function init() {
   baaId = new URLSearchParams(location.search).get('b');
   if (!baaId) { show('error-screen'); return; }
-  const rows = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(baaId) + '&select=*', { method: 'GET' });
-  rec = rows && rows[0];
+  const loaded = await supa('/rest/v1/rpc/baa_load', {
+    method: 'POST', body: JSON.stringify({ p_baa: baaId })
+  });
+  rec = loaded && loaded.record;
   if (!rec) { show('error-screen'); return; }
-  const vers = await supa('/rest/v1/baa_versions?id=eq.' + encodeURIComponent(rec.baa_version_id) + '&select=*', { method: 'GET' });
-  ver = vers && vers[0];
+  ver = loaded.version;
   if (!ver) { show('error-screen'); return; }
 
   if (rec.status === 'signed') {
@@ -163,17 +164,11 @@ async function sign() {
   const btn = document.getElementById('sign-btn');
   btn.disabled = true; btn.textContent = 'Signing…';
   // company name travels via signer fields; the record's company field is set at request time by the agent
-  const ok = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(baaId) + '&status=eq.pending', {
-    method: 'PATCH',
+  const ok = await supa('/rest/v1/rpc/baa_sign', {
+    method: 'POST',
     body: JSON.stringify({
-      status: 'signed',
-      signed_at: new Date().toISOString(),
-      company_legal_name: company,
-      signer_name: name,
-      signer_title: title,
-      signer_email: email,
-      signer_attestation: true,
-      signer_user_agent: (navigator.userAgent || '').slice(0, 300)
+      p_baa: baaId, p_company: company, p_name: name, p_title: title,
+      p_email: email, p_user_agent: (navigator.userAgent || '').slice(0, 300)
     })
   });
   if (ok) { show('done'); }

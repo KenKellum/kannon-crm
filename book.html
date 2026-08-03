@@ -357,22 +357,13 @@ async function init() {
   if (!agentId) { showError('Invalid booking link — no agent specified.'); return; }
 
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/agents?id=eq.${agentId}&select=id,name,booking_types,phone,office_address,meeting_link`,
-      { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
-    );
-    const rows = await res.json();
-    if (!rows || rows.length === 0) { showError('Booking page not found.'); return; }
-    agent = rows[0];
+    agent = await _rpc('booking_agent', { p_agent: agentId });
+    if (!agent || !agent.id) { showError('Booking page not found.'); return; }
 
     // Arriving from a quote link: pull their details from the quote record (no PII in the URL)
     if (quoteId && !preName) {
       try {
-        const qRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/quotes?id=eq.${encodeURIComponent(quoteId)}&select=client_name,client_email,contact_id`,
-          { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
-        );
-        const qRows = await qRes.json();
+        const qRows = [await _rpc('booking_quote_prefill', { p_quote: quoteId })].filter(Boolean);
         if (qRows && qRows.length) {
           preName = qRows[0].client_name || preName;
           preEmail = qRows[0].client_email || preEmail;
@@ -521,47 +512,11 @@ async function submitAndBook() {
   let resolvedContactId = contactId || null;
   try {
     // Check if contact already exists for this agent
-    const checkRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/contacts?email=eq.${encodeURIComponent(visitorEmail)}&agent_id=eq.${agent.id}&select=id,sequence_status`,
-      { headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON } }
-    );
-    const existing = await checkRes.json();
-
-    if (existing && existing.length > 0) {
-      // Contact exists — bump to Replied so they exit cold sequences
-      resolvedContactId = existing[0].id;
-      if (existing[0].sequence_status !== 'Replied' && existing[0].sequence_status !== 'Closed') {
-        await fetch(`${SUPABASE_URL}/rest/v1/contacts?id=eq.${resolvedContactId}`, {
-          method: 'PATCH',
-          headers: {
-            'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
-            'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-          },
-          body: JSON.stringify({ sequence_status: 'Replied' })
-        });
-      }
-    } else {
-      // New contact — create at Replied level so they skip cold sequences
-      const contactType = (selectedType && selectedType.context === 'recruit') ? 'Recruit' : 'Individual & Family';
-      const createRes = await fetch(`${SUPABASE_URL}/rest/v1/contacts`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
-          'Content-Type': 'application/json', 'Prefer': 'return=representation'
-        },
-        body: JSON.stringify({
-          name:             visitorName,
-          email:            visitorEmail,
-          company:          company || null,
-          agent_id:         agent.id,
-          contact_type:     contactType,
-          sequence_status:  'Replied',
-          notes:            note ? `Booked via booking page. Note: ${note}` : 'Booked via booking page.'
-        })
-      });
-      const created = await createRes.json();
-      if (created && created.length > 0) resolvedContactId = created[0].id;
-    }
+    const contactType = (selectedType && selectedType.context === 'recruit') ? 'Recruit' : 'Individual & Family';
+    resolvedContactId = await _rpc('booking_upsert_contact', {
+      p_agent: agent.id, p_email: visitorEmail, p_name: visitorName,
+      p_company: company || null, p_note: note || null, p_contact_type: contactType
+    });
   } catch(e) {
     // Don't block redirect on contact errors — log and continue
     console.error('Contact upsert error:', e);
@@ -592,6 +547,18 @@ async function submitAndBook() {
   await new Promise(r => setTimeout(r, 400));
   window.location.href = selectedType.link;
 }
+
+const _rpc = async (fn, args) => {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON,
+               'Content-Type': 'application/json' },
+    body: JSON.stringify(args)
+  });
+  if (!r.ok) return null;
+  const t = await r.text();
+  try { return JSON.parse(t); } catch (e) { return null; }
+};
 
 // ── Error state ───────────────────────────────────────────
 function showError(msg) {

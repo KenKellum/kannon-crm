@@ -1148,15 +1148,10 @@ async function sendPicks() {
   const btn = document.getElementById('bar-send');
   btn.disabled = true; btn.textContent = 'Sending…';
   const ids = [...discussSet];
-  let ok = true;
-  for (const id of ids) {
-    const r = await supa('/rest/v1/quote_options?id=eq.' + encodeURIComponent(id), {
-      method: 'PATCH', body: JSON.stringify({ client_selected_at: new Date().toISOString() })
-    });
-    ok = ok && r;
-  }
-  await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&status=in.(sent,viewed)', {
-    method: 'PATCH', body: JSON.stringify({ status: 'interested' })
+  // One call instead of one per option. The server checks each option really
+  // belongs to this quote, so naming someone else's option ids does nothing.
+  const ok = await supa('/rest/v1/rpc/quote_mark_interested', {
+    method: 'POST', body: JSON.stringify({ p_quote: qid, p_option_ids: ids })
   });
   try {
     fetch(APPS_SCRIPT_URL + '?action=quote_interested&quote_id=' + qid
@@ -1180,13 +1175,13 @@ async function sendPicks() {
 async function init() {
   qid = new URLSearchParams(location.search).get('q');
   if (!qid) { showErr(); return; }
-  const rows = await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid)
-    + '&select=id,client_name,line,brand,status,valid_until,viewed_at,agent_name,agent_email,agent_phone,agent_booking_url,quote_inputs', { method: 'GET' });
-  quote = rows && rows[0];
+  const loaded = await supa('/rest/v1/rpc/quote_load', {
+    method: 'POST', body: JSON.stringify({ p_quote: qid })
+  });
+  quote = loaded && loaded.quote;
   if (!quote) { showErr(); return; }
   if (quote.valid_until && new Date(quote.valid_until + 'T23:59:59') < new Date()) { showExpired(); return; }
-  allOpts = await supa('/rest/v1/quote_options?quote_id=eq.' + encodeURIComponent(qid)
-    + '&select=*&order=sort_order.asc', { method: 'GET' }) || [];
+  allOpts = (loaded && loaded.options) || [];
   if (!allOpts.length) { showErr(); return; }
 
   setBrand(quote.brand);
@@ -1249,9 +1244,8 @@ async function init() {
   document.getElementById('quote-view').style.display = 'block';
 
   if (!quote.viewed_at) {
-    supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&status=eq.sent', {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'viewed', viewed_at: new Date().toISOString() })
+    supa('/rest/v1/rpc/quote_mark_viewed', {
+      method: 'POST', body: JSON.stringify({ p_quote: qid })
     });
   }
 }
@@ -1264,8 +1258,8 @@ function showErr() {
 async function requestRefresh() {
   const btn = document.getElementById('refresh-btn');
   btn.disabled = true; btn.textContent = 'Sending…';
-  const ok = await supa('/rest/v1/quotes?id=eq.' + encodeURIComponent(qid) + '&refresh_requested_at=is.null', {
-    method: 'PATCH', body: JSON.stringify({ refresh_requested_at: new Date().toISOString() })
+  const ok = await supa('/rest/v1/rpc/quote_request_refresh', {
+    method: 'POST', body: JSON.stringify({ p_quote: qid })
   });
   const done = document.getElementById('refresh-done');
   done.style.display = 'block';

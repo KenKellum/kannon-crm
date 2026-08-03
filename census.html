@@ -363,8 +363,11 @@ function downloadTemplate() {
 async function init() {
   reqId = new URLSearchParams(location.search).get('c');
   if (!reqId) { show('error-screen'); return; }
-  const rows = await supa('/rest/v1/census_requests?id=eq.' + encodeURIComponent(reqId) + '&select=*', { method: 'GET' });
-  req = rows && rows[0];
+  const _loaded = await supa('/rest/v1/rpc/census_load', {
+    method: 'POST', body: JSON.stringify({ p_request: reqId })
+  });
+  req = _loaded && _loaded.request;
+  const _baa = _loaded && _loaded.baa;
   if (!req) { show('error-screen'); return; }
   if (req.status === 'submitted') {
     document.getElementById('already-sub').textContent =
@@ -380,8 +383,7 @@ async function init() {
 
   // HIPAA BAA gate: if this request carries an unsigned agreement, it becomes Step 2
   if (req.baa_record_id) {
-    const brows = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(req.baa_record_id) + '&select=id,status', { method: 'GET' });
-    const baa = brows && brows[0];
+    const baa = _baa;
     if (baa && baa.status === 'pending') {
       const url = 'baa.html?b=' + baa.id;
       document.getElementById('baa-step').style.display = 'block';
@@ -390,8 +392,10 @@ async function init() {
       document.getElementById('census-step-label').textContent = 'STEP 3 — EMPLOYEE CENSUS';
       // Watch for the signature and flip the step to "done" automatically
       const watcher = setInterval(async () => {
-        const chk = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(baa.id) + '&select=status', { method: 'GET' });
-        if (chk && chk[0] && chk[0].status === 'signed') {
+        const chk = await supa('/rest/v1/rpc/baa_status', {
+          method: 'POST', body: JSON.stringify({ p_baa: baa.id })
+        });
+        if (chk === 'signed') {
           clearInterval(watcher);
           document.getElementById('baa-step').innerHTML =
             '<h2><span class="step-badge" style="background:#16a34a;">STEP 2 — HIPAA AGREEMENT &#10003;</span></h2>'
@@ -408,8 +412,8 @@ async function init() {
     document.getElementById(id).addEventListener('change', function() {
       const patch = {};
       patch[persistMap[id]] = this.value.trim() || null;
-      supa('/rest/v1/census_requests?id=eq.' + encodeURIComponent(reqId) + '&status=eq.pending', {
-        method: 'PATCH', body: JSON.stringify(patch)
+      supa('/rest/v1/rpc/census_save_draft', {
+        method: 'POST', body: JSON.stringify({ p_request: reqId, p_patch: patch })
       });
     });
   }
@@ -469,8 +473,10 @@ async function submitCensus() {
   }
   // HIPAA gate: the census cannot be received without a signed BAA
   if (req.baa_record_id) {
-    const brows = await supa('/rest/v1/baa_records?id=eq.' + encodeURIComponent(req.baa_record_id) + '&select=status', { method: 'GET' });
-    if (!brows || !brows[0] || brows[0].status !== 'signed') {
+    const _st = await supa('/rest/v1/rpc/baa_status', {
+      method: 'POST', body: JSON.stringify({ p_baa: req.baa_record_id })
+    });
+    if (_st !== 'signed') {
       err.textContent = 'Please sign the HIPAA agreement (Step 2) first — federal law requires it before we can receive your census.';
       err.style.display = 'block';
       document.getElementById('baa-step').scrollIntoView({ behavior: 'smooth' });
@@ -520,29 +526,27 @@ async function submitCensus() {
     };
   });
 
-  await supa('/rest/v1/census_employees?request_id=eq.' + encodeURIComponent(reqId), { method: 'DELETE' });
-  const ok1 = await supa('/rest/v1/census_employees', { method: 'POST', body: JSON.stringify(payload) });
-  if (!ok1) {
-    btn.disabled = false; btn.textContent = 'Send census to my advisor';
-    err.textContent = 'Something went wrong saving the census — please try again.'; err.style.display = 'block';
-    return;
-  }
-  const ok2 = await supa('/rest/v1/census_requests?id=eq.' + encodeURIComponent(reqId) + '&status=eq.pending', {
-    method: 'PATCH',
+  // Replacing the roster and marking the census sent now happen together. If
+  // anything fails the whole thing rolls back, so a half-finished submit can no
+  // longer leave the employee list wiped.
+  const ok2 = await supa('/rest/v1/rpc/census_submit', {
+    method: 'POST',
     body: JSON.stringify({
-      company_legal_name: document.getElementById('c-legal').value.trim(),
-      company_dba: document.getElementById('c-dba').value.trim() || null,
-      sic_code: document.getElementById('c-sic').value.trim() || null,
-      company_street: document.getElementById('c-street').value.trim() || null,
-      company_city: document.getElementById('c-city').value.trim() || null,
-      company_state: document.getElementById('c-state').value.trim().toUpperCase(),
-      company_zip: document.getElementById('c-zip').value.trim(),
-      contact_name: document.getElementById('c-cname').value.trim(),
-      contact_title: document.getElementById('c-ctitle').value.trim() || null,
-      contact_phone: document.getElementById('c-cphone').value.trim(),
-      contact_email: document.getElementById('c-cemail').value.trim(),
-      status: 'submitted',
-      submitted_at: new Date().toISOString(),
+      p_request: reqId,
+      p_employees: payload,
+      p_company: {
+        company_legal_name: document.getElementById('c-legal').value.trim(),
+        company_dba: document.getElementById('c-dba').value.trim() || null,
+        sic_code: document.getElementById('c-sic').value.trim() || null,
+        company_street: document.getElementById('c-street').value.trim() || null,
+        company_city: document.getElementById('c-city').value.trim() || null,
+        company_state: document.getElementById('c-state').value.trim().toUpperCase(),
+        company_zip: document.getElementById('c-zip').value.trim(),
+        contact_name: document.getElementById('c-cname').value.trim(),
+        contact_title: document.getElementById('c-ctitle').value.trim() || null,
+        contact_phone: document.getElementById('c-cphone').value.trim(),
+        contact_email: document.getElementById('c-cemail').value.trim(),
+      }
     })
   });
   if (!ok2) {
