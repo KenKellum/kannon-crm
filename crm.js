@@ -23,7 +23,10 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 const APPS_SCRIPT_URL        = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
-const GMAIL_SCOPES = 'https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/contacts';
+// userinfo.email is here so the callback can ask Google WHICH account just
+// approved, and refuse if it is not the agent the link names. Without it the
+// connection would be pointed at anyone whose agent id was known.
+const GMAIL_SCOPES = 'https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/contacts https://www.googleapis.com/auth/userinfo.email';
 
 // The Apps Script sends mail through an agent's own Gmail and spends our
 // Marketplace API quota, so it has to know which agent is asking. There are two
