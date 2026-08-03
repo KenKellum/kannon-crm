@@ -15095,15 +15095,26 @@ async function askKenai_() {
       body: JSON.stringify({
         contact_id: contact.id,
         quote_id: window._qbQuoteId || null,
+        // These are plans the ACA picker already pulled, and they are stored in
+        // the shape the Apps Script normalises them to - `net` (after the tax
+        // credit), `metal`, `hsa`. Reading healthcare.gov's own raw field names
+        // here (premium_w_credit / metal_level / hsa_eligible) found nothing and
+        // silently fell back to the FULL premium, so Ken.ai spent its whole
+        // answer reasoning about prices no client would ever pay.
         aca_plans: (window._qbAcaPlans || []).slice(0, 60).map(p => ({
-          id: p.id, name: p.name, issuer: (p.issuer && p.issuer.name) || p.issuer || null,
-          metal: p.metal_level || null,
-          monthly_premium: (p.premium_w_credit != null ? p.premium_w_credit : p.premium),
+          id: p.id, name: p.name, issuer: p.issuer || null,
+          metal: p.metal || null,
+          monthly_premium: (p.net != null ? p.net : p.premium),
           premium_before_subsidy: p.premium,
           deductible: p.deductible, moop: p.moop,
-          hsa: !!p.hsa_eligible, type: p.type || null,
+          deductible_family: p.deductible_family, moop_family: p.moop_family,
+          hsa: !!p.hsa, type: p.type || null, rating: p.rating || null,
         })),
         aca_year: window._qbAcaYear || null,
+        // What the picker already worked out about the credit, so Ken.ai does
+        // not have to ask healthcare.gov a second time to know it exists.
+        aca_aptc: (window._qbAcaAptc != null ? window._qbAcaAptc : null),
+        aca_csr: window._qbAcaCsr || null,
         county_fips: (() => {
           const el = document.getElementById('qb-aca-county');
           return (el && el.value) ? el.value.split('|')[0] : null;
@@ -15187,6 +15198,23 @@ async function kenaiAddPlan_(btn, productId) {
 
   if (btn) { btn.textContent = '\u2713 On the quote'; btn.disabled = true; btn.classList.add('btn-primary'); }
   showToast('Added to option ' + String.fromCharCode(65 + slot) + '.');
+}
+
+// Add the package up ourselves rather than printing the model's own total.
+// It returns that total as prose ("$1,155" or "about $1,200/mo"), and running a
+// currency string through Number() gives NaN - which is exactly what an agent
+// saw at the top of every package. The plans carry real numbers; use those, and
+// where any one of them has no price, say so instead of inventing a sum.
+function kenaiTotal_(pack) {
+  const plans = (pack && pack.plans) || [];
+  if (!plans.length) return 'cost not yet known';
+  const priceOf = (pl) => (pl.estimated_after_credit != null ? pl.estimated_after_credit : pl.monthly_premium);
+  const priced = plans.filter(pl => priceOf(pl) != null && !isNaN(Number(priceOf(pl))));
+  if (!priced.length) return 'cost not yet known';
+  const total = priced.reduce((sum, pl) => sum + Number(priceOf(pl)), 0);
+  const missing = plans.length - priced.length;
+  return '$' + total.toLocaleString(undefined, { maximumFractionDigits: 0 }) + '/mo'
+    + (missing ? ' <span style="color:var(--text-warning);">+ ' + missing + ' with no price yet</span>' : '');
 }
 
 async function kenaiUseIncome_(income) {
@@ -15318,14 +15346,17 @@ function kenaiShow_(d) {
         </div>
       </div>` : ''}
       ${(d.aca_considered && !d.aca_fetched) ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
-        Includes ${d.aca_considered} Marketplace plan${d.aca_considered === 1 ? '' : 's'} at their real subsidised price.</div>` : ''}
+        Includes ${d.aca_considered} Marketplace plan${d.aca_considered === 1 ? '' : 's'} from the ACA panel${
+          (window._qbAcaAptc != null && Number(window._qbAcaAptc) > 0)
+            ? ', priced after their tax credit of about $' + Number(window._qbAcaAptc).toFixed(0) + '/mo'
+            : ' — no tax credit applies at this income, so these are full prices'}.</div>` : ''}
       ${d.note ? `<div class="pk-bar muted" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12.5px;">${escWeb(d.note)}</div>` : ''}
 
       ${packs.map((p, i) => `
         <div style="border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:12px;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">
             <div style="font-weight:800;font-size:14.5px;">${i + 1}. ${escWeb(p.strategy || '')}</div>
-            <div style="font-size:12.5px;color:var(--text-muted);">${p.monthly ? money(p.monthly) + '/mo' : 'cost not yet known'}</div>
+            <div style="font-size:12.5px;color:var(--text-muted);">${kenaiTotal_(p)}</div>
           </div>
           <div style="margin-top:7px;">
             ${(p.plans || []).map(pl => `<div style="font-size:12.5px;padding:2px 0;">
