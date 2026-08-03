@@ -15067,6 +15067,116 @@ async function qbSmartDefaultLine_(deal, contact) {
   return 'Life';
 }
 
+
+// ============================================================
+// KEN.AI - what would suit this client, out of what we can actually sell them
+//
+// It SUGGESTS. The agent decides. Two things are deliberately not left to it:
+// what the client is allowed to buy (rules, in the database) and what anything
+// costs (only where a real premium exists). Everything it says has to be
+// traceable back to an answer the client gave, so an agent can check it fast.
+// ============================================================
+async function askKenai_() {
+  const contact = window._qbContact;
+  if (!contact) { showToast('Open a quote for a client first.'); return; }
+  const btn = document.getElementById('kenai-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '\u{1F9E0} Thinking\u2026'; }
+  try {
+    const s = await supabaseClient.auth.getSession();
+    const res = await fetch(SUPABASE_URL + '/functions/v1/kenai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY,
+                 Authorization: 'Bearer ' + (s.data.session ? s.data.session.access_token : SUPABASE_KEY) },
+      body: JSON.stringify({ contact_id: contact.id, quote_id: window._qbQuoteId || null }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    kenaiShow_(data);
+  } catch (e) {
+    showToast('Ken.ai could not answer: ' + (e.message || e), 6000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '\u{1F9E0} Ask Ken.ai'; }
+  }
+}
+
+function kenaiShow_(d) {
+  const packs = d.packages || [];
+  const el = document.getElementById('kenai-overlay');
+  if (el) el.remove();
+
+  const money = (v) => v == null ? null : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 0 });
+  const blocked = ((d.eligibility || {}).blocked) || [];
+  const notes = ((d.eligibility || {}).notes) || [];
+
+  const ov = document.createElement('div');
+  ov.id = 'kenai-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,20,0.8);z-index:99996;'
+    + 'display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto;';
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:13px;
+      max-width:760px;width:100%;padding:20px 22px;margin:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div>
+          <div style="font-weight:800;font-size:17px;">\u{1F9E0} Ken.ai</div>
+          <div style="font-size:12.5px;color:var(--text-secondary);margin-top:2px;">${escWeb(d.headline || '')}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('kenai-overlay').remove()">Close</button>
+      </div>
+
+      <div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">
+        Looked at ${d.plans_considered || 0} plan${(d.plans_considered || 0) === 1 ? '' : 's'} you can sell them.
+        ${d.prices_known ? d.prices_known + ' have a price on this quote.'
+          : '<strong style="color:var(--text-warning);">No prices loaded yet \u2014 these are ranked on fit and coverage only.</strong>'}
+      </div>
+
+      ${blocked.length ? `<div class="pk-bar warn" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12px;line-height:1.6;">
+        <strong>Ruled out for this client:</strong>
+        ${blocked.map(b => '<div style="margin-top:3px;">\u2022 <strong>' + escWeb(b.line) + '</strong> \u2014 ' + escWeb(b.why) + '</div>').join('')}
+      </div>` : ''}
+
+      ${d.note ? `<div class="pk-bar muted" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12.5px;">${escWeb(d.note)}</div>` : ''}
+
+      ${packs.map((p, i) => `
+        <div style="border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">
+            <div style="font-weight:800;font-size:14.5px;">${i + 1}. ${escWeb(p.strategy || '')}</div>
+            <div style="font-size:12.5px;color:var(--text-muted);">${p.monthly ? money(p.monthly) + '/mo' : 'cost not yet known'}</div>
+          </div>
+          <div style="margin-top:7px;">
+            ${(p.plans || []).map(pl => `<div style="font-size:12.5px;padding:2px 0;">
+              <strong>${escWeb(pl.name || '')}</strong>
+              <span style="color:var(--text-muted);">\u00b7 ${escWeb(pl.carrier || '')} \u00b7 ${escWeb(pl.role || pl.line || '')}</span>
+              ${pl.option ? '<span style="color:var(--text-secondary);"> \u2014 ' + escWeb(pl.option) + '</span>' : ''}
+              ${pl.monthly_premium != null ? '<span style="color:var(--text-success);"> \u00b7 ' + money(pl.monthly_premium) + '/mo</span>' : ''}
+            </div>`).join('')}
+          </div>
+          <div style="font-size:12.5px;color:var(--text-secondary);line-height:1.6;margin-top:7px;">${escWeb(p.why || '')}</div>
+          ${p.watch ? `<div style="font-size:12px;color:var(--text-warning);line-height:1.6;margin-top:5px;">
+            <strong>Watch:</strong> ${escWeb(p.watch)}</div>` : ''}
+        </div>`).join('') || '<div style="font-size:13px;color:var(--text-muted);margin-top:14px;">No package could be built from what you can sell this client.</div>'}
+
+      ${(d.ask_the_client || []).length ? `<div style="margin-top:14px;">
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">Worth asking them</div>
+        ${(d.ask_the_client || []).map(q => '<div style="font-size:12.5px;padding:2px 0;">\u2022 ' + escWeb(q) + '</div>').join('')}
+      </div>` : ''}
+
+      ${(d.not_offered || []).length ? `<div style="margin-top:12px;font-size:11.5px;color:var(--text-muted);line-height:1.6;">
+        ${(d.not_offered || []).map(n => '<div>Not offered \u2014 <strong>' + escWeb(n.strategy) + '</strong>: ' + escWeb(n.why) + '</div>').join('')}
+      </div>` : ''}
+
+      ${notes.length ? `<div style="margin-top:12px;font-size:11.5px;color:var(--text-muted);line-height:1.6;
+        padding-top:10px;border-top:1px solid var(--border);">
+        ${notes.map(n => '\u2022 ' + escWeb(n)).join('<br>')}</div>` : ''}
+
+      <div style="font-size:11.5px;color:var(--text-muted);margin-top:12px;padding-top:10px;border-top:1px solid var(--border);line-height:1.6;">
+        A suggestion, not a recommendation \u2014 you decide what goes on the quote. Once you have gathered
+        prices, ask again and it will rank the same packages on cost as well as fit.
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
 async function openQuoteBuilder(dealId, opts) {
   opts = opts || {};
   const deal = deals.find(d => d.id === dealId); if (!deal) return;
@@ -15201,6 +15311,8 @@ async function openQuoteBuilder(dealId, opts) {
       <div id="qb-intake-note" style="font-size:11.5px;color:var(--text-muted);">${intakeNote}</div>
       <button type="button" class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
         onclick="qbToggleIntakeDrawer_()">\u{1F4C4} Their answers</button>
+      <button type="button" class="btn btn-primary btn-sm" id="kenai-btn" style="font-size:11px;padding:2px 9px;"
+        onclick="askKenai_()">\u{1F9E0} Ask Ken.ai</button>
     </div>
     <div id="qb-sections" style="font-size:11.5px;margin-top:4px;line-height:1.5;"></div>
     <div id="qb-auto-card" style="display:none;"></div>
