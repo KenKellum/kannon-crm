@@ -12792,6 +12792,8 @@ async function pwResume_(runId) {
     _pw.docs = f.document_ids || (run.document_id ? [run.document_id] : []);
     _pw.chosen = {};
     (((run.proposal || {}).products) || []).forEach((_, i) => { _pw.chosen[i] = true; });
+    _pw.asRead = JSON.parse(JSON.stringify(((run.proposal || {}).products) || []));
+    _pw.edited = false;
     if (run.document_id) {
       const { data: d } = await supabaseClient.from('product_documents')
         .select('carrier_id').eq('id', run.document_id).maybeSingle();
@@ -13044,6 +13046,8 @@ async function pwRun_(answers) {
     _pw.run = run;
     _pw.chosen = {};
     (((run || {}).proposal || {}).products || []).forEach((_, i) => { _pw.chosen[i] = true; });
+    _pw.asRead = JSON.parse(JSON.stringify(((run || {}).proposal || {}).products || []));
+    _pw.edited = false;
     _pw.busy = false;
     pwStep_(data.status === 'needs_answers' ? 3 : 4);
   } catch (e) {
@@ -13207,9 +13211,32 @@ function pwStepReview_() {
               <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;">${escWeb(pr.line_of_business || '')}${pr.product_code ? ' · ' + escWeb(pr.product_code) : ''}</div>
               ${(pr.what_changed || []).length ? `<div style="font-size:12px;color:var(--text-warning);margin-bottom:5px;">${(pr.what_changed || []).map(x => '• ' + escWeb(x)).join('<br>')}</div>` : ''}
               ${pr.summary ? `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;margin-bottom:6px;">${escWeb(pr.summary)}</div>` : ''}
-              ${Object.entries(pr.dimensions || {}).map(([k, d]) =>
-                `<div style="font-size:11.5px;line-height:1.6;"><strong>${escWeb((d && d.label) || k)}:</strong> ${escWeb(pwChoices_(d))}</div>`).join('')}
-              <button type="button" class="btn btn-outline btn-sm" style="margin-top:7px;"
+              ${Object.entries(pr.dimensions || {}).map(([k, d]) => `
+                <div style="font-size:11.5px;line-height:1.5;margin-top:4px;">
+                  <div style="color:var(--text-muted);">${escWeb((d && d.label) || k.replace(/_/g, ' '))}
+                    ${(d && d.parts && d.parts.length > 1) ? '<span style="opacity:.7;">\u2014 ' + escWeb(d.parts.join(' / ')) + ', separated by \u00b7</span>' : ''}</div>
+                  <input type="text" value="${escWeb(pwChoices_(d))}"
+                    onclick="event.stopPropagation();" onchange="pwEditChoice_(${i}, '${escWeb(k)}', this.value)"
+                    style="width:100%;font-size:12px;margin-top:2px;" /></div>`).join('')}
+
+              <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11.5px;">
+                <span onclick="event.stopPropagation();">Prescriptions:
+                  <label style="font-weight:400;display:inline;margin:0 4px 0 6px;cursor:pointer;">
+                    <input type="radio" name="rx-${i}" style="width:auto;" ${((pr.prescription||{}).has_benefit) ? 'checked' : ''}
+                      onchange="pwEditRx_(${i}, true)" /> included</label>
+                  <label style="font-weight:400;display:inline;margin:0;cursor:pointer;">
+                    <input type="radio" name="rx-${i}" style="width:auto;" ${((pr.prescription||{}).has_benefit) ? '' : 'checked'}
+                      onchange="pwEditRx_(${i}, false)" /> not included</label></span>
+                <span onclick="event.stopPropagation();">Out-of-pocket max:
+                  <label style="font-weight:400;display:inline;margin:0 4px 0 6px;cursor:pointer;">
+                    <input type="radio" name="oop-${i}" style="width:auto;" ${pr.oop_includes_deductible === true ? 'checked' : ''}
+                      onchange="pwEditOop_(${i}, true)" /> includes the deductible</label>
+                  <label style="font-weight:400;display:inline;margin:0;cursor:pointer;">
+                    <input type="radio" name="oop-${i}" style="width:auto;" ${pr.oop_includes_deductible === false ? 'checked' : ''}
+                      onchange="pwEditOop_(${i}, false)" /> is separate</label></span>
+              </div>
+
+              <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;"
                 onclick="event.preventDefault();event.stopPropagation();pwPreview_(${i})">See it as an agent will</button>
               ${Object.entries(pr.facts || {}).length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.6;margin-top:2px;">
                 ${Object.entries(pr.facts).map(([k, v]) => escWeb(k.replace(/_/g, ' ')) + ': ' + escWeb(String(v))).join(' &nbsp;·&nbsp; ')}</div>` : ''}
@@ -13254,6 +13281,78 @@ function pwEdit_(i, field, value) {
   if (prods[i]) prods[i][field] = value;
 }
 
+// The values of one choice, typed as the buyer would read them:
+//   $2,500 / 0%  ·  $5,000 / 0%
+// Parsed back into the combinations the rest of the system expects, so a
+// deductible and the coinsurance beside it never come apart.
+function pwEditChoice_(i, key, text) {
+  const prods = ((_pw.run || {}).proposal || {}).products || [];
+  const d = ((prods[i] || {}).dimensions || {})[key];
+  if (!d) return;
+  const parts = (d.parts && d.parts.length) ? d.parts : ['Value'];
+  d.combos = String(text).split('\u00b7').map(chunk => {
+    const bits = chunk.split('/').map(x => x.trim());
+    const combo = {};
+    parts.forEach((p, k) => { if (bits[k]) combo[p] = bits[k]; });
+    return Object.keys(combo).length ? combo : null;
+  }).filter(Boolean);
+  _pw.edited = true;
+}
+
+function pwEditRx_(i, has) {
+  const prods = ((_pw.run || {}).proposal || {}).products || [];
+  if (!prods[i]) return;
+  prods[i].prescription = Object.assign({}, prods[i].prescription || {},
+    { has_benefit: has, is_rider: has ? false : (prods[i].prescription || {}).is_rider });
+  _pw.edited = true;
+  pwPaint_();
+}
+
+function pwEditOop_(i, val) {
+  const prods = ((_pw.run || {}).proposal || {}).products || [];
+  if (!prods[i]) return;
+  prods[i].oop_includes_deductible = val;
+  _pw.edited = true;
+  pwPaint_();
+}
+
+// What changed between what was read and what is being approved. Each difference
+// becomes a fact about the carrier, so the same mistake is not made again.
+function pwCorrections_() {
+  const before = _pw.asRead || [];
+  const after = (((_pw.run || {}).proposal || {}).products) || [];
+  const out = [];
+  after.forEach((p, i) => {
+    const was = before.find(b => String(b.name) === String(p.name)) || before[i] || {};
+    const nm = String(p.name || 'a plan');
+
+    Object.entries(p.dimensions || {}).forEach(([k, d]) => {
+      const wasText = pwChoices_((was.dimensions || {})[k]);
+      const nowText = pwChoices_(d);
+      if (wasText !== nowText) {
+        out.push('For ' + nm + ', \u201c' + ((d && d.label) || k.replace(/_/g, ' ')) + '\u201d is: '
+          + nowText + (wasText ? ' (it was read as: ' + wasText + ' \u2014 that was wrong)' : ''));
+      }
+    });
+    Object.keys(was.dimensions || {}).forEach((k) => {
+      if (!(p.dimensions || {})[k]) out.push('For ' + nm + ', there is no \u201c'
+        + k.replace(/_/g, ' ') + '\u201d choice \u2014 do not record one.');
+    });
+
+    const rxWas = ((was.prescription || {}).has_benefit) === true;
+    const rxNow = ((p.prescription || {}).has_benefit) === true;
+    if (rxWas !== rxNow) {
+      out.push(nm + (rxNow ? ' DOES include a prescription benefit.' : ' does NOT include a prescription benefit.'));
+    }
+    if (was.oop_includes_deductible !== p.oop_includes_deductible && p.oop_includes_deductible != null) {
+      out.push('For ' + nm + ', the out-of-pocket maximum '
+        + (p.oop_includes_deductible ? 'INCLUDES the deductible (the deductible is the maximum out-of-pocket).'
+                                     : 'does NOT include the deductible.'));
+    }
+  });
+  return out;
+}
+
 // ---------------------------------------------------------------- 5. save it
 function pwStepSave_() {
   const p = (_pw.run || {}).proposal || {};
@@ -13281,6 +13380,19 @@ function pwStepSave_() {
 async function pwSave_() {
   _pw.busy = true; _pw.error = null; pwPaint_();
   try {
+    // A correction is a licensed agent marking a specific claim wrong against the
+    // paperwork - the best signal there is. Bank it before saving anything, so a
+    // later failure cannot lose the lesson.
+    if (_pw.carrierId) {
+      const corrections = pwCorrections_();
+      if (corrections.length) {
+        await supabaseClient.from('carrier_facts').insert(corrections.map(c => ({
+          carrier_id: _pw.carrierId, fact: c, learned_from: 'correction',
+          run_id: (_pw.run || {}).id || null,
+        })));
+      }
+    }
+
     const proposal = (_pw.run || {}).proposal || {};
     const shared = proposal.shared || {};
     const carrier = proposal.carrier || {};
