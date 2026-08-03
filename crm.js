@@ -13439,9 +13439,13 @@ async function openProductPicker_(line) {
 
   // If that view cannot be read, fall back to the old rule rather than showing
   // an empty picker and leaving an agent unable to quote.
+  // Declared out here because the brochure lookup below needs it too. It used to
+  // be declared inside the fallback branch, so the picker only worked when the
+  // gate FAILED - and threw "carriers is not defined" whenever it worked.
+  const carriers = (window._qbCarriers || []).map(c => c.id);
+
   let prods = [];
   if (allowErr) {
-    const carriers = (window._qbCarriers || []).map(c => c.id);
     const { data } = carriers.length
       ? await supabaseClient.from('carrier_products').select('*')
           .eq('is_active', true).is('discontinued_on', null)
