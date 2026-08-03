@@ -13082,6 +13082,19 @@ function pwStepQuestions_() {
 function pwAnswer_(id, value) { _pw.answers[id] = value; }
 
 // ------------------------------------------------------------- 4. the review
+// A choice is a list of COMBINATIONS, each one an object keyed by the parts that
+// make it up -- a deductible on its own, or a deductible paired with the
+// coinsurance that goes with it. Read them out as the buyer would choose them,
+// so a pair never gets split into two unrelated lists.
+function pwChoices_(d) {
+  if (!d) return '';
+  const combos = d.combos || [];
+  if (!combos.length) return (d.values || []).join(' \u00b7 ');
+  const parts = (d.parts && d.parts.length) ? d.parts : Object.keys(combos[0] || {});
+  return combos.map(c => parts.map(p => c[p]).filter(v => v != null && v !== '').join(' / '))
+    .filter(Boolean).join('  \u00b7  ');
+}
+
 function pwStepReview_() {
   const p = (_pw.run || {}).proposal || {};
   const f = (_pw.run || {}).findings || {};
@@ -13124,7 +13137,9 @@ function pwStepReview_() {
               ${(pr.what_changed || []).length ? `<div style="font-size:12px;color:var(--text-warning);margin-bottom:5px;">${(pr.what_changed || []).map(x => '• ' + escWeb(x)).join('<br>')}</div>` : ''}
               ${pr.summary ? `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;margin-bottom:6px;">${escWeb(pr.summary)}</div>` : ''}
               ${Object.entries(pr.dimensions || {}).map(([k, d]) =>
-                `<div style="font-size:11.5px;"><strong>${escWeb((d && d.label) || k)}:</strong> ${escWeb(((d && d.values) || []).join(' · '))}</div>`).join('')}
+                `<div style="font-size:11.5px;line-height:1.6;"><strong>${escWeb((d && d.label) || k)}:</strong> ${escWeb(pwChoices_(d))}</div>`).join('')}
+              ${Object.entries(pr.facts || {}).length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.6;margin-top:2px;">
+                ${Object.entries(pr.facts).map(([k, v]) => escWeb(k.replace(/_/g, ' ')) + ': ' + escWeb(String(v))).join(' &nbsp;·&nbsp; ')}</div>` : ''}
             </span></label>
         </div>`;
       }).join('') || '<div style="font-size:13px;color:var(--text-muted);">Nothing was found to save.</div>'}
