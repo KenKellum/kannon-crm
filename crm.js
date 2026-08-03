@@ -4712,7 +4712,7 @@ function aiSuggestEmail() {
     try {
       const resp = await fetch(SUPABASE_URL + '/functions/v1/suggest-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_KEY },
+        headers: await fnHeaders_(),
         body: JSON.stringify({ segment, table, tone, topic })
       });
       if (!resp.ok) { const t = await resp.text(); throw new Error(t); }
