@@ -13095,6 +13095,77 @@ function pwChoices_(d) {
     .filter(Boolean).join('  \u00b7  ');
 }
 
+// The picker reads a product's detail from p.metadata. A proposal keeps the same
+// shape at the top level, so wrapping it is all that is needed to draw a proposed
+// plan with the real renderers rather than a second, drifting copy of them.
+function pwAsProduct_(prod) {
+  return { id: 'preview', name: prod.name, line_of_business: prod.line_of_business,
+           product_code: prod.product_code, metadata: prod };
+}
+
+function pwPreview_(i) {
+  const prod = (((_pw.run || {}).proposal || {}).products || [])[i];
+  if (!prod) return;
+  const p = pwAsProduct_(prod);
+  const rows = ppBenefitRows_(p);
+  const dims = Object.entries(prod.dimensions || {});
+  const facts = Object.entries(prod.facts || {});
+  const rx = prod.prescription || {};
+  const net = prod.network || {};
+
+  const ov = document.createElement('div');
+  ov.id = 'pw-preview';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,20,0.75);z-index:99996;'
+    + 'display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:13px;
+      max-width:620px;width:100%;max-height:88vh;overflow:auto;padding:20px 22px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text-muted);">
+            How an agent will see this</div>
+          <div style="font-weight:800;font-size:17px;margin-top:2px;">${escWeb(prod.name || '')}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);">${escWeb(prod.line_of_business || '')}${prod.product_code ? ' \u00b7 ' + escWeb(prod.product_code) : ''}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('pw-preview').remove()">Close</button>
+      </div>
+
+      ${prod.summary ? `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-top:10px;">${escWeb(prod.summary)}</div>` : ''}
+
+      ${dims.length ? `<div style="margin-top:14px;">
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">What the buyer chooses</div>
+        ${dims.map(([k, d]) => `<div style="font-size:12.5px;margin-top:5px;">
+          <strong>${escWeb((d && d.label) || k.replace(/_/g, ' '))}:</strong> ${escWeb(pwChoices_(d))}</div>`).join('')}
+      </div>` : `<div class="pk-bar warn" style="margin-top:14px;border-radius:8px;border:1px solid;font-size:12px;">
+        Nothing for the buyer to choose \u2014 no deductibles or options came through. Check the brochure.</div>`}
+
+      ${rows.length ? `<div style="margin-top:14px;">
+        <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">What it pays, item by item</div>
+        <table style="border-collapse:collapse;margin-top:6px;width:100%;">
+          ${rows.map(([label, cell, icon]) => `<tr>
+            <td style="padding:4px 10px 4px 0;font-size:12.5px;color:var(--text-muted);vertical-align:top;width:220px;">${icon || ''} ${escWeb(label)}</td>
+            <td style="padding:4px 0;font-size:12.5px;vertical-align:top;line-height:1.5;">${cell}</td></tr>`).join('')}
+        </table></div>` : `<div class="pk-bar warn" style="margin-top:14px;border-radius:8px;border:1px solid;font-size:12px;">
+        No benefit rows came through. An agent would see an empty plan.</div>`}
+
+      <div style="margin-top:14px;font-size:12.5px;">
+        <strong>Prescriptions:</strong> ${rx.has_benefit
+          ? escWeb([rx.summary, rx.copay, rx.maximum_benefit].filter(Boolean).join(' \u00b7 ') || 'Included')
+          : '<span style="color:var(--text-warning);">Not included</span>'}
+        ${rx.is_rider ? ' <span style="color:var(--text-warning);">(recorded as a rider \u2014 is that right?)</span>' : ''}
+      </div>
+      ${net.name || net.type ? `<div style="font-size:12.5px;margin-top:4px;"><strong>Network:</strong> ${escWeb([net.name, net.type, net.provided_by].filter(Boolean).join(' \u00b7 '))}</div>` : ''}
+      ${facts.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;line-height:1.6;">
+        ${facts.map(([k, v]) => escWeb(k.replace(/_/g, ' ')) + ': ' + escWeb(String(v))).join(' &nbsp;\u00b7&nbsp; ')}</div>` : ''}
+
+      <div style="font-size:11.5px;color:var(--text-muted);margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">
+        This is drawn by the same code as the plan picker, so anything wrong here is wrong on a real quote.
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
 function pwStepReview_() {
   const p = (_pw.run || {}).proposal || {};
   const f = (_pw.run || {}).findings || {};
@@ -13138,6 +13209,8 @@ function pwStepReview_() {
               ${pr.summary ? `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;margin-bottom:6px;">${escWeb(pr.summary)}</div>` : ''}
               ${Object.entries(pr.dimensions || {}).map(([k, d]) =>
                 `<div style="font-size:11.5px;line-height:1.6;"><strong>${escWeb((d && d.label) || k)}:</strong> ${escWeb(pwChoices_(d))}</div>`).join('')}
+              <button type="button" class="btn btn-outline btn-sm" style="margin-top:7px;"
+                onclick="event.preventDefault();event.stopPropagation();pwPreview_(${i})">See it as an agent will</button>
               ${Object.entries(pr.facts || {}).length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.6;margin-top:2px;">
                 ${Object.entries(pr.facts).map(([k, v]) => escWeb(k.replace(/_/g, ' ')) + ': ' + escWeb(String(v))).join(' &nbsp;·&nbsp; ')}</div>` : ''}
             </span></label>
