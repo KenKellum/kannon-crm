@@ -7050,6 +7050,10 @@ async function renderAdmin() {
   window._allCarriers = _carriers || [];
   const { data: _crProdsAll } = await supabaseClient.from('carrier_products').select('id,carrier_id');
   window._allCarrierProducts = _crProdsAll || [];
+  const [{ data: _agcLinks }, { data: _seatLinks }] = await Promise.all([
+    supabaseClient.from('agency_companies').select('agency_id,company_id'),
+    supabaseClient.from('agent_agencies').select('agent_id,agency_id'),
+  ]);
   // My own appointments are a fact about me, so My Profile is the only place
   // that shows them now. The copy that used to sit here was the same card and
   // the same query, run again on a page about other people.
@@ -7369,13 +7373,82 @@ async function renderAdmin() {
     </div>`;
   }).join('');
 
-  const agencyRows = allAgencies.map(ag => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
+  // An office sits under the division it is a branch of, and an office may one
+  // day open offices of its own -- agencies.parent_agency_id already carries
+  // that -- so the same drawing function calls itself all the way down.
+  const seatsByOffice = {};
+  (_seatLinks || []).forEach(s => { (seatsByOffice[s.agency_id] = seatsByOffice[s.agency_id] || []).push(s.agent_id); });
+  const divisionsOf = {};
+  (_agcLinks || []).forEach(l => { (divisionsOf[l.agency_id] = divisionsOf[l.agency_id] || []).push(l.company_id); });
+
+  const officeNode_ = (ag, depth, divId) => {
+    const seats = seatsByOffice[ag.id] || [];
+    const owners = allAgents.filter(a => seats.includes(a.id) && (a.role === 'broker_owner' || a.role === 'system_owner'));
+    const headcount = seats.length;
+    // Shown under both divisions when it is a branch of both, which is the
+    // honest picture -- it is one office wearing two hats, not two offices.
+    const alsoIn = (divisionsOf[ag.id] || []).filter(c => c !== divId)
+      .map(c => (allCompanies.find(x => x.id === c) || {}).name).filter(Boolean);
+    const kids = allAgencies.filter(x => x.parent_agency_id === ag.id);
+    return `
+      <div style="padding-left:${depth * 22}px;">
+        <div style="display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:0.5px solid var(--border);">
+          <span style="color:var(--text-muted);font-size:12px;">${depth ? '&#9492;&#9472;' : '&#9679;'}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13.5px;">${escWeb(ag.name)}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);">
+              ${owners.length ? escWeb(owners.map(o => o.name).join(', ')) : '<span style="font-style:italic;">no Broker Owner yet</span>'}
+              &nbsp;&middot;&nbsp; ${headcount} ${headcount === 1 ? 'seat' : 'seats'}
+              ${alsoIn.length ? ' &nbsp;&middot;&nbsp; also a branch of ' + escWeb(alsoIn.join(', ')) : ''}
+            </div>
+          </div>
+        </div>
+        ${kids.map(k => officeNode_(k, depth + 1, divId)).join('')}
+      </div>`;
+  };
+
+  const divisionNode_ = (co) => {
+    // Only top-level offices are listed here; an office opened by another
+    // office is drawn beneath its parent, not again at the division root.
+    const offices = allAgencies.filter(ag =>
+      (divisionsOf[ag.id] || []).includes(co.id) && !ag.parent_agency_id);
+    const carrierCount = (window._allCarriers || []).length;
+    return `
+      <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <i class="ti ti-building-bank" style="color:var(--text-accent);font-size:15px;"></i>
+          <div style="font-weight:800;font-size:14px;">${escWeb(co.name)}</div>
+          <span style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Division</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">
+          ${offices.length} ${offices.length === 1 ? 'office' : 'offices'}</div>
+        ${offices.length ? offices.map(ag => officeNode_(ag, 0, co.id)).join('')
+          : '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic;padding:6px 0;">No offices in this division yet.</div>'}
+      </div>`;
+  };
+
+  // An office nobody assigned to a division would simply vanish from a tree
+  // drawn by division, so it gets its own heading instead of disappearing.
+  const orphans = allAgencies.filter(ag => !(divisionsOf[ag.id] || []).length && !ag.parent_agency_id);
+
+  const agencyRows = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid var(--border);">
+      <i class="ti ti-hierarchy-2" style="color:var(--text-accent);font-size:16px;"></i>
       <div>
-        <div style="font-weight:600;font-size:14px;">${ag.name}</div>
-        <div style="font-size:12px;color:var(--muted);">${ag.companies?.name||'No company'}</div>
+        <div style="font-weight:800;font-size:14.5px;">Kannon Financial</div>
+        <div style="font-size:11.5px;color:var(--text-muted);">Owns both divisions and everything under them.</div>
       </div>
-    </div>`).join('');
+    </div>
+    <div style="padding-left:16px;">
+      ${allCompanies.map(divisionNode_).join('')}
+      ${orphans.length ? `
+        <div style="border:1px dashed var(--border-warning);border-radius:10px;padding:12px 14px;">
+          <div style="font-weight:800;font-size:14px;margin-bottom:2px;">Not in a division yet</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">
+            These offices carry nothing until they are made a branch of a division, on My Office.</div>
+          ${orphans.map(ag => officeNode_(ag, 0, null)).join('')}
+        </div>` : ''}
+    </div>`;
 
   const pending = applications.filter(a => a.status === 'pending');
   const trackLabel = { primerica: 'Life & Financial Services', insured_america: 'Health Insurance', both: 'Full-Service (Both)' };
