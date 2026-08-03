@@ -15189,6 +15189,21 @@ async function kenaiAddPlan_(btn, productId) {
   showToast('Added to option ' + String.fromCharCode(65 + slot) + '.');
 }
 
+async function kenaiUseIncome_(income) {
+  const c = window._qbContact;
+  if (!c) return;
+  const { error } = await supabaseClient.from('contacts')
+    .update({ household_income: income }).eq('id', c.id);
+  if (error) { showToast('Could not save that income: ' + error.message, 6000); return; }
+  c.household_income = income;
+  const inc = document.getElementById('qb-aca-income');
+  if (inc) inc.value = income;
+  showToast('$' + Number(income).toLocaleString() + ' saved for ' + (c.name || 'this client') + '. Asking again\u2026');
+  const ov = document.getElementById('kenai-overlay');
+  if (ov) ov.remove();
+  askKenai_();
+}
+
 async function kenaiSetCounty_(fips, name) {
   const c = window._qbContact;
   if (!c) return;
@@ -15247,6 +15262,37 @@ function kenaiShow_(d) {
         everything below is a comparison against an incomplete shortlist until you do.
       </div>` : ''}
 
+      ${d.subsidy_cliff ? `<div class="pk-bar warn" style="margin-top:12px;border-radius:9px;border:2px solid var(--danger);font-size:12.5px;line-height:1.65;">
+        <div style="font-weight:800;font-size:13.5px;color:var(--text-warning);">\u26a0 Two different incomes are on file, and they give completely different answers.</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:7px;">
+          <div style="flex:1;min-width:180px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">Priced here \u2014 from ${escWeb(d.subsidy_cliff.used_source || 'the client record')}</div>
+            <div style="font-weight:800;font-size:15px;">$${Number(d.subsidy_cliff.used_income).toLocaleString()}</div>
+            <div style="${Number(d.subsidy_cliff.used_aptc) > 0 ? 'color:var(--text-success);' : 'color:var(--text-warning);'}font-weight:700;">
+              ${Number(d.subsidy_cliff.used_aptc) > 0 ? '$' + Number(d.subsidy_cliff.used_aptc).toFixed(0) + '/mo credit' : 'No tax credit'}</div>
+          </div>
+          <div style="flex:1;min-width:180px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">This quote was built at</div>
+            <div style="font-weight:800;font-size:15px;">$${Number(d.subsidy_cliff.quoted_income).toLocaleString()}</div>
+            <div style="${Number(d.subsidy_cliff.quoted_aptc) > 0 ? 'color:var(--text-success);' : 'color:var(--text-warning);'}font-weight:700;">
+              ${Number(d.subsidy_cliff.quoted_aptc) > 0 ? '$' + Number(d.subsidy_cliff.quoted_aptc).toFixed(0) + '/mo credit' : 'No tax credit'}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <strong>$${Number(d.subsidy_cliff.gap).toLocaleString()} of income separates those two answers</strong>, worth about
+          <strong>$${(Math.abs(Number(d.subsidy_cliff.quoted_aptc) - Number(d.subsidy_cliff.used_aptc)) * 12).toLocaleString()} a year</strong>.
+          The tax credit stops dead above a cut-off rather than tapering, so this client is sitting right on that edge.
+          Settle which income is right before you quote anyone a price \u2014 the plans below are priced at
+          $${Number(d.subsidy_cliff.used_income).toLocaleString()}.
+        </div>
+        <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:11.5px;color:var(--text-muted);">Price it at:</span>
+          <button type="button" class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
+            onclick="kenaiUseIncome_(${Number(d.subsidy_cliff.quoted_income)})">$${Number(d.subsidy_cliff.quoted_income).toLocaleString()}</button>
+          <button type="button" class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
+            onclick="kenaiUseIncome_(${Number(d.subsidy_cliff.used_income)})">$${Number(d.subsidy_cliff.used_income).toLocaleString()}</button>
+        </div>
+      </div>` : ''}
       ${d.aca_fetched ? `<div class="pk-bar" style="margin-top:12px;border-radius:9px;border:1px solid var(--border);font-size:12.5px;line-height:1.6;">
         <strong>Ken.ai pulled ${d.aca_fetched} Marketplace plan${d.aca_fetched === 1 ? '' : 's'} from healthcare.gov itself${(d.aca && d.aca.year) ? ' for ' + escWeb(String(d.aca.year)) : ''}${(d.aca && d.aca.county_name) ? ', ' + escWeb(String(d.aca.county_name)) : ''}.</strong>
         ${(d.aca && d.aca.credit_applied)
