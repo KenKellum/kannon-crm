@@ -15087,7 +15087,19 @@ async function askKenai_() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY,
                  Authorization: 'Bearer ' + (s.data.session ? s.data.session.access_token : SUPABASE_KEY) },
-      body: JSON.stringify({ contact_id: contact.id, quote_id: window._qbQuoteId || null }),
+      body: JSON.stringify({
+        contact_id: contact.id,
+        quote_id: window._qbQuoteId || null,
+        aca_plans: (window._qbAcaPlans || []).slice(0, 60).map(p => ({
+          id: p.id, name: p.name, issuer: (p.issuer && p.issuer.name) || p.issuer || null,
+          metal: p.metal_level || null,
+          monthly_premium: (p.premium_w_credit != null ? p.premium_w_credit : p.premium),
+          premium_before_subsidy: p.premium,
+          deductible: p.deductible, moop: p.moop,
+          hsa: !!p.hsa_eligible, type: p.type || null,
+        })),
+        aca_year: window._qbAcaYear || null,
+      }),
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -15135,6 +15147,14 @@ function kenaiShow_(d) {
         ${blocked.map(b => '<div style="margin-top:3px;">\u2022 <strong>' + escWeb(b.line) + '</strong> \u2014 ' + escWeb(b.why) + '</div>').join('')}
       </div>` : ''}
 
+      ${d.aca_missing ? `<div class="pk-bar warn" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12.5px;line-height:1.6;">
+        <strong>This client can buy a Marketplace plan, and none were looked at.</strong>
+        Marketplace plans cover pre-existing conditions, prescriptions and maternity by law, and with a
+        subsidy one is often cheaper as well. Run the ACA quote for them, then ask Ken.ai again \u2014
+        everything below is a comparison against an incomplete shortlist until you do.
+      </div>` : ''}
+      ${d.aca_considered ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">
+        Includes ${d.aca_considered} Marketplace plan${d.aca_considered === 1 ? '' : 's'} at their real subsidised price.</div>` : ''}
       ${d.note ? `<div class="pk-bar muted" style="margin-top:12px;border-radius:9px;border:1px solid;font-size:12.5px;">${escWeb(d.note)}</div>` : ''}
 
       ${packs.map((p, i) => `
@@ -15146,6 +15166,7 @@ function kenaiShow_(d) {
           <div style="margin-top:7px;">
             ${(p.plans || []).map(pl => `<div style="font-size:12.5px;padding:2px 0;">
               <strong>${escWeb(pl.name || '')}</strong>
+              ${pl.marketplace ? '<span style="font-size:9.5px;font-weight:800;letter-spacing:.4px;color:var(--text-success);">MARKETPLACE</span>' : ''}
               <span style="color:var(--text-muted);">\u00b7 ${escWeb(pl.carrier || '')} \u00b7 ${escWeb(pl.role || pl.line || '')}</span>
               ${pl.option ? '<span style="color:var(--text-secondary);"> \u2014 ' + escWeb(pl.option) + '</span>' : ''}
               ${pl.monthly_premium != null ? '<span style="color:var(--text-success);"> \u00b7 ' + money(pl.monthly_premium) + '/mo</span>' : ''}
