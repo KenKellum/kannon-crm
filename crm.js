@@ -12927,9 +12927,31 @@ async function pwWithdraw_() {
 // Watch the run until it settles. Each pass is a fresh worker, so the only
 // thing that can hang is a pass dying silently -- if nothing moves for four
 // minutes, say so rather than spinning for ever.
-async function pwWaitForRun_(runId) {
-  let lastStep = '', still = 0;
+// Find the run this kicked off, then watch it until it settles. The run row is
+// written before any reading starts, so it appears within a second or two.
+async function pwWaitForRun_(since, getCallError) {
+  let runId = null, lastStep = '', still = 0, waitedForRow = 0;
+
   for (;;) {
+    if (!runId) {
+      const { data } = await supabaseClient.from('extraction_runs')
+        .select('id').gte('created_at', since)
+        .order('created_at', { ascending: false }).limit(1);
+      if (data && data[0]) runId = data[0].id;
+      else {
+        waitedForRow++;
+        // No row at all after ~25s means it never got started -- an expired
+        // sign-in, or the documents are missing. Then the call's own error is
+        // the truthful one.
+        if (waitedForRow > 12) {
+          const e = getCallError && getCallError();
+          throw new Error((e && e.message) || 'The reading never started. Sign out and back in, then try again.');
+        }
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+    }
+
     const { data: run } = await supabaseClient.from('extraction_runs')
       .select('*').eq('id', runId).single();
     if (!run) throw new Error('That reading is no longer on file.');
@@ -12937,11 +12959,11 @@ async function pwWaitForRun_(runId) {
 
     const step = ((run.findings || {}).step) || 'Reading\u2026';
     if (step === lastStep) still++; else { still = 0; lastStep = step; }
-    if (still > 80) {   // ~4 minutes with no progress at all
+    if (still > 90) {   // ~4.5 minutes with no movement at all
+      const msg = 'A pass stopped without finishing. Nothing is wrong with the document \u2014 run it again.';
       await supabaseClient.from('extraction_runs')
-        .update({ status: 'failed', error: 'A pass stopped without finishing. Nothing is wrong with the document \u2014 run it again.' })
-        .eq('id', runId);
-      throw new Error('A pass stopped without finishing. Nothing is wrong with the document \u2014 run it again.');
+        .update({ status: 'failed', error: msg }).eq('id', runId);
+      throw new Error(msg);
     }
     if (_pw) { _pw.step_note = step; pwPaint_(); }
     await new Promise(r => setTimeout(r, 3000));
@@ -13008,14 +13030,17 @@ async function pwRun_(answers) {
     const payload = { document_ids: _pw.docs, mode: _pw.mode, hint: _pw.hint };
     if (answers) { payload.answers = answers; payload.prior_run_id = _pw.run.id; }
 
-    const started = new Date(Date.now() - 120000).toISOString();  // 2 minutes of slack for clock skew
-    const { data, error } = await supabaseClient.functions.invoke('product-extract', { body: payload });
-    if (error) throw new Error(await pwWhyItFailed_(started, error));
-    if (data && data.status === 'failed') throw new Error(data.error || 'The reading failed.');
+    // Start it, but do NOT wait for the reply -- the server finishes regardless,
+    // and waiting is the only part that ever fails.
+    const since = new Date(Date.now() - 120000).toISOString();  // slack for clock skew
+    let callError = null;
+    supabaseClient.functions.invoke('product-extract', { body: payload })
+      .then(r => { if (r && r.error) callError = r.error; })
+      .catch(e => { callError = e; });
 
-    const run = await pwWaitForRun_(data.run_id);
+    const run = await pwWaitForRun_(since, () => callError);
     if (run.status === 'failed') throw new Error(run.error || 'The reading failed.');
-    data.status = run.status;
+    const data = { status: run.status, run_id: run.id };
     _pw.run = run;
     _pw.chosen = {};
     (((run || {}).proposal || {}).products || []).forEach((_, i) => { _pw.chosen[i] = true; });
