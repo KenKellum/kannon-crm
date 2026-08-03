@@ -302,15 +302,16 @@ async function showApp() {
   } else if (currentAgent.role === 'agent' && !currentAgent.gmail_connected) {
     setTimeout(() => showGmailSetup(false), 500);
   } else if (currentAgent.gmail_connected && !currentAgent.calendar_connected) {
-    setTimeout(() => showToast('🗓 Connect your Google Calendar in Settings → Gmail & Calendar for full sync.'), 1500);
+    setTimeout(() => showToast('🗓 Connect your Google Calendar in My Profile → Gmail & Calendar for full sync.'), 1500);
   }
 }
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
   opens: 'Email Opens', campaigns: 'Email Campaigns', compliance: 'Compliance',
-  admin: 'Admin', office: 'My Office', dialer: 'Work My Leads', settings: 'Settings', appointments: 'Appointments',
-  scripts: 'Script Manager', website: 'Website'
+  admin: 'Admin', office: 'My Office', dialer: 'Work My Leads', settings: 'My Profile', appointments: 'Appointments',
+  scripts: 'Script Manager', website: 'Website',
+  recruiting: 'Recruiting', system: 'System'
 };
 
 // ============================================================
@@ -496,7 +497,7 @@ async function officePlan_(productId, carrierId, on) {
 }
 
 function showPage(page) {
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','office','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
+  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','recruiting','system','office','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -511,7 +512,9 @@ function showPage(page) {
   if (page === 'opens')        renderOpens();
   if (page === 'campaigns')    renderCampaigns();
   if (page === 'compliance')   renderCompliance();
-  if (page === 'admin')        renderAdmin();
+  if (page === 'admin')        { showPage('recruiting'); return; }
+  if (page === 'recruiting')   renderAdmin();
+  if (page === 'system')       renderAdmin();
   if (page === 'dialer')       renderDialer();
   if (page === 'settings')     renderSettings();
   if (page === 'appointments') renderAppointments();
@@ -535,75 +538,66 @@ function renderSidebarNav() {
   const role = previewRole || currentAgent.role;
   const b = getNavBadges();
 
+  const myWork = (label) => ({ label: label, items: [
+    { icon: 'ti-layout-dashboard', text: 'Dashboard',      page: 'dashboard'    },
+    { icon: 'ti-bolt',             text: 'Work my leads',  page: 'dialer', badge: b.notStarted || null, badgeType: 'green' },
+    { icon: 'ti-users',            text: 'Contacts',       page: 'contacts'     },
+    { icon: 'ti-layout-kanban',    text: 'Pipelines',      page: 'pipelines'    },
+    { icon: 'ti-calendar-event',   text: 'Appointments',   page: 'appointments' },
+  ]});
+  const marketing = { label: 'Marketing', items: [
+    { icon: 'ti-send',             text: 'Email campaigns', page: 'campaigns' },
+    { icon: 'ti-mail-opened',      text: 'Email opens',     page: 'opens'     },
+  ]};
+  const profile = { label: 'Profile', items: [
+    { icon: 'ti-user-circle',      text: 'My profile',      page: 'settings' },
+  ]};
+
   const navConfig = {
     system_owner: [
-      { label: 'Overview', items: [
-        { icon: 'ti-layout-dashboard', text: 'Dashboard',          page: 'dashboard'    },
-        { icon: 'ti-calendar-event',   text: 'Appointments',       page: 'appointments' },
+      myWork('My work'),
+      { label: 'My office', items: [
+        { icon: 'ti-briefcase',        text: 'My Office',       page: 'office'    },
+        { icon: 'ti-alert-triangle',   text: 'Oversight',       page: 'oversight' },
+        { icon: 'ti-script',           text: 'Script Manager',  page: 'scripts'   },
       ]},
-      { label: 'Manage', items: [
-        { icon: 'ti-users',            text: 'All contacts',       page: 'contacts'  },
-        { icon: 'ti-layout-kanban',    text: 'Pipelines',          page: 'pipelines' },
-        { icon: 'ti-bolt',             text: 'Work my leads',      page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
+      { label: 'Recruiting', items: [
+        { icon: 'ti-user-plus',        text: 'Applications & agents', page: 'recruiting', badge: b.inactiveAgents || null, badgeType: 'red' },
       ]},
-      { label: 'Agency & team', items: [
-        { icon: 'ti-briefcase',          text: 'My Office',         page: 'office' },
-        { icon: 'ti-building-community', text: 'Agencies & agents', page: 'admin',   badge: b.inactiveAgents || null, badgeType: 'red' },
-        { icon: 'ti-alert-triangle',     text: 'Oversight',         page: 'oversight' },
-        { icon: 'ti-script',             text: 'Script Manager',    page: 'scripts'   },
-      ]},
-      { label: 'Funnels', items: [
-        { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
-        { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
-      ]},
+      { label: 'Marketing', items: marketing.items.concat([
+        { icon: 'ti-world',            text: 'Website',         page: 'website' },
+      ])},
       { label: 'System', items: [
-        { icon: 'ti-world',            text: 'Website',            page: 'website'   },
-        { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
-        { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
+        { icon: 'ti-settings-cog',     text: 'System setup',    page: 'system'     },
+        { icon: 'ti-shield-check',     text: 'Compliance',      page: 'compliance' },
       ]},
+      profile,
     ],
     agency_owner: [
-      { label: 'My agency', items: [
-        { icon: 'ti-layout-dashboard', text: 'Dashboard',          page: 'dashboard'    },
-        { icon: 'ti-users',            text: 'Contacts',           page: 'contacts'     },
-        { icon: 'ti-layout-kanban',    text: 'Pipelines',          page: 'pipelines'    },
-        { icon: 'ti-calendar-event',   text: 'Appointments',       page: 'appointments' },
-        { icon: 'ti-bolt',             text: 'Work my leads',      page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
+      myWork('My work'),
+      { label: 'My office', items: [
+        { icon: 'ti-briefcase',        text: 'My Office',       page: 'office'    },
+        { icon: 'ti-alert-triangle',   text: 'Oversight',       page: 'oversight' },
+        { icon: 'ti-script',           text: 'Script Manager',  page: 'scripts'   },
       ]},
-      { label: 'Funnels', items: [
-        { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
-        { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
+      { label: 'Recruiting', items: [
+        { icon: 'ti-user-plus',        text: 'Applications & agents', page: 'recruiting', badge: b.inactiveAgents || null, badgeType: 'red' },
       ]},
-      { label: 'Team', items: [
-        { icon: 'ti-briefcase',          text: 'My Office',        page: 'office' },
-        { icon: 'ti-building-community', text: 'Agents & hiring',  page: 'admin',    badge: b.inactiveAgents || null, badgeType: 'red' },
-        { icon: 'ti-alert-triangle',     text: 'Oversight',        page: 'oversight' },
-        { icon: 'ti-shield-check',       text: 'Compliance',       page: 'compliance'},
-        { icon: 'ti-script',             text: 'Script Manager',   page: 'scripts'   },
+      marketing,
+      { label: 'System', items: [
+        { icon: 'ti-settings-cog',     text: 'System setup',    page: 'system'     },
+        { icon: 'ti-shield-check',     text: 'Compliance',      page: 'compliance' },
       ]},
-      { label: 'Account', items: [
-        { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
-      ]},
+      profile,
     ],
     agent: [
-      { label: 'My work', items: [
-        { icon: 'ti-layout-dashboard', text: 'Dashboard',          page: 'dashboard'    },
-        { icon: 'ti-bolt',             text: 'Work my leads',      page: 'dialer',   badge: b.notStarted || null, badgeType: 'green' },
-        { icon: 'ti-users',            text: 'My contacts',        page: 'contacts'     },
-        { icon: 'ti-layout-kanban',    text: 'My pipeline',        page: 'pipelines'    },
-        { icon: 'ti-calendar-event',   text: 'Appointments',       page: 'appointments' },
-      ]},
-      { label: 'Funnels', items: [
-        { icon: 'ti-send',             text: 'Email Campaigns',    page: 'campaigns' },
-        { icon: 'ti-mail-opened',      text: 'Email Opens',        page: 'opens'     },
-      ]},
+      myWork('My work'),
+      marketing,
       { label: 'Compliance', items: [
-        { icon: 'ti-alert-triangle',   text: 'Oversight',          page: 'oversight' },
-        { icon: 'ti-shield-check',     text: 'Compliance',         page: 'compliance'},
+        { icon: 'ti-alert-triangle',   text: 'Oversight',       page: 'oversight'  },
+        { icon: 'ti-shield-check',     text: 'Compliance',      page: 'compliance' },
       ]},
-      { label: 'Account', items: [
-        { icon: 'ti-settings',         text: 'Settings',           page: 'settings'  },
-      ]},
+      profile,
     ],
   };
 
@@ -793,7 +787,7 @@ function renderDashboardOwner() {
           <div class="action-item"><div class="action-item-info"><div class="action-item-name">Email sequences</div><div class="action-item-sub">Apps Script trigger</div></div><span class="badge badge-active"><i class="ti ti-check"></i> Running</span></div>
           <div class="action-item"><div class="action-item-info"><div class="action-item-name">Bounce flags</div><div class="action-item-sub">${bounced} flagged contacts</div></div>${bounced > 0 ? `<button class="btn btn-outline btn-sm" onclick="showPage('compliance')">Review</button>` : `<span class="badge badge-active"><i class="ti ti-check"></i> Clean</span>`}</div>
           <div class="action-item"><div class="action-item-info"><div class="action-item-name">Opted out</div><div class="action-item-sub">${optedOut} suppressed</div></div><span class="badge badge-completed">${optedOut}</span></div>
-          ${pendingApps > 0 ? `<div class="action-item"><div class="action-item-info"><div class="action-item-name">Agent applications</div><div class="action-item-sub">${pendingApps} pending review</div></div><button class="btn btn-primary btn-sm" onclick="showPage('admin')">Review</button></div>` : ''}
+          ${pendingApps > 0 ? `<div class="action-item"><div class="action-item-info"><div class="action-item-name">Agent applications</div><div class="action-item-sub">${pendingApps} pending review</div></div><button class="btn btn-primary btn-sm" onclick="showPage('recruiting')">Review</button></div>` : ''}
         </div>
         <div class="dash-card">
           ${_ctitle('ti-building-community', 'Agency snapshot')}
@@ -934,7 +928,7 @@ function renderDashboardAgency() {
               <div class="action-item-name">${app.name || app.email}</div>
               <div class="action-item-sub">${app.license_type || 'Track not set'} &middot; ${new Date(app.created_at).toLocaleDateString()}</div>
             </div>
-            <button class="btn btn-outline btn-sm" onclick="showPage('admin')">Review</button>
+            <button class="btn btn-outline btn-sm" onclick="showPage('recruiting')">Review</button>
           </div>`).join('')}
         </div>` : ''}
       </div>
@@ -1354,7 +1348,8 @@ function renderDashboard_UNUSED() {
       <button class="qa-btn" onclick="showPage('pipelines')">&#128202; Pipelines</button>
       <button class="qa-btn" onclick="showPage('contacts')">&#128101; All Contacts</button>
       <button class="qa-btn" onclick="syncGoogleContacts()">&#128257; Sync Google</button>
-      ${(currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner') ? `<button class="qa-btn" onclick="showPage('admin')">&#9881;&#65039; Admin</button>` : ''}
+      ${(currentAgent.role === 'system_owner' || currentAgent.role === 'broker_owner') ? `<button class="qa-btn" onclick="showPage('recruiting')">&#128101; Recruiting</button>
+         <button class="qa-btn" onclick="showPage('system')">&#9881;&#65039; System</button>` : ''}
     </div>
 
     <div class="dash-grid">
@@ -1447,7 +1442,7 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
 
   // Must have Gmail connected
   if (!currentAgent.gmail_connected) {
-    showToast('⚠ Connect your Gmail first (Settings → Gmail Connect)', 5000);
+    showToast('⚠ Connect your Gmail first (My Profile → Gmail Connect)', 5000);
     return;
   }
 
@@ -2610,7 +2605,7 @@ function showDialerSocialMedia(contactId) {
     const agentHas = !!(currentAgent[p.key]);
     const canOpen = agentHas && !!val;
     const tipText = !agentHas
-      ? 'Add your own ' + p.label + ' in Settings to enable this'
+      ? 'Add your own ' + p.label + ' in My Profile to enable this'
       : (!val ? 'No handle on file for this contact' : 'Open their profile on ' + p.label);
     return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
       + '<div style="width:90px;font-size:12px;font-weight:700;color:var(--muted);">' + p.label + '</div>'
@@ -3762,7 +3757,7 @@ async function dialerSendBookingLink(contactId) {
   const c = dialerQueue.find(x => x.id === contactId) || contacts.find(x => x.id === contactId);
   if (!c?.email) { showToast('No email address on file for this contact'); return; }
   if (!currentAgent.gmail_connected) {
-    showToast('⚠ Connect your Gmail first (Settings → Gmail Connect)', 5000);
+    showToast('⚠ Connect your Gmail first (My Profile → Gmail Connect)', 5000);
     return;
   }
   try {
@@ -7041,7 +7036,13 @@ async function verifyAllEmails() {
 // ADMIN PANEL (system_owner only)
 // ============================================================
 async function renderAdmin() {
-  if (currentAgent.role !== 'system_owner' && currentAgent.role !== 'broker_owner') { document.getElementById('page-admin').innerHTML = '<div class="empty-state"><div class="emoji">&#128274;</div><p>Access denied.</p></div>'; return; }
+  if (currentAgent.role !== 'system_owner' && currentAgent.role !== 'broker_owner') {
+    const denied = '<div class="empty-state"><div class="emoji">&#128274;</div><p>Access denied.</p></div>';
+    ['page-admin','page-recruiting','page-system'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.innerHTML = denied;
+    });
+    return;
+  }
 
   const totalContacts = (await supabaseClient.from('contacts').select('id', { count: 'exact', head: true })).count || 0;
   const { data: _carriers } = await supabaseClient.from('carriers')
@@ -7049,17 +7050,9 @@ async function renderAdmin() {
   window._allCarriers = _carriers || [];
   const { data: _crProdsAll } = await supabaseClient.from('carrier_products').select('id,carrier_id');
   window._allCarrierProducts = _crProdsAll || [];
-  const { data: _myApptsAdm } = await supabaseClient.from('carrier_appointments')
-    .select('*, carriers(name)').eq('agent_id', currentAgent.id);
-  const myApptsCard = `
-    <div class="card" style="margin-bottom:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:700;font-size:16px;">&#9997;&#65039; My Carrier Appointments</div>
-        <button class="btn btn-primary btn-sm" onclick="openMyCarriers()">Manage</button>
-      </div>
-      ${currentAgent.role === 'broker_owner' ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Your active appointments define which carriers the agents in your agency can select.</div>' : ''}
-      ${carrierApptsSummaryHtml_(_myApptsAdm)}
-    </div>`;
+  // My own appointments are a fact about me, so My Profile is the only place
+  // that shows them now. The copy that used to sit here was the same card and
+  // the same query, run again on a page about other people.
   const carriersSection = `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -7414,59 +7407,88 @@ async function renderAdmin() {
     </div>`;
   }).join('');
 
-  document.getElementById('page-admin').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h2 class="section-title" style="margin:0;">&#9881;&#65039; ${currentAgent.role === 'broker_owner' ? 'Agency Admin' : 'System Admin'}</h2>
+  const sysOnly = currentAgent.role === 'system_owner';
+
+  // ---- RECRUITING: bringing people in and getting them active -------------
+  const recruitPage = document.getElementById('page-recruiting');
+  if (recruitPage) recruitPage.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <h2 class="section-title" style="margin:0;">&#128101; Recruiting</h2>
+      <button class="btn btn-outline btn-sm" onclick="loadData().then(renderAdmin)">&#8635; Refresh</button>
     </div>
+    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:18px;">Applications, approvals, and everyone currently on the roster.</div>
 
     <div class="admin-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
-      <div class="admin-stat"><div class="num">${allAgents.length}</div><div class="lbl">Total Agents</div></div>
-      <div class="admin-stat" style="border-left-color:#3b82f6;"><div class="num">${totalContacts}</div><div class="lbl">Total Contacts</div></div>
-      <div class="admin-stat" style="border-left-color:#10b981;"><div class="num">${allAgencies.length}</div><div class="lbl">Agencies</div></div>
-      <div class="admin-stat" style="border-left-color:#8b5cf6;"><div class="num">${allCompanies.length}</div><div class="lbl">Companies</div></div>
-      <div class="admin-stat" style="border-left-color:var(--danger);"><div class="num" style="${pending.length > 0 ? 'color:var(--danger);' : ''}">${pending.length}</div><div class="lbl">Pending Apps</div></div>
+      <div class="admin-stat" style="border-left-color:var(--danger);"><div class="num" style="${pending.length > 0 ? 'color:var(--danger);' : ''}">${pending.length}</div><div class="lbl">Pending Applications</div></div>
+      <div class="admin-stat" style="border-left-color:#f59e0b;"><div class="num">${pendingAgents.length}</div><div class="lbl">Awaiting Approval</div></div>
+      <div class="admin-stat"><div class="num">${activeAgents.length}</div><div class="lbl">Active Agents</div></div>
     </div>
 
     <div class="card" style="margin-bottom:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <div style="font-weight:700;font-size:16px;">&#128203; Agent Applications ${pending.length > 0 ? `<span style="background:var(--danger);color:white;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">${pending.length}</span>` : ''}</div>
-        <button class="btn btn-outline btn-sm" onclick="loadData().then(renderAdmin)">&#8635; Refresh</button>
-      </div>
+      <div style="font-weight:700;font-size:16px;margin-bottom:14px;">&#128203; Agent Applications ${pending.length > 0 ? `<span style="background:var(--danger);color:white;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">${pending.length}</span>` : ''}</div>
       ${appRows || `<div style="font-size:13px;color:var(--muted);padding:8px 0;text-align:center;">No pending applications.</div>`}
       ${applications.filter(a=>a.status!=='pending').length > 0 ? `<div style="font-size:11px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">Approved: ${applications.filter(a=>a.status==='approved').length} &nbsp;&#183;&nbsp; Denied: ${applications.filter(a=>a.status==='denied').length}</div>` : ''}
     </div>
 
-    ${myApptsCard}
-
-    ${currentAgent.role === 'system_owner' ? `<div class="card" style="margin-bottom:20px;">
+    ${sysOnly ? `<div class="card" style="margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <div style="font-weight:700;font-size:16px;">&#128101; Agents ${pendingAgents.length > 0 ? `<span style="background:var(--danger);color:white;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">${pendingAgents.length}</span>` : ''}</div>
         <button class="btn btn-accent btn-sm" onclick="openAddAgent()">+ Add Agent</button>
       </div>
       ${applicationsSection}
       ${pendingAgentSection}
-      ${carriersSection}
-      ${baaSection}
-      ${nppSection}
-      ${_planYearSection}${_reviewSection}${cmsSection}
       ${agentRows || '<div class="empty-state" style="padding:20px;"><p>No active agents yet.</p></div>'}
+    </div>` : ''}`;
+
+  // ---- SYSTEM: the plumbing the whole franchise runs on --------------------
+  const sysPage = document.getElementById('page-system');
+  if (sysPage) sysPage.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <h2 class="section-title" style="margin:0;">&#9881;&#65039; System</h2>
+      <button class="btn btn-outline btn-sm" onclick="loadData().then(renderAdmin)">&#8635; Refresh</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:18px;">The shared catalogue and the yearly figures. Changes here reach every office.</div>
+
+    ${sysOnly ? `
+    <div class="admin-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
+      <div class="admin-stat" style="border-left-color:#10b981;"><div class="num">${allAgencies.length}</div><div class="lbl">Offices</div></div>
+      <div class="admin-stat" style="border-left-color:#8b5cf6;"><div class="num">${allCompanies.length}</div><div class="lbl">Divisions</div></div>
+      <div class="admin-stat" style="border-left-color:#3b82f6;"><div class="num">${totalContacts}</div><div class="lbl">Total Contacts</div></div>
     </div>
 
-    <div class="card">
-      <div style="font-weight:700;font-size:16px;margin-bottom:16px;">&#127970; Agencies</div>
-      ${agencyRows || '<div class="empty-state" style="padding:20px;"><p>No agencies.</p></div>'}
-    </div>` : ''}
+    <div class="card" style="margin-bottom:20px;">
+      <div style="font-weight:700;font-size:16px;margin-bottom:14px;">&#127970; Carriers &amp; Products</div>
+      ${carriersSection}
+    </div>
 
-    <div class="card" style="margin-top:20px;">
+    <div class="card" style="margin-bottom:20px;">
+      <div style="font-weight:700;font-size:16px;margin-bottom:14px;">&#128197; Plan Year &amp; Medicare Data</div>
+      ${_planYearSection}${_reviewSection}${cmsSection}
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div style="font-weight:700;font-size:16px;margin-bottom:14px;">&#128220; Compliance Documents</div>
+      ${baaSection}
+      ${nppSection}
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div style="font-weight:700;font-size:16px;margin-bottom:16px;">&#127970; Offices</div>
+      ${agencyRows || '<div class="empty-state" style="padding:20px;"><p>No offices.</p></div>'}
+    </div>` : `<div class="card" style="margin-bottom:20px;">
+      <div style="font-size:13px;color:var(--text-muted);">The shared catalogue is maintained by the system owner. What your own office carries from it is on <a href="#" onclick="showPage('office');return false;">My Office</a>.</div>
+    </div>`}
+
+    <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div>
           <div style="font-weight:700;font-size:16px;margin-bottom:4px;">&#128221; Call Scripts</div>
-          <div style="font-size:13px;color:var(--muted);">Manage the dialer's script tree — root scripts, objections, and rebuttals.</div>
+          <div style="font-size:13px;color:var(--muted);">Manage the dialer's script tree &mdash; root scripts, objections, and rebuttals.</div>
         </div>
         <button class="btn btn-primary btn-sm" onclick="openScriptManager()">Manage Scripts</button>
       </div>
-    </div>
-  `;
+    </div>`;
+
 }
 
 // ============================================================
@@ -8009,7 +8031,8 @@ async function renderSettings() {
     .select('*, carriers(name)').eq('agent_id', currentAgent.id);
 
   pg.innerHTML = `
-    <h2 class="section-title" style="margin-bottom:20px;">⚙ Settings</h2>
+    <h2 class="section-title" style="margin-bottom:4px;">&#128100; My Profile</h2>
+    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:18px;">Who you are, how clients reach you, and how you sign in.</div>
     <div style="max-width:680px;">
 
       <div class="dash-card" style="margin-bottom:16px;">
@@ -8075,7 +8098,7 @@ async function renderSettings() {
 
       <div class="dash-card" style="margin-bottom:16px;">
         <div class="dash-card-title"><i class="ti ti-building-bank"></i>My Carrier Appointments</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">The carriers you're contracted with. These drive Scope of Appointment rules and, soon, quoting.</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">The carriers you're contracted with. These drive Scope of Appointment rules and, soon, quoting.${currentAgent.role === 'broker_owner' ? ' Your active appointments also define which carriers the agents in your office can select.' : ''}</div>
         ${carrierApptsSummaryHtml_(_myApptsSet)}
         <div style="margin-top:12px;"><button class="btn btn-primary" onclick="openMyCarriers()">Manage my carriers</button></div>
       </div>
@@ -8290,7 +8313,7 @@ async function saveSettings() {
   const ndEl = document.getElementById('user-name-display');
   if (ndEl) ndEl.textContent = currentAgent.name;
 
-  showToast('✓ Settings saved!');
+  showToast('✓ Profile saved!');
 }
 
 // ============================================================
@@ -14115,7 +14138,7 @@ function qbQuoteLinkPaint_(i) {
   const btn = carrierQuotingBtn_(carId, prodId, 'Quote this at the carrier');
   const line = btn
     ? btn + `<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">then bring the premium back to this option</span>`
-    : `<span style="font-size:11px;color:var(--text-muted);">No quoting page saved for this carrier — add yours in Settings → My Carrier Appointments.</span>`;
+    : `<span style="font-size:11px;color:var(--text-muted);">No quoting page saved for this carrier — add yours in My Profile → My Carrier Appointments.</span>`;
 
   const prod = (window._qbProds || []).find(p => p.id === prodId);
   const st = (typeof _acaClientState_ === 'function') ? _acaClientState_() : '';
@@ -14386,7 +14409,7 @@ async function openQuoteBuilder(dealId, opts) {
   let myCarriers = (master || []).filter(c => apptIds.has(c.id));
   if (!myCarriers.length && isOwner) myCarriers = master || [];
   if (!myCarriers.length) {
-    showToast('Set up your carrier appointments first (Settings \u2192 My Carrier Appointments).');
+    showToast('Set up your carrier appointments first (My Profile \u2192 My Carrier Appointments).');
     return;
   }
   const { data: prods } = await supabaseClient.from('carrier_products')
@@ -18019,7 +18042,7 @@ function qbAcaApptWarn_(i, plan) {
     notes.push(agencyOk
       ? { tone: 'warn',
           html: '&#9888;&#65039; You\u2019re not contracted with <strong>' + escWeb(plan.issuer || 'this carrier')
-            + '</strong>. Your agency offers it \u2014 check your appointment before enrolling the client (Settings \u2192 My Carrier Appointments).' }
+            + '</strong>. Your agency offers it \u2014 check your appointment before enrolling the client (My Profile \u2192 My Carrier Appointments).' }
       : { tone: 'bad',
           html: '&#9888;&#65039; <strong>' + escWeb(plan.issuer || 'This carrier')
             + '</strong> isn\u2019t on your agency\u2019s carrier list \u2014 you likely can\u2019t enroll the client in this plan. Confirm with your agency before presenting it.' });
