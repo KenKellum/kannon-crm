@@ -12690,6 +12690,10 @@ function pwStep_(n) { _pw.step = n; _pw.error = null; pwPaint_(); }
 function pwPaint_() {
   const host = document.getElementById('pw-body');
   if (!host || !_pw) return;
+  if (_pw.busy && _pw.step_note) {
+    const note = document.getElementById('pw-progress');
+    if (note) { note.textContent = _pw.step_note; return; }   // just update the line
+  }
   const body =
     _pw.step === 0 ? pwStepMode_() :
     _pw.step === 1 ? pwStepCarrier_() :
@@ -12800,7 +12804,9 @@ function pwStepUpload_() {
         ${_pw.busy ? 'Reading…' : 'Read it →'}</button>
     </div>
     ${_pw.busy ? `<div class="pk-bar muted" style="margin-top:12px;border-radius:8px;border:1px solid;">
-      Reading — a full brochure usually takes twenty to forty seconds.</div>` : ''}${pwErr_()}`;
+      <div id="pw-progress">${escWeb(_pw.step_note || 'Reading the document…')}</div>
+      <div style="font-size:11.5px;opacity:.75;margin-top:3px;">Each plan is read on its own, so a brochure with
+      several plans takes a little longer — and gets read more carefully.</div></div>` : ''}${pwErr_()}`;
 }
 
 function pwPickFiles_(el) { _pw.files = Array.from(el.files || []); _pw.error = null; pwPaint_(); }
@@ -12847,6 +12853,30 @@ async function pwWithdraw_() {
 // The wizard is told only "non-2xx". The reason, if there is one, is on the run
 // row -- and a row still saying "running" with nothing in it means the worker was
 // stopped mid-read rather than failing.
+// Watch the run until it settles. Each pass is a fresh worker, so the only
+// thing that can hang is a pass dying silently -- if nothing moves for four
+// minutes, say so rather than spinning for ever.
+async function pwWaitForRun_(runId) {
+  let lastStep = '', still = 0;
+  for (;;) {
+    const { data: run } = await supabaseClient.from('extraction_runs')
+      .select('*').eq('id', runId).single();
+    if (!run) throw new Error('That reading is no longer on file.');
+    if (run.status !== 'running') return run;
+
+    const step = ((run.findings || {}).step) || 'Reading\u2026';
+    if (step === lastStep) still++; else { still = 0; lastStep = step; }
+    if (still > 80) {   // ~4 minutes with no progress at all
+      await supabaseClient.from('extraction_runs')
+        .update({ status: 'failed', error: 'A pass stopped without finishing. Nothing is wrong with the document \u2014 run it again.' })
+        .eq('id', runId);
+      throw new Error('A pass stopped without finishing. Nothing is wrong with the document \u2014 run it again.');
+    }
+    if (_pw) { _pw.step_note = step; pwPaint_(); }
+    await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
 async function pwWhyItFailed_(startedAt, error) {
   try {
     const { data } = await supabaseClient.from('extraction_runs')
@@ -12869,7 +12899,7 @@ async function pwWhyItFailed_(startedAt, error) {
 }
 
 async function pwRun_(answers) {
-  _pw.busy = true; _pw.error = null; pwPaint_();
+  _pw.busy = true; _pw.error = null; _pw.step_note = ''; pwPaint_();
   try {
     if (!_pw.carrierId) {
       const { data: nc, error } = await supabaseClient.from('carriers')
@@ -12912,7 +12942,9 @@ async function pwRun_(answers) {
     if (error) throw new Error(await pwWhyItFailed_(started, error));
     if (data && data.status === 'failed') throw new Error(data.error || 'The reading failed.');
 
-    const { data: run } = await supabaseClient.from('extraction_runs').select('*').eq('id', data.run_id).single();
+    const run = await pwWaitForRun_(data.run_id);
+    if (run.status === 'failed') throw new Error(run.error || 'The reading failed.');
+    data.status = run.status;
     _pw.run = run;
     _pw.chosen = {};
     (((run || {}).proposal || {}).products || []).forEach((_, i) => { _pw.chosen[i] = true; });
