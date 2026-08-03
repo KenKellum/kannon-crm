@@ -15120,6 +15120,75 @@ async function askKenai_() {
   }
 }
 
+// The next visible, empty option slot - same rule the Medigap and CMS pickers
+// use, including revealing a hidden one if they are all in use.
+function kenaiFreeSlot_() {
+  const empty = (i) => {
+    const w = document.getElementById('qb-opt-wrap-' + i);
+    const nm = document.getElementById('qb-name-' + i);
+    if (!w || !nm) return false;
+    return w.style.display !== 'none' && !nm.value.trim()
+      && !(window._qbMgSel || {})[i] && !(window._qbCmsSel || {})[i] && !(window._qbAcaSel || {})[i];
+  };
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if (empty(i)) return i;
+  qbRevealOption_();
+  for (let i = 0; i < QB_MAX_OPTIONS; i++) if (empty(i)) return i;
+  return -1;
+}
+
+async function kenaiAddPlan_(btn, productId) {
+  const d = window._kenaiLast || {};
+  const slot = kenaiFreeSlot_();
+  if (slot < 0) { showToast('All ' + QB_MAX_OPTIONS + ' options are full \u2014 remove one first.', 6000); return; }
+  const wrap = document.getElementById('qb-opt-wrap-' + slot);
+  if (wrap) wrap.style.display = 'block';
+  qbRenumberOptions_();
+
+  if (String(productId).indexOf('aca:') === 0) {
+    // A Marketplace plan Ken.ai fetched. Put it into the list the ACA picker
+    // reads from, then let that picker's own code fill the slot - so the option
+    // carries the same premium, bullets and appointment warning it would have
+    // had if the agent had found it themselves.
+    const raw = (d.aca_raw || {})[productId];
+    if (!raw) { showToast('That plan is no longer in this answer \u2014 ask Ken.ai again.', 6000); return; }
+    window._qbAcaPlans = window._qbAcaPlans || [];
+    if (!window._qbAcaPlans.some(p => String(p.id) === String(raw.id))) window._qbAcaPlans.push(raw);
+    const sel = document.getElementById('qb-aca-' + slot);
+    if (!sel) { showToast('Could not find that option slot.', 6000); return; }
+    if (!sel.options.length || sel.options.length === 1) {
+      sel.innerHTML = '<option value="">&mdash; pick a plan &mdash;</option>'
+        + window._qbAcaPlans.map(p => `<option value="${escWeb(p.id)}">${escWeb(p.metal)}: ${escWeb((p.issuer ? p.issuer + ' \u2014 ' : '') + p.name)} ($${Number(p.net).toFixed(2)}/mo)</option>`).join('');
+    } else if (!sel.querySelector('option[value="' + CSS.escape(String(raw.id)) + '"]')) {
+      const o = document.createElement('option');
+      o.value = raw.id;
+      o.textContent = (raw.metal || '') + ': ' + ((raw.issuer ? raw.issuer + ' \u2014 ' : '') + raw.name) + ' ($' + Number(raw.net).toFixed(2) + '/mo)';
+      sel.appendChild(o);
+    }
+    sel.value = raw.id;
+    qbApplyAcaPlan_(slot);
+  } else {
+    // One of our own catalogue plans.
+    const line = document.getElementById('qb-optline-' + slot);
+    const prodSel = document.getElementById('qb-prod-' + slot);
+    if (prodSel && [...prodSel.options].some(o => o.value === productId)) {
+      prodSel.value = productId;
+      qbApplyProduct_(slot);
+    } else {
+      // Its carrier is not selected in this slot yet, so the product list has
+      // not been built. Name it and let the agent pick the rate - better than
+      // silently attaching the wrong product.
+      const p = ((window._qbProds || []).find(x => x.id === productId));
+      const nm = document.getElementById('qb-name-' + slot);
+      if (nm) nm.value = p ? p.name : '';
+      if (!p) { showToast('Added the slot \u2014 pick the carrier and plan to finish.', 6000); }
+    }
+    if (line && !line.value) { line.value = 'Health \u2014 Individual'; qbOptLineChanged_(slot); }
+  }
+
+  if (btn) { btn.textContent = '\u2713 On the quote'; btn.disabled = true; btn.classList.add('btn-primary'); }
+  showToast('Added to option ' + String.fromCharCode(65 + slot) + '.');
+}
+
 async function kenaiSetCounty_(fips, name) {
   const c = window._qbContact;
   if (!c) return;
@@ -15134,6 +15203,7 @@ async function kenaiSetCounty_(fips, name) {
 }
 
 function kenaiShow_(d) {
+  window._kenaiLast = d;
   const packs = d.packages || [];
   const el = document.getElementById('kenai-overlay');
   if (el) el.remove();
@@ -15178,8 +15248,11 @@ function kenaiShow_(d) {
       </div>` : ''}
 
       ${d.aca_fetched ? `<div class="pk-bar" style="margin-top:12px;border-radius:9px;border:1px solid var(--border);font-size:12.5px;line-height:1.6;">
-        <strong>Ken.ai pulled ${d.aca_fetched} Marketplace plan${d.aca_fetched === 1 ? '' : 's'} from healthcare.gov itself${(d.aca && d.aca.year) ? ' for ' + escWeb(String(d.aca.year)) : ''}.</strong>
-        Prices shown are AFTER the tax credit${(d.aca && d.aca.aptc) ? ' (estimated at $' + Number(d.aca.aptc).toFixed(0) + '/mo)' : ''}${(d.aca && d.aca.csr && !/none/i.test(String(d.aca.csr))) ? ', with extra Silver savings' : ''}.
+        <strong>Ken.ai pulled ${d.aca_fetched} Marketplace plan${d.aca_fetched === 1 ? '' : 's'} from healthcare.gov itself${(d.aca && d.aca.year) ? ' for ' + escWeb(String(d.aca.year)) : ''}${(d.aca && d.aca.county_name) ? ', ' + escWeb(String(d.aca.county_name)) : ''}.</strong>
+        ${(d.aca && d.aca.credit_applied)
+          ? 'Prices shown are <strong>after the tax credit</strong>' + ((d.aca && d.aca.aptc) ? ' of about $' + Number(d.aca.aptc).toFixed(0) + '/mo' : '') + ((d.aca && d.aca.csr && !/none/i.test(String(d.aca.csr))) ? ', with extra Silver savings' : '') + '.'
+          : '<span style="color:var(--text-warning);font-weight:700;">No tax credit applies at this income \u2014 these are full prices.</span>'}
+        ${(d.aca && d.aca.income != null) ? '<span style="color:var(--text-muted);"> Based on $' + Number(d.aca.income).toLocaleString() + ' a year' + ((d.aca.applicant_count) ? ' for ' + d.aca.applicant_count + ' ' + (d.aca.applicant_count === 1 ? 'person' : 'people') : '') + '.</span>' : ''}
         ${(d.aca && d.aca.total_available) ? '<span style="color:var(--text-muted);">Cheapest few of each metal level, out of ' + d.aca.total_available + ' available.</span>' : ''}
         ${(d.aca_assumptions || []).length ? `<div style="margin-top:7px;padding-top:7px;border-top:1px solid var(--border);">
           <strong style="color:var(--text-warning);">Check these before you quote the price:</strong>
@@ -15213,6 +15286,10 @@ function kenaiShow_(d) {
               <span style="color:var(--text-muted);">\u00b7 ${escWeb(pl.carrier || '')} \u00b7 ${escWeb(pl.role || pl.line || '')}</span>
               ${pl.option ? '<span style="color:var(--text-secondary);"> \u2014 ' + escWeb(pl.option) + '</span>' : ''}
               ${pl.monthly_premium != null ? '<span style="color:var(--text-success);"> \u00b7 ' + money(pl.monthly_premium) + '/mo</span>' : ''}
+              ${(pl.premium_before_subsidy != null && Number(pl.premium_before_subsidy) > Number(pl.monthly_premium))
+                ? '<span style="color:var(--text-muted);font-size:11.5px;"> <s>' + money(pl.premium_before_subsidy) + '</s> before the credit</span>' : ''}
+              ${pl.addable ? `<button type="button" class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px;"
+                onclick="kenaiAddPlan_(this, '${escWeb(String(pl.product_id))}')">+ Add to quote</button>` : ''}
               ${(pl.deductible != null || pl.out_of_pocket_max != null) ? '<div style="font-size:11.5px;color:var(--text-muted);padding-left:2px;">'
                 + (pl.deductible != null ? money(pl.deductible) + ' deductible' : '')
                 + (pl.deductible != null && pl.out_of_pocket_max != null ? ' \u00b7 ' : '')
