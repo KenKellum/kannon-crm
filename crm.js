@@ -7892,6 +7892,26 @@ async function startSequence(contactId) {
   }, { confirmLabel: 'Start Sequence' });
 }
 
+// A dialog "has something to lose" if it carries anything the person filled in
+// or chose, or if it is mid-way through a job. Read-only dialogs keep the old
+// convenience of clicking away to dismiss.
+function modalHasWork_(overlay) {
+  if (window._pw && window._pw.mode) return true;      // the product wizard is in flight
+  const fields = overlay.querySelectorAll('input, textarea, select');
+  for (const f of fields) {
+    if (f.type === 'checkbox' || f.type === 'radio') { if (f.checked !== f.defaultChecked) return true; }
+    else if (f.tagName === 'SELECT') { if (f.selectedIndex !== 0) return true; }
+    else if ((f.value || '').trim() !== '' && f.value !== f.defaultValue) return true;
+  }
+  return false;
+}
+
+function modalBackdropClick_(event, overlay) {
+  if (event.target !== overlay) return;                // a click inside the dialog
+  if (!modalHasWork_(overlay)) { closeModal(); return; }
+  showToast('Use Cancel or \u2715 to close \u2014 so nothing you have entered is lost.');
+}
+
 function showModal(title, bodyHtml, onSave, opts = {}) {
   const confirmLabel = opts.confirmLabel || 'Save';
   const footer = opts.hideConfirm
@@ -7900,7 +7920,7 @@ function showModal(title, bodyHtml, onSave, opts = {}) {
   const modalStyle = opts.wide ? 'max-width:900px;padding:0;' : '';
   const bodyStyle  = opts.wide ? 'padding:0;' : '';
   document.getElementById('modal-container').innerHTML = `
-    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal-overlay" onclick="modalBackdropClick_(event, this)">
       <div class="modal" style="${modalStyle}">
         <div class="modal-header" style="${opts.wide ? 'margin:0;border-radius:12px 12px 0 0;padding:16px 20px;' : ''}"><h2>${title}</h2><button class="modal-close" onclick="closeModal()">&times;</button></div>
         <div class="modal-body" style="${bodyStyle}">${bodyHtml}</div>
@@ -12824,6 +12844,30 @@ async function pwWithdraw_() {
 }
 
 // ------------------------------------------------------------- the reading
+// The wizard is told only "non-2xx". The reason, if there is one, is on the run
+// row -- and a row still saying "running" with nothing in it means the worker was
+// stopped mid-read rather than failing.
+async function pwWhyItFailed_(startedAt, error) {
+  try {
+    const { data } = await supabaseClient.from('extraction_runs')
+      .select('status,error,proposal,created_at')
+      .gte('created_at', startedAt)
+      .order('created_at', { ascending: false }).limit(1);
+    const run = data && data[0];
+    if (run && run.error) return run.error;
+    if (run && run.status === 'running' && !run.proposal) {
+      // clear the stranded row so it does not sit in the list looking live
+      await supabaseClient.from('extraction_runs')
+        .update({ status: 'failed', error: 'Stopped at the server time limit before the reading came back.' })
+        .eq('created_at', run.created_at);
+      return 'The reading was stopped at the server\u2019s time limit before it finished. '
+           + 'This document needs longer than one run allows \u2014 nothing is wrong with the file. '
+           + 'Try uploading fewer pages at once, or tell Claude and the reading can be split.';
+    }
+  } catch (e) { /* fall through to the raw message */ }
+  return (error && error.message) || 'The reading failed.';
+}
+
 async function pwRun_(answers) {
   _pw.busy = true; _pw.error = null; pwPaint_();
   try {
@@ -12863,8 +12907,9 @@ async function pwRun_(answers) {
     const payload = { document_ids: _pw.docs, mode: _pw.mode, hint: _pw.hint };
     if (answers) { payload.answers = answers; payload.prior_run_id = _pw.run.id; }
 
+    const started = new Date().toISOString();
     const { data, error } = await supabaseClient.functions.invoke('product-extract', { body: payload });
-    if (error) throw new Error(error.message || 'The reading failed.');
+    if (error) throw new Error(await pwWhyItFailed_(started, error));
     if (data && data.status === 'failed') throw new Error(data.error || 'The reading failed.');
 
     const { data: run } = await supabaseClient.from('extraction_runs').select('*').eq('id', data.run_id).single();
