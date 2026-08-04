@@ -1,8 +1,8 @@
 // Deleting a contact — the rule Ken set on 2026-08-04.
 //
 // A contact can be deleted with everything attached to them, but ONLY if they
-// hold no coverage, no signed Scope of Appointment and no locked quote, and
-// never without being shown first what is about to go.
+// hold no coverage, no signed Scope of Appointment, no signed HIPAA BAA and no
+// locked quote, and never without being shown first what is about to go.
 //
 // This exercises the real verdict function out of crm.js. The old version of
 // deleteContact fired four deletes, checked none of them, and reported success
@@ -35,8 +35,9 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) bad
 const texts = list => list.map(x => x.text).join(', ');
 
 // ── 1. what stops a delete dead ──────────────────────────────────────────────
-console.log('1. the three things that block it outright');
-[['enrollments', 'coverage'], ['signedSoas', 'a signed SOA'], ['lockedQuotes', 'a locked quote']].forEach(([k, what]) => {
+console.log('1. the four things that block it outright');
+[['enrollments', 'coverage'], ['signedSoas', 'a signed SOA'],
+ ['baas', 'a signed HIPAA BAA'], ['lockedQuotes', 'a locked quote']].forEach(([k, what]) => {
   const s = contactDeleteSummary_({ [k]: 1 });
   ok(!!s.blocked, what + ' blocks the delete');
   ok(s.blocked.length === 1, what + ' is named as the reason: ' + (s.blocked ? texts(s.blocked) : '—'));
@@ -47,9 +48,13 @@ ok(!!contactDeleteSummary_({ enrollments: 3 }).blocked, 'coverage of any status 
 ok(contactDeleteSummary_({ enrollments: 2 }).blocked[0].text === '2 coverage records',
    'the reason is plural when there are several');
 
-// All three at once must all be named, not just the first.
-const all3 = contactDeleteSummary_({ enrollments: 1, signedSoas: 2, lockedQuotes: 1 });
-ok(all3.blocked.length === 3, 'all three blockers are listed together: ' + texts(all3.blocked));
+// All four at once must all be named, not just the first.
+const all4 = contactDeleteSummary_({ enrollments: 1, signedSoas: 2, baas: 1, lockedQuotes: 1 });
+ok(all4.blocked.length === 4, 'all four blockers are listed together: ' + texts(all4.blocked));
+// A BAA that was only ever REQUESTED is not a record — the count that reaches
+// here is already filtered to status 'signed', and an unsigned one must not
+// hold a duplicate contact hostage.
+ok(!contactDeleteSummary_({ baas: 0 }).blocked, 'an unsigned BAA request does not block anything');
 
 // ── 2. a contact with nothing attached ───────────────────────────────────────
 console.log('\n2. a duplicate or a typo');
@@ -63,7 +68,7 @@ ok(!empty.destroyed.length && !empty.orphaned.length, 'and nothing is listed as 
 console.log('\n3. the warning names what goes');
 const s = contactDeleteSummary_({
   deals: 2, dealActivities: 14, dealTasks: 3, quotes: 1, intakes: 2,
-  activities: 40, providers: 6, medications: 2, baas: 1, censuses: 1,
+  activities: 40, providers: 6, medications: 2, censuses: 1,
 });
 ok(!s.blocked, 'none of this blocks a delete under Ken\'s rule');
 ok(!s.nothingAttached, 'but it is not an empty contact either');
@@ -78,17 +83,17 @@ ok(/40 timeline entries/.test(d),   'the whole timeline is named');
 ok(/6 doctors and facilities/.test(d), 'the doctors are named');
 ok(/2 medications/.test(d),         'the medications are named');
 const o = texts(s.orphaned);
-ok(/1 signed HIPAA BAA/.test(o), 'the BAA is listed as kept but detached: ' + o);
-ok(/1 employee census/.test(o),  'the census is listed as kept but detached');
-ok(!/BAA/.test(d), 'nothing that survives is listed under Destroyed');
-ok(!/deal/.test(o), 'nothing that is destroyed is listed under Kept');
+ok(/1 employee census/.test(o), 'the census is listed as kept but detached: ' + o);
+ok(!/census/.test(d), 'nothing that survives is listed under Destroyed');
+ok(!/deal/.test(o),   'nothing that is destroyed is listed under Kept');
 
 // ── 4. the typed-name rule ───────────────────────────────────────────────────
 console.log('\n4. when the name has to be typed');
 ok(contactDeleteSummary_({ deals: 1 }).needsTypedName,    'a deal means typing the name');
 ok(contactDeleteSummary_({ quotes: 1 }).needsTypedName,   'a quote means typing the name');
-ok(contactDeleteSummary_({ baas: 1 }).needsTypedName,     'a signed BAA means typing the name');
 ok(contactDeleteSummary_({ censuses: 1 }).needsTypedName, 'a census means typing the name');
+// A signed BAA no longer reaches this question — it blocks outright.
+ok(!!contactDeleteSummary_({ baas: 1 }).blocked, 'a signed BAA never gets as far as typing a name');
 // History alone is not a record of business. Requiring the name for a stray
 // email open would train Ken to type it without reading.
 ok(!contactDeleteSummary_({ activities: 40 }).needsTypedName, 'a timeline on its own does not');
@@ -105,9 +110,13 @@ CONTACT_DELETE_ATTACHMENTS.forEach(a => {
 // raises restrict_violation, so those two would fail at the database anyway —
 // this list must agree with it or the interface promises something the
 // database will refuse.
-['enrollments', 'lockedQuotes', 'signedSoas'].forEach(k =>
+['enrollments', 'lockedQuotes', 'signedSoas', 'baas'].forEach(k =>
   ok(CONTACT_DELETE_ATTACHMENTS.find(a => a.key === k).fate === 'refuse',
-     k + ' is a blocker, matching the database guard'));
+     k + ' is a blocker'));
+// Every signed document blocks. If a new one is ever added to the catalogue,
+// this is the line that should make somebody think about it.
+ok(CONTACT_DELETE_ATTACHMENTS.filter(a => /signed/.test(a.one)).every(a => a.fate === 'refuse'),
+   'nothing carrying a signature is left deletable');
 
 console.log(bad ? '\n' + bad + ' FAILED' : '\na client we sold something to cannot be tidied away');
 process.exit(bad ? 1 : 0);

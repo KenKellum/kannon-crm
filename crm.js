@@ -7852,10 +7852,13 @@ async function loadIntakeHistoryPanel(contactId) {
 const CONTACT_DELETE_ATTACHMENTS = [
   { key: 'enrollments',    one: 'coverage record',     many: 'coverage records',      fate: 'refuse'    },
   { key: 'lockedQuotes',   one: 'locked quote',        many: 'locked quotes',         fate: 'refuse'    },
-  // Ken, 2026-08-04: "do not delete if there are any signed SOA's". A signed
-  // Scope of Appointment carries a ten-year CMS retention rule, and severing it
-  // from the person it was signed by is not something to do by accident.
+  // Ken, 2026-08-04: "do not delete if there are any signed SOA's", then
+  // "HIPPA and BAA needs to not delete either". A signed Scope of Appointment
+  // carries a ten-year CMS retention rule; a signed BAA is the HIPAA agreement
+  // itself. Both are documents with a real signature on them, and severing one
+  // from the person who signed it is not something to do by accident.
   { key: 'signedSoas',     one: 'signed SOA',          many: 'signed SOAs',           fate: 'refuse'    },
+  { key: 'baas',           one: 'signed HIPAA BAA',    many: 'signed HIPAA BAAs',     fate: 'refuse'    },
   { key: 'deals',          one: 'deal',                many: 'deals',                 fate: 'destroyed' },
   { key: 'dealActivities', one: 'logged call or note', many: 'logged calls and notes',fate: 'destroyed' },
   { key: 'dealTasks',      one: 'task',                many: 'tasks',                 fate: 'destroyed' },
@@ -7864,7 +7867,6 @@ const CONTACT_DELETE_ATTACHMENTS = [
   { key: 'activities',     one: 'timeline entry',      many: 'timeline entries',      fate: 'destroyed' },
   { key: 'providers',      one: 'doctor or facility',  many: 'doctors and facilities',fate: 'destroyed' },
   { key: 'medications',    one: 'medication',          many: 'medications',           fate: 'destroyed' },
-  { key: 'baas',           one: 'signed HIPAA BAA',    many: 'signed HIPAA BAAs',     fate: 'orphaned'  },
   { key: 'censuses',       one: 'employee census',     many: 'employee censuses',     fate: 'orphaned'  },
 ];
 
@@ -7884,7 +7886,7 @@ function contactDeleteSummary_(counts) {
     // A contact with nothing of record is a duplicate or a typo: one click.
     // Anything of record going means typing the name, the same hard
     // confirmation Ken asked for on quotes.
-    needsTypedName: n('deals') + n('quotes') + n('baas') + n('censuses') > 0,
+    needsTypedName: n('deals') + n('quotes') + n('censuses') > 0,
     nothingAttached: !CONTACT_DELETE_ATTACHMENTS.some(a => n(a.key) > 0),
   };
 }
@@ -7951,10 +7953,13 @@ async function deleteContact(id) {
         </ul></div>` : ''}
       ${counts.signedSoas ? `<p style="font-size:12.5px;">A signed Scope of Appointment carries a
         <strong>ten-year CMS retention rule</strong>. It stays, and it stays attached to the person who signed it.</p>` : ''}
+      ${counts.baas ? `<p style="font-size:12.5px;">A signed HIPAA Business Associate Agreement is the agreement
+        itself, with their signature on it. It stays attached to the person who signed it.</p>` : ''}
       ${counts.lockedQuotes ? `<p style="font-size:12.5px;">A locked quote is one a client enrolled or waived on —
         it is the proof of what they were offered, and the database will not let it go either.</p>` : ''}
-      <p style="font-size:12.5px;color:var(--text-muted);">If they have left us, end the coverage with a date
-      instead — it stays on the file and stops counting as in force.</p>
+      <p style="font-size:12.5px;color:var(--text-muted);">${cover.length
+        ? 'If they have left us, end the coverage with a date instead — it stays on the file and stops counting as in force.'
+        : 'If they are no longer a client, leave the record and close their deal instead — it comes off the board and keeps everything attached to it.'}</p>
     `, null, { hideConfirm: true, cancelLabel: 'Leave them alone' });
     return;
   }
@@ -7974,10 +7979,7 @@ async function deleteContact(id) {
     ${s.destroyed.length ? `<div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">Destroyed</div>
       <ul style="font-size:12.5px;margin:0 0 12px 18px;">${s.destroyed.map(x => line(x, false)).join('')}</ul>` : ''}
     ${s.orphaned.length ? `<div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">Kept, but no longer attached to anybody</div>
-      <ul style="font-size:12.5px;margin:0 0 8px 18px;">${s.orphaned.map(x => line(x, /BAA/.test(x.text))).join('')}</ul>
-      ${counts.baas ? `<p style="font-size:12px;color:var(--text-danger);margin-bottom:12px;">
-        A signed HIPAA BAA survives with the name that was signed on it, but nothing will tie it to this
-        person again.</p>` : ''}` : ''}
+      <ul style="font-size:12.5px;margin:0 0 12px 18px;">${s.orphaned.map(x => line(x, false)).join('')}</ul>` : ''}
     ${s.needsTypedName ? `<label>Type <strong>${escWeb(name)}</strong> to confirm</label>
       <input type="text" id="del-confirm-name" placeholder="${escWeb(name)}" autocomplete="off" />` : ''}
   `, async function () {
