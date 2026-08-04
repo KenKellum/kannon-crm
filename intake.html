@@ -600,7 +600,7 @@ async function zipCounty_() {
   if (counties.length === 1) {
     const c = counties[0];
     _countyPicked = c;
-    box.innerHTML = '<span style="font-size:12.5px;color:#5a7d5a;">✓ ' + esc_(c.name) + ' County, ' + esc_(c.state) + '</span>'
+    box.innerHTML = '<span style="font-size:12.5px;color:#5a7d5a;">✓ ' + esc_(countyLabel_(c)) + '</span>'
       + hiddenCounty_(c);
     return;
   }
@@ -610,7 +610,7 @@ async function zipCounty_() {
     + 'That ZIP covers more than one county, and plans differ between them — which one are you in?</div>'
     + '<select id="zip-county-pick" onchange="zipCountyChose_()" style="max-width:320px;">'
     + '<option value="">Select your county…</option>'
-    + counties.map(c => '<option value="' + esc_(c.fips) + '">' + esc_(c.name) + ' County, ' + esc_(c.state) + '</option>').join('')
+    + counties.map(c => '<option value="' + esc_(c.fips) + '">' + esc_(countyLabel_(c)) + '</option>').join('')
     + '</select><span id="zip-county-hidden"></span>';
   window._countyChoices = counties;
 }
@@ -620,6 +620,13 @@ function zipCountyChose_() {
   const c = (window._countyChoices || []).find(x => String(x.fips) === fips);
   _countyPicked = c || null;
   document.getElementById('zip-county-hidden').innerHTML = c ? hiddenCounty_(c) : '';
+}
+
+// The relay returns "Gallatin County" already — appending another "County"
+// gave us "Gallatin County County".
+function countyLabel_(c) {
+  const n = String(c.name || '').trim();
+  return (/county$/i.test(n) ? n : n + ' County') + ', ' + (c.state || '');
 }
 
 function hiddenCounty_(c) {
