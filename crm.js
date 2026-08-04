@@ -3057,31 +3057,31 @@ const INTAKE_PRODUCTS = [
   { key: 'medicare', group: 'Health cover', label: 'Medicare',
     agentLabel: 'Medicare', formType: 'medicare',
     lines: ['Medicare Advantage','Medicare Supplement','Part D (PDP)'],
-    ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier',
+    ids: ['household_members','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier',
           'med_doctors','med_medications','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental'] },
 
   { key: 'dental', group: 'Health cover', label: 'Dental, vision & hearing',
-    agentLabel: 'Dental / Vision / Hearing', lines: ['Dental/Vision/Hearing'], ids: [] },
+    agentLabel: 'Dental / Vision / Hearing', lines: ['Dental/Vision/Hearing'], ids: ['household_members','med_doctors'] },
 
   { key: 'supplemental', group: 'Health cover', label: 'Accident, hospital or critical illness cover',
     agentLabel: 'Supplemental (accident / hospital / cancer)',
     lines: ['Hospital Indemnity','Accident','Cancer/Critical Illness'],
-    ids: ['affordable_shock','ongoing_condition'] },
+    ids: ['household_members','affordable_shock','ongoing_condition'] },
 
   { key: 'life', group: 'Life & income', label: 'Life insurance',
     agentLabel: 'Life', formType: 'financial', lines: ['Life'],
     // Dependents come from the household widget — count and ages are already
     // in it, per person, with gender and tobacco alongside.
-    ids: ['marital_status','has_life_insurance',
+    ids: ['household_members','marital_status','med_medications','has_life_insurance',
           'life_coverage_amount','goal_protection','goal_debt','goal_college'] },
 
   { key: 'disability', group: 'Life & income', label: 'Disability / income protection',
     agentLabel: 'Disability', lines: ['Disability'],
-    ids: ['current_occupation','current_income'] },
+    ids: ['household_members','current_occupation','current_income','med_medications'] },
 
   { key: 'investments', group: 'Life & income', label: 'Savings, retirement & college funding',
     agentLabel: 'Savings & Investments', formType: 'financial', lines: [],
-    ids: ['marital_status','household_income','has_investments',
+    ids: ['household_members','marital_status','household_income','has_investments',
           'goal_retirement','goal_wealth','goal_college','goal_debt'] },
 
   { key: 'group', group: 'For a business', label: 'Benefits for my employees',

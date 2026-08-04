@@ -123,6 +123,14 @@ PRODS.forEach(p => {
   if (!NEEDS[p.key]) fail(p.key + ' has no entry in INTAKE_PRODUCT_NEEDS — the widgets would not know what to show');
   if (p.referral && (NEEDS[p.key] || []).length) fail('referral product ' + p.key + ' asks for widgets; it should ask for none');
   if (p.referral && p.ids.length) fail('referral product ' + p.key + ' asks ' + p.ids.length + ' question(s) — it should ask none');
+  // A product that says it needs the medication or provider picker has to
+  // actually ask for it, or the flag is a promise the form never keeps.
+  const cap = NEEDS[p.key] || [];
+  if (cap.includes('meds') && !p.ids.includes('med_medications')) fail(p.key + " needs 'meds' but never asks med_medications");
+  if (cap.includes('providers') && !p.ids.includes('med_doctors')) fail(p.key + " needs 'providers' but never asks med_doctors");
+  if (cap.includes('household') && !p.ids.includes('household_members') && p.key !== 'group') {
+    fail(p.key + " needs 'household' but never asks household_members");
+  }
   (p.lines || []).forEach(l => {
     if (!knownLines.has(l)) fail(p.key + ' maps to line "' + l + '", which is not in CARRIER_LINES');
   });
