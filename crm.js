@@ -10317,7 +10317,6 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         ${item.snippet ? `<div style="font-size:11px;color:#0d9488;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.snippet)}</div>` : ''}
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           ${item.censusId ? `<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#0d9488;border-color:#0d9488;" onclick="openCensusEditor('${item.censusId}')">&#128203; View / Edit</button>` : ''}
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="viewContact('${item.contactId}')">&#128100; Contact</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
@@ -10336,7 +10335,6 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="font-size:11px;color:#a78bfa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(formLabel)}</div>
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           ${viewBtn}
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="viewContact('${item.contactId}')">&#128100; Contact</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
