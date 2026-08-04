@@ -10133,9 +10133,11 @@ function naOpenContact_(ev, contactId) {
 // whole set clickable instead of eight near-identical edits.
 function _naClickable_(html, contactId) {
   if (!html || !contactId) return html || '';
-  return html.replace('<div style="flex-shrink:0;width:220px;',
+  // Card widths differ between variants (220px and 230px), so match the shape
+  // and leave the width out of it — pinning a width silently skipped three.
+  return html.replace('<div style="flex-shrink:0;',
     '<div onclick="naOpenContact_(event,\'' + contactId + '\')" title="Open contact card"'
-    + ' style="cursor:pointer;flex-shrink:0;width:220px;');
+    + ' style="cursor:pointer;flex-shrink:0;');
 }
 
 function _buildNeedsAttentionHTML(appointmentsOnly) {
