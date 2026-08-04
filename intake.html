@@ -1039,6 +1039,9 @@ function renderForm(session, contact) {
   document.getElementById('loader').style.display = 'none';
   document.getElementById('form-container').style.display = '';
   document.getElementById('form-container').innerHTML = html;
+  // Same frame as the render, so a conditional question never appears and then
+  // disappears — that flash reads as a broken field.
+  try { applyFieldRules_(); } catch (e) {}
 }
 
 async function submitForm(e, sessionId, contactId, formType, agentId) {

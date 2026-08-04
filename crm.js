@@ -3653,6 +3653,10 @@ function _intakeRenderForm() {
   }
   html += `</div>`;
   panel.innerHTML = html;
+  // Apply the conditional rules in the same frame as the render. On a timer,
+  // every dependent question appears and then vanishes a fifth of a second
+  // later, which reads as a field that flashed up and broke.
+  try { imApplyRules_(); } catch (e) {}
 }
 
 window._imPickers = window._imPickers || {};
