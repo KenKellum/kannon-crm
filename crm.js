@@ -4031,6 +4031,27 @@ function _intakeRenderField(id, def, prefillVal) {
 
 
 
+// Typing a ZIP in the contact editor fills City and State from our own table.
+// Only fills what is blank — a corrected city should not be overwritten by a
+// ZIP that spans two towns.
+async function conZipLookup_() {
+  const zEl = document.getElementById('con-zip');
+  if (!zEl) return;
+  const zip = String(zEl.value || '').replace(/[^0-9]/g, '');
+  if (zip.length !== 5 || zEl.dataset.done === zip) return;
+  zEl.dataset.done = zip;
+  let pl = null;
+  try {
+    const r = await supabaseClient.rpc('zip_lookup', { p_zip: zip });
+    pl = (r && r.data && r.data.city) ? r.data : null;
+  } catch (e) { return; }
+  if (!pl) return;
+  const cEl = document.getElementById('con-city');
+  const sEl = document.getElementById('con-state');
+  if (cEl && !cEl.value.trim()) cEl.value = pl.city;
+  if (sEl && !sEl.value.trim()) sEl.value = pl.state;
+}
+
 function _intakeCollectResponses() {
   const responses = {};
   for (const id of _intakeChecked) {
@@ -7643,7 +7664,7 @@ function editContact(id, onSave) {
       <div style="display:grid;grid-template-columns:2fr 70px 1fr;gap:10px;margin-top:10px;">
         ${fld('City', `<input type="text" id="con-city" value="${c.city||''}" placeholder="Bozeman" ${iw} />`)}
         ${fld('State', `<input type="text" id="con-state" value="${c.state||''}" placeholder="MT" maxlength="2" ${iw} />`)}
-        ${fld('ZIP', `<input type="text" id="con-zip" value="${c.zip||''}" ${iw} />`)}
+        ${fld('ZIP', `<input type="text" id="con-zip" value="${c.zip||''}" oninput="conZipLookup_()" ${iw} />`)}
       </div>
     `)}
 
