@@ -5944,7 +5944,7 @@ function c360Body_(D) {
           ${md.length ? '\u{1F48A} ' + escWeb(md.map(m => m.name).slice(0, 3).join(', ')) + (md.length > 3 ? ' +' + (md.length - 3) + ' more' : '') : ''}
         </div>` : ''}
       </div>
-      <div class="panel-section"><div class="panel-label">Coverage${(D.coverage || []).length ? ' (' + (D.coverage || []).filter(x => x.status === 'active' || x.status === 'submitted').length + ' in force)' : ''}</div>
+      <div class="panel-section"><div class="panel-label">Coverage${(D.coverage || []).length ? ' (' + (D.coverage || []).filter(x => coverageState_(x).inForce).length + ' in force)' : ''}</div>
         <div id="contact-coverage-${c.id}" style="margin-bottom:8px;">${coverageListHtml_(D.coverage || [])}</div>
         <button class="btn btn-outline btn-sm" onclick="openCoverageEditor_(null,'${c.id}',null)">&#43; Coverage they already have</button>
       </div>
@@ -7900,7 +7900,9 @@ async function deleteContact(id) {
   let counts, cover;
   try {
     const [enr, lockedQ, dl, qs, ins, acts, prov, meds, soas, baas, cens] = await Promise.all([
-      supabaseClient.from('enrollments').select('plan_name,carrier_name,status').eq('contact_id', id),
+      supabaseClient.from('enrollments')
+        .select('plan_name,carrier_name,status,effective_date,termination_date,termination_reason')
+        .eq('contact_id', id),
       head('quotes').eq('contact_id', id).not('locked_at', 'is', null),
       head('deals').eq('contact_id', id),
       head('quotes').eq('contact_id', id),
@@ -7939,7 +7941,7 @@ async function deleteContact(id) {
   const s = contactDeleteSummary_(counts);
 
   if (s.blocked) {
-    const live = cover.filter(x => x.status === 'active' || x.status === 'submitted').length;
+    const live = cover.filter(x => coverageState_(x).live).length;
     showModal('Cannot delete ' + escWeb(name), `
       <p style="font-size:13px;">They hold records we are not allowed to lose:</p>
       <ul style="font-size:12.5px;margin:8px 0 12px 18px;">
@@ -7949,7 +7951,7 @@ async function deleteContact(id) {
         <div style="font-weight:700;margin-bottom:3px;">Their coverage${live ? ' — ' + live + ' still in force' : ''}</div>
         <ul style="margin-left:18px;">
           ${cover.map(x => '<li>' + escWeb(x.plan_name) + ' — ' + escWeb(x.carrier_name)
-              + ' <span style="color:var(--text-muted);">' + ((ENROLLMENT_STATUS[x.status] || {}).label || x.status) + '</span></li>').join('')}
+              + ' <span style="color:var(--text-muted);">' + escWeb(coverageState_(x).label) + '</span></li>').join('')}
         </ul></div>` : ''}
       ${counts.signedSoas ? `<p style="font-size:12.5px;">A signed Scope of Appointment carries a
         <strong>ten-year CMS retention rule</strong>. It stays, and it stays attached to the person who signed it.</p>` : ''}
@@ -17498,13 +17500,67 @@ async function markQuoteSent_(quoteId, btn) {
 // as "never offered", if anyone asks a year later.
 // ============================================================
 
-// What a coverage record can be, in the words an agent would use.
+// What a human DECIDED about a coverage record. Four values, and only these
+// four are stored — see coverageState_ below for what a client actually reads.
 const ENROLLMENT_STATUS = {
   submitted:  { label: 'Applied',    hint: 'Application in — waiting on the carrier', color: 'var(--text-warning)', icon: '\u{1F4E4}' },
-  active:     { label: 'Active',     hint: 'In force',                                 color: 'var(--text-success)', icon: '✅' },
-  terminated: { label: 'Terminated', hint: 'Was in force, has ended',                  color: 'var(--text-muted)',   icon: '\u{1F6D1}' },
-  withdrawn:  { label: 'Not taken',  hint: 'Never took effect',                        color: 'var(--text-muted)',   icon: '✖' },
+  active:     { label: 'Approved',   hint: 'The carrier accepted it',                 color: 'var(--text-success)', icon: '✅' },
+  terminated: { label: 'Terminated', hint: 'Ended on a date',                         color: 'var(--text-muted)',   icon: '\u{1F6D1}' },
+  withdrawn:  { label: 'Not taken',  hint: 'Never took effect',                       color: 'var(--text-muted)',   icon: '✖' },
 };
+
+// ── IN FORCE IS A FACT ABOUT TODAY, NOT A STATUS SOMEBODY REMEMBERS TO SET ────
+//
+// The first version stored 'active' and left it there. A policy enrolled in
+// November with a 1 January start read "Active" all through December, and a
+// policy that ended in March still read "Active" in June unless a human opened
+// it. Nothing runs on a schedule to fix that, and the client portal would have
+// shown both confidently and wrongly.
+//
+// So only the DECISION is stored — applied, approved, ended, not taken — and
+// whether it is in force right now is worked out from the dates every time it
+// is read. Nothing to remember, nothing to go stale.
+//
+// This is also what makes ending a policy mid-term work: set the end date and
+// it stays in force until that date arrives, then stops. Same code path whether
+// the date is today, next month, or last year.
+function coverageState_(r, today) {
+  today = today || new Date().toISOString().slice(0, 10);
+  const eff  = r.effective_date || null;
+  const term = r.termination_date || null;
+
+  if (r.status === 'withdrawn') {
+    return { key: 'withdrawn', label: 'Not taken', icon: '✖', color: 'var(--text-muted)',
+             inForce: false, live: false, hint: 'Never took effect' };
+  }
+  // An end date that has arrived wins over any stored status. A record saying
+  // "approved" with an end date last March is not a live policy.
+  if (term && term <= today) {
+    return { key: 'ended', label: 'Ended ' + enrollDate_(term), icon: '\u{1F6D1}', color: 'var(--text-muted)',
+             inForce: false, live: false, hint: r.termination_reason || 'No longer in force' };
+  }
+  if (r.status === 'terminated') {
+    return { key: 'ending', label: 'Ends ' + enrollDate_(term), icon: '\u{1F6D1}', color: 'var(--text-warning)',
+             inForce: !!(eff && eff <= today), live: true,
+             hint: 'Still in force until then' + (r.termination_reason ? ' — ' + r.termination_reason : '') };
+  }
+  if (r.status === 'submitted') {
+    return { key: 'applied', label: 'Applied', icon: '\u{1F4E4}', color: 'var(--text-warning)',
+             inForce: false, live: true, hint: 'Waiting on the carrier' };
+  }
+  // Approved. The effective date decides whether that means covered yet.
+  if (!eff) {
+    return { key: 'approved', label: 'Approved', icon: '✅', color: 'var(--text-warning)',
+             inForce: false, live: true, hint: 'No start date recorded yet' };
+  }
+  if (eff > today) {
+    return { key: 'starting', label: 'Starts ' + enrollDate_(eff), icon: '\u{1F5D3}', color: 'var(--text-info)',
+             inForce: false, live: true, hint: 'Approved — cover has not begun' };
+  }
+  return { key: 'in_force', label: 'In force', icon: '\u{1F6E1}', color: 'var(--text-success)',
+           inForce: true, live: true,
+           hint: term ? 'Ends ' + enrollDate_(term) : 'Active cover' };
+}
 
 const ENROLL_STAGE = {
   'individual-family': 'Enrolled',
@@ -17561,7 +17617,7 @@ function enrollPortalLink_(opt, carrier, appt) {
 // One product's state, in the words the agent reads.
 function enrollCardState_(opt, enrollment) {
   if (opt.outcome === 'enrolled') {
-    const st = (enrollment && ENROLLMENT_STATUS[enrollment.status]) || ENROLLMENT_STATUS.submitted;
+    const st = enrollment ? coverageState_(enrollment) : ENROLLMENT_STATUS.submitted;
     return { key: 'enrolled', label: st.label, icon: st.icon, color: st.color };
   }
   if (opt.outcome === 'waived') {
@@ -18001,22 +18057,35 @@ function coverageListHtml_(rows, opts) {
   if (!rows.length) {
     return '<div style="font-size:12px;color:var(--text-muted);">Nothing enrolled yet — enrolling from a quote files it here.</div>';
   }
-  const live = rows.filter(r => r.status === 'active' || r.status === 'submitted');
-  const past = rows.filter(r => r.status !== 'active' && r.status !== 'submitted');
-  const row = r => {
-    const st = ENROLLMENT_STATUS[r.status] || { label: r.status, color: 'var(--text-muted)', icon: '•' };
-    const when = r.status === 'terminated'
-      ? 'ended ' + enrollDate_(r.termination_date) + (r.termination_reason ? ' · ' + escWeb(r.termination_reason) : '')
-      : (r.effective_date ? 'effective ' + enrollDate_(r.effective_date) : 'no effective date yet');
+  // Live and past are worked out from the dates, not read off a stored flag —
+  // a policy whose end date passed last March belongs below the line even if
+  // nobody ever opened it to say so.
+  const withState = rows.map(r => ({ r, st: coverageState_(r) }));
+  const live = withState.filter(x => x.st.live);
+  const past = withState.filter(x => !x.st.live);
+  const row = ({ r, st }) => {
+    let when;
+    if (st.key === 'ended' || st.key === 'ending') {
+      when = r.termination_reason || st.hint;
+    } else if (st.key === 'withdrawn') {
+      when = 'never took effect';
+    } else if (r.effective_date) {
+      // A future end date belongs on the face of the row, not hidden in a
+      // tooltip — a policy cancelled mid-term is still one you have to act on.
+      when = 'effective ' + enrollDate_(r.effective_date)
+           + (r.termination_date ? ' · ends ' + enrollDate_(r.termination_date) : '');
+    } else {
+      when = 'no effective date yet';
+    }
     return `<div style="padding:6px 0;border-bottom:0.5px solid var(--border);font-size:12px;">
       <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
         <span style="font-weight:700;">${escWeb(r.plan_name)}</span>
         <span style="color:var(--text-muted);">${escWeb(r.carrier_name || '')}</span>
-        <span style="color:${st.color};font-weight:700;">${st.icon} ${st.label}</span>
+        <span style="color:${st.color};font-weight:700;" title="${escWeb(st.hint || '')}">${st.icon} ${escWeb(st.label)}</span>
         ${r.monthly_premium != null ? '<span style="color:var(--text-success);font-weight:600;">' + enrollMoney_(r.monthly_premium) + '/mo</span>' : ''}
         ${canEdit ? '<a href="#" style="margin-left:auto;font-size:11px;" onclick="openCoverageEditor_(\'' + r.id + '\'); return false;">manage</a>' : ''}
       </div>
-      <div style="color:var(--text-muted);font-size:11px;">${escWeb(r.line || '')} &middot; ${when}
+      <div style="color:var(--text-muted);font-size:11px;">${escWeb(r.line || '')} &middot; ${escWeb(when)}
         ${r.policy_number ? ' &middot; policy ' + escWeb(r.policy_number) : ''}
         ${r.source === 'manual' ? ' &middot; entered by hand' : ''}
         ${r.quote_id ? ' &middot; <a href="quote.html?q=' + r.quote_id + '" target="_blank">the quote they enrolled on &#8599;</a>' : ''}</div>
@@ -18044,10 +18113,17 @@ async function openCoverageEditor_(enrollmentId, contactId, dealId) {
     `<option${r && r.line === l ? ' selected' : ''}>${escWeb(l)}</option>`).join('');
   const val = (k) => escWeb((r && r[k] != null) ? r[k] : '');
 
+  const nowState = isNew ? null : coverageState_(r);
   showModal(isNew ? 'Add coverage they already have' : 'Coverage — ' + escWeb(r.plan_name), `
     ${isNew ? `<p style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">
       For a policy that did not come from a quote here — something they bought before, or an
       application taken on paper. It shows up on their record exactly like an enrolled one.</p>` : ''}
+    ${nowState ? `<div style="display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:8px;margin-bottom:12px;
+        background:${nowState.inForce ? 'var(--bg-success)' : 'var(--surface-2)'};
+        border:1px solid ${nowState.inForce ? 'var(--border-success)' : 'var(--border)'};">
+        <span style="font-size:13px;font-weight:700;color:${nowState.color};">${nowState.icon} ${escWeb(nowState.label)}</span>
+        <span style="font-size:11.5px;color:var(--text-muted);">${escWeb(nowState.hint || '')}</span>
+      </div>` : ''}
     ${!isNew && r.quote_id ? `<p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
       Enrolled from <a href="quote.html?q=${r.quote_id}" target="_blank">their quote &#8599;</a> on
       ${enrollDate_(r.applied_on)}. The plan and the premium came from that quote and are part of
@@ -18075,7 +18151,10 @@ async function openCoverageEditor_(enrollmentId, contactId, dealId) {
         <input type="date" id="cv-term" value="${r && r.termination_date ? r.termination_date : ''}" /></div>
     </div>
     <div id="cv-term-why"><label>Why did it end?</label>
-      <input type="text" id="cv-term-reason" value="${val('termination_reason')}" placeholder="e.g. moved to a group plan" /></div>
+      <input type="text" id="cv-term-reason" value="${val('termination_reason')}" placeholder="e.g. moved to a group plan" />
+      <p style="font-size:11px;color:var(--text-muted);margin-top:5px;">
+        Ending it part-way through is fine — put the real end date in, even if it is next month. It stays in
+        force until that day and stops by itself, and today's date ends it now.</p></div>
     <label>Note <span style="font-weight:400;color:var(--text-muted);">— for you, not the client</span></label>
     <textarea id="cv-note" rows="2">${val('agent_note')}</textarea>
   `, async function () {

@@ -37,6 +37,7 @@ eval(grab('ENROLLMENT_STATUS').replace(/^const /, 'var '));
 eval(grab('ENROLL_STAGE').replace(/^const /, 'var '));
 eval(grab('enrollMoney_'));
 eval(grab('enrollDate_'));
+eval(grab('coverageState_'));
 eval(grab('enrollQuoteExpired_'));
 eval(grab('enrollPortalLink_'));
 eval(grab('enrollCardState_'));
@@ -64,6 +65,56 @@ const forwardOnly = (pipe, from) =>
 ok(forwardOnly('individual-family', 'Active Client'), 'an Active Client is not pulled back to Enrolled');
 ok(forwardOnly('medicare', 'Annual Review'), 'a Medicare deal at Annual Review stays there');
 ok(!forwardOnly('individual-family', 'Quoted'), 'a Quoted deal does move up to Enrolled');
+
+// ── 1b. in force is a fact about today ───────────────────────────────────────
+//
+// The whole point: nothing runs on a schedule, so a stored "active" would still
+// say active in June for a policy that ended in March. These are read fresh
+// every time, which is why they can be trusted by a client's portal.
+console.log('\n1b. what a policy reads as, worked out from its dates');
+const T = '2026-08-04';
+const st = (r) => coverageState_(r, T);
+const cov = (o) => Object.assign({ status: 'active' }, o);
+
+let s1 = st(cov({ effective_date: '2026-01-01' }));
+ok(s1.key === 'in_force' && s1.inForce, 'started in January -> in force');
+s1 = st(cov({ effective_date: '2026-08-04' }));
+ok(s1.inForce, 'starting TODAY is in force today, not tomorrow');
+s1 = st(cov({ effective_date: '2026-09-01' }));
+ok(s1.key === 'starting' && !s1.inForce, 'a September start is not in force in August');
+ok(/Starts Sep 1, 2026/.test(s1.label), 'and it says when: ' + s1.label);
+ok(s1.live, 'but it is still a live record — it has not gone anywhere');
+
+// The case that made this necessary: nobody updates a record when a date passes.
+s1 = st(cov({ effective_date: '2025-01-01', termination_date: '2026-03-31' }));
+ok(!s1.inForce && !s1.live, 'an end date that has passed ends it, whatever the stored status says');
+ok(/Ended Mar 31, 2026/.test(s1.label), 'and it says when it ended: ' + s1.label);
+
+// Ken's mid-coverage cancellation, set now for a future date.
+s1 = st(cov({ effective_date: '2026-01-01', termination_date: '2026-10-31' }));
+ok(s1.inForce, 'ending it in October leaves it IN FORCE through August');
+ok(/Ends Oct 31, 2026/.test(s1.hint), 'and the hint says when it stops: ' + s1.hint);
+s1 = st({ status: 'terminated', effective_date: '2026-01-01', termination_date: '2026-10-31' });
+ok(s1.inForce && s1.live, 'marked terminated with a FUTURE date is still in force until then');
+ok(/Ends Oct 31/.test(s1.label), 'and reads as ending, not ended: ' + s1.label);
+s1 = st({ status: 'terminated', effective_date: '2026-01-01', termination_date: T });
+ok(!s1.inForce, 'ending it TODAY takes it out of force today');
+
+// The states that are not about dates at all.
+ok(st({ status: 'submitted' }).key === 'applied', 'an application in the carrier\'s hands is Applied');
+ok(!st({ status: 'submitted', effective_date: '2026-01-01' }).inForce,
+   'an application is never in force, even with a date on it — the carrier has not said yes');
+ok(st({ status: 'withdrawn', effective_date: '2026-01-01' }).key === 'withdrawn',
+   'a withdrawn record stays withdrawn whatever its dates say');
+ok(!st({ status: 'withdrawn' }).live, 'and it is not live');
+ok(st(cov({ effective_date: null })).key === 'approved', 'approved with no start date says so');
+ok(!st(cov({ effective_date: null })).inForce, 'and is not claimed to be in force');
+
+// Every state must give the agent words and a colour, or the list renders blank.
+['submitted', 'active', 'terminated', 'withdrawn'].forEach(x => {
+  const r = st({ status: x, effective_date: '2026-01-01', termination_date: x === 'terminated' ? '2026-06-01' : null });
+  ok(!!r.label && !!r.color && !!r.icon, x + ' -> "' + r.label + '"');
+});
 
 // ── 2. nobody enrols on a price that has run out ─────────────────────────────
 console.log('\n2. an expired quote cannot be enrolled on');
@@ -100,8 +151,10 @@ ok(enrollCardState_({ outcome: 'waived' }).key === 'waived', 'a declined product
 // the carrier does not claim to be active.
 ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'submitted' }).label === 'Applied',
    'enrolled + application in = "Applied"');
-ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'active' }).label === 'Active',
-   'enrolled + approved = "Active"');
+ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'active' }).label === 'Approved',
+   'enrolled + approved but no start date = "Approved"');
+ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'active', effective_date: '2020-01-01' }).label === 'In force',
+   'enrolled + approved + a start date that has passed = "In force"');
 ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'withdrawn' }).label === 'Not taken',
    'an undone enrollment reads as "Not taken"');
 ok(enrollCardState_({ outcome: 'enrolled' }, null).label === 'Applied',
@@ -145,8 +198,8 @@ const html = coverageListHtml_([
 ok(html.indexOf('Bronze POS 205') < html.indexOf('No longer in force'), 'in-force coverage comes first');
 ok(html.indexOf('Old Plan') > html.indexOf('No longer in force'), 'terminated coverage sits below the divider');
 ok(html.indexOf('Never Started') > html.indexOf('No longer in force'), 'a policy that never started is not shown as live');
-ok(html.includes('Active') && html.includes('Applied'), 'applied and active read differently');
-ok(html.includes('ended Dec 31, 2025') && html.includes('replaced'), 'a terminated policy says when and why');
+ok(html.includes('In force') && html.includes('Applied'), 'applied and in force read differently');
+ok(html.includes('Ended Dec 31, 2025') && html.includes('replaced'), 'a terminated policy says when and why');
 ok(html.includes('no effective date yet'), 'a pending application says the date is missing');
 ok(html.includes('entered by hand'), 'coverage typed in by hand is marked as such');
 ok(!html.includes('<script>') && html.includes('&lt;script&gt;'), 'a plan name cannot inject markup');
