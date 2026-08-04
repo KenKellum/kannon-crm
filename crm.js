@@ -5721,7 +5721,7 @@ function renderC360_() {
       <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;opacity:.95;">
         ${c.phone ? `<a href="tel:${escWeb(c.phone)}" style="color:#fff;text-decoration:none;">\u{1F4DE} ${escWeb(c.phone)}</a>` : ''}
         ${c.email ? `<a href="mailto:${escWeb(c.email)}" style="color:#fff;text-decoration:none;">\u2709\uFE0F ${escWeb(c.email)}</a>` : ''}
-        ${c.zip || c.state ? `<span>\u{1F4CD} ${escWeb([c.zip, c.state].filter(Boolean).join(', '))}</span>` : ''}
+        ${c.city || c.state || c.zip ? `<span>\u{1F4CD} ${escWeb([[c.city, c.state].filter(Boolean).join(', '), c.zip].filter(Boolean).join(' '))}</span>` : ''}
       </div>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 18px;border-bottom:0.5px solid var(--border);background:var(--surface-1);">${TABS.map(tabBtn).join('')}</div>
@@ -5772,6 +5772,7 @@ function c360Body_(D) {
           ${fact('Date of birth', c.date_of_birth ? fmtD(c.date_of_birth) + (age !== null ? ' \u00b7 ' + age : '') : null)}
           ${fact('Gender', c.gender)}
           ${fact('Tobacco', c.tobacco_use === true ? 'Yes' : c.tobacco_use === false ? 'No' : null)}
+          ${fact('City', c.city)}
           ${fact('ZIP / State', [c.zip, c.state].filter(Boolean).join(', '))}
           ${fact('Company', c.company)}
           ${fact('Email status', c.email_status)}
