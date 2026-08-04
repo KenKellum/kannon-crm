@@ -18630,9 +18630,20 @@ const ZIP3_STATE = [
   [885,885,'TX'],[889,898,'NV'],[900,961,'CA'],[967,968,'HI'],[970,979,'OR'],
   [980,994,'WA'],[995,999,'AK'],
 ];
+// ZIPs whose state the three-digit prefix gets wrong or does not cover at all.
+// Checked against all 42,366 rows of zip_places: the prefix agrees 99.68% of the
+// time, and these 137 are the rest. It matters because the state picks the rate
+// set — 84 of these are Loudoun County, Virginia being read as DC, which would
+// quote a Virginia client at DC prices.
+// Regenerate from zip_places when that table is refreshed (System Setups >
+// Upkeep & reviews, due each September).
+const ZIP_STATE_FIX = {"00501":"NY","00544":"NY","05501":"MA","05544":"MA","06390":"NY","20101":"VA","20102":"VA","20103":"VA","20104":"VA","20105":"VA","20106":"VA","20107":"VA","20108":"VA","20109":"VA","20110":"VA","20111":"VA","20112":"VA","20113":"VA","20115":"VA","20116":"VA","20117":"VA","20118":"VA","20119":"VA","20120":"VA","20121":"VA","20122":"VA","20124":"VA","20128":"VA","20129":"VA","20130":"VA","20131":"VA","20132":"VA","20134":"VA","20135":"VA","20136":"VA","20137":"VA","20138":"VA","20139":"VA","20140":"VA","20141":"VA","20142":"VA","20143":"VA","20144":"VA","20146":"VA","20147":"VA","20148":"VA","20149":"VA","20151":"VA","20152":"VA","20153":"VA","20155":"VA","20156":"VA","20158":"VA","20159":"VA","20160":"VA","20163":"VA","20164":"VA","20165":"VA","20166":"VA","20167":"VA","20168":"VA","20169":"VA","20170":"VA","20171":"VA","20172":"VA","20175":"VA","20176":"VA","20177":"VA","20178":"VA","20180":"VA","20181":"VA","20182":"VA","20184":"VA","20185":"VA","20186":"VA","20187":"VA","20188":"VA","20189":"VA","20190":"VA","20191":"VA","20192":"VA","20193":"VA","20194":"VA","20195":"VA","20196":"VA","20197":"VA","20198":"VA","20199":"VA","20588":"MD","20598":"VA","39813":"GA","39815":"GA","39817":"GA","39818":"GA","39823":"GA","39824":"GA","39825":"GA","39826":"GA","39827":"GA","39828":"GA","39829":"GA","39832":"GA","39834":"GA","39836":"GA","39841":"GA","39842":"GA","39845":"GA","39846":"GA","39851":"GA","39852":"GA","39854":"GA","39859":"GA","39861":"GA","39862":"GA","39866":"GA","39867":"GA","39870":"GA","39877":"GA","39885":"GA","39886":"GA","39897":"GA","39901":"GA","56901":"DC","56902":"DC","56904":"DC","56915":"DC","56920":"DC","56933":"DC","56944":"DC","56945":"IA","56950":"DC","56965":"DC","56972":"DC","73301":"TX","73344":"TX","83414":"WY","93737":"NV"};
+
 function zipToState_(zip) {
   const n = parseInt(String(zip || '').slice(0, 3), 10);
   if (isNaN(n)) return '';
+  const exact = ZIP_STATE_FIX[String(zip || '').replace(/[^0-9]/g, '').slice(0, 5)];
+  if (exact) return exact;
   const hit = ZIP3_STATE.find(r => n >= r[0] && n <= r[1]);
   return hit ? hit[2] : '';
 }
