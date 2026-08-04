@@ -3792,8 +3792,9 @@ function _imHHTable_(id, def) {
   const n = intakeNeeds_([..._intakeProducts]);
   const wide = n.has('hw') || n.has('amount');   // cards, not a nine-column table
   const head = ['Who', 'Age', n.has('gender') && 'Gender', n.has('tobacco') && 'Tob.',
-                n.has('covered') && 'Applying', ''].filter(x => x !== false)
-                .map(h => '<th>' + (h || '') + '</th>').join('');
+                n.has('covered') && 'Applying', n.has('hw') && 'Ht', n.has('hw') && 'Wt',
+                n.has('amount') && 'Coverage wanted', n.has('amount') && 'or exact', '']
+                .filter(x => x !== false).map(h => '<th style="padding:4px 6px;">' + (h || '') + '</th>').join('');
   // One insured life (disability) gets no roster and no add button — the label
   // has to stop saying "household members" too.
   // Disability insures one life, but Health needs the whole roster. When both
@@ -3803,12 +3804,10 @@ function _imHHTable_(id, def) {
   const heading = solo ? 'The person being insured' : 'Who needs coverage';
   return `<div id="iwrap_${id}">
     <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${heading}</label>
-    ${wide
-      ? `<div id="im-hh-rows" style="display:flex;flex-direction:column;gap:8px;"></div>`
-      : `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
            <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">${head}</tr></thead>
            <tbody id="im-hh-rows"></tbody>
-         </table></div>`}
+         </table></div>
     ${solo ? '' : `<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="imHHAdd_()">+ Add member</button>`}
   </div>`;
 }
@@ -3819,66 +3818,36 @@ function imHHPaint_() {
   const tb = document.getElementById('im-hh-rows');
   if (!tb) return;
   const n = intakeNeeds_([..._intakeProducts]);
-  const wide = n.has('hw') || n.has('amount');
   const rel = (m, i) => i === 0
     ? '<strong>Client</strong><input type="hidden" class="hh-rel" value="Self">'
     : `<select class="hh-rel" onchange="imHHRead_()"><option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option><option${m.relationship === 'Child' ? ' selected' : ''}>Child</option><option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`;
-  const age = m => `<input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" style="width:58px;" oninput="imHHRead_()">`;
-  const gen = m => `<select class="hh-gen" onchange="imHHRead_()">
-        <option value=""${!m.gender ? ' selected' : ''}>\u2014</option>
-        <option value="M"${m.gender === 'M' ? ' selected' : ''}>M</option>
-        <option value="F"${m.gender === 'F' ? ' selected' : ''}>F</option>
-        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Declined</option></select>`;
-  const tob = m => `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`;
-  const cov = m => `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`;
-  const hidden = (cls, v) => `<input type="hidden" class="${cls}" value="${v == null ? '' : v}">`;
-  // A label and its box are one thing. Left to wrap independently they drift
-  // onto separate lines and the card reads as nonsense — "Gender" above an
-  // empty row, "Weight" stranded beside a height box.
-  const pair_ = (label, control, show) => show === false ? '' :
-    `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
-       <span style="font-size:11px;color:var(--text-muted);">${label}</span>${control}</span>`;
+  const bands = m => LIFE_AMOUNT_BANDS.map(b => `<option${m.amount_band === b ? ' selected' : ''}>${b}</option>`).join('');
+  // A column the products do not want is hidden, never removed, so an answer
+  // already given survives a product change.
+  const cell = (show, html) => `<td style="padding:2px 6px;${show ? '' : 'display:none;'}">${html}</td>`;
 
-  if (!wide) {
-    tb.innerHTML = window._imHH.map((m, i) => {
-      const cells = [`<td style="padding:2px;">${rel(m, i)}</td>`, `<td style="padding:2px;">${age(m)}</td>`];
-      cells.push(`<td style="padding:2px;${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</td>`);
-      cells.push(`<td style="padding:2px;text-align:center;${n.has('tobacco') ? '' : 'display:none;'}">${tob(m)}</td>`);
-      cells.push(`<td style="padding:2px;text-align:center;${n.has('covered') ? '' : 'display:none;'}">${cov(m)}</td>`);
-      // Fields the layout doesn't show still round-trip, so unticking a product
-      // never silently discards an answer the client already gave.
-      cells.push(`<td style="padding:2px;">${hidden('hh-hft', m.height_ft)}${hidden('hh-hin', m.height_in)}${hidden('hh-wt', m.weight)}${hidden('hh-amt', m.amount_band)}${hidden('hh-amtx', m.amount_exact)}${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}</td>`);
-      return '<tr>' + cells.join('') + '</tr>';
-    }).join('');
-  } else {
-    const bands = m => LIFE_AMOUNT_BANDS.map(b =>
-      `<option${m.amount_band === b ? ' selected' : ''}>${b}</option>`).join('');
-    tb.innerHTML = window._imHH.map((m, i) => `
-      <div class="hh-card" style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--surface-1,#fbfcfd);">
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
-          ${rel(m, i)}
-          ${pair_('Age', age(m))}
-          ${pair_('Gender', gen(m), n.has('gender'))}
-          <label style="font-size:11px;color:var(--text-muted);display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:5px;white-space:nowrap;margin:0;">${tob(m)} Uses tobacco</label>
-          <label style="font-size:11px;color:var(--text-muted);display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:5px;white-space:nowrap;margin:0;">${cov(m)} Applying for coverage</label>
-          <span style="flex:1;"></span>
-          ${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}
-        </div>
-        <div style="display:${n.has('hw') ? 'flex' : 'none'};align-items:center;gap:14px;flex-wrap:wrap;">
-          ${pair_('Height', `<input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:54px;" oninput="imHHRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:54px;margin-left:4px;" oninput="imHHRead_()">`)}
-          ${pair_('Weight', `<input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:68px;" oninput="imHHRead_()">`)}
-        </div>
-        <div style="display:${n.has('amount') ? 'flex' : 'none'};align-items:center;gap:14px;flex-wrap:wrap;margin-top:8px;">
-          ${pair_('Coverage wanted', `<select class="hh-amt" onchange="imHHRead_()"><option value=""></option>${bands(m)}</select>`)}
-          ${pair_('or exact', `<input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:108px;" oninput="imHHRead_()">`)}
-        </div>
-      </div>`).join('');
-  }
+  tb.innerHTML = window._imHH.map((m, i) => `
+    <tr>
+      ${cell(true, rel(m, i))}
+      ${cell(true, `<input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" style="width:56px;" oninput="imHHRead_()">`)}
+      ${cell(n.has('gender'), `<select class="hh-gen" onchange="imHHRead_()">
+          <option value=""${!m.gender ? ' selected' : ''}>—</option>
+          <option value="M"${m.gender === 'M' ? ' selected' : ''}>M</option>
+          <option value="F"${m.gender === 'F' ? ' selected' : ''}>F</option>
+          <option value="X"${m.gender === 'X' ? ' selected' : ''}>Declined</option></select>`)}
+      ${cell(n.has('tobacco'), `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`)}
+      ${cell(n.has('covered'), `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`)}
+      ${cell(n.has('hw'), `<input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:44px;" oninput="imHHRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:44px;margin-left:3px;" oninput="imHHRead_()">`)}
+      ${cell(n.has('hw'), `<input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:56px;" oninput="imHHRead_()">`)}
+      ${cell(n.has('amount'), `<select class="hh-amt" onchange="imHHRead_()"><option value=""></option>${bands(m)}</select>`)}
+      ${cell(n.has('amount'), `<input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:88px;" oninput="imHHRead_()">`)}
+      ${cell(true, i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`)}
+    </tr>`).join('');
   imHHRead_();
 }
 function imHHRead_() {
   const num = v => (v === '' || v == null ? null : Number(v));
-  const rows = document.querySelectorAll('#im-hh-rows tr, #im-hh-rows .hh-card');
+  const rows = document.querySelectorAll('#im-hh-rows tr');
   window._imHH = [...rows].map(r => ({
     relationship: r.querySelector('.hh-rel').value,
     age: r.querySelector('.hh-age').value === '' ? '' : parseInt(r.querySelector('.hh-age').value),

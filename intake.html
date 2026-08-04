@@ -484,10 +484,11 @@ function renderHouseholdTable_(id, def) {
     <div style="overflow-x:auto;" id="hh-table"><table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr id="hh-head" style="text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;">
         <th style="padding:4px;">Who</th><th style="padding:4px;">Age</th><th style="padding:4px;">Gender</th>
-        <th style="padding:4px;">Tobacco</th><th style="padding:4px;">Applying</th><th></th></tr></thead>
+        <th style="padding:4px;">Tobacco</th><th style="padding:4px;">Applying</th>
+        <th style="padding:4px;">Height</th><th style="padding:4px;">Weight</th>
+        <th style="padding:4px;">Coverage wanted</th><th style="padding:4px;">or exact</th><th></th></tr></thead>
       <tbody id="hh-rows"></tbody>
     </table></div>
-    <div id="hh-cards" style="display:none;"></div>
     ${_solo ? '' : `<button type="button" class="btn-secondary" style="margin-top:8px;padding:8px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;font-size:13px;" onclick="hhAdd_()">+ Add family member</button>`}
     <input type="hidden" name="household_struct" id="f_household_struct">
     <input type="hidden" name="household_size" id="f_household_size">
@@ -499,7 +500,6 @@ function hhPaint_() {
   const tb = document.getElementById('hh-rows');
   if (!tb) return;
   const n = _needs();
-  const wide = n.has('hw') || n.has('amount');
   const inp = 'padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;';
   const rel = (m, i) => i === 0
     ? '<strong style="font-size:13px;">You</strong><input type="hidden" class="hh-rel" value="Self">'
@@ -507,74 +507,39 @@ function hhPaint_() {
         <option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option>
         <option${m.relationship === 'Child' ? ' selected' : ''}>Child</option>
         <option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`;
-  const age = m => `<input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" min="0" max="120" style="width:64px;${inp}" oninput="hhRead_()">`;
-  const gen = m => `<select class="hh-gen" onchange="hhRead_()" style="${inp}">
-        <option value=""${!m.gender ? ' selected' : ''}>Select\u2026</option>
-        <option value="M"${m.gender === 'M' ? ' selected' : ''}>Male</option>
-        <option value="F"${m.gender === 'F' ? ' selected' : ''}>Female</option>
-        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Decline to answer</option></select>`;
-  const tob = m => `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`;
-  const cov = m => `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`;
-  const hid = (c, v) => `<input type="hidden" class="${c}" value="${v == null ? '' : v}">`;
-  const del = i => i === 0 ? '' : `<button type="button" onclick="_hh.splice(${i},1);hhPaint_();hhRead_();" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:15px;">&#10005;</button>`;
-
-  // Columns nobody needs are hidden rather than removed, so an answer already
-  // given survives if the client adds a product that wants it back.
-  const head = document.querySelector('#hh-head');
+  const bands = m => LIFE_AMOUNT_BANDS.map(b => `<option${m.amount_band === b ? ' selected' : ''}>${b}</option>`).join('');
+  // Hidden, never removed, so an answer already given survives a product change.
+  const cell = (show, html) => `<td style="padding:3px;${show ? '' : 'display:none;'}">${html}</td>`;
+  const head = document.getElementById('hh-head');
   if (head) {
-    head.children[2].style.display = n.has('gender')  ? '' : 'none';
-    head.children[3].style.display = n.has('tobacco') ? '' : 'none';
-    head.children[4].style.display = n.has('covered') ? '' : 'none';
+    const on = [true, true, n.has('gender'), n.has('tobacco'), n.has('covered'),
+                n.has('hw'), n.has('hw'), n.has('amount'), n.has('amount'), true];
+    [...head.children].forEach((th, i) => { th.style.display = on[i] ? '' : 'none'; });
   }
-  const table = document.querySelector('#hh-table');
-  if (table) table.style.display = wide ? 'none' : '';
-  const cards = document.getElementById('hh-cards');
-  if (cards) cards.style.display = wide ? '' : 'none';
 
-  if (!wide) {
-    tb.innerHTML = _hh.map((m, i) => `
-      <tr>
-        <td style="padding:3px;">${rel(m, i)}</td>
-        <td style="padding:3px;">${age(m)}</td>
-        <td style="padding:3px;${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</td>
-        <td style="padding:3px;text-align:center;${n.has('tobacco') ? '' : 'display:none;'}">${tob(m)}</td>
-        <td style="padding:3px;text-align:center;${n.has('covered') ? '' : 'display:none;'}">${cov(m)}</td>
-        <td style="padding:3px;">${hid('hh-hft', m.height_ft)}${hid('hh-hin', m.height_in)}${hid('hh-wt', m.weight)}${hid('hh-amt', m.amount_band)}${hid('hh-amtx', m.amount_exact)}${del(i)}</td>
-      </tr>`).join('');
-  } else {
-    const bands = m => LIFE_AMOUNT_BANDS.map(b => `<option${m.amount_band === b ? ' selected' : ''}>${b}</option>`).join('');
-    cards.innerHTML = _hh.map((m, i) => `
-      <div class="hh-card" style="border:1px solid #e5e3de;border-radius:12px;padding:14px;margin-bottom:10px;background:#fcfbf9;">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
-          ${rel(m, i)}
-          <span style="font-size:12px;color:#777;">Age</span>${age(m)}
-          <span style="font-size:12px;color:#777;${n.has('gender') ? '' : 'display:none;'}">Gender</span>
-          <span style="${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</span>
-          <label style="font-size:12px;color:#777;display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:5px;margin:0;">${tob(m)} Uses tobacco</label>
-          <label style="font-size:12px;color:#777;display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:5px;margin:0;">${cov(m)} Applying for coverage</label>
-          <span style="flex:1;"></span>${del(i)}
-        </div>
-        <div style="display:${n.has('hw') ? 'flex' : 'none'};align-items:center;gap:8px;flex-wrap:wrap;">
-          <span style="font-size:12px;color:#777;">Height</span>
-          <input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:60px;${inp}" oninput="hhRead_()">
-          <input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:60px;${inp}" oninput="hhRead_()">
-          <span style="font-size:12px;color:#777;">Weight</span>
-          <input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:72px;${inp}" oninput="hhRead_()">
-        </div>
-        <div style="display:${n.has('amount') ? 'flex' : 'none'};align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <span style="font-size:12px;color:#777;">Coverage wanted</span>
-          <select class="hh-amt" onchange="hhRead_()" style="${inp}"><option value=""></option>${bands(m)}</select>
-          <span style="font-size:12px;color:#777;">or exact</span>
-          <input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:120px;${inp}" oninput="hhRead_()">
-        </div>
-      </div>`).join('');
-  }
+  tb.innerHTML = _hh.map((m, i) => `
+    <tr>
+      ${cell(true, rel(m, i))}
+      ${cell(true, `<input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" min="0" max="120" style="width:62px;${inp}" oninput="hhRead_()">`)}
+      ${cell(n.has('gender'), `<select class="hh-gen" onchange="hhRead_()" style="${inp}">
+          <option value=""${!m.gender ? ' selected' : ''}>Select…</option>
+          <option value="M"${m.gender === 'M' ? ' selected' : ''}>Male</option>
+          <option value="F"${m.gender === 'F' ? ' selected' : ''}>Female</option>
+          <option value="X"${m.gender === 'X' ? ' selected' : ''}>Decline to answer</option></select>`)}
+      ${cell(n.has('tobacco'), `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`)}
+      ${cell(n.has('covered'), `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`)}
+      ${cell(n.has('hw'), `<input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:52px;${inp}" oninput="hhRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:52px;margin-left:4px;${inp}" oninput="hhRead_()">`)}
+      ${cell(n.has('hw'), `<input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:62px;${inp}" oninput="hhRead_()">`)}
+      ${cell(n.has('amount'), `<select class="hh-amt" onchange="hhRead_()" style="${inp}"><option value=""></option>${bands(m)}</select>`)}
+      ${cell(n.has('amount'), `<input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:104px;${inp}" oninput="hhRead_()">`)}
+      ${cell(true, i === 0 ? '' : `<button type="button" onclick="_hh.splice(${i},1);hhPaint_();hhRead_();" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:15px;">&#10005;</button>`)}
+    </tr>`).join('');
   hhRead_();
 }
 
 function hhRead_() {
   const num = v => (v === '' || v == null ? null : Number(v));
-  const rows = [...document.querySelectorAll('#hh-rows tr, #hh-cards .hh-card')];
+  const rows = [...document.querySelectorAll('#hh-rows tr')];
   _hh = rows.map(tr => ({
     relationship: tr.querySelector('.hh-rel').value,
     age: tr.querySelector('.hh-age').value === '' ? '' : parseInt(tr.querySelector('.hh-age').value),
