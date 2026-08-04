@@ -34,10 +34,15 @@ global.window = global;
 eval(grab('escWeb'));
 eval(grab('PIPELINES').replace(/^const /, 'var '));
 eval(grab('ENROLLMENT_STATUS').replace(/^const /, 'var '));
-eval(grab('ENROLL_STAGE').replace(/^const /, 'var '));
+eval(grab('COVERAGE_STAGE').replace(/^const /, 'var '));
+eval(grab('DEAL_WON_REASON').replace(/^const /, 'var '));
+eval(grab('DEAL_CLOSE_REASONS').replace(/^const /, 'var '));
+eval(grab('dealWasWon_'));
 eval(grab('enrollMoney_'));
 eval(grab('enrollDate_'));
 eval(grab('coverageState_'));
+eval(grab('coverageRollup_'));
+eval(grab('dealCoverageVerdict_'));
 eval(grab('enrollQuoteExpired_'));
 eval(grab('enrollPortalLink_'));
 eval(grab('enrollCardState_'));
@@ -45,34 +50,65 @@ eval(grab('enrollHeadline_'));
 eval(grab('coverageListHtml_'));
 eval(grab('cvStatusChanged_'));
 
+const T = '2026-08-04';
 let bad = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) bad++; };
 const day = d => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
 
-// ── 1. the stage a deal moves to on enrollment ───────────────────────────────
-console.log('1. the stage a deal moves to on enrollment');
-Object.entries(ENROLL_STAGE).forEach(([pipe, stage]) => {
+// ── 1. where a deal sits, given what the coverage is doing ───────────────────
+console.log('1. every stage the coverage can send a deal to is a real stage');
+Object.entries(COVERAGE_STAGE).forEach(([pipe, map]) => {
   const stages = (PIPELINES[pipe] || {}).stages || [];
-  ok(stages.includes(stage), pipe + ' -> "' + stage + '" is a real stage in that pipeline');
-  ok(stages.indexOf(stage) > 0, pipe + ' -> "' + stage + '" is not the first stage');
+  Object.entries(map).forEach(([when, stage]) => {
+    ok(stages.includes(stage), pipe + ' / ' + when + ' -> "' + stage + '" exists in that pipeline');
+  });
+  ok(stages.indexOf(map.applied) <= stages.indexOf(map.settled), pipe + ': applied comes before settled');
+  ok(stages.indexOf(map.settled) <= stages.indexOf(map.in_force), pipe + ': settled comes before in force');
 });
 Object.keys(PIPELINES).forEach(p => {
-  if (p.startsWith('agent-')) ok(!ENROLL_STAGE[p], p + ' has no enrollment stage — an agent is contracted, not enrolled');
-  else ok(!!ENROLL_STAGE[p], p + ' has an enrollment stage');
+  if (p.startsWith('agent-')) ok(!COVERAGE_STAGE[p], p + ' has no coverage stages — an agent is contracted, not enrolled');
+  else ok(!!COVERAGE_STAGE[p], p + ' has coverage stages');
 });
-const forwardOnly = (pipe, from) =>
-  PIPELINES[pipe].stages.indexOf(from) >= PIPELINES[pipe].stages.indexOf(ENROLL_STAGE[pipe]);
-ok(forwardOnly('individual-family', 'Active Client'), 'an Active Client is not pulled back to Enrolled');
-ok(forwardOnly('medicare', 'Annual Review'), 'a Medicare deal at Annual Review stays there');
-ok(!forwardOnly('individual-family', 'Quoted'), 'a Quoted deal does move up to Enrolled');
 
-// ── 1b. in force is a fact about today ───────────────────────────────────────
+console.log('\n1a. a deal is finished only when nothing is still with a carrier');
+const V = (pipe, rows) => dealCoverageVerdict_(pipe, rows, T);
+const R = (o) => Object.assign({ status: 'active' }, o);
+ok(!V('individual-family', []).stage, 'no coverage at all leaves the deal alone');
+let v = V('individual-family', [R({ status: 'submitted' })]);
+ok(v.stage === 'Application' && !v.close, 'an application in the carrier\'s hands -> Application, stays on the board');
+v = V('individual-family', [R({ effective_date: '2026-09-01' })]);
+ok(v.stage === 'Enrolled' && !v.close, 'approved but not started -> Enrolled, still on the board');
+v = V('individual-family', [R({ effective_date: '2026-01-01' })]);
+ok(v.stage === 'Active Client' && v.close, 'cover in force -> Active Client, and the deal closes');
+// The case that matters: do not take a deal off the board while there is still
+// something to chase.
+v = V('individual-family', [R({ effective_date: '2026-01-01' }), R({ status: 'submitted' })]);
+ok(!v.close, 'one policy in force but another still pending does NOT close the deal');
+ok(v.stage === 'Application', 'and it sits at Application, because that is the outstanding work');
+v = V('medicare', [R({ effective_date: '2026-01-01' })]);
+ok(v.stage === 'Annual Review' && v.close, 'a Medicare client in force -> Annual Review, closed');
+v = V('group-employer', [R({ status: 'submitted' })]);
+ok(v.stage === 'Enrolled', 'group has no Application stage, so it uses Enrolled');
+// Coverage that has ended is not a reason to close a deal as won today.
+v = V('individual-family', [R({ effective_date: '2025-01-01', termination_date: '2026-03-31' })]);
+ok(!v.close && !v.stage, 'coverage that lapsed months ago does not close anything now');
+ok(!V('agent-insured', [R({ effective_date: '2026-01-01' })]).stage,
+   'a recruiting deal is never touched by coverage');
+
+console.log('\n1b. won is not the same as lost');
+ok(DEAL_CLOSE_REASONS.includes(DEAL_WON_REASON), 'the won reason is one of the close reasons');
+ok(DEAL_CLOSE_REASONS[0] === DEAL_WON_REASON, 'and it is first in the list, not buried among the losses');
+ok(dealWasWon_({ closed_reason: DEAL_WON_REASON }), 'a deal closed as won reads as won');
+ok(!dealWasWon_({ closed_reason: 'Price' }), 'a deal lost on price does not');
+ok(!dealWasWon_({}), 'and an open deal is neither');
+ok(!dealWasWon_(null), 'nor is nothing at all');
+
+// ── 1c. in force is a fact about today ───────────────────────────────────────
 //
 // The whole point: nothing runs on a schedule, so a stored "active" would still
 // say active in June for a policy that ended in March. These are read fresh
 // every time, which is why they can be trusted by a client's portal.
 console.log('\n1b. what a policy reads as, worked out from its dates');
-const T = '2026-08-04';
 const st = (r) => coverageState_(r, T);
 const cov = (o) => Object.assign({ status: 'active' }, o);
 

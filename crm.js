@@ -5960,12 +5960,17 @@ function c360Body_(D) {
     const closedD = D.deals.filter(function(d) { return  d.closed_at; });
     const dealCard = (d, isClosed) => {
       const pl = (typeof PIPELINES !== 'undefined' && PIPELINES[d.pipeline]) ? PIPELINES[d.pipeline].name : d.pipeline;
+      // A deal that ended in coverage is not the same thing as one that fell
+      // through, and dimming both to grey said it was.
+      const won = dealWasWon_(d);
       const why = [d.closed_reason || 'Closed', d.closed_at ? fmtD(d.closed_at) : '',
                    d.follow_up_on ? 'try again ' + fmtD(d.follow_up_on) : ''].filter(Boolean).join(' · ');
       return c360Row_(`
-        <div style="flex:1;min-width:0;${isClosed ? 'opacity:.6;' : ''}">
+        <div style="flex:1;min-width:0;${isClosed && !won ? 'opacity:.6;' : ''}">
           <div style="font-weight:700;font-size:13.5px;">${escWeb(d.title || pl)}${isClosed
-            ? ' <span style="font-weight:600;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:9px;padding:1px 7px;margin-left:5px;vertical-align:middle;">CLOSED</span>' : ''}</div>
+            ? (won
+              ? ' <span style="font-weight:700;font-size:10px;color:var(--text-success);border:1px solid var(--border-success);border-radius:9px;padding:1px 7px;margin-left:5px;vertical-align:middle;">WON</span>'
+              : ' <span style="font-weight:600;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:9px;padding:1px 7px;margin-left:5px;vertical-align:middle;">CLOSED</span>') : ''}</div>
           <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${escWeb(pl)} → <span style="color:${isClosed ? 'var(--text-muted)' : 'var(--accent,#1d3557)'};font-weight:700;">${escWeb(d.stage || '—')}</span>${d.value ? ' · $' + Number(d.value).toLocaleString() : ''}</div>
           ${isClosed ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${escWeb(why)}</div>` : ''}
         </div>
@@ -5979,10 +5984,14 @@ function c360Body_(D) {
     // Closed deals stay on the record but out of the way. The button only
     // appears when there is actually something behind it.
     if (closedD.length) {
+      // "3 closed deals" would file a won client under the same word as a deal
+      // that went quiet. Say which is which.
+      const wonN = closedD.filter(dealWasWon_).length;
+      const lostN = closedD.length - wonN;
+      const label = [wonN ? wonN + ' won' : '', lostN ? lostN + ' closed' : ''].filter(Boolean).join(' · ');
       html += '<div style="margin-top:12px;text-align:center;">'
             + '<button class="btn btn-outline btn-sm" style="color:var(--text-muted);" onclick="c360ToggleClosed_()">'
-            + (D.showClosed ? '▾ Hide' : '▸ Show') + ' ' + closedD.length + ' closed deal'
-            + (closedD.length === 1 ? '' : 's') + '</button></div>';
+            + (D.showClosed ? '▾ Hide' : '▸ Show') + ' ' + label + '</button></div>';
       if (D.showClosed) html += '<div style="margin-top:8px;">'
             + closedD.map(function(d) { return dealCard(d, true); }).join('') + '</div>';
     }
@@ -6389,10 +6398,59 @@ async function markAllNotifsRead() {
   } catch(e) { /* silent */ }
 }
 
+// Every reason here used to be a loss, because closing a deal only ever meant
+// giving up on it. A deal that ENDS IN COVERAGE is the other way a deal
+// finishes, and it needs to leave the board too — otherwise the last column
+// fills with every client the agency has ever written and stops being a
+// worklist. See [[project-book-of-business]].
+const DEAL_WON_REASON = 'Enrolled — coverage in force';
+
 const DEAL_CLOSE_REASONS = [
+  DEAL_WON_REASON,
   'Went with another agent', 'Price', 'Not eligible', 'Went quiet / no response',
   'Bought direct', 'Not now — try again later', 'Other'
 ];
+
+function dealWasWon_(d) { return !!d && d.closed_reason === DEAL_WON_REASON; }
+
+// Where a deal sits given what its client's coverage is actually doing. Each
+// pipeline names its own stages, so the mapping is per pipeline rather than a
+// clever guess.
+const COVERAGE_STAGE = {
+  'individual-family': { applied: 'Application',           settled: 'Enrolled', in_force: 'Active Client' },
+  'medicare':          { applied: 'Application Submitted', settled: 'Enrolled', in_force: 'Annual Review' },
+  'group-employer':    { applied: 'Enrolled',              settled: 'Enrolled', in_force: 'Active Client' },
+};
+
+// What a client's whole book says, in one object. Pure, so the rule that
+// decides whether a deal is finished can be tested without a database.
+function coverageRollup_(rows, today) {
+  const states = (rows || []).map(r => coverageState_(r, today));
+  const live = states.filter(s => s.live);
+  return {
+    total:      states.length,
+    anyInForce: states.some(s => s.inForce),
+    // Still waiting on a carrier. Real work, so the deal stays on the board.
+    anyApplied: states.some(s => s.key === 'applied' || s.key === 'approved'),
+    anyStarting: states.some(s => s.key === 'starting'),
+    anyLive:    live.length > 0,
+    inForce:    states.filter(s => s.inForce).length,
+  };
+}
+
+// A deal is FINISHED when the client has cover in force and nothing is still
+// sitting with a carrier. Anything outstanding keeps it on the board, because
+// an application waiting on underwriting is work somebody has to chase.
+function dealCoverageVerdict_(pipeline, rows, today) {
+  const map = COVERAGE_STAGE[pipeline];
+  if (!map) return { stage: null, close: false };
+  const r = coverageRollup_(rows, today);
+  if (!r.total) return { stage: null, close: false };
+  if (r.anyApplied) return { stage: map.applied, close: false };
+  if (r.anyInForce) return { stage: map.in_force, close: true };
+  if (r.anyStarting) return { stage: map.settled, close: false };
+  return { stage: null, close: false };
+}
 
 // Deals are closed, never deleted. Quotes, census records, BAAs and SOAs all
 // point at a deal, and an SOA has a ten-year retention requirement — deleting
@@ -6406,8 +6464,11 @@ function openCloseDeal(dealId) {
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
       This takes it off the board but keeps everything attached to it — quotes, any signed
       SOA, and the history. You can reopen it any time, and a new intake reopens it by itself.</p>
-    <label>Why did it fall through? *</label>
-    <select id="cd-reason">${DEAL_CLOSE_REASONS.map(r => '<option>' + r + '</option>').join('')}</select>
+    <label>How did it end? *</label>
+    <select id="cd-reason">${DEAL_CLOSE_REASONS.map(r =>
+      '<option' + (r === DEAL_WON_REASON ? ' style="font-weight:700;"' : '') + '>' + r + '</option>').join('')}</select>
+    <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+      "${escWeb(DEAL_WON_REASON)}" happens by itself once their cover starts — you rarely need to pick it here.</p>
     <label>Anything worth remembering</label>
     <textarea id="cd-note" rows="2" placeholder="e.g. said to call back after open enrolment"></textarea>
     <label>Follow up on <span style="font-weight:400;color:var(--text-muted);">— optional, for "not now"</span></label>
@@ -6436,6 +6497,11 @@ function openDealFor_(contactId) {
 
 async function reopenDeal_(dealId) {
   const d = (deals || []).find(x => x.id === dealId);
+  // Reopening a WON deal is legitimate — it is how you work a cross-sell — but
+  // it is not the same act as reopening one that fell through, so say so.
+  if (dealWasWon_(d) && !confirm('This deal was won — ' + (d.title || 'the client')
+      + ' has cover in force.\n\nReopening puts it back on the board as live work. '
+      + 'Their coverage is not affected, and it will close itself again when the next policy settles.\n\nCarry on?')) return;
   const { error } = await supabaseClient.from('deals')
     .update({ closed_at: null, closed_reason: null, closed_note: null, follow_up_on: null })
     .eq('id', dealId);
@@ -17562,12 +17628,6 @@ function coverageState_(r, today) {
            hint: term ? 'Ends ' + enrollDate_(term) : 'Active cover' };
 }
 
-const ENROLL_STAGE = {
-  'individual-family': 'Enrolled',
-  'group-employer':    'Enrolled',
-  'medicare':          'Enrolled',
-};
-
 function enrollMoney_(n) {
   const v = parseFloat(n);
   return isFinite(v) ? '$' + v.toFixed(2) : '';
@@ -18008,18 +18068,39 @@ async function enrollCloseQuote_() {
   await enrollRefresh_();
 }
 
-// Enrolling moves the deal to its pipeline's Enrolled stage — forward only,
-// the same rule a sent quote uses. A deal already at Active Client stays there.
+// The deal follows the coverage, rather than an agent remembering to drag a
+// card. Forward only, always — the same rule a sent quote uses, so nothing here
+// can pull a card backwards on somebody.
+//
+// And when the client's cover is actually in force with nothing left sitting at
+// a carrier, the deal is FINISHED: it closes as won and comes off the board.
+// That is the whole answer to Ken's "an Active Client stage with a shit ton of
+// client names in it" — a finished deal leaves, and the client lives in the
+// book of business instead.
 async function advanceDealOnEnrollment_(deal) {
   try {
-    const target = ENROLL_STAGE[deal.pipeline];
-    if (!target || deal.stage === target) return;
+    if (!deal || !deal.contact_id) return;
+    const { data: rows } = await supabaseClient.from('enrollments')
+      .select('status,effective_date,termination_date').eq('contact_id', deal.contact_id);
+    const verdict = dealCoverageVerdict_(deal.pipeline, rows || []);
+    if (!verdict.stage) return;
+
     const stages = (PIPELINES[deal.pipeline] || {}).stages || [];
-    if (stages.indexOf(deal.stage) >= stages.indexOf(target)) return;
-    const { error } = await supabaseClient.from('deals').update({ stage: target }).eq('id', deal.id);
-    if (error) return;
-    deal.stage = target;
-    showToast((deal.title || 'Deal') + ' moved to "' + target + '".');
+    const patch = {};
+    if (stages.indexOf(deal.stage) < stages.indexOf(verdict.stage)) patch.stage = verdict.stage;
+    if (verdict.close && !deal.closed_at) {
+      patch.closed_at = new Date().toISOString();
+      patch.closed_reason = DEAL_WON_REASON;
+    }
+    if (!Object.keys(patch).length) return;
+
+    const { error } = await supabaseClient.from('deals').update(patch).eq('id', deal.id);
+    if (error) { showToast('Could not update the deal: ' + error.message, 8000); return; }
+    Object.assign(deal, patch);
+
+    showToast(patch.closed_at
+      ? '\u{1F389} ' + (deal.title || 'Deal') + ' is now a client — closed as won and off the board.'
+      : (deal.title || 'Deal') + ' moved to "' + patch.stage + '".');
     try { renderPipelines(); } catch (e) {}
   } catch (e) { console.error('advanceDealOnEnrollment_:', e); }
 }
@@ -18192,7 +18273,9 @@ async function openCoverageEditor_(enrollmentId, contactId, dealId) {
     }
     const deal = (deals || []).find(d => d.id === (dealId || (r && r.deal_id)))
               || openDealFor_(contactId || (r && r.contact_id));
-    if (deal) loadCoverage_(deal);
+    // Ending a policy, or a start date arriving, changes where the deal belongs
+    // just as much as enrolling did.
+    if (deal) { await advanceDealOnEnrollment_(deal); loadCoverage_(deal); }
     if (contact && document.getElementById('contact-coverage-' + contact.id)) loadContactCoverage_(contact.id);
     return true;
   }, { confirmLabel: isNew ? 'Add this coverage' : 'Save' });
