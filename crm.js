@@ -2886,6 +2886,34 @@ const INTAKE_FIELD_DEFS = {
                            options: ['Yes','No'] },
   products_sold:         { label: 'Products Sold',          type: 'text',   section: 'Your book of business',
                            placeholder: 'e.g. ACA, Medicare, Life' },
+  // ── Life ────────────────────────────────────────────────────────────────
+  life_term:             { label: 'How long do they need the cover?', type: 'select', section: 'What this needs to do',
+                           options: ['10 years','15 years','20 years','25 years','30 years',
+                                     'For life (permanent)','Not sure — advise me'] },
+  life_work_cover:       { label: 'Cover through work?', type: 'select', section: 'What you have now',
+                           options: ['No','Yes — and it ends if I leave','Yes — I can take it with me','Not sure'] },
+  health_conditions:     { label: 'Any conditions or medications we should know about?', type: 'textarea',
+                           section: 'A few private questions' },
+  // ── Disability ──────────────────────────────────────────────────────────
+  di_employment:         { label: 'Employment type', type: 'select', section: 'Your background',
+                           options: ['W-2 employee','Self-employed / 1099','Business owner','Other'] },
+  di_hours:              { label: 'Hours worked per week', type: 'number', section: 'Your background' },
+  di_existing:           { label: 'Disability cover through work?', type: 'select', section: 'What you have now',
+                           options: ['No','Yes — short term only','Yes — long term','Yes — both','Not sure'] },
+  di_benefit_wanted:     { label: 'Monthly benefit wanted ($)', type: 'number', section: 'What this needs to do' },
+  di_elimination:        { label: 'How long could they go before benefits start?', type: 'select',
+                           section: 'What this needs to do',
+                           options: ['30 days','60 days','90 days','180 days','A year','Not sure'] },
+  di_benefit_period:     { label: 'How long should benefits last?', type: 'select', section: 'What this needs to do',
+                           options: ['2 years','5 years','10 years','To age 65','To age 67','Not sure'] },
+  // ── Group ───────────────────────────────────────────────────────────────
+  group_sic:             { label: 'Industry / SIC code', type: 'text', section: 'About your business',
+                           placeholder: 'e.g. 8742 — management consulting' },
+  group_legal_name:      { label: 'Legal entity name (if different from DBA)', type: 'text', section: 'About your business' },
+  group_renewal_date:    { label: 'Current plan renewal date', type: 'date', section: 'What you have now' },
+  group_contribution:    { label: 'Employer contribution (% of premium)', type: 'number', section: 'Money' },
+  group_current_deduct:  { label: 'Current plan deductible', type: 'text', section: 'What you have now',
+                           placeholder: 'e.g. $3,000 individual / $6,000 family' },
   // ── Closing ─────────────────────────────────────────────────────────────
   notes:                 { label: 'Anything else (their words)', type: 'textarea', section: 'Anything else' },
   notes_health:          { label: 'Agent notes (not shown to the client)', type: 'textarea', section: 'Anything else' },
@@ -2973,34 +3001,38 @@ const INTAKE_SECTIONS = [
           'dependents_count','dependents_ages','aca_not_applying'] },
 
   { key: 'business', title: 'About your business',
-    ids: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states'] },
+    ids: ['business_name','group_legal_name','employee_count','enrollment_count','avg_age_range',
+          'employee_states','group_sic'] },
 
   { key: 'medicare', title: 'Where you are with Medicare',
     ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage'] },
 
   { key: 'current',  title: 'What you have now',
     ids: ['currently_insured','current_carrier','employer_plan_available','current_premium',
-          'has_current_plan','current_group_carrier','current_cost_per_emp',
-          'has_life_insurance','life_coverage_amount','has_investments'] },
+          'has_current_plan','current_group_carrier','current_cost_per_emp','group_current_deduct',
+          'group_renewal_date','has_life_insurance','life_coverage_amount','life_work_cover',
+          'di_existing','has_investments'] },
 
   { key: 'care',     title: 'How you use care',
     ids: ['care_frequency','planned_care','med_doctors','med_medications','med_pharmacy','essential_meds'] },
 
   { key: 'needs',    title: 'What this needs to do',
     ids: ['coverage_goals','health_priority','coverage_start_date','group_start_date','coverage_duration',
+          'life_term','di_benefit_wanted','di_elimination','di_benefit_period',
           'mi_supplement','mi_pdp','mi_advantage','mi_dental',
           'cov_medical','cov_dental','cov_vision','cov_life','cov_disability','cov_hsa',
           'goal_debt','goal_protection','goal_college','goal_retirement','goal_wealth','goal_business'] },
 
   { key: 'money',    title: 'Money',
     ids: ['aca_income','household_income','affordable_shock',
-          'aca_ichra_offer','aca_ichra_amount','group_budget'] },
+          'aca_ichra_offer','aca_ichra_amount','group_budget','group_contribution'] },
 
   { key: 'timing',   title: 'Timing',
     ids: ['aca_qle','aca_qle_date'] },
 
   { key: 'work',     title: 'Your background',
-    ids: ['current_employer','current_occupation','current_income','education','sales_experience'] },
+    ids: ['current_employer','current_occupation','current_income','di_employment','di_hours',
+          'education','sales_experience'] },
 
   { key: 'licensing', title: 'Licensing',
     ids: ['licensed_life','licensed_health','licensed_series','states_licensed'] },
@@ -3013,7 +3045,7 @@ const INTAKE_SECTIONS = [
           'looking_higher_contracts','looking_better_leads','looking_more_support','looking_flexibility'] },
 
   { key: 'private',  title: 'A few private questions',
-    ids: ['aca_lawful','ongoing_condition','preexisting_conditions','aca_tobacco'] },
+    ids: ['aca_lawful','ongoing_condition','preexisting_conditions','health_conditions','aca_tobacco'] },
 
   { key: 'anything', title: 'Anything else',
     ids: ['notes','notes_health'] },
@@ -3073,11 +3105,14 @@ const INTAKE_PRODUCTS = [
     // Dependents come from the household widget — count and ages are already
     // in it, per person, with gender and tobacco alongside.
     ids: ['household_members','marital_status','med_medications','has_life_insurance',
-          'life_coverage_amount','goal_protection','goal_debt','goal_college'] },
+          'life_coverage_amount','life_work_cover','life_term','health_conditions',
+          'goal_protection','goal_debt','goal_college'] },
 
   { key: 'disability', group: 'Life & income', label: 'Disability / income protection',
     agentLabel: 'Disability', lines: ['Disability'],
-    ids: ['household_members','current_occupation','current_income','med_medications'] },
+    ids: ['household_members','current_occupation','current_income','med_medications',
+          'di_employment','di_hours','di_existing','di_benefit_wanted','di_elimination',
+          'di_benefit_period','health_conditions'] },
 
   { key: 'investments', group: 'Life & income', label: 'Savings, retirement & college funding',
     agentLabel: 'Savings & Investments', formType: 'financial', lines: [],
@@ -3086,9 +3121,10 @@ const INTAKE_PRODUCTS = [
 
   { key: 'group', group: 'For a business', label: 'Benefits for my employees',
     agentLabel: 'Group / Employer', formType: 'health-group', lines: ['Health — Group'],
-    ids: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states',
-          'has_current_plan','current_group_carrier','current_cost_per_emp','group_start_date',
-          'cov_medical','cov_dental','cov_vision','group_budget'] },
+    ids: ['business_name','group_legal_name','group_sic','employee_count','enrollment_count',
+          'avg_age_range','employee_states','has_current_plan','current_group_carrier',
+          'current_cost_per_emp','group_current_deduct','group_renewal_date','group_start_date',
+          'cov_medical','cov_dental','cov_vision','group_budget','group_contribution'] },
 
   // ── Placed through a partner rather than written here. `referral` is a
   // BEHAVIOUR flag, not a label: it means ask no questions and never imply a

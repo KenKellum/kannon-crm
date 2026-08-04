@@ -226,6 +226,27 @@ const FIELD_DEFS = {
   mi_pdp:               { label: 'Prescription Drug Plan (Part D)', type: 'checkbox-field', group: 'medinterest' },
   mi_advantage:         { label: 'Medicare Advantage', type: 'checkbox-field', group: 'medinterest' },
   mi_dental:            { label: 'Dental / Vision / Hearing options', type: 'checkbox-field', group: 'medinterest' },
+  life_term:            { label: 'How long do you need this cover to last?', type: 'select',
+                          options: ['10 years','15 years','20 years','25 years','30 years','For life (permanent)','Not sure — advise me'] },
+  life_work_cover:      { label: 'Do you have life cover through work?', type: 'select',
+                          options: ['No','Yes — and it ends if I leave','Yes — I can take it with me','Not sure'] },
+  health_conditions:    { label: 'Any conditions or medications we should know about?', type: 'textarea',
+                          placeholder: 'This affects the price more than almost anything else, and it stays between you and your advisor.' },
+  di_employment:        { label: 'How are you employed?', type: 'select',
+                          options: ['W-2 employee','Self-employed / 1099','Business owner','Other'] },
+  di_hours:             { label: 'Hours you work per week', type: 'number' },
+  di_existing:          { label: 'Disability cover through work?', type: 'select',
+                          options: ['No','Yes — short term only','Yes — long term','Yes — both','Not sure'] },
+  di_benefit_wanted:    { label: 'Monthly benefit you would need ($)', type: 'number' },
+  di_elimination:       { label: 'How long could you manage before benefits started?', type: 'select',
+                          options: ['30 days','60 days','90 days','180 days','A year','Not sure'] },
+  di_benefit_period:    { label: 'How long should benefits last?', type: 'select',
+                          options: ['2 years','5 years','10 years','To age 65','To age 67','Not sure'] },
+  group_sic:            { label: 'Industry / SIC code', type: 'text', placeholder: 'e.g. 8742 — management consulting' },
+  group_legal_name:     { label: 'Legal entity name (if different from your trading name)', type: 'text' },
+  group_renewal_date:   { label: 'When does your current plan renew?', type: 'date' },
+  group_contribution:   { label: 'What share of the premium do you pay (%)?', type: 'number' },
+  group_current_deduct: { label: 'Current plan deductible', type: 'text', placeholder: 'e.g. $3,000 individual / $6,000 family' },
   notes:                { label: 'Anything else you\'d like us to know', type: 'textarea', placeholder: 'Questions, comments, special circumstances…' }
 };
 
@@ -290,13 +311,17 @@ const INTAKE_PRODUCT_IDS = {
   medicare: ['household_members','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier',
              'med_doctors','med_medications','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental'],
   life: ['household_members','marital_status','med_medications','has_life_insurance',
-         'life_coverage_amount','goal_protection','goal_debt','goal_college'],
-  disability: ['household_members','current_occupation','current_income','med_medications'],
+         'life_coverage_amount','life_work_cover','life_term','health_conditions',
+         'goal_protection','goal_debt','goal_college'],
+  disability: ['household_members','current_occupation','current_income','med_medications',
+               'di_employment','di_hours','di_existing','di_benefit_wanted','di_elimination',
+               'di_benefit_period','health_conditions'],
   investments: ['household_members','marital_status','household_income','has_investments',
                 'goal_retirement','goal_wealth','goal_college','goal_debt'],
-  group: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states',
-          'has_current_plan','current_group_carrier','current_cost_per_emp','group_start_date',
-          'cov_medical','cov_dental','cov_vision','group_budget'],
+  group: ['business_name','group_legal_name','group_sic','employee_count','enrollment_count',
+          'avg_age_range','employee_states','has_current_plan','current_group_carrier',
+          'current_cost_per_emp','group_current_deduct','group_renewal_date','group_start_date',
+          'cov_medical','cov_dental','cov_vision','group_budget','group_contribution'],
   supplemental: ['household_members','affordable_shock','ongoing_condition'],
   dental: ['household_members','med_doctors'], property: [], commercial: [],
 };
@@ -344,7 +369,8 @@ const INTAKE_SECTIONS = [
           'dependents_count','dependents_ages','aca_not_applying'] },
 
   { key: 'business', title: 'About your business',
-    ids: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states'] },
+    ids: ['business_name','group_legal_name','employee_count','enrollment_count','avg_age_range',
+          'employee_states','group_sic'] },
 
   { key: 'medicare', title: 'Where you are with Medicare',
     blurb: 'Wherever you are is fine — plenty of people are not sure yet. Answer what you know.',
@@ -352,8 +378,9 @@ const INTAKE_SECTIONS = [
 
   { key: 'current', title: 'What you have now',
     ids: ['currently_insured','current_carrier','employer_plan_available','current_premium',
-          'has_current_plan','current_group_carrier','current_cost_per_emp',
-          'has_life_insurance','life_coverage_amount','has_investments'] },
+          'has_current_plan','current_group_carrier','current_cost_per_emp','group_current_deduct',
+          'group_renewal_date','has_life_insurance','life_coverage_amount','life_work_cover',
+          'di_existing','has_investments'] },
 
   { key: 'care', title: 'How you use care',
     blurb: 'This is how your advisor checks that a plan actually covers your doctors and your prescriptions before recommending it.',
@@ -361,6 +388,7 @@ const INTAKE_SECTIONS = [
 
   { key: 'needs', title: 'What this needs to do',
     ids: ['coverage_goals','health_priority','coverage_start_date','group_start_date','coverage_duration',
+          'life_term','di_benefit_wanted','di_elimination','di_benefit_period',
           'mi_supplement','mi_pdp','mi_advantage','mi_dental',
           'cov_medical','cov_dental','cov_vision','cov_life','cov_disability','cov_hsa',
           'goal_debt','goal_protection','goal_college','goal_retirement','goal_wealth','goal_business'] },
@@ -368,13 +396,14 @@ const INTAKE_SECTIONS = [
   { key: 'money', title: 'Money',
     blurb: 'Your income sets the tax credit you qualify for, so an accurate figure gives an accurate price. It is never sold or shared.',
     ids: ['aca_income','household_income','affordable_shock',
-          'aca_ichra_offer','aca_ichra_amount','group_budget'] },
+          'aca_ichra_offer','aca_ichra_amount','group_budget','group_contribution'] },
 
   { key: 'timing', title: 'Timing',
     ids: ['aca_qle','aca_qle_date'] },
 
   { key: 'work', title: 'Your background',
-    ids: ['current_employer','current_occupation','current_income','education','sales_experience'] },
+    ids: ['current_employer','current_occupation','current_income','di_employment','di_hours',
+          'education','sales_experience'] },
 
   { key: 'licensing', title: 'Licensing',
     ids: ['licensed_life','licensed_health','licensed_series','states_licensed'] },
@@ -391,7 +420,7 @@ const INTAKE_SECTIONS = [
          + 'already managing is worse than no plan, and eligibility for a Marketplace plan is set by law rather '
          + 'than by us. Answer only what you are comfortable with — “Prefer not to say” is a real answer and your '
          + 'advisor will simply ask you about it in person.',
-    ids: ['aca_lawful','ongoing_condition','preexisting_conditions','aca_tobacco'] },
+    ids: ['aca_lawful','ongoing_condition','preexisting_conditions','health_conditions','aca_tobacco'] },
 
   // notes_health is the agent's own note. It has no def here, so the client
   // never sees it — the id stays listed only to keep this list identical to
@@ -441,7 +470,12 @@ function renderHouseholdTable_(id, def) {
   }
   setTimeout(() => { try { hhPaint_(); } catch (e) {} }, 80);
   return `<div class="field-group" id="wrap_${id}">
-    <label>${def.label} <span style="font-weight:400;color:#94a3b8;">\u2014 add everyone who lives with you; untick \u201cCover\u201d for anyone not applying</span></label>
+    <label>${def.label}</label>
+    <p style="font-weight:400;color:#777;font-size:12.5px;line-height:1.6;margin:-2px 0 8px;">
+      Add everyone you claim on your tax return \u2014 even if they already have coverage and are
+      not applying here. Then untick <strong>Applying</strong> for anyone who does not need cover.
+      <span style="color:#999;">Your tax household is what a subsidy is worked out on, so leaving
+      someone off can change the price.</span></p>
     <div style="overflow-x:auto;" id="hh-table"><table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr id="hh-head" style="text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;">
         <th style="padding:4px;">Who</th><th style="padding:4px;">Age</th><th style="padding:4px;">Gender</th>
