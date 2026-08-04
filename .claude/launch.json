@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "crm-static",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set PATH=C:\\Program Files\\nodejs;%PATH% && npx --yes http-server . -p 4321 -c-1 --silent"
+      ],
+      "port": 4321
+    }
+  ]
+}

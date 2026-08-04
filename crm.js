@@ -2733,151 +2733,210 @@ async function showNotInterested(contactId) {
   } catch(e) { showToast('Error updating contact'); }
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// THE INTAKE CATALOGUE
+//
+// Field ids are permanent. Saved answers, kenai_eligibility() and the Ken.ai
+// prompt all key off them, so a rename silently orphans every form ever taken.
+// Labels, options and which section a field sits in are free to change —
+// EXCEPT the option strings kenai_eligibility() matches on by value:
+// planned_care, ongoing_condition, preexisting_conditions, essential_meds,
+// affordable_shock, care_frequency, coverage_duration and aca_qle.
+//
+// `section` must be one of the titles in INTAKE_SECTIONS below — that one list
+// decides the order the client meets the questions in, the order the agent's
+// checklist shows them, and the grouping in the answer viewer.
+// ────────────────────────────────────────────────────────────────────────────
 const INTAKE_FIELD_DEFS = {
   // ── Shared ──────────────────────────────────────────────────────────────
-  name:                  { label: 'Full Name',              type: 'text',   section: 'Contact Info' },
-  email:                 { label: 'Email',                  type: 'email',  section: 'Contact Info' },
-  phone:                 { label: 'Phone',                  type: 'tel',    section: 'Contact Info' },
-  dob:                   { label: 'Date of Birth',          type: 'date',   section: 'Contact Info' },
-  zip:                   { label: 'ZIP Code',               type: 'text',   section: 'Contact Info' },
-  med_ab_status:         { label: 'Where are they with Medicare?', type: 'select', section: 'Medicare',
+  name:                  { label: 'Full Name',              type: 'text',   section: 'About you' },
+  email:                 { label: 'Email',                  type: 'email',  section: 'About you' },
+  phone:                 { label: 'Phone',                  type: 'tel',    section: 'About you' },
+  dob:                   { label: 'Date of Birth',          type: 'date',   section: 'About you' },
+  zip:                   { label: 'ZIP Code',               type: 'text',   section: 'About you' },
+  street_address:        { label: 'Street Address',         type: 'text',   section: 'About you' },
+  med_ab_status:         { label: 'Where are they with Medicare?', type: 'select', section: 'Where you are with Medicare',
                            options: ['Not enrolled yet','Enrolled in Part A only','Enrolled in Parts A & B','On a Medicare Advantage plan','Have a Medicare Supplement (Medigap) plan'] },
-  med_part_a_date:       { label: 'Part A effective date',  type: 'date',   section: 'Medicare' },
-  med_part_b_date:       { label: 'Part B effective date',  type: 'date',   section: 'Medicare' },
-  med_employer_coverage: { label: 'Still on employer health plan?', type: 'select', section: 'Medicare', options: ['Yes','No'] },
-  med_medications:       { label: 'Current medications (names & dosages)', type: 'textarea', section: 'Medicare' },
-  med_doctors:           { label: 'Doctors to keep',        type: 'text',   section: 'Medicare' },
-  med_pharmacy:          { label: 'Preferred pharmacy',     type: 'text',   section: 'Medicare' },
-  mi_supplement:         { label: 'Interested: Medicare Supplement (Medigap)', type: 'checkbox', section: 'Medicare' },
-  mi_pdp:                { label: 'Interested: Prescription Drug Plan (Part D)', type: 'checkbox', section: 'Medicare' },
-  mi_advantage:          { label: 'Interested: Medicare Advantage', type: 'checkbox', section: 'Medicare' },
-  mi_dental:             { label: 'Interested: Dental / Vision / Hearing', type: 'checkbox', section: 'Medicare' },
-  best_time:             { label: 'Best Time to Reach',     type: 'select', section: 'Contact Info',
-                           options: ['Morning','Afternoon','Evening','Anytime'] },
-  marital_status:        { label: 'Marital Status',         type: 'select', section: 'Contact Info',
+  med_part_a_date:       { label: 'Part A effective date',  type: 'date',   section: 'Where you are with Medicare' },
+  med_part_b_date:       { label: 'Part B effective date',  type: 'date',   section: 'Where you are with Medicare' },
+  med_employer_coverage: { label: 'Still on employer health plan?', type: 'select', section: 'Where you are with Medicare', options: ['Yes','No'] },
+  med_medications:       { label: 'Current medications (names & dosages)', type: 'textarea', section: 'How you use care' },
+  med_doctors:           { label: 'Doctors to keep',        type: 'text',   section: 'How you use care' },
+  med_pharmacy:          { label: 'Preferred pharmacy',     type: 'text',   section: 'How you use care' },
+  mi_supplement:         { label: 'Interested: Medicare Supplement (Medigap)', type: 'checkbox', section: 'What this needs to do' },
+  mi_pdp:                { label: 'Interested: Prescription Drug Plan (Part D)', type: 'checkbox', section: 'What this needs to do' },
+  mi_advantage:          { label: 'Interested: Medicare Advantage', type: 'checkbox', section: 'What this needs to do' },
+  mi_dental:             { label: 'Interested: Dental / Vision / Hearing', type: 'checkbox', section: 'What this needs to do' },
+  best_time:             { label: 'Best Time to Reach',     type: 'select', section: 'About you',
+                           options: ['Morning (8am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)','Anytime'] },
+  marital_status:        { label: 'Marital Status',         type: 'select', section: 'About you',
                            options: ['Single','Married','Divorced','Widowed'] },
   // ── Financial Services ───────────────────────────────────────────────────
-  household_income:      { label: 'Household Income',       type: 'select', section: 'Finances',
-                           options: ['Under $30k','$30k–$50k','$50k–$75k','$75k–$100k','$100k–$150k','$150k+'] },
-  dependents_count:      { label: '# of Dependents',        type: 'number', section: 'Finances' },
-  dependents_ages:       { label: 'Dependent Ages',         type: 'text',   section: 'Finances',
+  household_income:      { label: 'Household Income',       type: 'select', section: 'Money',
+                           options: ['Under $25,000','$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','$100,000–$150,000','Over $150,000'] },
+  dependents_count:      { label: '# of Dependents',        type: 'number', section: 'Who needs coverage' },
+  dependents_ages:       { label: 'Dependent Ages',         type: 'text',   section: 'Who needs coverage',
                            placeholder: 'e.g. 5, 8, 12' },
-  has_life_insurance:    { label: 'Has Life Insurance?',    type: 'select', section: 'Life Insurance',
+  has_life_insurance:    { label: 'Has Life Insurance?',    type: 'select', section: 'What you have now',
                            options: ['Yes','No','Not sure'] },
-  life_coverage_amount:  { label: 'Coverage Amount',        type: 'text',   section: 'Life Insurance',
-                           placeholder: 'e.g. $250,000' },
-  has_investments:       { label: 'Has Investments?',       type: 'select', section: 'Investments',
+  life_coverage_amount:  { label: 'Life Coverage Amount',   type: 'select', section: 'What you have now',
+                           options: ['Under $50k','$50k–$100k','$100k–$250k','$250k–$500k','Over $500k','Not sure'] },
+  has_investments:       { label: 'Has Investments?',       type: 'select', section: 'What you have now',
                            options: ['Yes','No','Not sure'] },
-  goal_debt:             { label: 'Goal: Debt Freedom',     type: 'checkbox', section: 'Goals' },
-  goal_protection:       { label: 'Goal: Family Protection',type: 'checkbox', section: 'Goals' },
-  goal_retirement:       { label: 'Goal: Retirement',       type: 'checkbox', section: 'Goals' },
-  goal_college:          { label: 'Goal: College Funding',  type: 'checkbox', section: 'Goals' },
-  goal_business:         { label: 'Goal: Business Planning',type: 'checkbox', section: 'Goals' },
-  notes_financial:       { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  goal_debt:             { label: 'Goal: Debt Freedom',     type: 'checkbox', section: 'What this needs to do' },
+  goal_protection:       { label: 'Goal: Income Protection',type: 'checkbox', section: 'What this needs to do' },
+  goal_retirement:       { label: 'Goal: Retirement',       type: 'checkbox', section: 'What this needs to do' },
+  goal_college:          { label: 'Goal: College Funding',  type: 'checkbox', section: 'What this needs to do' },
+  goal_wealth:           { label: 'Goal: Wealth Building',  type: 'checkbox', section: 'What this needs to do' },
+  goal_business:         { label: 'Goal: Business Planning',type: 'checkbox', section: 'What this needs to do' },
   // ── Health – Individual/Family ──────────────────────────────────────────
-  household_size:        { label: 'Household Size',         type: 'number', section: 'Household' },
-  member_ages:           { label: 'Member Ages',            type: 'text',   section: 'Household',
+  household_size:        { label: 'Household Size',         type: 'number', section: 'Who needs coverage' },
+  member_ages:           { label: 'Member Ages',            type: 'text',   section: 'Who needs coverage',
                            placeholder: 'e.g. 35, 32, 7' },
-  aca_income:            { label: 'Estimated annual household income ($)', type: 'number', section: 'Household' },
-  aca_not_applying:      { label: 'Anyone NOT applying for this coverage? (who & why)', type: 'text', section: 'Household' },
-  aca_ichra_offer:       { label: 'Employer offers ICHRA/HRA reimbursement?', type: 'select', section: 'Household', options: ['No','Yes','Not sure'] },
-  aca_ichra_amount:      { label: 'ICHRA/HRA monthly amount ($)', type: 'number', section: 'Household' },
-  aca_qle:               { label: 'Qualifying life event in the last 60 days?', type: 'select', section: 'Household',
+  aca_income:            { label: 'Estimated annual household income ($)', type: 'number', section: 'Money' },
+  aca_not_applying:      { label: 'Anyone NOT applying for this coverage? (who & why)', type: 'text', section: 'Who needs coverage' },
+  aca_ichra_offer:       { label: 'Employer offers ICHRA/HRA reimbursement?', type: 'select', section: 'Money', options: ['No','Yes','Not sure'] },
+  aca_ichra_amount:      { label: 'ICHRA/HRA monthly amount ($)', type: 'number', section: 'Money' },
+  aca_qle:               { label: 'Qualifying life event in the last 60 days?', type: 'select', section: 'Timing',
                            options: ['No \u2014 none of these','Lost other health coverage','Moved to a new area','Got married','Had or adopted a baby','Divorce or legal separation (lost coverage)','Lost Medicaid/CHIP eligibility','Left incarceration','Gained citizenship or lawful presence','Other qualifying life change'] },
-  aca_qle_date:          { label: 'Date of that life event', type: 'date', section: 'Household' },
-  aca_tobacco:           { label: 'Does anyone applying use tobacco? (who)', type: 'text', section: 'Household' },
-  aca_lawful:            { label: 'Everyone applying is a U.S. citizen or lawfully present?', type: 'select', section: 'Household', options: ['Yes','No','Not sure'] },
-  household_members:     { label: 'Household members (who\u2019s covered, age, gender, tobacco)', type: 'household-table', section: 'Household' },
-  currently_insured:     { label: 'Currently Insured?',     type: 'select', section: 'Current Coverage',
+  aca_qle_date:          { label: 'Date of that life event', type: 'date', section: 'Timing' },
+  aca_tobacco:           { label: 'Does anyone applying use tobacco? (who)', type: 'text', section: 'A few private questions' },
+  aca_lawful:            { label: 'Everyone applying is a U.S. citizen or lawfully present?', type: 'select', section: 'A few private questions', options: ['Yes','No','Not sure'] },
+  household_members:     { label: 'Household members (who\u2019s covered, age, gender, tobacco)', type: 'household-table', section: 'Who needs coverage' },
+  currently_insured:     { label: 'Currently Insured?',     type: 'select', section: 'What you have now',
                            options: ['Yes','No'] },
-  current_carrier:       { label: 'Current Carrier',        type: 'text',   section: 'Current Coverage' },
-  current_premium:       { label: 'Current Monthly Premium',type: 'text',   section: 'Current Coverage',
+  current_carrier:       { label: 'Current Carrier',        type: 'text',   section: 'What you have now' },
+  current_premium:       { label: 'Current Monthly Premium',type: 'text',   section: 'What you have now',
                            placeholder: 'e.g. $450' },
-  employer_plan_available:{ label: 'Employer Plan Available?', type: 'select', section: 'Current Coverage',
+  employer_plan_available:{ label: 'Employer Plan Available?', type: 'select', section: 'What you have now',
                             options: ['Yes','No'] },
-  coverage_start_date:   { label: 'Desired Start Date',     type: 'date',   section: 'Coverage Needs' },
-  coverage_intent:       { label: 'Why they are looking (their words)', type: 'textarea', section: 'Coverage Needs' },
-  coverage_goals:        { label: 'What good looks like (their words)',  type: 'textarea', section: 'Coverage Needs' },
-  care_frequency:        { label: 'Doctor visits in a year',  type: 'select', section: 'Coverage Needs',
+  coverage_start_date:   { label: 'Desired Start Date',     type: 'date',   section: 'What this needs to do' },
+  coverage_intent:       { label: 'Why they are looking (their words)', type: 'textarea', section: 'What brings you here' },
+  coverage_goals:        { label: 'What good looks like (their words)',  type: 'textarea', section: 'What this needs to do' },
+  care_frequency:        { label: 'Doctor visits in a year',  type: 'select', section: 'How you use care',
                            options: ['Hardly ever','A few times a year','Monthly or more','Ongoing treatment'] },
-  planned_care:          { label: 'Planned in next 12 months',type: 'select', section: 'Coverage Needs',
+  planned_care:          { label: 'Planned in next 12 months',type: 'select', section: 'How you use care',
                            options: ['Nothing planned','Surgery or a procedure','Physical therapy','Having a baby','Trying for a baby','Prefer not to say'] },
-  affordable_shock:      { label: 'Could cover out of pocket',type: 'select', section: 'Coverage Needs',
+  affordable_shock:      { label: 'Could cover out of pocket',type: 'select', section: 'Money',
                            options: ['Under $1,000','$1,000 to $5,000','$5,000 to $10,000','More than $10,000'] },
-  coverage_duration:     { label: 'How long they need it',    type: 'select', section: 'Coverage Needs',
+  coverage_duration:     { label: 'How long they need it',    type: 'select', section: 'What this needs to do',
                            options: ['A few months','Until the end of the year','A year or more','Not sure yet'] },
-  essential_meds:        { label: 'Medication they cannot go without', type: 'select', section: 'Coverage Needs',
+  essential_meds:        { label: 'Medication they cannot go without', type: 'select', section: 'How you use care',
                            options: ['No','Yes','Prefer not to say'] },
-  ongoing_condition:     { label: 'Managing an ongoing condition', type: 'select', section: 'Coverage Needs',
+  ongoing_condition:     { label: 'Managing an ongoing condition', type: 'select', section: 'A few private questions',
                            options: ['No','Yes','Prefer not to say'] },
-  preexisting_conditions:{ label: 'Pre-existing conditions',  type: 'select', section: 'Coverage Needs',
+  preexisting_conditions:{ label: 'Pre-existing conditions',  type: 'select', section: 'A few private questions',
                            options: ['No','Yes','Prefer not to say'] },
-  health_priority:       { label: 'Priority',               type: 'select', section: 'Coverage Needs',
-                           options: ['Lowest premium','Best network','Low deductible','Rx coverage','Dental/Vision'] },
-  notes_health:          { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  health_priority:       { label: 'Priority',               type: 'select', section: 'What this needs to do',
+                           options: ['Lowest monthly premium','Lowest deductible','Keep specific doctors','Prescription coverage','Dental & vision','Balance of cost and coverage'] },
   // ── Health – Group/Employer ─────────────────────────────────────────────
-  business_name:         { label: 'Business Name',          type: 'text',   section: 'Business' },
-  employee_count:        { label: '# of Employees',         type: 'number', section: 'Business' },
-  enrollment_count:      { label: 'Expected Enrollment',    type: 'number', section: 'Business' },
-  avg_age_range:         { label: 'Avg Employee Age Range', type: 'select', section: 'Business',
-                           options: ['Under 30','30–40','40–50','50+','Mixed'] },
-  has_current_plan:      { label: 'Has Current Group Plan?',type: 'select', section: 'Current Coverage',
+  business_name:         { label: 'Business Name',          type: 'text',   section: 'About your business' },
+  employee_count:        { label: '# of Employees',         type: 'number', section: 'About your business' },
+  enrollment_count:      { label: 'Expected Enrollment',    type: 'number', section: 'About your business' },
+  avg_age_range:         { label: 'Avg Employee Age Range', type: 'select', section: 'About your business',
+                           options: ['18–30','30–40','40–50','50+','Mixed ages'] },
+  employee_states:       { label: 'States Employees Work In', type: 'text', section: 'About your business',
+                           placeholder: 'e.g. MT, WY, ID' },
+  has_current_plan:      { label: 'Has Current Group Plan?',type: 'select', section: 'What you have now',
                            options: ['Yes','No'] },
-  current_group_carrier: { label: 'Current Group Carrier',  type: 'text',   section: 'Current Coverage' },
-  group_start_date:      { label: 'Desired Start Date',     type: 'date',   section: 'Coverage Needs' },
-  cov_medical:           { label: 'Medical',                type: 'checkbox', section: 'Coverage Needs' },
-  cov_dental:            { label: 'Dental',                 type: 'checkbox', section: 'Coverage Needs' },
-  cov_vision:            { label: 'Vision',                 type: 'checkbox', section: 'Coverage Needs' },
-  cov_life:              { label: 'Group Life',             type: 'checkbox', section: 'Coverage Needs' },
-  cov_disability:        { label: 'Short/Long Term Disability', type: 'checkbox', section: 'Coverage Needs' },
-  notes_group:           { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  current_group_carrier: { label: 'Current Group Carrier',  type: 'text',   section: 'What you have now' },
+  current_cost_per_emp:  { label: 'Current Cost per Employee / Month', type: 'text', section: 'What you have now',
+                           placeholder: 'e.g. $350' },
+  group_start_date:      { label: 'Desired Start Date',     type: 'date',   section: 'What this needs to do' },
+  cov_medical:           { label: 'Medical',                type: 'checkbox', section: 'What this needs to do' },
+  cov_dental:            { label: 'Dental',                 type: 'checkbox', section: 'What this needs to do' },
+  cov_vision:            { label: 'Vision',                 type: 'checkbox', section: 'What this needs to do' },
+  cov_life:              { label: 'Group Life',             type: 'checkbox', section: 'What this needs to do' },
+  cov_disability:        { label: 'Short/Long Term Disability', type: 'checkbox', section: 'What this needs to do' },
+  cov_hsa:               { label: 'HSA / FSA',              type: 'checkbox', section: 'What this needs to do' },
+  group_budget:          { label: 'Budget per Employee / Month', type: 'text', section: 'Money',
+                           placeholder: 'e.g. $400' },
   // ── Career – KFG (Primerica) ────────────────────────────────────────────
-  current_employer:      { label: 'Current Employer',       type: 'text',   section: 'Background' },
-  current_occupation:    { label: 'Current Occupation',     type: 'text',   section: 'Background' },
-  current_income:        { label: 'Current Annual Income',  type: 'select', section: 'Background',
-                           options: ['Under $30k','$30k–$50k','$50k–$75k','$75k–$100k','$100k+'] },
+  current_employer:      { label: 'Current Employer',       type: 'text',   section: 'Your background' },
+  current_occupation:    { label: 'Current Occupation',     type: 'text',   section: 'Your background' },
+  current_income:        { label: 'Current Annual Income',  type: 'select', section: 'Your background',
+                           options: ['Under $30,000','$30,000–$50,000','$50,000–$75,000','$75,000–$100,000','Over $100,000'] },
+  education:             { label: 'Highest Education Level', type: 'select', section: 'Your background',
+                           options: ['High school / GED','Some college','Associate’s degree','Bachelor’s degree','Master’s or higher'] },
+  sales_experience:      { label: 'Years of Sales / Finance Experience', type: 'select', section: 'Your background',
+                           options: ['None','1–2 years','3–5 years','5+ years'] },
   licensed_life:         { label: 'Licensed — Life?',       type: 'select', section: 'Licensing',
                            options: ['Yes','No','In progress'] },
   licensed_health:       { label: 'Licensed — Health?',     type: 'select', section: 'Licensing',
                            options: ['Yes','No','In progress'] },
-  full_part_time:        { label: 'Full-time or Part-time?',type: 'select', section: 'Availability',
+  licensed_series:       { label: 'Licensed — Series 6 / 65?', type: 'select', section: 'Licensing',
+                           options: ['Yes','No','In progress'] },
+  full_part_time:        { label: 'Full-time or Part-time?',type: 'select', section: 'What you are looking for',
                            options: ['Full-time','Part-time','Either'] },
-  income_goal_12mo:      { label: 'Income Goal (12 mo)',    type: 'select', section: 'Goals',
-                           options: ['Under $30k','$30k–$60k','$60k–$100k','$100k–$150k','$150k+'] },
-  why_interested:        { label: 'Why Interested?',        type: 'textarea', section: 'Goals' },
-  notes_career:          { label: 'Notes',                  type: 'textarea', section: 'Notes' },
+  start_availability:    { label: 'Earliest Availability to Start', type: 'select', section: 'What you are looking for',
+                           options: ['Immediately','Within 30 days','30–60 days','60–90 days'] },
+  income_goal_12mo:      { label: 'Income Goal (12 mo)',    type: 'select', section: 'What you are looking for',
+                           options: ['$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','Over $100,000'] },
+  looking_higher_contracts:{ label: 'Looking for: Higher contracts', type: 'checkbox', section: 'What you are looking for' },
+  looking_better_leads:  { label: 'Looking for: Better leads',       type: 'checkbox', section: 'What you are looking for' },
+  looking_more_support:  { label: 'Looking for: More support / training', type: 'checkbox', section: 'What you are looking for' },
+  looking_flexibility:   { label: 'Looking for: More flexibility',   type: 'checkbox', section: 'What you are looking for' },
+  why_interested:        { label: 'Why Interested?',        type: 'textarea', section: 'What brings you here' },
   // ── Career – Insured America ────────────────────────────────────────────
   states_licensed:       { label: 'States Licensed',        type: 'text',   section: 'Licensing',
                            placeholder: 'e.g. TX, FL, GA' },
-  monthly_production:    { label: 'Monthly Production ($)',  type: 'text',   section: 'Production',
-                           placeholder: 'e.g. $5,000' },
-  own_book:              { label: 'Own Book of Business?',  type: 'select', section: 'Production',
+  monthly_production:    { label: 'Monthly Premium Production', type: 'select', section: 'Your book of business',
+                           options: ['Under $5,000','$5,000–$15,000','$15,000–$30,000','$30,000–$50,000','Over $50,000'] },
+  own_book:              { label: 'Own Book of Business?',  type: 'select', section: 'Your book of business',
                            options: ['Yes','No'] },
-  products_sold:         { label: 'Products Sold',          type: 'text',   section: 'Production',
+  products_sold:         { label: 'Products Sold',          type: 'text',   section: 'Your book of business',
                            placeholder: 'e.g. ACA, Medicare, Life' },
+  // ── Closing ─────────────────────────────────────────────────────────────
+  notes:                 { label: 'Anything else (their words)', type: 'textarea', section: 'Anything else' },
+  notes_health:          { label: 'Agent notes (not shown to the client)', type: 'textarea', section: 'Anything else' },
+  // Retired note fields. Kept so answers already saved against them still show
+  // a real label in the viewer; they are no longer offered on the checklist.
+  notes_financial:       { label: 'Notes (retired)',        type: 'textarea', section: 'Anything else' },
+  notes_group:           { label: 'Notes (retired)',        type: 'textarea', section: 'Anything else' },
+  notes_career:          { label: 'Notes (retired)',        type: 'textarea', section: 'Anything else' },
 };
 
+// What each intent type asks by default, written in the order of
+// INTAKE_SECTIONS. Deliberately trimmed of questions that were being asked
+// twice: preexisting_conditions duplicates ongoing_condition (the eligibility
+// rules read whichever is present), and aca_tobacco duplicates the tobacco
+// column in the household table. Both stay selectable — neither is a default.
 const INTAKE_TYPE_DEFAULTS = {
-  'financial':       ['dob','marital_status','best_time','household_income','dependents_count','dependents_ages',
+  'financial':       ['dob','marital_status','best_time',
+                      'dependents_count','dependents_ages',
                       'has_life_insurance','life_coverage_amount','has_investments',
-                      'goal_debt','goal_protection','goal_retirement'],
-  'medicare':['dob','zip','best_time','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier','med_medications','med_doctors','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental','notes'],
-  'health-individual':['dob','zip','best_time','household_members','aca_income',
-                       'currently_insured','current_carrier','current_premium',
-                       'employer_plan_available','coverage_start_date','health_priority',
-                       'coverage_duration','coverage_intent','coverage_goals',
-                       'care_frequency','planned_care','affordable_shock',
-                       'essential_meds','ongoing_condition','preexisting_conditions',
-                       'aca_ichra_offer','aca_ichra_amount',
-                       'aca_qle','aca_qle_date','aca_lawful',
-                       'med_medications','med_doctors'],
-  'health-group':    ['business_name','best_time','employee_count','enrollment_count','avg_age_range',
-                      'has_current_plan','current_group_carrier','group_start_date',
-                      'cov_medical','cov_dental','cov_vision'],
-  'career-kfg':      ['dob','best_time','current_employer','current_occupation','current_income',
-                      'licensed_life','licensed_health','full_part_time','income_goal_12mo','why_interested'],
-  'career-ia':       ['best_time','current_employer','licensed_life','licensed_health',
-                      'states_licensed','monthly_production','own_book','products_sold','full_part_time'],
+                      'goal_debt','goal_protection','goal_retirement','goal_college','goal_wealth',
+                      'household_income','notes'],
+  'medicare':        ['dob','zip','best_time',
+                      'coverage_intent',
+                      'med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage',
+                      'current_carrier',
+                      'med_doctors','med_medications','med_pharmacy',
+                      'mi_supplement','mi_pdp','mi_advantage','mi_dental','notes'],
+  'health-individual':['dob','zip','best_time',
+                      'coverage_intent',
+                      'household_members','aca_not_applying',
+                      'currently_insured','current_carrier','current_premium','employer_plan_available',
+                      'care_frequency','planned_care','med_doctors','med_medications','essential_meds',
+                      'coverage_goals','health_priority','coverage_start_date','coverage_duration',
+                      'aca_income','affordable_shock','aca_ichra_offer','aca_ichra_amount',
+                      'aca_qle','aca_qle_date',
+                      'aca_lawful','ongoing_condition','notes'],
+  'health-group':    ['best_time',
+                      'business_name','employee_count','enrollment_count','avg_age_range','employee_states',
+                      'has_current_plan','current_group_carrier','current_cost_per_emp',
+                      'group_start_date','cov_medical','cov_dental','cov_vision',
+                      'group_budget','notes'],
+  'career-kfg':      ['dob','best_time','why_interested',
+                      'current_employer','current_occupation','current_income','education','sales_experience',
+                      'licensed_life','licensed_health',
+                      'full_part_time','start_availability','income_goal_12mo','notes'],
+  'career-ia':       ['best_time','why_interested',
+                      'current_employer',
+                      'licensed_life','licensed_health','licensed_series','states_licensed',
+                      'monthly_production','own_book','products_sold',
+                      'full_part_time','looking_higher_contracts','looking_better_leads',
+                      'looking_more_support','looking_flexibility','notes'],
 };
 
 const INTAKE_TYPE_LABELS = {
@@ -2889,31 +2948,79 @@ const INTAKE_TYPE_LABELS = {
   'career-ia':        'Career – Insured America',
 };
 
-// All field IDs grouped by logical section for the checklist panel
-const INTAKE_ALL_FIELDS = [
-  { section: 'Contact Info',    ids: ['name','email','phone','dob','zip','marital_status','best_time'] },
-  { section: 'Medicare',        ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage',
-                                       'med_medications','med_doctors','med_pharmacy',
-                                       'mi_supplement','mi_pdp','mi_advantage','mi_dental'] },
-  { section: 'Finances',        ids: ['household_income','dependents_count','dependents_ages','has_investments'] },
-  { section: 'Life Insurance',  ids: ['has_life_insurance','life_coverage_amount'] },
-  { section: 'Goals',           ids: ['goal_debt','goal_protection','goal_retirement','goal_college','goal_business',
-                                       'income_goal_12mo','why_interested'] },
-  { section: 'Household',       ids: ['household_members','household_size','member_ages','aca_income','aca_not_applying','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date','aca_tobacco','aca_lawful'] },
-  { section: 'Business',        ids: ['business_name','employee_count','enrollment_count','avg_age_range'] },
-  { section: 'Current Coverage',ids: ['currently_insured','current_carrier','current_premium',
-                                       'employer_plan_available','has_current_plan','current_group_carrier'] },
-  { section: 'Coverage Needs',  ids: ['coverage_start_date','health_priority','coverage_duration',
-                                       'coverage_intent','coverage_goals',
-                                       'care_frequency','planned_care','affordable_shock','essential_meds',
-                                       'ongoing_condition','preexisting_conditions','group_start_date',
-                                       'cov_medical','cov_dental','cov_vision','cov_life','cov_disability'] },
-  { section: 'Background',      ids: ['current_employer','current_occupation','current_income'] },
-  { section: 'Licensing',       ids: ['licensed_life','licensed_health','states_licensed'] },
-  { section: 'Availability',    ids: ['full_part_time'] },
-  { section: 'Production',      ids: ['monthly_production','own_book','products_sold'] },
-  { section: 'Notes',           ids: ['notes_financial','notes_health','notes_group','notes_career'] },
+// ────────────────────────────────────────────────────────────────────────────
+// THE ORDER OF THE WHOLE INTAKE — one list, three consumers.
+//
+// It is written in the order a person can answer without stopping to think:
+// who they are, why they came, who is being covered, what they have now, how
+// they use care, what they want, money, timing — and the questions people
+// hesitate over LAST, where each one says why it is being asked and can be
+// declined. Sections with nothing selected simply do not appear.
+//
+// intake.html holds the same list. If you change the order or the sections
+// here, change it there too — the client form and this checklist are meant to
+// be the same shape, and drift between them is how questions go missing.
+// ────────────────────────────────────────────────────────────────────────────
+const INTAKE_SECTIONS = [
+  { key: 'about',    title: 'About you',
+    ids: ['name','email','phone','dob','zip','street_address','marital_status','best_time'] },
+
+  { key: 'story',    title: 'What brings you here',
+    ids: ['coverage_intent','why_interested'] },
+
+  { key: 'household', title: 'Who needs coverage',
+    ids: ['household_members','household_size','member_ages',
+          'dependents_count','dependents_ages','aca_not_applying'] },
+
+  { key: 'business', title: 'About your business',
+    ids: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states'] },
+
+  { key: 'medicare', title: 'Where you are with Medicare',
+    ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage'] },
+
+  { key: 'current',  title: 'What you have now',
+    ids: ['currently_insured','current_carrier','current_premium','employer_plan_available',
+          'has_current_plan','current_group_carrier','current_cost_per_emp',
+          'has_life_insurance','life_coverage_amount','has_investments'] },
+
+  { key: 'care',     title: 'How you use care',
+    ids: ['care_frequency','planned_care','med_doctors','med_medications','med_pharmacy','essential_meds'] },
+
+  { key: 'needs',    title: 'What this needs to do',
+    ids: ['coverage_goals','health_priority','coverage_start_date','group_start_date','coverage_duration',
+          'mi_supplement','mi_pdp','mi_advantage','mi_dental',
+          'cov_medical','cov_dental','cov_vision','cov_life','cov_disability','cov_hsa',
+          'goal_debt','goal_protection','goal_college','goal_retirement','goal_wealth','goal_business'] },
+
+  { key: 'money',    title: 'Money',
+    ids: ['aca_income','household_income','affordable_shock',
+          'aca_ichra_offer','aca_ichra_amount','group_budget'] },
+
+  { key: 'timing',   title: 'Timing',
+    ids: ['aca_qle','aca_qle_date'] },
+
+  { key: 'work',     title: 'Your background',
+    ids: ['current_employer','current_occupation','current_income','education','sales_experience'] },
+
+  { key: 'licensing', title: 'Licensing',
+    ids: ['licensed_life','licensed_health','licensed_series','states_licensed'] },
+
+  { key: 'book',     title: 'Your book of business',
+    ids: ['monthly_production','own_book','products_sold'] },
+
+  { key: 'looking',  title: 'What you are looking for',
+    ids: ['full_part_time','start_availability','income_goal_12mo',
+          'looking_higher_contracts','looking_better_leads','looking_more_support','looking_flexibility'] },
+
+  { key: 'private',  title: 'A few private questions',
+    ids: ['aca_lawful','ongoing_condition','preexisting_conditions','aca_tobacco'] },
+
+  { key: 'anything', title: 'Anything else',
+    ids: ['notes','notes_health'] },
 ];
+
+// The checklist panel and the agent-side form both read this shape.
+const INTAKE_ALL_FIELDS = INTAKE_SECTIONS.map(s => ({ section: s.title, ids: s.ids }));
 
 let _intakeContactId = null;
 let _intakeFormType = 'financial';
@@ -3218,8 +3325,9 @@ function _intakeRenderForm() {
     for (const id of ids) {
       const def = INTAKE_FIELD_DEFS[id];
       const isWide = def.type === 'textarea'
-        || ['notes_financial','notes_health','notes_group','notes_career',
-            'why_interested','member_ages','dependents_ages',
+        || ['notes','notes_financial','notes_health','notes_group','notes_career',
+            'why_interested','member_ages','dependents_ages','employee_states',
+            'states_licensed','products_sold','aca_not_applying',
             'coverage_intent','coverage_goals'].includes(id);
       html += `<div style="${isWide ? 'grid-column:1/-1;' : ''}">` +
               _intakeRenderField(id, def, prefill[id] || '') + '</div>';
@@ -3636,14 +3744,24 @@ async function saveIntakeToCRM() {
     // 4. Create or advance pipeline Deal on intake completion
     // New Lead = inbound digital (web form / marketing) — no agent contact yet
     // Intake completion = agent had a real conversation → advance to next meaningful stage
+    // Keyed by the form types the app actually writes. It used to be keyed by
+    // an older underscored set ('health_group'), which no form has produced for
+    // a long time — so every type except medicare quietly fell through to the
+    // default and a GROUP or CAREER intake opened an individual-family deal.
+    // The old keys stay as aliases so anything still passing them keeps working.
     const _intakePipelineMap = {
-      health_individual: { pipeline: 'individual-family', stage: 'Needs Assessment' }, // intake IS the needs assessment
+      'health-individual': { pipeline: 'individual-family', stage: 'Needs Assessment' }, // intake IS the needs assessment
+      'financial':         { pipeline: 'individual-family', stage: 'Needs Assessment' },
+      'health-group':      { pipeline: 'group-employer',    stage: 'Responded' },        // prospect engaged, info gathered
+      'career-kfg':        { pipeline: 'agent-kannon',      stage: 'Identified' },
+      'career-ia':         { pipeline: 'agent-insured',     stage: 'Identified' },
+      'medicare':          { pipeline: 'medicare',          stage: 'Intake Complete' },
+      health_individual: { pipeline: 'individual-family', stage: 'Needs Assessment' },
       health_family:     { pipeline: 'individual-family', stage: 'Needs Assessment' },
       life_individual:   { pipeline: 'individual-family', stage: 'Needs Assessment' },
-      health_group:      { pipeline: 'group-employer',    stage: 'Responded' },        // prospect engaged, info gathered
+      health_group:      { pipeline: 'group-employer',    stage: 'Responded' },
       career_new:        { pipeline: 'agent-kannon',      stage: 'Identified' },
       career_existing:   { pipeline: 'agent-kannon',      stage: 'Identified' },
-      medicare:          { pipeline: 'medicare',          stage: 'Intake Complete' },
     };
     const _idest = _intakePipelineMap[_intakeFormType] || { pipeline: 'individual-family', stage: 'Needs Assessment' };
     const _iexisting = deals.find(function(d) { return d.contact_id === _intakeContactId && d.pipeline === _idest.pipeline; });
@@ -9216,8 +9334,15 @@ function intakeAnswersHtml_(s) {
       sections[section].push({ label: label, val: val });
     }
   });
+  // Read the answers back in the order they were asked, not the order the
+  // field ids happen to sit in on the row.
+  const order = INTAKE_SECTIONS.map(function(s) { return s.title; });
+  const ordered = Object.entries(sections).sort(function(a, b) {
+    const ia = order.indexOf(a[0]), ib = order.indexOf(b[0]);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+  });
   let html = '';
-  Object.entries(sections).forEach(function(entry) {
+  ordered.forEach(function(entry) {
     html += '<div style="margin-bottom:16px;">'
       + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:8px;">' + escWeb(entry[0]) + '</div>';
     entry[1].forEach(function(r) {

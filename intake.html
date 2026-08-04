@@ -53,6 +53,13 @@
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   .privacy-note { background: #f8f7f4; border: 1px dashed #ddd; border-radius: 12px; padding: 1.25rem; text-align: center; margin-bottom: 1.5rem; }
   .privacy-note p { font-size: 12px; color: #888; line-height: 1.7; }
+  .sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .sec-num { font-size: 11px; font-weight: 700; color: #c8a96e; letter-spacing: 0.5px; flex-shrink: 0; }
+  .sec-head h3 { font-size: 17px; font-weight: 600; color: #1a1a2e; margin: 0; }
+  .sec-blurb { font-size: 13px; color: #777; line-height: 1.6; margin: 0 0 1.25rem; padding-bottom: 12px; border-bottom: 1px solid #f0ede8; }
+  .sec-rule { border-bottom: 1px solid #f0ede8; margin-bottom: 1.25rem; padding-bottom: 12px; }
+  .sec-private { background: #fbfaf7; border-color: #e8e2d4; }
+  .sec-private .sec-num { color: #a08a4b; }
   @media (max-width: 520px) { .two-col { grid-template-columns: 1fr; } .goal-grid { grid-template-columns: 1fr; } .card { padding: 1.25rem; } }
 </style>
 </head>
@@ -116,20 +123,25 @@ async function supa(path, opts) {
 }
 
 const FIELD_DEFS = {
+  name:                 { label: 'Full name', type: 'text' },
+  email:                { label: 'Email address', type: 'email' },
+  phone:                { label: 'Phone number', type: 'tel' },
   dob:                  { label: 'Date of birth', type: 'date' },
   marital_status:       { label: 'Marital status', type: 'select', options: ['Single','Married','Divorced','Widowed'] },
   best_time:            { label: 'Best time to reach you', type: 'select', options: ['Morning (8am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)','Anytime'] },
+  street_address:       { label: 'Street address', type: 'text', placeholder: 'e.g. 123 Main St, Apt 4' },
   household_income:     { label: 'Annual household income', type: 'select', options: ['Under $25,000','$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','$100,000–$150,000','Over $150,000'] },
   dependents_count:     { label: 'Number of dependents', type: 'number' },
   dependents_ages:      { label: 'Ages of dependents', type: 'text', placeholder: 'e.g. 8, 12, 15' },
-  has_life_insurance:   { label: 'Currently have life insurance?', type: 'radio', options: ['Yes','No'] },
+  has_life_insurance:   { label: 'Currently have life insurance?', type: 'radio', options: ['Yes','No','Not sure'] },
   life_coverage_amount: { label: 'Current life insurance coverage', type: 'select', options: ['Under $50k','$50k–$100k','$100k–$250k','$250k–$500k','Over $500k','Not sure'] },
-  has_investments:      { label: 'Have savings or retirement investments?', type: 'radio', options: ['Yes','No'] },
+  has_investments:      { label: 'Have savings or retirement investments?', type: 'radio', options: ['Yes','No','Not sure'] },
   goal_debt:            { label: 'Debt elimination', type: 'checkbox-field', group: 'goals' },
   goal_protection:      { label: 'Income protection', type: 'checkbox-field', group: 'goals' },
   goal_college:         { label: 'College funding', type: 'checkbox-field', group: 'goals' },
   goal_retirement:      { label: 'Retirement savings', type: 'checkbox-field', group: 'goals' },
   goal_wealth:          { label: 'Wealth building', type: 'checkbox-field', group: 'goals' },
+  goal_business:        { label: 'Business planning', type: 'checkbox-field', group: 'goals' },
   household_size:       { label: 'Number of people in household', type: 'number' },
   member_ages:          { label: 'Ages of all household members', type: 'text', placeholder: 'e.g. 34, 32, 6, 4' },
   aca_income:           { label: 'Estimated annual household income ($)', type: 'number', placeholder: 'e.g. 48000 — an accurate figure gives an accurate tax-credit estimate' },
@@ -147,7 +159,6 @@ const FIELD_DEFS = {
   current_premium:      { label: 'Current monthly premium', type: 'text', placeholder: 'e.g. $450/month' },
   employer_plan_available: { label: 'Employer-sponsored plan available?', type: 'radio', options: ['Yes','No'] },
   coverage_start_date:  { label: 'Coverage needed by', type: 'date' },
-  preferred_network:    { label: 'Preferred doctors or hospitals', type: 'text', placeholder: 'Any specific providers?' },
   coverage_intent:      { label: 'What made you start looking for coverage?', type: 'textarea',
                           placeholder: 'In your own words \u2014 there is no wrong answer. A job change, a new baby, a bill that caught you out\u2026' },
   coverage_goals:       { label: 'What would this coverage need to do for you?', type: 'textarea',
@@ -164,8 +175,9 @@ const FIELD_DEFS = {
                           options: ['No','Yes','Prefer not to say'] },
   ongoing_condition:    { label: 'Is anyone on this plan managing an ongoing condition? (This helps your advisor avoid a plan that will not cover it)', type: 'radio',
                           options: ['No','Yes','Prefer not to say'] },
-  health_priority:      { label: 'Coverage priority', type: 'select', options: ['Lowest monthly premium','Lowest deductible','Keep specific doctors','Balance of cost and coverage'] },
-  preexisting_conditions: { label: 'Any pre-existing conditions?', type: 'radio', options: ['Yes','No','Prefer not to say'] },
+  health_priority:      { label: 'If you had to pick one thing for this plan to get right, what is it?', type: 'select',
+                          options: ['Lowest monthly premium','Lowest deductible','Keep specific doctors','Prescription coverage','Dental & vision','Balance of cost and coverage'] },
+  preexisting_conditions: { label: 'Any pre-existing conditions?', type: 'radio', options: ['No','Yes','Prefer not to say'] },
   business_name:        { label: 'Business name', type: 'text' },
   employee_count:       { label: 'Number of full-time employees', type: 'number' },
   enrollment_count:     { label: 'Number of employees to enroll', type: 'number' },
@@ -185,7 +197,7 @@ const FIELD_DEFS = {
   current_employer:     { label: 'Current employer', type: 'text' },
   current_occupation:   { label: 'Current occupation / title', type: 'text' },
   current_income:       { label: 'Current annual income', type: 'select', options: ['Under $30,000','$30,000–$50,000','$50,000–$75,000','$75,000–$100,000','Over $100,000'] },
-  education:            { label: 'Highest education level', type: 'select', options: ['High school / GED','Some college','Associate\'s degree','Bachelor\'s degree','Master\'s or higher'] },
+  education:            { label: 'Highest education level', type: 'select', options: ['High school / GED','Some college','Associate’s degree','Bachelor’s degree','Master’s or higher'] },
   sales_experience:     { label: 'Years of sales or finance experience', type: 'select', options: ['None','1–2 years','3–5 years','5+ years'] },
   licensed_life:        { label: 'Life insurance licensed?', type: 'radio', options: ['Yes','No','In progress'] },
   licensed_health:      { label: 'Health insurance licensed?', type: 'radio', options: ['Yes','No','In progress'] },
@@ -223,6 +235,87 @@ const CHECKBOX_GROUP_LABELS = {
   looking:  'What are you looking for? — select all that apply',
   medinterest: 'What would you like help with? — select all that apply'
 };
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE ORDER OF THE FORM.
+//
+// The agent picks WHICH questions get asked. This list decides the order they
+// are met in and which card they sit under, so the form reads the same way
+// whatever mix is selected: who you are, why you came, who is covered, what
+// you have, how you use care, what you want, money, timing — and the ones
+// people hesitate over LAST, each saying why it is asked and each declinable.
+//
+// crm.js holds the same list as INTAKE_SECTIONS. Change one, change the other.
+// A section with nothing selected in it never renders.
+// ────────────────────────────────────────────────────────────────────────────
+const INTAKE_SECTIONS = [
+  { key: 'about', title: 'About you',
+    ids: ['name','email','phone','dob','zip','street_address','marital_status','best_time'] },
+
+  { key: 'story', title: 'What brings you here',
+    blurb: 'In your own words. There is no wrong answer, and you can leave it blank — but it is the part that helps your advisor most.',
+    ids: ['coverage_intent','why_interested'] },
+
+  { key: 'household', title: 'Who needs coverage',
+    ids: ['household_members','household_size','member_ages',
+          'dependents_count','dependents_ages','aca_not_applying'] },
+
+  { key: 'business', title: 'About your business',
+    ids: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states'] },
+
+  { key: 'medicare', title: 'Where you are with Medicare',
+    blurb: 'Wherever you are is fine — plenty of people are not sure yet. Answer what you know.',
+    ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage'] },
+
+  { key: 'current', title: 'What you have now',
+    ids: ['currently_insured','current_carrier','current_premium','employer_plan_available',
+          'has_current_plan','current_group_carrier','current_cost_per_emp',
+          'has_life_insurance','life_coverage_amount','has_investments'] },
+
+  { key: 'care', title: 'How you use care',
+    blurb: 'This is how your advisor checks that a plan actually covers your doctors and your prescriptions before recommending it.',
+    ids: ['care_frequency','planned_care','med_doctors','med_medications','med_pharmacy','essential_meds'] },
+
+  { key: 'needs', title: 'What this needs to do',
+    ids: ['coverage_goals','health_priority','coverage_start_date','group_start_date','coverage_duration',
+          'mi_supplement','mi_pdp','mi_advantage','mi_dental',
+          'cov_medical','cov_dental','cov_vision','cov_life','cov_disability','cov_hsa',
+          'goal_debt','goal_protection','goal_college','goal_retirement','goal_wealth','goal_business'] },
+
+  { key: 'money', title: 'Money',
+    blurb: 'Your income sets the tax credit you qualify for, so an accurate figure gives an accurate price. It is never sold or shared.',
+    ids: ['aca_income','household_income','affordable_shock',
+          'aca_ichra_offer','aca_ichra_amount','group_budget'] },
+
+  { key: 'timing', title: 'Timing',
+    ids: ['aca_qle','aca_qle_date'] },
+
+  { key: 'work', title: 'Your background',
+    ids: ['current_employer','current_occupation','current_income','education','sales_experience'] },
+
+  { key: 'licensing', title: 'Licensing',
+    ids: ['licensed_life','licensed_health','licensed_series','states_licensed'] },
+
+  { key: 'book', title: 'Your book of business',
+    ids: ['monthly_production','own_book','products_sold'] },
+
+  { key: 'looking', title: 'What you are looking for',
+    ids: ['full_part_time','start_availability','income_goal_12mo',
+          'looking_higher_contracts','looking_better_leads','looking_more_support','looking_flexibility'] },
+
+  { key: 'private', title: 'A few private questions', sensitive: true,
+    blurb: 'These are last on purpose, and here is why they are asked: a plan that excludes a condition you are '
+         + 'already managing is worse than no plan, and eligibility for a Marketplace plan is set by law rather '
+         + 'than by us. Answer only what you are comfortable with — “Prefer not to say” is a real answer and your '
+         + 'advisor will simply ask you about it in person.',
+    ids: ['aca_lawful','ongoing_condition','preexisting_conditions','aca_tobacco'] },
+
+  // notes_health is the agent's own note. It has no def here, so the client
+  // never sees it — the id stays listed only to keep this list identical to
+  // crm.js, which is what makes drift between the two visible.
+  { key: 'anything', title: 'Anything else',
+    ids: ['notes','notes_health'] },
+];
 
 function renderField(id, def, prefillVal) {
   if (def.type === 'checkbox-field') return '';
@@ -341,8 +434,14 @@ function _sepNeeded_() {
   return true;
 }
 const FIELD_RULES = {
-  current_carrier:  () => _fv('currently_insured') !== 'No',
-  current_premium:  () => _fv('currently_insured') !== 'No',
+  current_carrier:       () => _fv('currently_insured') !== 'No',
+  current_premium:       () => _fv('currently_insured') !== 'No',
+  current_group_carrier: () => _fv('has_current_plan') !== 'No',
+  current_cost_per_emp:  () => _fv('has_current_plan') !== 'No',
+  life_coverage_amount:  () => _fv('has_life_insurance') !== 'No',
+  // Nothing to date if they are not on Medicare yet.
+  med_part_a_date:  () => /enrolled in|advantage|supplement/i.test(_fv('med_ab_status')),
+  med_part_b_date:  () => /parts a & b|advantage|supplement/i.test(_fv('med_ab_status')),
   aca_ichra_amount: () => _fv('aca_ichra_offer') === 'Yes',
   aca_qle:          () => _sepNeeded_(),
   aca_qle_date:     () => _sepNeeded_() && _fv('aca_qle') && !/^no\b/i.test(_fv('aca_qle')),
@@ -351,6 +450,23 @@ function applyFieldRules_() {
   Object.keys(FIELD_RULES).forEach(id => {
     const w = document.getElementById('wrap_' + id);
     if (w) w.style.display = FIELD_RULES[id]() ? '' : 'none';
+  });
+  // A card whose every question has just been ruled out is an empty box with a
+  // heading on it. Hide the card too, and renumber what is left.
+  const shown = [];
+  INTAKE_SECTIONS.forEach(sec => {
+    const card = document.getElementById('sec_' + sec.key);
+    if (!card) return;
+    const alive = [...card.querySelectorAll('.field-group')]
+      .some(w => w.style.display !== 'none');
+    card.style.display = alive ? '' : 'none';
+    if (alive) shown.push(card);
+  });
+  const more = document.getElementById('sec_more');
+  if (more) shown.push(more);
+  shown.forEach((card, i) => {
+    const n = card.querySelector('.sec-num');
+    if (n) n.textContent = (i + 1) + ' / ' + shown.length;
   });
 }
 
@@ -635,55 +751,61 @@ function renderForm(session, contact) {
     'career-ia': 'Career Opportunity — Insured America'
   }[session.form_type] || 'Information Form';
 
-  // Collect checkbox groups
-  const groups = {};
-  sf.forEach(id => {
-    const def = FIELD_DEFS[id];
-    if (def && def.type === 'checkbox-field' && def.group) {
-      groups[def.group] = groups[def.group] || [];
-      groups[def.group].push(id);
-    }
+  // Special renderers (household table, doctor/medication pickers) read this.
+  window._prefillAll = prefill;
+
+  // Name, email and phone are always asked, whatever the agent selected.
+  const ALWAYS_ON = ['name', 'email', 'phone'];
+
+  // Work out which sections have anything in them BEFORE rendering, so each
+  // one can be numbered and the client can see how far there is to go.
+  const placed = new Set();
+  const plan = [];
+  INTAKE_SECTIONS.forEach(sec => {
+    const fields = [];   // ordered plain fields
+    const groups = {};   // checkbox-field groups, keyed by def.group
+    sec.ids.forEach(id => {
+      const def = FIELD_DEFS[id];
+      if (!def) return;                                   // agent-only field
+      placed.add(id);
+      const wanted = sf.has(id) || (sec.key === 'about' && ALWAYS_ON.includes(id));
+      if (!wanted) return;
+      if (def.type === 'checkbox-field' && def.group) {
+        (groups[def.group] = groups[def.group] || []).push(id);
+      } else {
+        fields.push(id);
+      }
+    });
+    if (fields.length || Object.keys(groups).length) plan.push({ sec, fields, groups });
   });
 
-  const skipPersonal = new Set(['dob','marital_status','best_time','notes']);
-  const alwaysOn = new Set(['name','email','phone']);
+  // A field the agent selected that no section claims would otherwise vanish
+  // without a trace. Show it rather than lose it.
+  const orphans = [...sf].filter(id => FIELD_DEFS[id] && !placed.has(id));
+  if (orphans.length) {
+    plan.push({ sec: { key: 'more', title: 'A few more things' }, fields: orphans, groups: {} });
+  }
 
   let html = `
   <div class="card">
     <p style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">Information Request</p>
     <h2 style="font-size:22px;margin-bottom:8px;color:#1a1a2e;">${typeLabel}</h2>
-    <p style="font-size:14px;color:#666;line-height:1.6;">Please take a moment to fill out the information below. This helps us prepare for your consultation.</p>
+    <p style="font-size:14px;color:#666;line-height:1.6;">A few questions, grouped so they are quick to work through. Nothing here is compulsory — answer what you can and your advisor will pick up the rest.</p>
   </div>
-  <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}','${session.agent_id||''}')">
-  <div class="card">
-    <div class="card-title">Your contact information</div>
-    <div class="two-col">
-      <div class="field-group"><label>Full name</label><input type="text" name="name" value="${prefill.name.replace(/"/g,'&quot;')}"${prefill.name?' class="pre-filled"':''}></div>
-      <div class="field-group"><label>Email address</label><input type="email" name="email" value="${prefill.email.replace(/"/g,'&quot;')}"${prefill.email?' class="pre-filled"':''}></div>
-    </div>
-    <div class="field-group"><label>Phone number</label><input type="tel" name="phone" value="${prefill.phone.replace(/"/g,'&quot;')}"${prefill.phone?' class="pre-filled"':''}></div>`;
+  <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}','${session.agent_id||''}')">`;
 
-  // Personal fields (dob, marital_status, best_time)
-  const personalSelected = ['dob','marital_status','best_time'].filter(id => sf.has(id));
-  if (personalSelected.length) {
-    html += `<div class="section-label">Personal details</div>`;
-    window._prefillAll = prefill; personalSelected.forEach(id => { html += renderField(id, FIELD_DEFS[id], prefill[id]||''); });
-  }
-  html += '</div>';
-
-  // Main fields
-  const mainFields = [...sf].filter(id => !skipPersonal.has(id) && !alwaysOn.has(id) && FIELD_DEFS[id] && FIELD_DEFS[id].type !== 'checkbox-field' && id !== 'notes');
-  if (mainFields.length || Object.keys(groups).length) {
-    html += `<div class="card"><div class="card-title">Details</div>`;
-    mainFields.forEach(id => { html += renderField(id, FIELD_DEFS[id], prefill[id]||''); });
-    Object.entries(groups).forEach(([gk, ids]) => { html += renderCheckboxGroup(gk, ids); });
+  plan.forEach((step, i) => {
+    const sec = step.sec;
+    html += `<div class="card${sec.sensitive ? ' sec-private' : ''}" id="sec_${sec.key}">
+      <div class="sec-head">
+        <span class="sec-num">${i + 1} / ${plan.length}</span>
+        <h3>${sec.title}</h3>
+      </div>
+      ${sec.blurb ? `<p class="sec-blurb">${sec.blurb}</p>` : '<div class="sec-rule"></div>'}`;
+    step.fields.forEach(id => { html += renderField(id, FIELD_DEFS[id], prefill[id] || ''); });
+    Object.entries(step.groups).forEach(([gk, ids]) => { html += renderCheckboxGroup(gk, ids); });
     html += '</div>';
-  }
-
-  // Notes
-  if (sf.has('notes')) {
-    html += `<div class="card"><div class="card-title">Anything else?</div>${renderField('notes', FIELD_DEFS['notes'], '')}</div>`;
-  }
+  });
 
   html += `<div class="privacy-note"><p>🔒 Your information is secure and confidential. It will only be used to prepare for your consultation with Kannon Financial Group. We will never sell or share your data.</p></div>
   <button type="submit" class="btn-primary" id="submit-btn">Submit My Information →</button>
