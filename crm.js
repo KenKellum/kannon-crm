@@ -2916,7 +2916,7 @@ const INTAKE_TYPE_DEFAULTS = {
   'health-individual':['dob','zip','best_time',
                       'coverage_intent',
                       'household_members','aca_not_applying',
-                      'currently_insured','current_carrier','current_premium','employer_plan_available',
+                      'currently_insured','current_carrier','employer_plan_available','current_premium',
                       'care_frequency','planned_care','med_doctors','med_medications','essential_meds',
                       'coverage_goals','health_priority','coverage_start_date','coverage_duration',
                       'aca_income','affordable_shock','aca_ichra_offer','aca_ichra_amount',
@@ -2979,7 +2979,7 @@ const INTAKE_SECTIONS = [
     ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage'] },
 
   { key: 'current',  title: 'What you have now',
-    ids: ['currently_insured','current_carrier','current_premium','employer_plan_available',
+    ids: ['currently_insured','current_carrier','employer_plan_available','current_premium',
           'has_current_plan','current_group_carrier','current_cost_per_emp',
           'has_life_insurance','life_coverage_amount','has_investments'] },
 
@@ -3453,16 +3453,10 @@ function _intakeRenderTypeBar() {
         <span style="font-size:11px;color:var(--text-muted);">
           ${n ? n + ' selected &middot; deal goes to <strong>' + escWeb(primary) + '</strong>' : 'Pick one or more — the questions merge.'}
         </span>
+        <span style="flex:1;"></span>
+        ${careerBtns}
       </div>
       ${chips}
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-                  margin-top:2px;padding-top:8px;border-top:1px dashed #e2e8f0;">
-        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-                     color:var(--text-muted);margin-right:2px;">Career opportunity</span>
-        ${careerBtns}
-        <span style="font-size:10.5px;color:var(--text-muted);font-style:italic;">
-          &mdash; recruiting an agent, not selling them a product</span>
-      </div>
     </div>`;
 }
 
