@@ -7825,15 +7825,41 @@ async function loadIntakeHistoryPanel(contactId) {
   }).join('');
 }
 
+// A client who has bought something is not a row to be tidied away. Their
+// coverage record carries a policy they hold today, and the enrollments table
+// refuses to let go of the contact it belongs to — so this now checks first and
+// says so, rather than firing off four deletes, ignoring every error and
+// reporting success either way, which is what it used to do.
 async function deleteContact(id) {
-  if (!confirm('Delete this contact and all their associated data (deals, email opens)?')) return;
   const contact = contacts.find(c => c.id === id);
-  await Promise.all([
+  const { data: cover } = await supabaseClient.from('enrollments')
+    .select('plan_name,carrier_name,status').eq('contact_id', id);
+  if (cover && cover.length) {
+    const live = cover.filter(x => x.status === 'active' || x.status === 'submitted');
+    showModal('Cannot delete ' + escWeb((contact && contact.name) || 'this contact'), `
+      <p style="font-size:13px;">They have <strong>${cover.length} coverage record${cover.length === 1 ? '' : 's'}</strong>
+      on file${live.length ? ', ' + live.length + ' still in force' : ''}:</p>
+      <ul style="font-size:12.5px;margin:8px 0 12px 18px;">
+        ${cover.map(x => '<li>' + escWeb(x.plan_name) + ' — ' + escWeb(x.carrier_name)
+            + ' <span style="color:var(--text-muted);">' + ((ENROLLMENT_STATUS[x.status] || {}).label || x.status) + '</span></li>').join('')}
+      </ul>
+      <p style="font-size:12.5px;color:var(--text-muted);">A policy we sold is a record we keep. If they have
+      left us, end the coverage with a date instead — it stays on the file and stops counting as in force.</p>
+    `, null, { hideConfirm: true, cancelLabel: 'Leave them alone' });
+    return;
+  }
+  if (!confirm('Delete this contact and all their associated data (deals, email opens)?')) return;
+  const results = await Promise.all([
     supabaseClient.from('contact_companies').delete().eq('contact_id', id),
     supabaseClient.from('deals').delete().eq('contact_id', id),
-    contact?.email ? supabaseClient.from('email_opens').delete().eq('contact_email', contact.email) : Promise.resolve()
+    contact && contact.email
+      ? supabaseClient.from('email_opens').delete().eq('contact_email', contact.email)
+      : Promise.resolve({}),
   ]);
-  await supabaseClient.from('contacts').delete().eq('id', id);
+  const failed = results.find(r => r && r.error);
+  if (failed) { showToast('Could not delete: ' + failed.error.message, 8000); return; }
+  const { error } = await supabaseClient.from('contacts').delete().eq('id', id);
+  if (error) { showToast('Could not delete: ' + error.message, 8000); return; }
   contacts = contacts.filter(c => c.id !== id); renderContacts(); showToast('Contact deleted');
 }
 // ── Email Verification ────────────────────────────────────────────────────────

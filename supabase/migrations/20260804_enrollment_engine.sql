@@ -83,8 +83,13 @@ create policy "agents manage the enrollments they can see" on public.enrollments
 -- table grant.
 revoke all on public.enrollments from anon;
 revoke all on public.enrollments from public;
--- No DELETE: coverage is terminated, never deleted.
 grant select, insert, update on public.enrollments to authenticated;
+-- Coverage is terminated, never deleted. Granting select/insert/update above
+-- does NOT achieve that on its own: a default privilege on this schema had
+-- already given authenticated ALL on any new table, and adding grants never
+-- removes them. Probed, caught, revoked.
+revoke delete, truncate on public.enrollments from authenticated;
+revoke delete, truncate on public.enrollments from anon;
 
 create or replace function public.touch_enrollment_updated_at()
 returns trigger language plpgsql set search_path to 'public' as $fn$
