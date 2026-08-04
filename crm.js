@@ -355,7 +355,7 @@ async function showApp() {
 }
 
 const PAGE_TITLES = {
-  dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts',
+  dashboard: 'Dashboard', pipelines: 'Pipelines', contacts: 'Contacts', clients: 'Book of Business',
   opens: 'Email Opens', campaigns: 'Email Campaigns', compliance: 'Compliance',
   admin: 'Admin', office: 'My Office', dialer: 'Work My Leads', settings: 'My Profile', appointments: 'Appointments',
   scripts: 'Script Manager', website: 'Website',
@@ -547,7 +547,7 @@ async function officePlan_(productId, carrierId, on) {
 let _currentPage = 'dashboard';
 function showPage(page) {
   _currentPage = page;
-  ['dashboard','pipelines','contacts','opens','campaigns','compliance','admin','recruiting','system','office','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
+  ['dashboard','pipelines','contacts','clients','opens','campaigns','compliance','admin','recruiting','system','office','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {
     const el = document.getElementById('page-' + p);
     if (el) el.style.display = p === page ? 'block' : 'none';
     const nav = document.getElementById('nav-' + p);
@@ -559,6 +559,7 @@ function showPage(page) {
   if (page === 'dashboard')    renderDashboard();
   if (page === 'pipelines')    renderPipelines();
   if (page === 'contacts')     renderContacts();
+  if (page === 'clients')      renderClients();
   if (page === 'opens')        renderOpens();
   if (page === 'campaigns')    renderCampaigns();
   if (page === 'compliance')   renderCompliance();
@@ -593,6 +594,7 @@ function renderSidebarNav() {
     { icon: 'ti-bolt',             text: 'Work my leads',  page: 'dialer', badge: b.notStarted || null, badgeType: 'green' },
     { icon: 'ti-users',            text: 'Contacts',       page: 'contacts'     },
     { icon: 'ti-layout-kanban',    text: 'Pipelines',      page: 'pipelines'    },
+    { icon: 'ti-shield-check',     text: 'Book of Business', page: 'clients'    },
     { icon: 'ti-calendar-event',   text: 'Appointments',   page: 'appointments' },
   ]});
   const marketing = { label: 'Marketing', items: [
@@ -17605,9 +17607,18 @@ function coverageState_(r, today) {
     return { key: 'ended', label: 'Ended ' + enrollDate_(term), icon: '\u{1F6D1}', color: 'var(--text-muted)',
              inForce: false, live: false, hint: r.termination_reason || 'No longer in force' };
   }
-  if (r.status === 'terminated') {
+  // An end date still to come means ENDING, whatever the stored status says.
+  // Setting a date without also flipping the status — which the coverage editor
+  // allows — must not hide a policy that is about to stop, because that is
+  // exactly the row an agent needs to see coming.
+  if (term && term > today && (r.status === 'terminated' || r.status === 'active')) {
     return { key: 'ending', label: 'Ends ' + enrollDate_(term), icon: '\u{1F6D1}', color: 'var(--text-warning)',
              inForce: !!(eff && eff <= today), live: true,
+             hint: 'Still in force until then' + (r.termination_reason ? ' — ' + r.termination_reason : '') };
+  }
+  if (r.status === 'terminated') {
+    return { key: 'ending', label: term ? 'Ends ' + enrollDate_(term) : 'Ending', icon: '\u{1F6D1}',
+             color: 'var(--text-warning)', inForce: !!(eff && eff <= today), live: true,
              hint: 'Still in force until then' + (r.termination_reason ? ' — ' + r.termination_reason : '') };
   }
   if (r.status === 'submitted') {
@@ -18103,6 +18114,288 @@ async function advanceDealOnEnrollment_(deal) {
       : (deal.title || 'Deal') + ' moved to "' + patch.stage + '".');
     try { renderPipelines(); } catch (e) {}
   } catch (e) { console.error('advanceDealOnEnrollment_:', e); }
+}
+
+// ============================================================
+// BOOK OF BUSINESS
+//
+// Ken, 2026-08-04: "a way to see a client list and the products they have that
+// are active and in-active and be able to in-activate them whenever needed,
+// even in mid-coverage periods" — and "almost a no brainer for the agent of
+// what and how to get to everything".
+//
+// This is the answer to a pipeline column that would otherwise fill with every
+// client the agency has ever written. A finished deal leaves the board; the
+// client shows up here instead, grouped by person, one row per product, with
+// the state worked out from the dates rather than read off a stale flag.
+//
+// A broker sees across their agents for free: the coverage policy is scoped by
+// can_see_agent_work(), so the same query returns their whole office.
+// ============================================================
+
+const CLIENT_FILTERS = {
+  in_force: { label: 'In force',   test: s => s.inForce },
+  pending:  { label: 'Applied',    test: s => s.key === 'applied' || s.key === 'approved' },
+  starting: { label: 'Starting',   test: s => s.key === 'starting' },
+  ending:   { label: 'Ending',     test: s => s.key === 'ending' },
+  ended:    { label: 'Ended',      test: s => s.key === 'ended' || s.key === 'withdrawn' },
+};
+
+function clientsState_() {
+  window._clients = window._clients || {
+    rows: [], loaded: false, filter: 'in_force', line: '', carrier: '', agent: '', q: '',
+    sort: 'name', expanded: {},
+  };
+  return window._clients;
+}
+
+async function renderClients() {
+  const S = clientsState_();
+  const el = document.getElementById('page-clients');
+  if (!el) return;
+  if (!S.loaded) {
+    el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">Pulling the book…</div>';
+    const { data, error } = await supabaseClient.from('enrollments')
+      .select('id,contact_id,agent_id,line,carrier_name,plan_name,policy_number,monthly_premium,status,effective_date,termination_date,termination_reason,source,quote_id,deal_id')
+      .order('created_at', { ascending: false });
+    if (error) {
+      el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-danger);">Could not load the book: '
+        + escWeb(error.message) + '</div>';
+      return;
+    }
+    S.rows = data || [];
+    S.loaded = true;
+  }
+  clientsPaint_();
+}
+
+function clientsRefresh_() { const S = clientsState_(); S.loaded = false; renderClients(); }
+
+// Everything the filters need, worked out once per row.
+function clientsDecorate_(rows) {
+  return rows.map(r => {
+    const st = coverageState_(r);
+    const c = (contacts || []).find(x => x.id === r.contact_id);
+    const a = (allAgents || []).find(x => x.id === r.agent_id);
+    return { r, st, name: (c && c.name) || 'Unknown client', contact: c,
+             agent: (a && (a.display_name || a.name)) || '' };
+  });
+}
+
+function clientsFilter_(items, S) {
+  const f = CLIENT_FILTERS[S.filter];
+  const q = (S.q || '').toLowerCase().trim();
+  return items.filter(x =>
+    (!f || f.test(x.st))
+    && (!S.line    || x.r.line === S.line)
+    && (!S.carrier || x.r.carrier_name === S.carrier)
+    && (!S.agent   || x.r.agent_id === S.agent)
+    && (!q || (x.name + ' ' + x.r.plan_name + ' ' + x.r.carrier_name + ' '
+               + (x.r.policy_number || '')).toLowerCase().includes(q)));
+}
+
+// Grouped by person, because that is how an agent thinks about their book.
+function clientsGroup_(items, sort) {
+  const by = {};
+  items.forEach(x => {
+    if (!by[x.r.contact_id]) by[x.r.contact_id] = { id: x.r.contact_id, name: x.name, contact: x.contact, rows: [] };
+    by[x.r.contact_id].rows.push(x);
+  });
+  const list = Object.values(by);
+  list.forEach(g => {
+    g.premium = g.rows.reduce((s, x) => s + (x.st.inForce ? (parseFloat(x.r.monthly_premium) || 0) : 0), 0);
+    g.inForce = g.rows.filter(x => x.st.inForce).length;
+    // The soonest thing that needs attention — a start date coming, or an end.
+    // Only dates STILL AHEAD count: sorting by an effective date from January
+    // put the client with nothing happening at the top of the list.
+    const today = new Date().toISOString().slice(0, 10);
+    g.next = g.rows
+      .flatMap(x => [x.r.termination_date, x.r.effective_date])
+      .filter(d => d && d >= today).sort()[0] || '';
+    // Nothing ahead? Fall back to the most recent thing that happened, so the
+    // sort still puts a client who lapsed last month above one who lapsed a
+    // year ago.
+    g.last = g.rows.flatMap(x => [x.r.termination_date, x.r.effective_date])
+      .filter(d => d && d < today).sort().pop() || '';
+  });
+  if (sort === 'premium') list.sort((a, b) => b.premium - a.premium);
+  else if (sort === 'next') list.sort((a, b) =>
+    // Everything with a date ahead, soonest first; then everyone else, most
+    // recently changed first.
+    (a.next || '9999').localeCompare(b.next || '9999')
+    || (b.last || '').localeCompare(a.last || ''));
+  else list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return list;
+}
+
+function clientsPaint_() {
+  const S = clientsState_();
+  const el = document.getElementById('page-clients');
+  const all = clientsDecorate_(S.rows);
+  const shown = clientsFilter_(all, S);
+  const groups = clientsGroup_(shown, S.sort);
+
+  const counts = {};
+  Object.keys(CLIENT_FILTERS).forEach(k =>
+    counts[k] = all.filter(x => CLIENT_FILTERS[k].test(x.st)).length);
+
+  const lines    = [...new Set(S.rows.map(r => r.line).filter(Boolean))].sort();
+  const carriers = [...new Set(S.rows.map(r => r.carrier_name).filter(Boolean))].sort();
+  const agentIds = [...new Set(S.rows.map(r => r.agent_id).filter(Boolean))];
+  const monthly  = shown.filter(x => x.st.inForce).reduce((s, x) => s + (parseFloat(x.r.monthly_premium) || 0), 0);
+
+  const chip = (k) => `<button class="btn btn-sm ${S.filter === k ? 'btn-primary' : 'btn-outline'}"
+      onclick="clientsSet_('filter','${k}')">${CLIENT_FILTERS[k].label}
+      <span style="opacity:.7;">${counts[k]}</span></button>`;
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+      <h2 class="section-title" style="margin:0;">Book of Business</h2>
+      <div style="font-size:12.5px;color:var(--text-muted);">
+        ${groups.length} client${groups.length === 1 ? '' : 's'} &middot; ${shown.length} product${shown.length === 1 ? '' : 's'}
+        ${monthly ? ' &middot; <strong style="color:var(--text-success);">' + enrollMoney_(monthly) + '/mo in force</strong>' : ''}
+      </div>
+    </div>
+
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      ${Object.keys(CLIENT_FILTERS).map(chip).join('')}
+      <button class="btn btn-sm ${S.filter === '' ? 'btn-primary' : 'btn-outline'}"
+        onclick="clientsSet_('filter','')">Everything <span style="opacity:.7;">${all.length}</span></button>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+      <div style="flex:2;min-width:190px;"><label style="font-size:11px;">Search</label>
+        <input type="text" id="cl-q" value="${escWeb(S.q)}" placeholder="name, plan, carrier, policy number"
+               oninput="clientsSet_('q', this.value)" style="width:100%;" /></div>
+      <div style="flex:1;min-width:140px;"><label style="font-size:11px;">Coverage type</label>
+        <select onchange="clientsSet_('line', this.value)"><option value="">All</option>
+          ${lines.map(l => '<option' + (S.line === l ? ' selected' : '') + '>' + escWeb(l) + '</option>').join('')}
+        </select></div>
+      <div style="flex:1;min-width:140px;"><label style="font-size:11px;">Carrier</label>
+        <select onchange="clientsSet_('carrier', this.value)"><option value="">All</option>
+          ${carriers.map(c => '<option' + (S.carrier === c ? ' selected' : '') + '>' + escWeb(c) + '</option>').join('')}
+        </select></div>
+      ${agentIds.length > 1 ? `<div style="flex:1;min-width:140px;"><label style="font-size:11px;">Written by</label>
+        <select onchange="clientsSet_('agent', this.value)"><option value="">All agents</option>
+          ${agentIds.map(id => { const a = (allAgents || []).find(x => x.id === id);
+            return '<option value="' + id + '"' + (S.agent === id ? ' selected' : '') + '>'
+                 + escWeb((a && (a.display_name || a.name)) || 'Unknown') + '</option>'; }).join('')}
+        </select></div>` : ''}
+      <div style="flex:1;min-width:130px;"><label style="font-size:11px;">Sort by</label>
+        <select onchange="clientsSet_('sort', this.value)">
+          <option value="name"${S.sort === 'name' ? ' selected' : ''}>Name</option>
+          <option value="premium"${S.sort === 'premium' ? ' selected' : ''}>Premium</option>
+          <option value="next"${S.sort === 'next' ? ' selected' : ''}>Next date</option>
+        </select></div>
+    </div>
+
+    ${!S.rows.length
+      ? `<div style="padding:40px;text-align:center;color:var(--text-muted);">
+           Nothing here yet. Enrolling a client from a quote files their coverage, and it appears here.</div>`
+      : (!groups.length
+        ? `<div style="padding:30px;text-align:center;color:var(--text-muted);">
+             No coverage matches those filters.</div>`
+        : groups.map(clientsCardHtml_).join(''))}`;
+}
+
+function clientsCardHtml_(g) {
+  const S = clientsState_();
+  const open = S.expanded[g.id] !== false;   // a book you can read at a glance
+  return `
+  <div style="border:1px solid var(--border);border-radius:10px;margin-bottom:9px;background:var(--surface-1);overflow:hidden;">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 13px;cursor:pointer;"
+         onclick="clientsToggle_('${g.id}')">
+      <div style="flex:1;min-width:180px;">
+        <div style="font-weight:700;font-size:13.5px;">${escWeb(g.name)}</div>
+        <div style="font-size:11.5px;color:var(--text-muted);">
+          ${g.inForce} in force &middot; ${g.rows.length} product${g.rows.length === 1 ? '' : 's'}
+          ${g.contact && g.contact.phone ? ' &middot; ' + escWeb(g.contact.phone) : ''}</div>
+      </div>
+      ${g.premium ? '<div style="font-weight:700;color:var(--text-success);font-size:13px;">'
+                  + enrollMoney_(g.premium) + '/mo</div>' : ''}
+      <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();closeDealPanel();viewContact('${g.id}','')">
+&#128100; Their record</button>
+      <span style="color:var(--text-muted);font-size:12px;">${open ? '▾' : '▸'}</span>
+    </div>
+    ${open ? `<div style="padding:0 13px 10px;">${g.rows.map(clientsRowHtml_).join('')}</div>` : ''}
+  </div>`;
+}
+
+function clientsRowHtml_({ r, st, agent }) {
+  // The badge already carries the date, so the sub-line carries the span and
+  // the reason instead of repeating "still in force until then".
+  let when;
+  if (st.key === 'ended') {
+    when = r.termination_reason || st.hint;
+  } else if (r.effective_date) {
+    when = 'from ' + enrollDate_(r.effective_date)
+         + (r.termination_date ? ' to ' + enrollDate_(r.termination_date) : '')
+         + (st.key === 'ending' && r.termination_reason ? ' · ' + r.termination_reason : '');
+  } else {
+    when = 'no start date yet';
+  }
+  return `
+  <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:0.5px solid var(--border);font-size:12px;">
+    <span style="min-width:120px;color:${st.color};font-weight:700;" title="${escWeb(st.hint || '')}">${st.icon} ${escWeb(st.label)}</span>
+    <span style="flex:1;min-width:170px;"><strong>${escWeb(r.plan_name)}</strong>
+      <span style="color:var(--text-muted);"> ${escWeb(r.carrier_name || '')}</span>
+      <div style="font-size:11px;color:var(--text-muted);">${escWeb(r.line || '')} &middot; ${escWeb(when)}
+        ${r.policy_number ? ' &middot; ' + escWeb(r.policy_number) : ''}
+        ${agent ? ' &middot; ' + escWeb(agent) : ''}</div></span>
+    ${r.monthly_premium != null ? '<span style="color:var(--text-success);font-weight:600;">'
+        + enrollMoney_(r.monthly_premium) + '/mo</span>' : ''}
+    ${st.live ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
+        onclick="clientsEndCoverage_('${r.id}')" title="Record that this policy is ending">End it</button>` : ''}
+    <button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
+      onclick="openCoverageEditor_('${r.id}')">Manage</button>
+  </div>`;
+}
+
+function clientsSet_(k, v) {
+  const S = clientsState_();
+  S[k] = v;
+  clientsPaint_();
+  if (k === 'q') { const i = document.getElementById('cl-q'); if (i) { i.focus(); i.setSelectionRange(v.length, v.length); } }
+}
+
+function clientsToggle_(id) {
+  const S = clientsState_();
+  S.expanded[id] = S.expanded[id] === false;
+  clientsPaint_();
+}
+
+// Ending a policy from the list, which is where an agent actually notices it —
+// mid-term or otherwise. Today's date stops it now; a later one leaves it in
+// force until then.
+async function clientsEndCoverage_(id) {
+  const S = clientsState_();
+  const r = S.rows.find(x => x.id === id);
+  if (!r) return;
+  const today = new Date().toISOString().slice(0, 10);
+  showModal('End coverage — ' + escWeb(r.plan_name), `
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">
+      ${escWeb(r.carrier_name || '')}${r.policy_number ? ' &middot; policy ' + escWeb(r.policy_number) : ''}.
+      The record stays on their file — it stops counting as in force from the date you give.</p>
+    <label>Last day of cover *</label>
+    <input type="date" id="ce-date" value="${today}" />
+    <p style="font-size:11px;color:var(--text-muted);margin:4px 0 10px;">
+      Today ends it now. A date next month leaves it in force until then and stops it by itself.</p>
+    <label>Why is it ending?</label>
+    <input type="text" id="ce-why" placeholder="e.g. moved to a group plan, non-payment, switched carrier" />
+  `, async function () {
+    const d = document.getElementById('ce-date').value;
+    if (!d) { showToast('A last day of cover is needed.'); return false; }
+    const { error } = await supabaseClient.from('enrollments').update({
+      status: 'terminated', termination_date: d,
+      termination_reason: document.getElementById('ce-why').value.trim() || null,
+    }).eq('id', id);
+    if (error) { showToast('Could not end it: ' + error.message, 8000); return false; }
+    showToast(r.plan_name + (d <= today ? ' ended.' : ' will end ' + enrollDate_(d) + '.'));
+    const deal = r.deal_id ? (deals || []).find(x => x.id === r.deal_id) : openDealFor_(r.contact_id);
+    if (deal) await advanceDealOnEnrollment_(deal);
+    clientsRefresh_();
+    return true;
+  }, { confirmLabel: 'End this coverage' });
 }
 
 // The deal panel's Coverage section — what this client actually has, which is

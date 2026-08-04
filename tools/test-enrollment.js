@@ -129,7 +129,10 @@ ok(/Ended Mar 31, 2026/.test(s1.label), 'and it says when it ended: ' + s1.label
 // Ken's mid-coverage cancellation, set now for a future date.
 s1 = st(cov({ effective_date: '2026-01-01', termination_date: '2026-10-31' }));
 ok(s1.inForce, 'ending it in October leaves it IN FORCE through August');
-ok(/Ends Oct 31, 2026/.test(s1.hint), 'and the hint says when it stops: ' + s1.hint);
+ok(/Ends Oct 31, 2026/.test(s1.label), 'and it says when it stops: ' + s1.label);
+// A date set without also flipping the status must not hide a policy that is
+// about to stop — that is exactly the row an agent needs to see coming.
+ok(s1.key === 'ending', 'a future end date means ENDING even while the status still says approved');
 s1 = st({ status: 'terminated', effective_date: '2026-01-01', termination_date: '2026-10-31' });
 ok(s1.inForce && s1.live, 'marked terminated with a FUTURE date is still in force until then');
 ok(/Ends Oct 31/.test(s1.label), 'and reads as ending, not ended: ' + s1.label);
