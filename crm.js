@@ -4352,6 +4352,7 @@ const DEAL_TL_KINDS = {
   meeting: { label: 'Meetings',          icon: '\u{1F4C5}' },
   note:    { label: 'Notes',             icon: '\u{1F4DD}' },
   intake:  { label: 'Intake',            icon: '\u{1F4CB}' },
+  coverage:{ label: 'Coverage',          icon: '\u{1F6E1}️' },
   status:  { label: 'Status',            icon: '⚡' },
   problem: { label: 'Delivery problems', icon: '⚠️' },
   other:   { label: 'Other',             icon: '\u{1F4CC}' },
@@ -4367,6 +4368,7 @@ function _dealTlKind_(activityType) {
   if (/^(meeting_|calendar_)/.test(t)) return 'meeting';
   if (t === 'note_added') return 'note';
   if (/^intake_/.test(t)) return 'intake';
+  if (t === 'enrolled' || /^coverage_/.test(t)) return 'coverage';
   if (t === 'status_changed' || t === 'deal_reopened') return 'status';
   return 'other';
 }
@@ -6093,6 +6095,10 @@ const ACTIVITY_META = {
   note_added:          { icon: '📝', color: '#fbbf24', label: 'Note' },
   status_changed:      { icon: '🔄', color: '#94a3b8', label: 'Status Changed' },
   intake_completed:    { icon: '📋', color: '#8b5cf6', label: 'Intake Completed' },
+  enrolled:            { icon: '✅', color: '#34d399', label: 'Enrolled' },
+  coverage_activated:  { icon: '🛡️', color: '#34d399', label: 'Coverage Active' },
+  coverage_terminated: { icon: '🛑', color: '#94a3b8', label: 'Coverage Ended' },
+  coverage_updated:    { icon: '🔄', color: '#60a5fa', label: 'Coverage Updated' },
 };
 
 function _renderActivityTimeline(acts, contactId) {
@@ -6755,6 +6761,11 @@ function openDealPanel(dealId) {
   }
 
   if (!deal.pipeline || !deal.pipeline.startsWith('agent-')) {
+    healthHTML += '<div class="panel-section"><div class="panel-label">Coverage</div>'
+      + '<div id="coverage-' + deal.id + '" style="font-size:12px;color:var(--text-muted);">Loading&hellip;</div>'
+      + '</div>';
+    setTimeout(function() { loadCoverage_(deal); }, 60);
+
     healthHTML += '<div class="panel-section"><div class="panel-label">Intakes &amp; Quotes</div>'
       + '<div id="deal-tree-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Loading&hellip;</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
@@ -15803,7 +15814,7 @@ async function loadDealTree_(deal) {
             .eq('contact_id', deal.contact_id).order('created_at', { ascending: false }).limit(6)
         : Promise.resolve({ data: [] }),
       supabaseClient.from('quotes')
-        .select('id,line,lines,status,created_at,client_email,intake_session_id')
+        .select('id,line,lines,status,created_at,client_email,intake_session_id,locked_at')
         .eq('deal_id', deal.id).order('created_at', { ascending: false }),
     ]);
     sess = a.data || []; qs = b.data || [];
@@ -15812,18 +15823,26 @@ async function loadDealTree_(deal) {
   const fmt = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const quoteLine = q => {
     let badge;
-    if (q.status === 'interested') badge = '<span style="color:var(--text-success);font-weight:700;">\u2b50 INTERESTED \u2014 follow up!</span>';
+    if (q.status === 'enrolled') badge = '<span style="color:var(--text-success);font-weight:700;">\u{1F512} ENROLLED</span>';
+    else if (q.status === 'waived') badge = '<span style="color:var(--text-muted);font-weight:600;">\u{1F512} All waived</span>';
+    else if (q.status === 'interested') badge = '<span style="color:var(--text-success);font-weight:700;">\u2b50 INTERESTED \u2014 follow up!</span>';
     else if (q.status === 'viewed') badge = '<span style="color:#3b82f6;font-weight:600;">Viewed</span>';
     else if (q.status === 'sent') badge = 'Sent';
     else badge = '<span style="color:var(--text-warning);">Draft</span>';
     const send = (q.status === 'draft' && q.client_email)
       ? ` &middot; <a href="#" onclick="sendQuote_('${q.id}', this); return false;">Send now</a>` : '';
+    // Enrolling is offered on any quote that has not already been decided \u2014
+    // clients sign up over the phone from a quote that was never emailed.
+    const enroll = !q.locked_at
+      ? ` &middot; <a href="#" style="color:var(--text-success);font-weight:600;"
+             onclick="openEnrollment_('${q.id}','${deal.id}'); return false;"
+             title="Record what they took and what they turned down">\u2705 Enroll</a>` : '';
     const lines = Array.isArray(q.lines) && q.lines.length ? q.lines : [q.line];
     const label = lines.length > 1
       ? '\u{1F4E6} ' + lines.length + '-part proposal: ' + escWeb(lines.join(' + '))
       : '\u{1F4BC} ' + escWeb(lines[0] || q.line);
     return `<div style="padding:2px 0;font-size:12px;">${label} &middot; ${fmt(q.created_at)} &middot; ${badge}
-      &middot; <a href="quote.html?q=${q.id}" target="_blank">view &#8599;</a>${send}
+      &middot; <a href="quote.html?q=${q.id}" target="_blank">view &#8599;</a>${send}${enroll}
       &middot; <a href="#" onclick="requoteFromQuote_('${q.id}','${deal.id}'); return false;" title="Start a fresh quote pre-filled from this one">&#8635; re-quote</a></div>`;
   };
 
@@ -17270,6 +17289,311 @@ async function markQuoteSent_(quoteId, btn) {
   showToast('Marked as sent.');
   if (btn) btn.textContent = '\u2713 Marked sent';
   advanceDealOnQuoteSent_(quoteId);
+}
+
+// ============================================================
+// ENROLLMENT
+//
+// A quote records what was OFFERED. An enrollment records what the client
+// actually TOOK — one row per product, with the numbers frozen into it. The two
+// are deliberately separate: a policy outlives the quote it came from, can be
+// entered without a quote at all, and has a life of its own (submitted ->
+// active -> terminated) that a quote has no way to express.
+//
+// Enrolling also LOCKS the quote behind it. From that moment the premiums,
+// plans and bullets on it cannot be edited by anyone — the database refuses it
+// — because that quote is now the proof of what the client agreed to. A change
+// of mind is a NEW quote (the re-quote button), never an edit of the old one.
+//
+// Every product on the quote gets an answer: enrolled, or waived. Waived is the
+// point — a dental offer the client turned down has to read as "declined", not
+// as "never offered", if anyone asks a year later.
+// ============================================================
+
+// What a coverage record can be, in the words an agent would use.
+const ENROLLMENT_STATUS = {
+  submitted:  { label: 'Applied',    hint: 'Application in — waiting on the carrier', color: 'var(--text-warning)', icon: '\u{1F4E4}' },
+  active:     { label: 'Active',     hint: 'In force',                                 color: 'var(--text-success)', icon: '✅' },
+  terminated: { label: 'Terminated', hint: 'Was in force, has ended',                  color: 'var(--text-muted)',   icon: '\u{1F6D1}' },
+  withdrawn:  { label: 'Not taken',  hint: 'Never took effect',                        color: 'var(--text-muted)',   icon: '✖' },
+};
+
+const ENROLL_STAGE = {
+  'individual-family': 'Enrolled',
+  'group-employer':    'Enrolled',
+  'medicare':          'Enrolled',
+};
+
+function enrollMoney_(n) {
+  const v = parseFloat(n);
+  return isFinite(v) ? '$' + v.toFixed(2) : '';
+}
+
+function enrollDate_(d) {
+  if (!d) return '';
+  return new Date(String(d).length <= 10 ? d + 'T12:00:00' : d)
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// The enrollment screen. One row per option on the quote, grouped by coverage
+// type the same way the client saw it, each answered enrolled or waived.
+async function openEnrollment_(quoteId, dealId) {
+  const deal = (deals || []).find(d => d.id === dealId);
+  const { data: q, error } = await supabaseClient.from('quotes')
+    .select('id,client_name,line,lines,status,locked_at,contact_id,deal_id').eq('id', quoteId).single();
+  if (error || !q) { showToast('Could not open that quote: ' + ((error && error.message) || 'not found')); return; }
+  if (q.locked_at) { showToast('That quote is already locked — open the coverage list to change anything.'); return; }
+  const { data: opts, error: e2 } = await supabaseClient.from('quote_options')
+    .select('id,line,carrier_id,carrier_name,product_id,display_name,monthly_premium,benefit_bullets,plan_meta,is_recommended,client_selected_at,sort_order')
+    .eq('quote_id', quoteId).order('sort_order', { ascending: true });
+  if (e2 || !opts || !opts.length) { showToast('That quote has no options on it.'); return; }
+
+  window._enrollOpts = opts;
+  window._enrollQuote = q;
+  window._enrollDealId = dealId;
+
+  // Sections in the agent's own order, exactly as the client page groups them.
+  const sections = [];
+  opts.forEach(o => {
+    const key = o.line || q.line;
+    let s = sections.find(x => x.line === key);
+    if (!s) { s = { line: key, rows: [] }; sections.push(s); }
+    s.rows.push(o);
+  });
+
+  const rowHtml = (o, idx) => {
+    // What the client already told us they wanted is the sensible default —
+    // it is a suggestion the agent overrides, never a decision made for them.
+    const leaning = !!o.client_selected_at;
+    return `
+    <div class="enroll-row" id="enroll-row-${idx}" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--surface-1);">
+      <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <div style="font-weight:700;font-size:13px;">${escWeb(o.display_name)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);">${escWeb(o.carrier_name || '')}
+            ${o.monthly_premium != null ? ' &middot; <strong style="color:var(--text-success);">' + enrollMoney_(o.monthly_premium) + '/mo</strong>' : ''}
+            ${o.is_recommended ? ' &middot; ⭐ recommended' : ''}
+            ${leaning ? ' &middot; <span style="color:var(--text-success);">client asked about this one</span>' : ''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <label class="enroll-pick" style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="radio" name="enroll-${idx}" value="enrolled" ${leaning ? 'checked' : ''}
+                   onchange="enrollRowChanged_(${idx})" /> Enrolled</label>
+          <label class="enroll-pick" style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="radio" name="enroll-${idx}" value="waived" ${leaning ? '' : 'checked'}
+                   onchange="enrollRowChanged_(${idx})" /> Waived</label>
+        </div>
+      </div>
+      <div id="enroll-detail-${idx}" style="display:${leaning ? 'flex' : 'none'};gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:0.5px dashed var(--border);">
+        <div style="flex:1;min-width:150px;">
+          <label style="font-size:11px;">Effective date</label>
+          <input type="date" id="enroll-eff-${idx}" style="width:100%;" onchange="enrollRowChanged_(${idx})" />
+        </div>
+        <div style="flex:1;min-width:150px;">
+          <label style="font-size:11px;">Policy / member number <span style="font-weight:400;color:var(--text-muted);">— if you have it</span></label>
+          <input type="text" id="enroll-pol-${idx}" placeholder="often comes later" style="width:100%;" />
+        </div>
+      </div>
+      <div id="enroll-why-${idx}" style="display:${leaning ? 'none' : 'block'};margin-top:8px;padding-top:8px;border-top:0.5px dashed var(--border);">
+        <label style="font-size:11px;">Why did they pass on it? <span style="font-weight:400;color:var(--text-muted);">— optional</span></label>
+        <input type="text" id="enroll-note-${idx}" placeholder="e.g. already has dental through their spouse" style="width:100%;" />
+      </div>
+    </div>`;
+  };
+
+  let idx = 0;
+  const body = sections.map(s => {
+    const rows = s.rows.map(o => rowHtml(o, idx++)).join('');
+    return `<div style="margin-bottom:12px;">
+      <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:5px;">${escWeb(s.line || '')}</div>
+      ${rows}</div>`;
+  }).join('');
+
+  showModal('Enroll — ' + escWeb(q.client_name || ''), `
+    <div style="background:var(--bg-warning);border:1px solid var(--border-warning);color:var(--text-warning);
+                border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;">
+      <strong>&#128274; Saving this locks the quote.</strong> The premiums and plans on it can never be
+      edited afterwards — it becomes the record of what this client enrolled on. If something changes
+      later, re-quote instead.
+    </div>
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">
+      Answer every product. Anything they turned down is recorded as <em>waived</em>, so a year from now
+      it reads as declined rather than never offered.</p>
+    ${body}
+    <div id="enroll-summary" style="font-size:12.5px;font-weight:600;padding-top:8px;border-top:1px solid var(--border);"></div>
+  `, enrollSave_, { confirmLabel: '\u{1F512} Enroll & lock this quote' });
+
+  for (let i = 0; i < opts.length; i++) enrollRowChanged_(i);
+}
+
+function enrollPick_(i) {
+  const el = document.querySelector('input[name="enroll-' + i + '"]:checked');
+  return el ? el.value : 'waived';
+}
+
+function enrollRowChanged_(i) {
+  const took = enrollPick_(i) === 'enrolled';
+  const det = document.getElementById('enroll-detail-' + i);
+  const why = document.getElementById('enroll-why-' + i);
+  if (det) det.style.display = took ? 'flex' : 'none';
+  if (why) why.style.display = took ? 'none' : 'block';
+  const row = document.getElementById('enroll-row-' + i);
+  if (row) {
+    row.style.borderColor = took ? 'var(--border-success)' : 'var(--border)';
+    row.style.background  = took ? 'var(--bg-success)' : 'var(--surface-1)';
+  }
+  enrollSummary_();
+}
+
+// Plain English, live, so nobody clicks the lock without knowing what it says.
+function enrollSummary_() {
+  const el = document.getElementById('enroll-summary');
+  const opts = window._enrollOpts || [];
+  if (!el) return;
+  let took = 0, total = 0;
+  opts.forEach((o, i) => { if (enrollPick_(i) === 'enrolled') { took++; total += parseFloat(o.monthly_premium) || 0; } });
+  if (!took) {
+    el.innerHTML = '<span style="color:var(--text-warning);">Nothing enrolled — all ' + opts.length
+      + ' products recorded as waived. The quote still locks, as the record of what was offered.</span>';
+  } else {
+    el.innerHTML = '✅ Enrolling in <strong>' + took + '</strong> of ' + opts.length
+      + ' &middot; <strong style="color:var(--text-success);">' + enrollMoney_(total) + '/mo</strong> total';
+  }
+}
+
+// Order matters. Outcomes go on first (the lock still allows the decision
+// record to be corrected later, but not the numbers), then the coverage rows,
+// and the lock goes on last — so a failure part-way through never leaves a
+// locked quote with no enrollment behind it.
+async function enrollSave_() {
+  const q = window._enrollQuote, opts = window._enrollOpts || [];
+  const dealId = window._enrollDealId;
+  if (!q || !opts.length) return false;
+  const deal = (deals || []).find(d => d.id === dealId);
+  const stamp = new Date().toISOString();
+
+  const picks = opts.map((o, i) => ({
+    opt: o,
+    took: enrollPick_(i) === 'enrolled',
+    eff:  (document.getElementById('enroll-eff-' + i) || {}).value || null,
+    pol:  ((document.getElementById('enroll-pol-' + i) || {}).value || '').trim() || null,
+    note: ((document.getElementById('enroll-note-' + i) || {}).value || '').trim() || null,
+  }));
+  const taken = picks.filter(p => p.took);
+
+  if (!confirm(taken.length
+      ? 'Enroll ' + q.client_name + ' in ' + taken.length + ' product' + (taken.length === 1 ? '' : 's')
+        + ' and lock this quote?\n\nThe premiums on it can never be edited afterwards.'
+      : 'Record every product on this quote as waived and lock it?\n\nNothing will be enrolled.')) return false;
+
+  showToast('Enrolling…');
+
+  for (const p of picks) {
+    const { error } = await supabaseClient.from('quote_options').update({
+      outcome: p.took ? 'enrolled' : 'waived',
+      outcome_at: stamp,
+      outcome_note: p.took ? null : p.note,
+    }).eq('id', p.opt.id);
+    if (error) { showToast('Could not record "' + p.opt.display_name + '": ' + error.message); return false; }
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  for (const p of taken) {
+    const o = p.opt;
+    const { error } = await supabaseClient.from('enrollments').insert({
+      contact_id: q.contact_id, deal_id: q.deal_id || dealId || null, agent_id: currentAgent.id,
+      quote_id: q.id, quote_option_id: o.id,
+      line: o.line || q.line,
+      carrier_id: o.carrier_id || null, carrier_name: o.carrier_name || 'Carrier',
+      product_id: o.product_id || null, plan_name: o.display_name,
+      policy_number: p.pol, monthly_premium: o.monthly_premium,
+      // In force already, or an application waiting on the carrier.
+      status: (p.eff && p.eff <= today) ? 'active' : 'submitted',
+      applied_on: today, effective_date: p.eff,
+      // Frozen, so the client's portal never has to read the quote back.
+      plan_snapshot: {
+        benefit_bullets: o.benefit_bullets || [],
+        plan_meta: o.plan_meta || null,
+        premium_at_enrollment: o.monthly_premium,
+        quoted_on: q.created_at || null,
+      },
+      source: 'quote',
+    });
+    if (error) { showToast('Could not save coverage for "' + o.display_name + '": ' + error.message); return false; }
+  }
+
+  const { error: lockErr } = await supabaseClient.from('quotes').update({
+    status: taken.length ? 'enrolled' : 'waived',
+    locked_at: stamp, locked_by: currentAgent.id,
+    enrolled_at: taken.length ? stamp : null,
+  }).eq('id', q.id);
+  if (lockErr) { showToast('Coverage saved, but the quote did not lock: ' + lockErr.message, 8000); return false; }
+
+  showToast(taken.length
+    ? '\u{1F512} Enrolled in ' + taken.length + ' — quote locked.'
+    : 'Recorded as waived — quote locked.');
+
+  if (deal) await advanceDealOnEnrollment_(deal);
+  closeModal();
+  if (deal) { loadDealTree_(deal); loadCoverage_(deal); }
+  return false;
+}
+
+// Enrolling moves the deal to its pipeline's Enrolled stage — forward only,
+// the same rule a sent quote uses. A deal already at Active Client stays there.
+async function advanceDealOnEnrollment_(deal) {
+  try {
+    const target = ENROLL_STAGE[deal.pipeline];
+    if (!target || deal.stage === target) return;
+    const stages = (PIPELINES[deal.pipeline] || {}).stages || [];
+    if (stages.indexOf(deal.stage) >= stages.indexOf(target)) return;
+    const { error } = await supabaseClient.from('deals').update({ stage: target }).eq('id', deal.id);
+    if (error) return;
+    deal.stage = target;
+    showToast((deal.title || 'Deal') + ' moved to "' + target + '".');
+    try { renderPipelines(); } catch (e) {}
+  } catch (e) { console.error('advanceDealOnEnrollment_:', e); }
+}
+
+// The deal panel's Coverage section — what this client actually has, which is
+// exactly what the client portal will show them.
+async function loadCoverage_(deal) {
+  const el = document.getElementById('coverage-' + deal.id);
+  if (!el) return;
+  if (!deal.contact_id) { el.textContent = 'No contact linked.'; return; }
+  const { data, error } = await supabaseClient.from('enrollments')
+    .select('id,line,carrier_name,plan_name,policy_number,monthly_premium,status,effective_date,termination_date,termination_reason,source,quote_id')
+    .eq('contact_id', deal.contact_id)
+    .order('status', { ascending: true }).order('created_at', { ascending: false });
+  if (error) { el.textContent = 'Could not load coverage.'; return; }
+  el.innerHTML = coverageListHtml_(data || []);
+}
+
+function coverageListHtml_(rows) {
+  if (!rows.length) {
+    return '<div style="font-size:12px;color:var(--text-muted);">Nothing enrolled yet — enrolling from a quote files it here.</div>';
+  }
+  const live = rows.filter(r => r.status === 'active' || r.status === 'submitted');
+  const past = rows.filter(r => r.status !== 'active' && r.status !== 'submitted');
+  const row = r => {
+    const st = ENROLLMENT_STATUS[r.status] || { label: r.status, color: 'var(--text-muted)', icon: '•' };
+    const when = r.status === 'terminated'
+      ? 'ended ' + enrollDate_(r.termination_date) + (r.termination_reason ? ' · ' + escWeb(r.termination_reason) : '')
+      : (r.effective_date ? 'effective ' + enrollDate_(r.effective_date) : 'no effective date yet');
+    return `<div style="padding:6px 0;border-bottom:0.5px solid var(--border);font-size:12px;">
+      <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
+        <span style="font-weight:700;">${escWeb(r.plan_name)}</span>
+        <span style="color:var(--text-muted);">${escWeb(r.carrier_name || '')}</span>
+        <span style="color:${st.color};font-weight:700;">${st.icon} ${st.label}</span>
+        ${r.monthly_premium != null ? '<span style="color:var(--text-success);font-weight:600;">' + enrollMoney_(r.monthly_premium) + '/mo</span>' : ''}
+      </div>
+      <div style="color:var(--text-muted);font-size:11px;">${escWeb(r.line || '')} &middot; ${when}
+        ${r.policy_number ? ' &middot; policy ' + escWeb(r.policy_number) : ''}
+        ${r.source === 'manual' ? ' &middot; entered by hand' : ''}</div>
+    </div>`;
+  };
+  return (live.length ? live.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);">No coverage in force.</div>')
+    + (past.length ? '<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:8px;">No longer in force</div>' + past.map(row).join('') : '');
 }
 
 // ============================================================
