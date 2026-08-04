@@ -237,6 +237,89 @@ const CHECKBOX_GROUP_LABELS = {
 };
 
 // ────────────────────────────────────────────────────────────────────────────
+// WHAT THEY'RE SHOPPING FOR.
+//
+// Mirrors INTAKE_PRODUCTS / INTAKE_PRODUCT_NEEDS in crm.js — the agent picks
+// during the call, and the client can add to it here. Someone who rang about
+// life insurance and discovers we do Medicare can say so on the form.
+//
+// `partner: true` means we place it through someone else: no questions, and
+// the wording never promises a quote. crm.js flags the same products with its
+// own internal name for this, which is deliberately absent from this file —
+// the parity checker fails the build if that word ever reaches a client page.
+//
+// tools/check-intake-parity.js compares this against crm.js.
+// ────────────────────────────────────────────────────────────────────────────
+const INTAKE_PRODUCTS = [
+  { key:'health',       group:'Health cover',       label:'Health insurance for me or my family' },
+  { key:'medicare',     group:'Health cover',       label:'Medicare' },
+  { key:'dental',       group:'Health cover',       label:'Dental, vision & hearing' },
+  { key:'supplemental', group:'Health cover',       label:'Accident, hospital or critical illness cover' },
+  { key:'life',         group:'Life & income',      label:'Life insurance' },
+  { key:'disability',   group:'Life & income',      label:'Disability / income protection' },
+  { key:'investments',  group:'Life & income',      label:'Savings, retirement & college funding' },
+  { key:'group',        group:'For a business',     label:'Benefits for my employees' },
+  { key:'property',     group:'Home, auto & business', label:'Auto & home', partner:true },
+  { key:'commercial',   group:'Home, auto & business', label:'Business or commercial coverage', partner:true },
+];
+
+const INTAKE_PRODUCT_NEEDS = {
+  health:       ['household','gender','tobacco','covered','meds','providers','county'],
+  medicare:     ['household','gender','tobacco','covered','meds','providers','county'],
+  life:         ['household','gender','tobacco','covered','meds','hw','amount'],
+  disability:   ['household','gender','tobacco','meds','hw'],
+  supplemental: ['household','gender','tobacco','covered'],
+  dental:       ['household','covered','providers'],
+  investments:  ['household'],
+  group:        [],
+  property:     [],
+  commercial:   [],
+};
+
+const LIFE_AMOUNT_BANDS = ['Not sure yet','Under $100,000','$100,000 – $250,000',
+  '$250,000 – $500,000','$500,000 – $1,000,000','$1,000,000 – $2,000,000','Over $2,000,000'];
+
+// The questions each product brings with it, so ticking one here actually asks
+// them. Mirrors the `ids` in crm.js; the parity checker compares the two.
+const INTAKE_PRODUCT_IDS = {
+  health: ['household_members','aca_not_applying','currently_insured','current_carrier','current_premium',
+           'employer_plan_available','care_frequency','planned_care','med_doctors','med_medications',
+           'essential_meds','coverage_goals','health_priority','coverage_start_date','coverage_duration',
+           'aca_income','affordable_shock','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date',
+           'aca_lawful','ongoing_condition'],
+  medicare: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier',
+             'med_doctors','med_medications','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental'],
+  life: ['marital_status','dependents_count','dependents_ages','has_life_insurance',
+         'life_coverage_amount','goal_protection','goal_debt','goal_college'],
+  disability: ['current_occupation','current_income'],
+  investments: ['marital_status','household_income','has_investments','dependents_count','dependents_ages',
+                'goal_retirement','goal_wealth','goal_college','goal_debt'],
+  group: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states',
+          'has_current_plan','current_group_carrier','current_cost_per_emp','group_start_date',
+          'cov_medical','cov_dental','cov_vision','group_budget'],
+  supplemental: ['affordable_shock','ongoing_condition'],
+  dental: [], property: [], commercial: [],
+};
+
+const INTAKE_CORE_IDS = ['dob','zip','best_time','coverage_intent','notes'];
+
+function intakeFieldsForProducts_(keys) {
+  const want = new Set(INTAKE_CORE_IDS);
+  (keys || []).forEach(k => (INTAKE_PRODUCT_IDS[k] || []).forEach(id => want.add(id)));
+  return want;
+}
+
+// Products on this form: what the agent chose, plus whatever the client ticks.
+let _products = new Set();
+
+function intakeNeeds_(keys) {
+  const n = new Set();
+  (keys || []).forEach(k => (INTAKE_PRODUCT_NEEDS[k] || []).forEach(c => n.add(c)));
+  return n;
+}
+function _needs() { return intakeNeeds_([..._products]); }
+
+// ────────────────────────────────────────────────────────────────────────────
 // THE ORDER OF THE FORM.
 //
 // The agent picks WHICH questions get asked. This list decides the order they
@@ -359,12 +442,13 @@ function renderHouseholdTable_(id, def) {
   setTimeout(() => { try { hhPaint_(); } catch (e) {} }, 80);
   return `<div class="field-group" id="wrap_${id}">
     <label>${def.label} <span style="font-weight:400;color:#94a3b8;">\u2014 add everyone who lives with you; untick \u201cCover\u201d for anyone not applying</span></label>
-    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead><tr style="text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;">
+    <div style="overflow-x:auto;" id="hh-table"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr id="hh-head" style="text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;">
         <th style="padding:4px;">Who</th><th style="padding:4px;">Age</th><th style="padding:4px;">Gender</th>
         <th style="padding:4px;">Tobacco</th><th style="padding:4px;">Cover</th><th></th></tr></thead>
       <tbody id="hh-rows"></tbody>
     </table></div>
+    <div id="hh-cards" style="display:none;"></div>
     <button type="button" class="btn-secondary" style="margin-top:8px;padding:8px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;font-size:13px;" onclick="hhAdd_()">+ Add family member</button>
     <input type="hidden" name="household_struct" id="f_household_struct">
     <input type="hidden" name="household_size" id="f_household_size">
@@ -375,35 +459,94 @@ function renderHouseholdTable_(id, def) {
 function hhPaint_() {
   const tb = document.getElementById('hh-rows');
   if (!tb) return;
-  tb.innerHTML = _hh.map((m, i) => `
-    <tr>
-      <td style="padding:3px;">${i === 0
-        ? '<strong style="font-size:13px;">You</strong><input type="hidden" class="hh-rel" value="Self">'
-        : `<select class="hh-rel" onchange="hhRead_()" style="padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;">
-            <option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option>
-            <option${m.relationship === 'Child' ? ' selected' : ''}>Child</option>
-            <option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`}</td>
-      <td style="padding:3px;"><input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" min="0" max="120" style="width:64px;padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;" oninput="hhRead_()"></td>
-      <td style="padding:3px;"><select class="hh-gen" onchange="hhRead_()" style="padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;">
+  const n = _needs();
+  const wide = n.has('hw') || n.has('amount');
+  const inp = 'padding:7px;border:1.5px solid #cbd5e1;border-radius:8px;';
+  const rel = (m, i) => i === 0
+    ? '<strong style="font-size:13px;">You</strong><input type="hidden" class="hh-rel" value="Self">'
+    : `<select class="hh-rel" onchange="hhRead_()" style="${inp}">
+        <option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option>
+        <option${m.relationship === 'Child' ? ' selected' : ''}>Child</option>
+        <option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`;
+  const age = m => `<input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" min="0" max="120" style="width:64px;${inp}" oninput="hhRead_()">`;
+  const gen = m => `<select class="hh-gen" onchange="hhRead_()" style="${inp}">
         <option value=""${!m.gender ? ' selected' : ''}>Select\u2026</option>
         <option value="M"${m.gender === 'M' ? ' selected' : ''}>Male</option>
         <option value="F"${m.gender === 'F' ? ' selected' : ''}>Female</option>
-        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Decline to answer</option></select></td>
-      <td style="padding:3px;text-align:center;"><input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;"></td>
-      <td style="padding:3px;text-align:center;"><input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;"></td>
-      <td style="padding:3px;">${i === 0 ? '' : `<button type="button" onclick="_hh.splice(${i},1);hhPaint_();hhRead_();" style="background:none;border:none;color:#dc2626;cursor:pointer;">&#10005;</button>`}</td>
-    </tr>`).join('');
+        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Decline to answer</option></select>`;
+  const tob = m => `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`;
+  const cov = m => `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`;
+  const hid = (c, v) => `<input type="hidden" class="${c}" value="${v == null ? '' : v}">`;
+  const del = i => i === 0 ? '' : `<button type="button" onclick="_hh.splice(${i},1);hhPaint_();hhRead_();" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:15px;">&#10005;</button>`;
+
+  // Columns nobody needs are hidden rather than removed, so an answer already
+  // given survives if the client adds a product that wants it back.
+  const head = document.querySelector('#hh-head');
+  if (head) {
+    head.children[2].style.display = n.has('gender')  ? '' : 'none';
+    head.children[3].style.display = n.has('tobacco') ? '' : 'none';
+    head.children[4].style.display = n.has('covered') ? '' : 'none';
+  }
+  const table = document.querySelector('#hh-table');
+  if (table) table.style.display = wide ? 'none' : '';
+  const cards = document.getElementById('hh-cards');
+  if (cards) cards.style.display = wide ? '' : 'none';
+
+  if (!wide) {
+    tb.innerHTML = _hh.map((m, i) => `
+      <tr>
+        <td style="padding:3px;">${rel(m, i)}</td>
+        <td style="padding:3px;">${age(m)}</td>
+        <td style="padding:3px;${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</td>
+        <td style="padding:3px;text-align:center;${n.has('tobacco') ? '' : 'display:none;'}">${tob(m)}</td>
+        <td style="padding:3px;text-align:center;${n.has('covered') ? '' : 'display:none;'}">${cov(m)}</td>
+        <td style="padding:3px;">${hid('hh-hft', m.height_ft)}${hid('hh-hin', m.height_in)}${hid('hh-wt', m.weight)}${hid('hh-amt', m.amount_band)}${hid('hh-amtx', m.amount_exact)}${del(i)}</td>
+      </tr>`).join('');
+  } else {
+    const bands = m => LIFE_AMOUNT_BANDS.map(b => `<option${m.amount_band === b ? ' selected' : ''}>${b}</option>`).join('');
+    cards.innerHTML = _hh.map((m, i) => `
+      <div class="hh-card" style="border:1px solid #e5e3de;border-radius:12px;padding:14px;margin-bottom:10px;background:#fcfbf9;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          ${rel(m, i)}
+          <span style="font-size:12px;color:#777;">Age</span>${age(m)}
+          <span style="font-size:12px;color:#777;${n.has('gender') ? '' : 'display:none;'}">Gender</span>
+          <span style="${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</span>
+          <label style="font-size:12px;color:#777;display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:5px;margin:0;">${tob(m)} Tobacco</label>
+          <label style="font-size:12px;color:#777;display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:5px;margin:0;">${cov(m)} Cover</label>
+          <span style="flex:1;"></span>${del(i)}
+        </div>
+        <div style="display:${n.has('hw') ? 'flex' : 'none'};align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:12px;color:#777;">Height</span>
+          <input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:60px;${inp}" oninput="hhRead_()">
+          <input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:60px;${inp}" oninput="hhRead_()">
+          <span style="font-size:12px;color:#777;">Weight</span>
+          <input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:72px;${inp}" oninput="hhRead_()">
+        </div>
+        <div style="display:${n.has('amount') ? 'flex' : 'none'};align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <span style="font-size:12px;color:#777;">Cover wanted</span>
+          <select class="hh-amt" onchange="hhRead_()" style="${inp}"><option value=""></option>${bands(m)}</select>
+          <span style="font-size:12px;color:#777;">or exact</span>
+          <input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:120px;${inp}" oninput="hhRead_()">
+        </div>
+      </div>`).join('');
+  }
   hhRead_();
 }
 
 function hhRead_() {
-  const rows = [...document.querySelectorAll('#hh-rows tr')];
+  const num = v => (v === '' || v == null ? null : Number(v));
+  const rows = [...document.querySelectorAll('#hh-rows tr, #hh-cards .hh-card')];
   _hh = rows.map(tr => ({
     relationship: tr.querySelector('.hh-rel').value,
     age: tr.querySelector('.hh-age').value === '' ? '' : parseInt(tr.querySelector('.hh-age').value),
     gender: tr.querySelector('.hh-gen').value,
     tobacco: tr.querySelector('.hh-tob').checked,
     covered: tr.querySelector('.hh-cov').checked,
+    height_ft: num(tr.querySelector('.hh-hft').value),
+    height_in: num(tr.querySelector('.hh-hin').value),
+    weight: num(tr.querySelector('.hh-wt').value),
+    amount_band: tr.querySelector('.hh-amt').value || null,
+    amount_exact: num(tr.querySelector('.hh-amtx').value),
   }));
   const fs = document.getElementById('f_household_struct');
   if (fs) fs.value = JSON.stringify(_hh);
@@ -687,6 +830,60 @@ function pickerPick_(id, i) {
 }
 
 
+// What they came for, plus anything else they'd like a look at. Deliberately
+// ADD-ONLY: what the advisor already set up is shown ticked and fixed, so a
+// stray click can't empty the form the client is halfway through.
+function renderProductPicker_(agentChose) {
+  const groups = [];
+  INTAKE_PRODUCTS.forEach(p => {
+    let g = groups.find(x => x[0] === p.group);
+    if (!g) { g = [p.group, []]; groups.push(g); }
+    g[1].push(p);
+  });
+  const body = groups.map(([group, items]) => `
+    <div style="margin-bottom:10px;">
+      <div style="font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">${group}</div>
+      <div class="checkbox-group goal-grid">
+        ${items.map(p => {
+          const fixed = agentChose.has(p.key);
+          return `<label class="check-opt" style="${fixed ? 'background:#f4f1ea;border-color:#e0d8c4;' : ''}">
+            <input type="checkbox" class="prod-tick" value="${p.key}"${fixed ? ' checked disabled' : ''}
+                   onchange="productTicked_()"> ${p.label}
+            ${fixed ? '<span style="font-size:11px;color:#a08a4b;margin-left:4px;">already included</span>' : ''}
+          </label>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+  return `<div class="card" id="sec_products">
+    <div class="sec-head"><span class="sec-num" id="prod-num"></span><h3>What are you looking for?</h3></div>
+    <p class="sec-blurb">Tick anything you'd like your advisor to look at — even if it isn't why you got in touch.
+      Adding something just brings up a few more questions further down.</p>
+    ${body}
+    <p style="font-size:12px;color:#888;margin-top:4px;">Auto, home and business cover we arrange through a
+      trusted partner rather than quoting it ourselves — tick it and your advisor will make the introduction.</p>
+  </div>`;
+}
+
+// Re-render so the new product's questions appear in their proper sections,
+// keeping everything already typed.
+function productTicked_() {
+  const picked = [...document.querySelectorAll('.prod-tick')].filter(c => c.checked).map(c => c.value);
+  const before = new Set(_products);
+  _products = new Set(picked);
+  if ([..._products].join() === [...before].join()) return;
+  try {
+    const form = document.getElementById('intake-form');
+    if (form) {
+      const keep = {};
+      new FormData(form).forEach((v, k) => { if (v !== '') keep[k] = v; });
+      window._prefillAll = Object.assign({}, window._prefillAll, keep);
+      Object.assign(window._session.responses = window._session.responses || {}, keep);
+    }
+  } catch (e) {}
+  renderForm(window._session, window._contact);
+  setTimeout(() => { try { applyFieldRules_(); } catch (e) {} }, 60);
+}
+
 function renderCheckboxGroup(groupKey, ids) {
   const label = CHECKBOX_GROUP_LABELS[groupKey] || groupKey;
   const items = ids.map(id => `<label class="check-opt"><input type="checkbox" name="${id}" value="yes"> ${FIELD_DEFS[id].label}</label>`).join('');
@@ -731,7 +928,17 @@ async function init() {
 }
 
 function renderForm(session, contact) {
+  // Kept so ticking a product can re-render without another round trip.
+  window._session = session; window._contact = contact;
+  window._agentProducts = window._agentProducts || new Set(session.products || []);
+  if (!_products.size) _products = new Set(window._agentProducts);
+
+  // What the agent asked for, plus whatever the client has since added.
   const sf = new Set(session.selected_fields || []);
+  [..._products].forEach(k => {
+    if (window._agentProducts.has(k)) return;          // already in selected_fields
+    intakeFieldsForProducts_([k]).forEach(id => sf.add(id));
+  });
   const cp = session.contact_prefill || {};
   const prefill = {
     name: contact.name || cp.name || '', email: contact.email || cp.email || '', phone: contact.phone || cp.phone || '',
@@ -795,6 +1002,11 @@ function renderForm(session, contact) {
   <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}','${session.agent_id||''}')">`;
 
   plan.forEach((step, i) => {
+    // Offered early, so anything they add grows the form in its proper place
+    // instead of tacking questions on the end.
+    if (step.sec.key === 'household' || (i === 2 && !plan.some(s => s.sec.key === 'household'))) {
+      html += renderProductPicker_(window._agentProducts);
+    }
     const sec = step.sec;
     html += `<div class="card${sec.sensitive ? ' sec-private' : ''}" id="sec_${sec.key}">
       <div class="sec-head">
@@ -828,6 +1040,10 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
     if (responses[k]) { responses[k] = [].concat(responses[k], v); }
     else { responses[k] = v; }
   }
+  // Anything they ticked for themselves. The server keeps only the products it
+  // recognises, so this is a request, not a write.
+  responses.products_added = [...document.querySelectorAll('.prod-tick')]
+    .filter(c => c.checked).map(c => c.value);
 
   const now = new Date().toISOString();
   // Durable facts belong on the client record so the next intake starts filled in

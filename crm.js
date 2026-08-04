@@ -3022,11 +3022,214 @@ const INTAKE_SECTIONS = [
 // The checklist panel and the agent-side form both read this shape.
 const INTAKE_ALL_FIELDS = INTAKE_SECTIONS.map(s => ({ section: s.title, ids: s.ids }));
 
+// ────────────────────────────────────────────────────────────────────────────
+// WHAT THE CLIENT IS SHOPPING FOR.
+//
+// An intake used to be ONE thing. A person who rang about life insurance and
+// then found out we do Medicare had no way to say so, and neither did the
+// agent — picking a second type wiped the first. A client can want several
+// things at once, so an intake carries a LIST of products and merges their
+// questions.
+//
+// `lines` are the SAME strings as CARRIER_LINES and QUOTE_LINE_GROUPS, so
+// anything the intake collects, the quote builder already understands. Don't
+// invent a new name here — use the line that exists, or add it there first.
+//
+// `referral: true` means we don't place it ourselves. Those products capture
+// the interest and raise a flag; they ask no questions and must never tell a
+// client we're going to quote them.
+//
+// Careers are NOT products — a recruit isn't shopping — so they stay as their
+// own form types and never show this picker.
+// ────────────────────────────────────────────────────────────────────────────
+const INTAKE_PRODUCTS = [
+  { key: 'health', group: 'Health cover', label: 'Health insurance for me or my family',
+    agentLabel: 'Health — Individual/Family', formType: 'health-individual',
+    lines: ['Health — Individual','Short-Term Medical','Private/Off-Market Medical','Health Share'],
+    ids: ['household_members','aca_not_applying','currently_insured','current_carrier','current_premium',
+          'employer_plan_available','care_frequency','planned_care','med_doctors','med_medications',
+          'essential_meds','coverage_goals','health_priority','coverage_start_date','coverage_duration',
+          'aca_income','affordable_shock','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date',
+          'aca_lawful','ongoing_condition'] },
+
+  { key: 'medicare', group: 'Health cover', label: 'Medicare',
+    agentLabel: 'Medicare', formType: 'medicare',
+    lines: ['Medicare Advantage','Medicare Supplement','Part D (PDP)'],
+    ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier',
+          'med_doctors','med_medications','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental'] },
+
+  { key: 'dental', group: 'Health cover', label: 'Dental, vision & hearing',
+    agentLabel: 'Dental / Vision / Hearing', lines: ['Dental/Vision/Hearing'], ids: [] },
+
+  { key: 'supplemental', group: 'Health cover', label: 'Accident, hospital or critical illness cover',
+    agentLabel: 'Supplemental (accident / hospital / cancer)',
+    lines: ['Hospital Indemnity','Accident','Cancer/Critical Illness'],
+    ids: ['affordable_shock','ongoing_condition'] },
+
+  { key: 'life', group: 'Life & income', label: 'Life insurance',
+    agentLabel: 'Life', formType: 'financial', lines: ['Life'],
+    ids: ['marital_status','dependents_count','dependents_ages','has_life_insurance',
+          'life_coverage_amount','goal_protection','goal_debt','goal_college'] },
+
+  { key: 'disability', group: 'Life & income', label: 'Disability / income protection',
+    agentLabel: 'Disability', lines: ['Disability'],
+    ids: ['current_occupation','current_income'] },
+
+  { key: 'investments', group: 'Life & income', label: 'Savings, retirement & college funding',
+    agentLabel: 'Savings & Investments', formType: 'financial', lines: [],
+    ids: ['marital_status','household_income','has_investments','dependents_count','dependents_ages',
+          'goal_retirement','goal_wealth','goal_college','goal_debt'] },
+
+  { key: 'group', group: 'For a business', label: 'Benefits for my employees',
+    agentLabel: 'Group / Employer', formType: 'health-group', lines: ['Health — Group'],
+    ids: ['business_name','employee_count','enrollment_count','avg_age_range','employee_states',
+          'has_current_plan','current_group_carrier','current_cost_per_emp','group_start_date',
+          'cov_medical','cov_dental','cov_vision','group_budget'] },
+
+  // ── Placed through a partner rather than written here. `referral` is a
+  // BEHAVIOUR flag, not a label: it means ask no questions and never imply a
+  // quote. The word itself appears nowhere the agent or the client can see it.
+  { key: 'property', group: 'Property & Casualty', label: 'Auto & home',
+    agentLabel: 'Auto & Home', lines: ['Auto/Home'], ids: [], referral: true },
+
+  { key: 'commercial', group: 'Property & Casualty', label: 'Business or commercial coverage',
+    agentLabel: 'Commercial', lines: ['Commercial'], ids: [], referral: true },
+];
+
+const INTAKE_PRODUCT_BY_KEY = Object.fromEntries(INTAKE_PRODUCTS.map(p => [p.key, p]));
+
+// ────────────────────────────────────────────────────────────────────────────
+// WHICH BITS OF THE SHARED WIDGETS EACH PRODUCT ACTUALLY NEEDS.
+//
+// The household table, the medication and provider pickers and the county
+// lookup are shared, but not every column earns its place on every intake —
+// nobody shopping for auto insurance should be asked whether they smoke.
+// Capabilities are UNIONED across the products selected, so one health product
+// in the mix brings tobacco back for everyone.
+//
+//   household  show the who's-covered table at all
+//   gender     the Gender column      (rating factor: Medigap, life, DI; and
+//                                      the Marketplace API wants it for ACA)
+//   tobacco    the Tobacco column     (rating factor everywhere except P&C)
+//   covered    the "Cover" tick       (only where cover is decided per person)
+//   meds       the medication picker  (plan choice on health/Medicare,
+//                                      underwriting on life/DI)
+//   providers  the doctor/facility picker
+//   county     resolve the county from their ZIP (MA and ACA are county-priced)
+//   hw         height and weight, per person (build class is most of a life or
+//              DI premium — and a spouse is underwritten separately)
+//   amount     how much cover each person wants, per person (a spouse rider is
+//              its own decision, so it gets its own answer)
+//
+// `hw` and `amount` widen each person from a table row into a card, because a
+// nine-column table is unusable on the phone most clients fill this in on. The
+// stored shape is identical either way — only the layout changes.
+// ────────────────────────────────────────────────────────────────────────────
+const INTAKE_PRODUCT_NEEDS = {
+  health:       ['household', 'gender', 'tobacco', 'covered', 'meds', 'providers', 'county'],
+  medicare:     ['household', 'gender', 'tobacco', 'covered', 'meds', 'providers', 'county'],
+  life:         ['household', 'gender', 'tobacco', 'covered', 'meds', 'hw', 'amount'],
+  disability:   ['household', 'gender', 'tobacco', 'meds', 'hw'],
+  supplemental: ['household', 'gender', 'tobacco', 'covered'],
+  dental:       ['household', 'covered', 'providers'],
+  investments:  ['household'],
+  group:        [],   // the people who matter are employees — that's the census
+  property:     [],   // placed by a partner; we capture the interest, nothing else
+  commercial:   [],
+};
+
+// Bands, because most people have never been asked this and a blank box stalls
+// them — with an exact figure alongside for anyone who does know.
+const LIFE_AMOUNT_BANDS = ['Not sure yet', 'Under $100,000', '$100,000 – $250,000',
+  '$250,000 – $500,000', '$500,000 – $1,000,000', '$1,000,000 – $2,000,000', 'Over $2,000,000'];
+
+function intakeNeeds_(keys) {
+  const n = new Set();
+  (keys || []).forEach(k => (INTAKE_PRODUCT_NEEDS[k] || []).forEach(c => n.add(c)));
+  return n;
+}
+
+// Questions every client intake asks, whatever they are shopping for.
+const INTAKE_CORE_IDS = ['dob','zip','best_time','coverage_intent','notes'];
+
+// The questions a set of products adds up to, in section order and deduped —
+// two products asking for the same thing ask for it once.
+function intakeFieldsForProducts_(keys) {
+  const want = new Set(INTAKE_CORE_IDS);
+  (keys || []).forEach(k => (INTAKE_PRODUCT_BY_KEY[k] || { ids: [] }).ids.forEach(id => want.add(id)));
+  const ordered = [];
+  INTAKE_SECTIONS.forEach(s => s.ids.forEach(id => { if (want.has(id)) ordered.push(id); }));
+  return ordered;
+}
+
+// One intake, several products, but only ONE pipeline — form_type decides where
+// the deal lands. Medicare wins outright: it is a separately gated pipeline with
+// its own compliance track, so a client who wants Medicare AND life belongs in
+// Medicare with life alongside, never the other way round.
+const INTAKE_FORMTYPE_PRECEDENCE = ['medicare', 'group', 'health', 'life', 'investments'];
+
+function intakePrimaryType_(keys) {
+  const has = new Set(keys || []);
+  for (const k of INTAKE_FORMTYPE_PRECEDENCE) {
+    if (has.has(k) && INTAKE_PRODUCT_BY_KEY[k].formType) return INTAKE_PRODUCT_BY_KEY[k].formType;
+  }
+  return 'financial';
+}
+
 let _intakeContactId = null;
 let _intakeFormType = 'financial';
 let _intakeChecked = new Set();
 let _intakeEditSessionId = null;   // set when editing an existing session
 let _intakeEditResponses = {};     // pre-fill values for edit mode
+
+// What they're shopping for, and the agent's own overrides on top of it.
+// Keeping the two apart is what lets a product be unticked without throwing
+// away a question the agent deliberately added, and lets a question the agent
+// deliberately removed stay removed when another product also asks for it.
+let _intakeProducts  = new Set();
+let _intakeManualOn  = new Set();
+let _intakeManualOff = new Set();
+
+function _intakeRecompute() {
+  const base = new Set(intakeFieldsForProducts_([..._intakeProducts]));
+  _intakeManualOn.forEach(id => base.add(id));
+  _intakeManualOff.forEach(id => base.delete(id));
+  _intakeChecked = base;
+  _intakeFormType = intakePrimaryType_([..._intakeProducts]);
+}
+
+function toggleIntakeProduct(key) {
+  if (_intakeProducts.has(key)) _intakeProducts.delete(key);
+  else _intakeProducts.add(key);
+  // A product's own questions stop counting as manual overrides once the
+  // product itself is doing the asking, so re-ticking it behaves predictably.
+  (INTAKE_PRODUCT_BY_KEY[key] || { ids: [] }).ids.forEach(id => _intakeManualOn.delete(id));
+  _intakeRecompute();
+  _intakeRenderTypeBar();
+  _intakeRenderFieldList();
+  _intakeRenderForm();
+}
+
+// Career intakes aren't shopping — no products, just the old fixed list.
+function _intakeIsCareer() { return /^career-/.test(_intakeFormType); }
+
+function setIntakeCareer(type) {
+  _intakeProducts.clear(); _intakeManualOn.clear(); _intakeManualOff.clear();
+  _intakeFormType = type;
+  _intakeChecked = new Set(INTAKE_TYPE_DEFAULTS[type] || []);
+  _intakeRenderTypeBar();
+  _intakeRenderFieldList();
+  _intakeRenderForm();
+}
+
+// The products a contact's type implies, so the picker opens on the likely answer.
+function _intakeProductsFromContact(c) {
+  const t = ((c || {}).type || (c || {}).contact_type || '').toLowerCase();
+  if (t.includes('medicare')) return ['medicare'];
+  if (t.includes('group') || t.includes('employer')) return ['group'];
+  if (t.includes('individual') || t.includes('family')) return ['health'];
+  return ['life'];
+}
 
 function _intakeTypeFromContact(c) {
   if (!c) return 'financial';
@@ -3075,7 +3278,16 @@ async function showIntakeForm(contactId, opts) {
     _intakeEditSessionId = null;   // fresh form: never resume a prior edit
     _intakeEditResponses = {};
     _intakeFormType = _intakeTypeFromContact(c);
-    _intakeChecked  = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
+    _intakeManualOn.clear(); _intakeManualOff.clear();
+    if (/^career-/.test(_intakeFormType)) {
+      _intakeProducts = new Set();
+      _intakeChecked  = new Set(INTAKE_TYPE_DEFAULTS[_intakeFormType] || []);
+    } else {
+      // Opens on what their contact type suggests; the agent adds to it as the
+      // conversation goes somewhere else.
+      _intakeProducts = new Set(_intakeProductsFromContact(c));
+      _intakeRecompute();
+    }
   }
 
   const initials = (c.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
@@ -3179,28 +3391,97 @@ function closeIntakeForm() {
   if (el) el.remove();
 }
 
+// The picker the agent works during the call. Ticking a second product ADDS its
+// questions rather than replacing the first — the whole point of the change.
 function _intakeRenderTypeBar() {
   const bar = document.getElementById('intakeTypeBar');
   if (!bar) return;
-  bar.innerHTML = Object.entries(INTAKE_TYPE_LABELS).map(([k, label]) => {
-    const active = _intakeFormType === k;
-    return `<button onclick="setIntakeFormType('${k}')" id="intakeTypeBtn_${k}"
-      style="padding:10px 16px;border:none;
-             border-bottom:3px solid ${active ? '#1a3a5c' : 'transparent'};
-             background:none;cursor:pointer;
-             font-size:12.5px;font-weight:${active ? '700' : '500'};
-             color:${active ? '#1a3a5c' : '#64748b'};
-             white-space:nowrap;transition:color .15s;"
-      onmouseover="if('${k}'!==_intakeFormType){this.style.color='#1e293b';this.style.background='#f8fafc';}"
-      onmouseout="if('${k}'!==_intakeFormType){this.style.color='#64748b';this.style.background='none';}">
-      ${label}
-    </button>`;
+
+  const careerBtns = ['career-kfg', 'career-ia'].map(k => {
+    const on = _intakeFormType === k;
+    return `<button onclick="setIntakeCareer('${k}')"
+      style="padding:6px 12px;border-radius:999px;cursor:pointer;font-size:11.5px;font-weight:${on ? '700' : '500'};
+             border:1px solid ${on ? '#1a3a5c' : '#dbe3ec'};background:${on ? '#1a3a5c' : '#fff'};
+             color:${on ? '#fff' : '#64748b'};white-space:nowrap;">${INTAKE_TYPE_LABELS[k]}</button>`;
   }).join('');
+
+  if (_intakeIsCareer()) {
+    bar.innerHTML = `<div style="padding:12px 4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">Recruiting intake</span>
+        ${careerBtns}
+        <button onclick="setIntakeCareer_toClient()"
+          style="padding:6px 12px;border-radius:999px;cursor:pointer;font-size:11.5px;font-weight:500;
+                 border:1px solid #dbe3ec;background:#fff;color:#64748b;">&#8592; This is a client, not a recruit</button>
+      </div>`;
+    return;
+  }
+
+  const groups = [];
+  INTAKE_PRODUCTS.forEach(p => {
+    let g = groups.find(x => x[0] === p.group);
+    if (!g) { g = [p.group, []]; groups.push(g); }
+    g[1].push(p);
+  });
+
+  const chips = groups.map(([group, items]) => `
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                   color:var(--text-muted);margin-right:2px;">${group}</span>
+      ${items.map(p => {
+        const on = _intakeProducts.has(p.key);
+        const ref = !!p.referral;
+        const bg = on ? (ref ? '#8a6d3b' : '#1a3a5c') : '#fff';
+        const bd = on ? bg : (ref ? '#e2d5b8' : '#dbe3ec');
+        return `<button onclick="toggleIntakeProduct('${p.key}')" title="${escWeb(p.label)}${ref ? ' — placed through a partner, so we capture the interest rather than quoting it here' : ''}"
+          style="padding:6px 12px;border-radius:999px;cursor:pointer;font-size:11.5px;
+                 font-weight:${on ? '700' : '500'};border:1px solid ${bd};background:${bg};
+                 color:${on ? '#fff' : '#475569'};white-space:nowrap;transition:all .12s;">
+          ${on ? '&#10003; ' : ''}${escWeb(p.agentLabel)}${ref ? ' &#8599;' : ''}</button>`;
+      }).join('')}
+    </div>`).join('');
+
+  const n = _intakeProducts.size;
+  const primary = INTAKE_TYPE_LABELS[_intakeFormType] || _intakeFormType;
+  bar.innerHTML = `
+    <div style="padding:11px 4px 12px;display:flex;flex-direction:column;gap:8px;width:100%;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#1a3a5c;">What are they shopping for?</span>
+        <span style="font-size:11px;color:var(--text-muted);">
+          ${n ? n + ' selected &middot; deal goes to <strong>' + escWeb(primary) + '</strong>' : 'Pick one or more — the questions merge.'}
+        </span>
+      </div>
+      ${chips}
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+                  margin-top:2px;padding-top:8px;border-top:1px dashed #e2e8f0;">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                     color:var(--text-muted);margin-right:2px;">Career opportunity</span>
+        ${careerBtns}
+        <span style="font-size:10.5px;color:var(--text-muted);font-style:italic;">
+          &mdash; recruiting an agent, not selling them a product</span>
+      </div>
+    </div>`;
 }
 
+function setIntakeCareer_toClient() {
+  _intakeFormType = 'financial';
+  _intakeProducts = new Set(['life']);
+  _intakeManualOn.clear(); _intakeManualOff.clear();
+  _intakeRecompute();
+  _intakeRenderTypeBar();
+  _intakeRenderFieldList();
+  _intakeRenderForm();
+}
+
+// Kept for anything that still selects an intake by its form type. Products are
+// the primary control now, so this maps a type back onto the products that mean
+// the same thing rather than setting a bare field list.
 function setIntakeFormType(type) {
-  _intakeFormType = type;
-  _intakeChecked  = new Set(INTAKE_TYPE_DEFAULTS[type] || []);
+  if (/^career-/.test(type)) { setIntakeCareer(type); return; }
+  const asProducts = { 'medicare': ['medicare'], 'health-individual': ['health'],
+                       'health-group': ['group'], 'financial': ['life','investments'] }[type];
+  _intakeProducts = new Set(asProducts || ['life']);
+  _intakeManualOn.clear(); _intakeManualOff.clear();
+  _intakeRecompute();
   _intakeRenderTypeBar();
   _intakeRenderFieldList();
   _intakeRenderForm();
@@ -3243,8 +3524,10 @@ function _intakeRenderFieldList() {
 }
 
 function toggleIntakeField(id, checked) {
-  if (checked) _intakeChecked.add(id);
-  else         _intakeChecked.delete(id);
+  // Remembered as an override, not just a tick, so changing products later
+  // doesn't quietly undo what the agent decided.
+  if (checked) { _intakeChecked.add(id);    _intakeManualOn.add(id);  _intakeManualOff.delete(id); }
+  else         { _intakeChecked.delete(id); _intakeManualOff.add(id); _intakeManualOn.delete(id); }
   _intakeRenderFieldList();
   _intakeRenderForm();
 }
@@ -3472,46 +3755,103 @@ function _imHHTable_(id, def) {
     window._imHH = [{ relationship: 'Self', age: a, gender: c.gender || '', tobacco: !!c.tobacco_use, covered: true }];
   }
   setTimeout(() => { try { imHHPaint_(); } catch (e) {} }, 80);
+  const n = intakeNeeds_([..._intakeProducts]);
+  const wide = n.has('hw') || n.has('amount');   // cards, not a nine-column table
+  const head = ['Who', 'Age', n.has('gender') && 'Gender', n.has('tobacco') && 'Tob.',
+                n.has('covered') && 'Cover', ''].filter(x => x !== false)
+                .map(h => '<th>' + (h || '') + '</th>').join('');
   return `<div id="iwrap_${id}">
     <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${def.label}</label>
-    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-      <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">
-        <th>Who</th><th>Age</th><th>Gender</th><th>Tob.</th><th>Cover</th><th></th></tr></thead>
-      <tbody id="im-hh-rows"></tbody>
-    </table></div>
+    ${wide
+      ? `<div id="im-hh-rows" style="display:flex;flex-direction:column;gap:8px;"></div>`
+      : `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+           <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">${head}</tr></thead>
+           <tbody id="im-hh-rows"></tbody>
+         </table></div>`}
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="imHHAdd_()">+ Add member</button>
   </div>`;
 }
 
+// Both layouts write the same fields with the same classes, so imHHRead_ and
+// everything downstream neither knows nor cares which one was drawn.
 function imHHPaint_() {
   const tb = document.getElementById('im-hh-rows');
   if (!tb) return;
-  tb.innerHTML = window._imHH.map((m, i) => `
-    <tr>
-      <td style="padding:2px;">${i === 0 ? '<strong>Client</strong><input type="hidden" class="hh-rel" value="Self">'
-        : `<select class="hh-rel" onchange="imHHRead_()"><option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option><option${m.relationship === 'Child' ? ' selected' : ''}>Child</option><option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`}</td>
-      <td style="padding:2px;"><input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" style="width:58px;" oninput="imHHRead_()"></td>
-      <td style="padding:2px;"><select class="hh-gen" onchange="imHHRead_()">
+  const n = intakeNeeds_([..._intakeProducts]);
+  const wide = n.has('hw') || n.has('amount');
+  const rel = (m, i) => i === 0
+    ? '<strong>Client</strong><input type="hidden" class="hh-rel" value="Self">'
+    : `<select class="hh-rel" onchange="imHHRead_()"><option${m.relationship === 'Spouse' ? ' selected' : ''}>Spouse</option><option${m.relationship === 'Child' ? ' selected' : ''}>Child</option><option${m.relationship === 'Other' ? ' selected' : ''}>Other</option></select>`;
+  const age = m => `<input type="number" class="hh-age" value="${m.age !== '' && m.age != null ? m.age : ''}" style="width:58px;" oninput="imHHRead_()">`;
+  const gen = m => `<select class="hh-gen" onchange="imHHRead_()">
         <option value=""${!m.gender ? ' selected' : ''}>\u2014</option>
         <option value="M"${m.gender === 'M' ? ' selected' : ''}>M</option>
         <option value="F"${m.gender === 'F' ? ' selected' : ''}>F</option>
-        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Declined</option></select></td>
-      <td style="padding:2px;text-align:center;"><input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;"></td>
-      <td style="padding:2px;text-align:center;"><input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;"></td>
-      <td style="padding:2px;">${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}</td>
-    </tr>`).join('');
+        <option value="X"${m.gender === 'X' ? ' selected' : ''}>Declined</option></select>`;
+  const tob = m => `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`;
+  const cov = m => `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`;
+  const hidden = (cls, v) => `<input type="hidden" class="${cls}" value="${v == null ? '' : v}">`;
+
+  if (!wide) {
+    tb.innerHTML = window._imHH.map((m, i) => {
+      const cells = [`<td style="padding:2px;">${rel(m, i)}</td>`, `<td style="padding:2px;">${age(m)}</td>`];
+      cells.push(`<td style="padding:2px;${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</td>`);
+      cells.push(`<td style="padding:2px;text-align:center;${n.has('tobacco') ? '' : 'display:none;'}">${tob(m)}</td>`);
+      cells.push(`<td style="padding:2px;text-align:center;${n.has('covered') ? '' : 'display:none;'}">${cov(m)}</td>`);
+      // Fields the layout doesn't show still round-trip, so unticking a product
+      // never silently discards an answer the client already gave.
+      cells.push(`<td style="padding:2px;">${hidden('hh-hft', m.height_ft)}${hidden('hh-hin', m.height_in)}${hidden('hh-wt', m.weight)}${hidden('hh-amt', m.amount_band)}${hidden('hh-amtx', m.amount_exact)}${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}</td>`);
+      return '<tr>' + cells.join('') + '</tr>';
+    }).join('');
+  } else {
+    const bands = m => LIFE_AMOUNT_BANDS.map(b =>
+      `<option${m.amount_band === b ? ' selected' : ''}>${b}</option>`).join('');
+    tb.innerHTML = window._imHH.map((m, i) => `
+      <div class="hh-card" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-1,#fbfcfd);">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+          ${rel(m, i)}
+          <span style="font-size:11px;color:var(--text-muted);">Age</span>${age(m)}
+          <span style="font-size:11px;color:var(--text-muted);${n.has('gender') ? '' : 'display:none;'}">Gender</span>
+          <span style="${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</span>
+          <label style="font-size:11px;color:var(--text-muted);display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${tob(m)} Tobacco</label>
+          <label style="font-size:11px;color:var(--text-muted);display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${cov(m)} Cover</label>
+          <span style="flex:1;"></span>
+          ${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;${n.has('hw') ? '' : 'display:none;'}">
+          <span style="font-size:11px;color:var(--text-muted);">Height</span>
+          <input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:52px;" oninput="imHHRead_()">
+          <input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:52px;" oninput="imHHRead_()">
+          <span style="font-size:11px;color:var(--text-muted);">Weight</span>
+          <input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:64px;" oninput="imHHRead_()">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;${n.has('amount') ? '' : 'display:none;'}">
+          <span style="font-size:11px;color:var(--text-muted);">Cover wanted</span>
+          <select class="hh-amt" onchange="imHHRead_()"><option value=""></option>${bands(m)}</select>
+          <span style="font-size:11px;color:var(--text-muted);">or exact</span>
+          <input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:104px;" oninput="imHHRead_()">
+        </div>
+      </div>`).join('');
+  }
   imHHRead_();
 }
 function imHHRead_() {
-  window._imHH = [...document.querySelectorAll('#im-hh-rows tr')].map(tr => ({
-    relationship: tr.querySelector('.hh-rel').value,
-    age: tr.querySelector('.hh-age').value === '' ? '' : parseInt(tr.querySelector('.hh-age').value),
-    gender: tr.querySelector('.hh-gen').value,
-    tobacco: tr.querySelector('.hh-tob').checked,
-    covered: tr.querySelector('.hh-cov').checked,
+  const num = v => (v === '' || v == null ? null : Number(v));
+  const rows = document.querySelectorAll('#im-hh-rows tr, #im-hh-rows .hh-card');
+  window._imHH = [...rows].map(r => ({
+    relationship: r.querySelector('.hh-rel').value,
+    age: r.querySelector('.hh-age').value === '' ? '' : parseInt(r.querySelector('.hh-age').value),
+    gender: r.querySelector('.hh-gen').value,
+    tobacco: r.querySelector('.hh-tob').checked,
+    covered: r.querySelector('.hh-cov').checked,
+    height_ft: num(r.querySelector('.hh-hft').value),
+    height_in: num(r.querySelector('.hh-hin').value),
+    weight: num(r.querySelector('.hh-wt').value),
+    amount_band: r.querySelector('.hh-amt').value || null,
+    amount_exact: num(r.querySelector('.hh-amtx').value),
   }));
 }
-function imHHAdd_() { window._imHH.push({ relationship: 'Child', age: '', gender: '', tobacco: false, covered: true }); imHHPaint_(); }
+function imHHAdd_() { window._imHH.push({ relationship: 'Spouse', age: '', gender: '', tobacco: false, covered: true }); imHHPaint_(); }
 
 function _imFv_(id) { const el = document.getElementById('ifield_' + id); return el ? el.value : ''; }
 function _imSepNeeded_() {
@@ -3676,7 +4016,8 @@ async function saveIntakeToCRM() {
     const _editId = _intakeEditSessionId;
     try {
       const { error: _updErr } = await supabaseClient.from('intake_sessions')
-        .update({ form_type: _intakeFormType, selected_fields: selectedFields, responses: responses,
+        .update({ form_type: _intakeFormType, products: [..._intakeProducts],
+                  selected_fields: selectedFields, responses: responses,
                   status: 'completed', completed_at: new Date().toISOString() })
         .eq('id', _editId);
       if (_updErr) throw _updErr;
@@ -3711,6 +4052,7 @@ async function saveIntakeToCRM() {
         contact_id:      _intakeContactId,
         agent_id:        currentAgent ? currentAgent.id : null,
         form_type:       _intakeFormType,
+        products:        [..._intakeProducts],
         selected_fields: selectedFields,
         contact_prefill: contactPrefillFor_(_intakeContactId),
         responses:       responses,
@@ -3935,6 +4277,7 @@ async function sendIntakeLink() {
         contact_id:      _intakeContactId,
         agent_id:        currentAgent ? currentAgent.id : null,
         form_type:       _intakeFormType,
+        products:        [..._intakeProducts],
         selected_fields: selectedFields,
         contact_prefill: contactPrefillFor_(_intakeContactId),
         responses:       {},
@@ -9453,7 +9796,7 @@ async function viewIntakeSession(sessionId) {
 async function editIntakeSession(sessionId) {
   const { data: s, error } = await supabaseClient
     .from('intake_sessions')
-    .select('id,contact_id,form_type,selected_fields,responses')
+    .select('id,contact_id,form_type,selected_fields,responses,products')
     .eq('id', sessionId)
     .single();
   if (error || !s) { showToast('Could not load intake'); return; }
@@ -9461,6 +9804,12 @@ async function editIntakeSession(sessionId) {
   // Set edit-mode globals BEFORE opening the full intake UI
   _intakeEditSessionId = sessionId;
   _intakeEditResponses = s.responses || {};
+  // Reopen showing the products it was actually taken for — including anything
+  // the client added themselves — and treat the saved field list as the truth,
+  // so re-opening an intake never silently rewrites what was asked.
+  _intakeProducts  = new Set(s.products || []);
+  _intakeManualOn  = new Set(s.selected_fields || []);
+  _intakeManualOff = new Set();
   _intakeFormType      = s.form_type;
   _intakeChecked       = new Set(s.selected_fields || []);
 

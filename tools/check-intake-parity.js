@@ -102,7 +102,69 @@ Object.keys(RA).forEach(id => {
   }
 });
 
-console.log('\n8. what each intent type asks, in the order it is asked');
+console.log('8. the product catalogue holds together');
+// Every product's questions must be real, renderable, and shown by some section.
+// Referral products must ask nothing — we don't place them, so asking a client
+// for detail would imply a quote we're not going to give.
+const PRODS = grab(crm, 'const INTAKE_PRODUCTS = ');
+const LINES = grab(crm, 'const CARRIER_LINES = ');
+const NEEDS = grab(crm, 'const INTAKE_PRODUCT_NEEDS = ');
+const CAPS = new Set(['household', 'gender', 'tobacco', 'covered', 'meds', 'providers',
+                      'county', 'hw', 'amount']);
+const knownLines = new Set(LINES);
+const seenKeys = new Set();
+Object.keys(NEEDS).forEach(k => {
+  if (!PRODS.some(p => p.key === k)) fail('INTAKE_PRODUCT_NEEDS has "' + k + '", which is not a product');
+  NEEDS[k].forEach(c => { if (!CAPS.has(c)) fail(k + ' needs unknown capability "' + c + '"'); });
+});
+PRODS.forEach(p => {
+  if (seenKeys.has(p.key)) fail('duplicate product key: ' + p.key);
+  seenKeys.add(p.key);
+  if (!NEEDS[p.key]) fail(p.key + ' has no entry in INTAKE_PRODUCT_NEEDS — the widgets would not know what to show');
+  if (p.referral && (NEEDS[p.key] || []).length) fail('referral product ' + p.key + ' asks for widgets; it should ask for none');
+  if (p.referral && p.ids.length) fail('referral product ' + p.key + ' asks ' + p.ids.length + ' question(s) — it should ask none');
+  (p.lines || []).forEach(l => {
+    if (!knownLines.has(l)) fail(p.key + ' maps to line "' + l + '", which is not in CARRIER_LINES');
+  });
+  p.ids.forEach(id => {
+    if (!A[id]) fail(p.key + ' wants ' + id + ', which is not in the catalogue');
+    else if (!B[id] && !AGENT_ONLY.has(id)) fail(p.key + ' wants ' + id + ', which the client page cannot render');
+    if (!placed.has(id)) fail(p.key + ' wants ' + id + ', which no section shows');
+  });
+});
+
+console.log('8b. the two copies of the product catalogue agree');
+// The client page carries its own copy of the products and their questions so
+// that ticking one there actually asks them. Same drift risk as the field
+// catalogues, same guard.
+const PRODS_B = grab(html, 'const INTAKE_PRODUCTS = ');
+const IDS_B   = grab(html, 'const INTAKE_PRODUCT_IDS = ');
+const NEEDS_B = grab(html, 'const INTAKE_PRODUCT_NEEDS = ');
+const keysA = PRODS.map(p => p.key).join(',');
+const keysB = PRODS_B.map(p => p.key).join(',');
+if (keysA !== keysB) fail('product keys differ:\n      CRM    ' + keysA + '\n      client ' + keysB);
+PRODS.forEach(p => {
+  const mine = (IDS_B[p.key] || []).join(',');
+  if (mine !== p.ids.join(',')) {
+    fail(p.key + ' asks different questions on each side:\n      CRM    ' + p.ids.join(',') + '\n      client ' + mine);
+  }
+  if ((NEEDS_B[p.key] || []).join(',') !== (NEEDS[p.key] || []).join(',')) {
+    fail(p.key + ' needs different widgets on each side');
+  }
+  const b = PRODS_B.find(x => x.key === p.key);
+  if (b && !!b.partner !== !!p.referral) fail(p.key + ': partner/referral flag disagrees between the two files');
+});
+// The word itself must never reach the client page.
+if (/referral/i.test(html)) fail('the word "referral" appears in intake.html — it must not be shown to a client');
+
+console.log('\n9. what each product asks for');
+PRODS.forEach(p => {
+  console.log('  ' + (p.referral ? '~' : ' ') + ' ' + p.key.padEnd(13)
+    + String(p.ids.length).padStart(2) + ' questions   '
+    + (p.lines.length ? p.lines.join(', ') : '(no quotable line)'));
+});
+
+console.log('\n10. what each intent type asks, in the order it is asked');
 Object.entries(DEF).forEach(([type, ids]) => {
   const set = new Set(ids);
   console.log('\n  ' + type + '  (' + ids.length + ' questions)');
