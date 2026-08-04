@@ -17522,25 +17522,117 @@ function enrollDate_(d) {
   return new Date(String(d).length <= 10 ? d + 'T12:00:00' : d)
     .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+// ── The enrollment screen ─────────────────────────────────────────────────────
+//
+// Ken's description of the job, 2026-08-04: the agent pulls up the quote in a
+// form meant for enrolling rather than for selling, sees every product on it,
+// enrols them ONE AT A TIME as the client decides, may add a product the client
+// asks about there and then, and clicks through to the carrier's own site to do
+// the real enrollment. Then either closes the quote or leaves it open to come
+// back to.
+//
+// So: the quote stays OPEN. Each product freezes as it is decided. The quote
+// closes when the agent says so, which waives whatever is left.
 
-// The enrollment screen. One row per option on the quote, grouped by coverage
-// type the same way the client saw it, each answered enrolled or waived.
+// Nothing is enrolled on a premium that has expired. Re-quote instead.
+function enrollQuoteExpired_(q) {
+  if (!q || !q.valid_until) return false;
+  return q.valid_until < new Date().toISOString().slice(0, 10);
+}
+
+// Where the REAL enrollment happens. This system records; the carrier's own
+// site is where the application is actually submitted.
+//
+// The agent's own appointment link wins over the carrier's public broker portal
+// — that is the one with their writing number behind it.
+function enrollPortalLink_(opt, carrier, appt) {
+  if (appt && appt.quoting_url) {
+    return { url: appt.quoting_url, label: (carrier && carrier.name) || opt.carrier_name || 'the carrier' };
+  }
+  if (carrier && carrier.broker_portal_url) {
+    return { url: carrier.broker_portal_url, label: carrier.name || opt.carrier_name || 'the carrier' };
+  }
+  const src = (opt.plan_meta && opt.plan_meta.src) || '';
+  if (src === 'aca') return { url: 'https://www.healthcare.gov/', label: 'HealthCare.gov' };
+  if (src === 'cms') return { url: 'https://www.medicare.gov/plan-compare/', label: 'Medicare.gov' };
+  return null;
+}
+
+// One product's state, in the words the agent reads.
+function enrollCardState_(opt, enrollment) {
+  if (opt.outcome === 'enrolled') {
+    const st = (enrollment && ENROLLMENT_STATUS[enrollment.status]) || ENROLLMENT_STATUS.submitted;
+    return { key: 'enrolled', label: st.label, icon: st.icon, color: st.color };
+  }
+  if (opt.outcome === 'waived') {
+    return { key: 'waived', label: 'Waived', icon: '✖', color: 'var(--text-muted)' };
+  }
+  return { key: 'undecided', label: 'Not decided yet', icon: '○', color: 'var(--text-warning)' };
+}
+
+function enrollHeadline_(opts) {
+  const took = opts.filter(o => o.outcome === 'enrolled');
+  const left = opts.filter(o => !o.outcome);
+  const money = took.reduce((s, o) => s + (parseFloat(o.monthly_premium) || 0), 0);
+  if (!took.length && !left.length) return 'Every product on this quote was waived.';
+  if (!took.length) return left.length + ' product' + (left.length === 1 ? '' : 's') + ' still to decide.';
+  return 'Enrolled in ' + took.length + ' — ' + enrollMoney_(money) + '/mo'
+    + (left.length ? ' · ' + left.length + ' still to decide' : ' · everything decided');
+}
+
 async function openEnrollment_(quoteId, dealId) {
-  const deal = (deals || []).find(d => d.id === dealId);
   const { data: q, error } = await supabaseClient.from('quotes')
-    .select('id,client_name,line,lines,status,locked_at,contact_id,deal_id').eq('id', quoteId).single();
+    .select('id,client_name,line,lines,status,locked_at,valid_until,created_at,contact_id,deal_id')
+    .eq('id', quoteId).single();
   if (error || !q) { showToast('Could not open that quote: ' + ((error && error.message) || 'not found')); return; }
-  if (q.locked_at) { showToast('That quote is already locked — open the coverage list to change anything.'); return; }
-  const { data: opts, error: e2 } = await supabaseClient.from('quote_options')
-    .select('id,line,carrier_id,carrier_name,product_id,display_name,monthly_premium,benefit_bullets,plan_meta,is_recommended,client_selected_at,sort_order')
-    .eq('quote_id', quoteId).order('sort_order', { ascending: true });
-  if (e2 || !opts || !opts.length) { showToast('That quote has no options on it.'); return; }
 
-  window._enrollOpts = opts;
   window._enrollQuote = q;
-  window._enrollDealId = dealId;
+  window._enrollDealId = dealId || q.deal_id;
+  await enrollLoad_();
 
-  // Sections in the agent's own order, exactly as the client page groups them.
+  showModal('Enrollment — ' + escWeb(q.client_name || ''),
+    '<div id="enroll-body" style="padding:16px 20px;"></div>', null,
+    { wide: true, hideConfirm: true, cancelLabel: 'Done for now' });
+  enrollRender_();
+}
+
+// Re-read from the database rather than patching a copy in memory: every write
+// here goes through triggers that can refuse, so the screen must show what
+// actually landed.
+async function enrollLoad_() {
+  const q = window._enrollQuote;
+  const [o, e] = await Promise.all([
+    supabaseClient.from('quote_options')
+      .select('id,line,carrier_id,carrier_name,product_id,display_name,monthly_premium,benefit_bullets,plan_meta,is_recommended,client_selected_at,sort_order,outcome,outcome_at,outcome_note,created_at')
+      .eq('quote_id', q.id).order('sort_order', { ascending: true }),
+    supabaseClient.from('enrollments')
+      .select('id,quote_option_id,status,effective_date,policy_number,termination_date')
+      .eq('quote_id', q.id),
+  ]);
+  window._enrollOpts = o.data || [];
+  window._enrollRows = e.data || [];
+
+  const [cs, appts] = await Promise.all([
+    supabaseClient.from('carriers').select('id,name,broker_portal_url,lines_of_business')
+      .eq('is_active', true).order('name'),
+    supabaseClient.from('carrier_appointments')
+      .select('carrier_id,quoting_url').eq('agent_id', currentAgent.id).eq('is_active', true),
+  ]);
+  window._enrollCarriers = {};
+  (cs.data || []).forEach(c => { window._enrollCarriers[c.id] = c; });
+  window._enrollCarrierList = cs.data || [];
+  window._enrollAppts = {};
+  (appts.data || []).forEach(a => { window._enrollAppts[a.carrier_id] = a; });
+}
+
+function enrollRender_() {
+  const el = document.getElementById('enroll-body');
+  if (!el) return;
+  const q = window._enrollQuote, opts = window._enrollOpts || [], rows = window._enrollRows || [];
+  const rowFor = id => rows.find(r => r.quote_option_id === id);
+  const expired = enrollQuoteExpired_(q);
+  const closed = !!q.locked_at;
+
   const sections = [];
   opts.forEach(o => {
     const key = o.line || q.line;
@@ -17549,182 +17641,315 @@ async function openEnrollment_(quoteId, dealId) {
     s.rows.push(o);
   });
 
-  const rowHtml = (o, idx) => {
-    // What the client already told us they wanted is the sensible default —
-    // it is a suggestion the agent overrides, never a decision made for them.
-    const leaning = !!o.client_selected_at;
+  const card = (o) => {
+    const i = opts.indexOf(o);
+    const enr = rowFor(o.id);
+    const st = enrollCardState_(o, enr);
+    const portal = enrollPortalLink_(o, window._enrollCarriers[o.carrier_id],
+                                     window._enrollAppts[o.carrier_id]);
+    const done = st.key !== 'undecided';
     return `
-    <div class="enroll-row" id="enroll-row-${idx}" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--surface-1);">
+    <div style="border:1px solid ${done && st.key === 'enrolled' ? 'var(--border-success)' : 'var(--border)'};
+                border-radius:10px;padding:11px 13px;margin-bottom:9px;
+                background:${st.key === 'enrolled' ? 'var(--bg-success)' : 'var(--surface-1)'};">
       <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
-        <div style="flex:1;min-width:220px;">
-          <div style="font-weight:700;font-size:13px;">${escWeb(o.display_name)}</div>
-          <div style="font-size:11.5px;color:var(--text-muted);">${escWeb(o.carrier_name || '')}
+        <div style="flex:1;min-width:230px;">
+          <div style="font-weight:700;font-size:13.5px;">${escWeb(o.display_name)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px;">${escWeb(o.carrier_name || '')}
             ${o.monthly_premium != null ? ' &middot; <strong style="color:var(--text-success);">' + enrollMoney_(o.monthly_premium) + '/mo</strong>' : ''}
             ${o.is_recommended ? ' &middot; ⭐ recommended' : ''}
-            ${leaning ? ' &middot; <span style="color:var(--text-success);">client asked about this one</span>' : ''}</div>
+            ${o.client_selected_at ? ' &middot; <span style="color:var(--text-success);">client asked about this one</span>' : ''}</div>
+          <div style="font-size:12px;font-weight:700;color:${st.color};margin-top:4px;">${st.icon} ${escWeb(st.label)}
+            ${enr && enr.effective_date ? '<span style="font-weight:500;color:var(--text-muted);"> &middot; effective ' + enrollDate_(enr.effective_date) + '</span>' : ''}
+            ${enr && enr.policy_number ? '<span style="font-weight:500;color:var(--text-muted);"> &middot; policy ' + escWeb(enr.policy_number) + '</span>' : ''}
+            ${o.outcome === 'waived' && o.outcome_note ? '<span style="font-weight:500;color:var(--text-muted);"> &middot; ' + escWeb(o.outcome_note) + '</span>' : ''}</div>
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0;">
-          <label class="enroll-pick" style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
-            <input type="radio" name="enroll-${idx}" value="enrolled" ${leaning ? 'checked' : ''}
-                   onchange="enrollRowChanged_(${idx})" /> Enrolled</label>
-          <label class="enroll-pick" style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
-            <input type="radio" name="enroll-${idx}" value="waived" ${leaning ? '' : 'checked'}
-                   onchange="enrollRowChanged_(${idx})" /> Waived</label>
-        </div>
-      </div>
-      <div id="enroll-detail-${idx}" style="display:${leaning ? 'flex' : 'none'};gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:0.5px dashed var(--border);">
-        <div style="flex:1;min-width:150px;">
-          <label style="font-size:11px;">Effective date</label>
-          <input type="date" id="enroll-eff-${idx}" style="width:100%;" onchange="enrollRowChanged_(${idx})" />
-        </div>
-        <div style="flex:1;min-width:150px;">
-          <label style="font-size:11px;">Policy / member number <span style="font-weight:400;color:var(--text-muted);">— if you have it</span></label>
-          <input type="text" id="enroll-pol-${idx}" placeholder="often comes later" style="width:100%;" />
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;align-items:flex-start;">
+          ${portal ? `<a class="btn btn-outline btn-sm" href="${escWeb(portal.url)}" target="_blank" rel="noopener"
+              style="text-decoration:none;" title="Opens in a new tab — this is where the real enrollment happens"
+              >&#8599; Enrol on ${escWeb(portal.label)}</a>` : ''}
+          ${!done && !expired && !closed ? `
+            <button class="btn btn-primary btn-sm" onclick="enrollExpand_(${i},'enrol')">✅ Enrolled</button>
+            <button class="btn btn-outline btn-sm" onclick="enrollExpand_(${i},'waive')">Waived</button>` : ''}
+          ${st.key === 'enrolled' && enr ? `
+            <button class="btn btn-outline btn-sm" onclick="closeModal();openCoverageEditor_('${enr.id}')">Manage</button>` : ''}
+          ${done && !closed ? `<button class="btn btn-outline btn-sm" style="font-size:11px;"
+              onclick="enrollCorrect_(${i})" title="Record that this was a mistake">↺ Undo</button>` : ''}
         </div>
       </div>
-      <div id="enroll-why-${idx}" style="display:${leaning ? 'none' : 'block'};margin-top:8px;padding-top:8px;border-top:0.5px dashed var(--border);">
-        <label style="font-size:11px;">Why did they pass on it? <span style="font-weight:400;color:var(--text-muted);">— optional</span></label>
-        <input type="text" id="enroll-note-${idx}" placeholder="e.g. already has dental through their spouse" style="width:100%;" />
-      </div>
+      <div id="enroll-form-${i}" style="display:none;margin-top:9px;padding-top:9px;border-top:0.5px dashed var(--border);"></div>
     </div>`;
   };
 
-  let idx = 0;
-  const body = sections.map(s => {
-    const rows = s.rows.map(o => rowHtml(o, idx++)).join('');
-    return `<div style="margin-bottom:12px;">
+  el.innerHTML = `
+    ${closed ? `<div style="background:var(--bg-info);border:1px solid var(--border-info);color:var(--text-info);
+        border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;">
+        &#128274; This quote is closed — it is the record of what was offered and what was taken.
+        Anything new goes on a new quote.</div>` : ''}
+    ${expired && !closed ? `<div style="background:var(--bg-warning);border:1px solid var(--border-warning);
+        color:var(--text-warning);border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;">
+        &#9888; These prices expired on ${enrollDate_(q.valid_until)}. Nobody should enrol on a premium that has
+        run out — <a href="#" style="color:inherit;text-decoration:underline;"
+        onclick="closeModal();requoteFromQuote_('${q.id}','${window._enrollDealId}');return false;">re-quote them</a> first.</div>` : ''}
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px;">${escWeb(enrollHeadline_(opts))}</div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+      Enrol each product as they decide. The <strong>real</strong> enrollment happens on the carrier's own site —
+      the buttons here open it in a new tab — and what you record below is our record of what you did.
+      The quote stays open until you close it.</p>
+    ${sections.map(s => `<div style="margin-bottom:14px;">
       <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:5px;">${escWeb(s.line || '')}</div>
-      ${rows}</div>`;
-  }).join('');
-
-  showModal('Enroll — ' + escWeb(q.client_name || ''), `
-    <div style="background:var(--bg-warning);border:1px solid var(--border-warning);color:var(--text-warning);
-                border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;">
-      <strong>&#128274; Saving this locks the quote.</strong> The premiums and plans on it can never be
-      edited afterwards — it becomes the record of what this client enrolled on. If something changes
-      later, re-quote instead.
+      ${s.rows.map(card).join('')}</div>`).join('')}
+    <div id="enroll-add-panel" style="display:none;margin-bottom:14px;"></div>
+    ${!closed ? `<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);">
+      <button class="btn btn-outline btn-sm" onclick="enrollAddProduct_()">&#43; Add a product</button>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="closeModal()">Leave it open</button>
+      <button class="btn btn-primary btn-sm" onclick="enrollCloseQuote_()">✓ Done — close this quote</button>
     </div>
-    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">
-      Answer every product. Anything they turned down is recorded as <em>waived</em>, so a year from now
-      it reads as declined rather than never offered.</p>
-    ${body}
-    <div id="enroll-summary" style="font-size:12.5px;font-weight:600;padding-top:8px;border-top:1px solid var(--border);"></div>
-  `, enrollSave_, { confirmLabel: '\u{1F512} Enroll & lock this quote' });
-
-  for (let i = 0; i < opts.length; i++) enrollRowChanged_(i);
+    <p style="font-size:11px;color:var(--text-muted);margin-top:7px;">
+      Closing marks anything still undecided as waived and locks the quote. Leaving it open lets you come back
+      and enrol more when they make up their mind.</p>` : ''}`;
 }
 
-function enrollPick_(i) {
-  const el = document.querySelector('input[name="enroll-' + i + '"]:checked');
-  return el ? el.value : 'waived';
-}
-
-function enrollRowChanged_(i) {
-  const took = enrollPick_(i) === 'enrolled';
-  const det = document.getElementById('enroll-detail-' + i);
-  const why = document.getElementById('enroll-why-' + i);
-  if (det) det.style.display = took ? 'flex' : 'none';
-  if (why) why.style.display = took ? 'none' : 'block';
-  const row = document.getElementById('enroll-row-' + i);
-  if (row) {
-    row.style.borderColor = took ? 'var(--border-success)' : 'var(--border)';
-    row.style.background  = took ? 'var(--bg-success)' : 'var(--surface-1)';
+// The enrol / waive form opens INSIDE the card. Modals do not stack in this
+// app, and a second dialog over the first is how the census editor broke.
+function enrollExpand_(i, mode) {
+  const o = (window._enrollOpts || [])[i];
+  const box = document.getElementById('enroll-form-' + i);
+  if (!o || !box) return;
+  if (box.style.display === 'block' && box.dataset.mode === box.dataset.mode && box.dataset.open === mode) {
+    box.style.display = 'none'; box.dataset.open = ''; return;
   }
-  enrollSummary_();
+  box.dataset.open = mode;
+  box.style.display = 'block';
+  box.innerHTML = mode === 'enrol'
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+         <div style="flex:1;min-width:150px;"><label style="font-size:11px;">Effective date</label>
+           <input type="date" id="en-eff-${i}" style="width:100%;" /></div>
+         <div style="flex:1;min-width:150px;"><label style="font-size:11px;">Policy / member number
+           <span style="font-weight:400;color:var(--text-muted);">— if you have it</span></label>
+           <input type="text" id="en-pol-${i}" placeholder="often comes later" style="width:100%;" /></div>
+         <button class="btn btn-primary btn-sm" onclick="enrollProduct_(${i})">Record it</button>
+       </div>
+       <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+         No effective date yet? Leave it blank — it will read as <em>Applied</em> until you fill it in.</p>`
+    : `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+         <div style="flex:1;min-width:220px;"><label style="font-size:11px;">Why did they pass on it?
+           <span style="font-weight:400;color:var(--text-muted);">— optional</span></label>
+           <input type="text" id="en-why-${i}" placeholder="e.g. already covered through their spouse" style="width:100%;" /></div>
+         <button class="btn btn-outline btn-sm" onclick="waiveProduct_(${i})">Record as waived</button>
+       </div>`;
 }
 
-// Plain English, live, so nobody clicks the lock without knowing what it says.
-function enrollSummary_() {
-  const el = document.getElementById('enroll-summary');
-  const opts = window._enrollOpts || [];
-  if (!el) return;
-  let took = 0, total = 0;
-  opts.forEach((o, i) => { if (enrollPick_(i) === 'enrolled') { took++; total += parseFloat(o.monthly_premium) || 0; } });
-  if (!took) {
-    el.innerHTML = '<span style="color:var(--text-warning);">Nothing enrolled — all ' + opts.length
-      + ' products recorded as waived. The quote still locks, as the record of what was offered.</span>';
-  } else {
-    el.innerHTML = '✅ Enrolling in <strong>' + took + '</strong> of ' + opts.length
-      + ' &middot; <strong style="color:var(--text-success);">' + enrollMoney_(total) + '/mo</strong> total';
-  }
-}
-
-// Order matters. Outcomes go on first (the lock still allows the decision
-// record to be corrected later, but not the numbers), then the coverage rows,
-// and the lock goes on last — so a failure part-way through never leaves a
-// locked quote with no enrollment behind it.
-async function enrollSave_() {
-  const q = window._enrollQuote, opts = window._enrollOpts || [];
-  const dealId = window._enrollDealId;
-  if (!q || !opts.length) return false;
-  const deal = (deals || []).find(d => d.id === dealId);
+async function enrollProduct_(i) {
+  const q = window._enrollQuote, o = (window._enrollOpts || [])[i];
+  if (!o) return;
+  const eff = (document.getElementById('en-eff-' + i) || {}).value || null;
+  const pol = ((document.getElementById('en-pol-' + i) || {}).value || '').trim() || null;
+  const today = new Date().toISOString().slice(0, 10);
   const stamp = new Date().toISOString();
 
-  const picks = opts.map((o, i) => ({
-    opt: o,
-    took: enrollPick_(i) === 'enrolled',
-    eff:  (document.getElementById('enroll-eff-' + i) || {}).value || null,
-    pol:  ((document.getElementById('enroll-pol-' + i) || {}).value || '').trim() || null,
-    note: ((document.getElementById('enroll-note-' + i) || {}).value || '').trim() || null,
-  }));
-  const taken = picks.filter(p => p.took);
+  const { error: e1 } = await supabaseClient.from('enrollments').insert({
+    contact_id: q.contact_id, deal_id: q.deal_id || window._enrollDealId || null,
+    agent_id: currentAgent.id, quote_id: q.id, quote_option_id: o.id,
+    line: o.line || q.line,
+    carrier_id: o.carrier_id || null, carrier_name: o.carrier_name || 'Carrier',
+    product_id: o.product_id || null, plan_name: o.display_name,
+    policy_number: pol, monthly_premium: o.monthly_premium,
+    // Approved with a date is 'active'; the date decides whether it is in force
+    // yet. Anything without one is an application still in the carrier's hands.
+    status: eff ? 'active' : 'submitted',
+    applied_on: today, effective_date: eff,
+    plan_snapshot: {
+      benefit_bullets: o.benefit_bullets || [],
+      plan_meta: o.plan_meta || null,
+      premium_at_enrollment: o.monthly_premium,
+      quoted_on: q.created_at || null,
+    },
+    source: 'quote',
+  });
+  if (e1) { showToast('Could not record it: ' + e1.message, 8000); return; }
 
-  if (!confirm(taken.length
-      ? 'Enroll ' + q.client_name + ' in ' + taken.length + ' product' + (taken.length === 1 ? '' : 's')
-        + ' and lock this quote?\n\nThe premiums on it can never be edited afterwards.'
-      : 'Record every product on this quote as waived and lock it?\n\nNothing will be enrolled.')) return false;
+  const { error: e2 } = await supabaseClient.from('quote_options')
+    .update({ outcome: 'enrolled', outcome_at: stamp, outcome_note: null }).eq('id', o.id);
+  if (e2) { showToast('Coverage saved, but the quote did not update: ' + e2.message, 8000); }
 
-  showToast('Enrolling…');
+  showToast('\u{1F512} ' + o.display_name + ' enrolled — those numbers are locked now.');
+  await enrollRefresh_();
+}
 
-  for (const p of picks) {
-    const { error } = await supabaseClient.from('quote_options').update({
-      outcome: p.took ? 'enrolled' : 'waived',
-      outcome_at: stamp,
-      outcome_note: p.took ? null : p.note,
-    }).eq('id', p.opt.id);
-    if (error) { showToast('Could not record "' + p.opt.display_name + '": ' + error.message); return false; }
+async function waiveProduct_(i) {
+  const o = (window._enrollOpts || [])[i];
+  if (!o) return;
+  const why = ((document.getElementById('en-why-' + i) || {}).value || '').trim() || null;
+  const { error } = await supabaseClient.from('quote_options')
+    .update({ outcome: 'waived', outcome_at: new Date().toISOString(), outcome_note: why }).eq('id', o.id);
+  if (error) { showToast('Could not record it: ' + error.message, 8000); return; }
+  showToast(o.display_name + ' recorded as waived.');
+  await enrollRefresh_();
+}
+
+// Undoing a decision. Coverage is never deleted, so an enrollment recorded in
+// error is marked "not taken" and keeps its history — which is also the honest
+// answer when a carrier declines the application later.
+async function enrollCorrect_(i) {
+  const o = (window._enrollOpts || [])[i];
+  if (!o) return;
+  const enr = (window._enrollRows || []).find(r => r.quote_option_id === o.id);
+  if (!confirm(o.outcome === 'enrolled'
+      ? 'Undo the enrollment of ' + o.display_name + '?\n\nThe coverage record stays and is marked "Not taken" — '
+        + 'that is also what to use if the carrier declines it. The product goes back to undecided.'
+      : 'Put ' + o.display_name + ' back to undecided?')) return;
+  if (enr) {
+    const { error } = await supabaseClient.from('enrollments')
+      .update({ status: 'withdrawn' }).eq('id', enr.id);
+    if (error) { showToast('Could not undo it: ' + error.message, 8000); return; }
   }
+  const { error: e2 } = await supabaseClient.from('quote_options')
+    .update({ outcome: null, outcome_at: null, outcome_note: null }).eq('id', o.id);
+  if (e2) { showToast('Could not undo it: ' + e2.message, 8000); return; }
+  showToast('Back to undecided.');
+  await enrollRefresh_();
+}
 
-  const today = new Date().toISOString().slice(0, 10);
-  for (const p of taken) {
-    const o = p.opt;
-    const { error } = await supabaseClient.from('enrollments').insert({
-      contact_id: q.contact_id, deal_id: q.deal_id || dealId || null, agent_id: currentAgent.id,
-      quote_id: q.id, quote_option_id: o.id,
-      line: o.line || q.line,
-      carrier_id: o.carrier_id || null, carrier_name: o.carrier_name || 'Carrier',
-      product_id: o.product_id || null, plan_name: o.display_name,
-      policy_number: p.pol, monthly_premium: o.monthly_premium,
-      // In force already, or an application waiting on the carrier.
-      status: (p.eff && p.eff <= today) ? 'active' : 'submitted',
-      applied_on: today, effective_date: p.eff,
-      // Frozen, so the client's portal never has to read the quote back.
-      plan_snapshot: {
-        benefit_bullets: o.benefit_bullets || [],
-        plan_meta: o.plan_meta || null,
-        premium_at_enrollment: o.monthly_premium,
-        quoted_on: q.created_at || null,
-      },
-      source: 'quote',
+async function enrollRefresh_() {
+  await enrollLoad_();
+  enrollRender_();
+  const deal = (deals || []).find(d => d.id === window._enrollDealId);
+  if (deal) {
+    await advanceDealOnEnrollment_(deal);
+    loadDealTree_(deal); loadCoverage_(deal);
+  }
+}
+
+// "The client decided they wanted the cancer plan after all." Adding it here
+// puts it on the SAME quote rather than starting a second one, which is what
+// Ken asked for — and quote_options.created_at records that it arrived later,
+// so the record still shows what was originally presented.
+//
+// Deliberately a typed row, not the full quote builder: the Marketplace and
+// Medicare pickers belong to a priced, dated quote. Anything needing live
+// pricing is a re-quote, and the panel says so.
+async function enrollAddProduct_() {
+  const panel = document.getElementById('enroll-add-panel');
+  if (!panel) return;
+  if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
+
+  const carriers = (window._enrollCarrierList || []);
+  const mine = carriers.filter(c => window._enrollAppts[c.id]);
+  const list = mine.length ? mine : carriers;
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div style="border:1px dashed var(--border-accent);border-radius:10px;padding:12px 13px;background:var(--surface-1);">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Add a product to this quote</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:170px;"><label style="font-size:11px;">Coverage type *</label>
+          <select id="ap-line">${CARRIER_LINES.map(l => '<option>' + escWeb(l) + '</option>').join('')}</select></div>
+        <div style="flex:1;min-width:170px;"><label style="font-size:11px;">Carrier *</label>
+          <select id="ap-carrier" onchange="enrollAddCarrierChanged_()">
+            <option value="">— choose —</option>
+            ${list.map(c => '<option value="' + c.id + '">' + escWeb(c.name) + '</option>').join('')}
+          </select></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:170px;"><label style="font-size:11px;">Their product
+          <span style="font-weight:400;color:var(--text-muted);">— optional</span></label>
+          <select id="ap-product" onchange="enrollAddProductChanged_()"><option value="">— type it below —</option></select></div>
+        <div style="flex:1;min-width:170px;"><label style="font-size:11px;">Monthly premium</label>
+          <input type="number" step="0.01" id="ap-prem" style="width:100%;" /></div>
+      </div>
+      <label style="font-size:11px;">Plan name shown to the client *</label>
+      <input type="text" id="ap-name" style="width:100%;" />
+      <label style="font-size:11px;">Note <span style="font-weight:400;color:var(--text-muted);">— optional</span></label>
+      <input type="text" id="ap-note" style="width:100%;" />
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-primary btn-sm" onclick="enrollAddSave_()">Add it to the quote</button>
+        <button class="btn btn-outline btn-sm" onclick="enrollAddProduct_()">Cancel</button>
+      </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+        This adds a typed product at today's price. For a Marketplace or Medicare plan that needs live
+        pricing, re-quote them instead — those come with their own official numbers.</p>
+    </div>`;
+}
+
+function enrollAddCarrierChanged_() {
+  const cid = document.getElementById('ap-carrier').value;
+  const sel = document.getElementById('ap-product');
+  sel.innerHTML = '<option value="">— type it below —</option>';
+  if (!cid) return;
+  supabaseClient.from('carrier_products')
+    .select('id,name,metadata,line').eq('carrier_id', cid).eq('is_active', true)
+    .is('discontinued_on', null).order('name')
+    .then(({ data }) => {
+      window._enrollAddProds = data || [];
+      (data || []).forEach(p => {
+        const o = document.createElement('option');
+        o.value = p.id; o.textContent = p.name;
+        sel.appendChild(o);
+      });
     });
-    if (error) { showToast('Could not save coverage for "' + o.display_name + '": ' + error.message); return false; }
+}
+
+function enrollAddProductChanged_() {
+  const id = document.getElementById('ap-product').value;
+  const p = (window._enrollAddProds || []).find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('ap-name').value = p.name || '';
+  if (p.line) {
+    const ls = document.getElementById('ap-line');
+    if ([...ls.options].some(o => o.value === p.line)) ls.value = p.line;
   }
+}
 
-  const { error: lockErr } = await supabaseClient.from('quotes').update({
-    status: taken.length ? 'enrolled' : 'waived',
+async function enrollAddSave_() {
+  const q = window._enrollQuote;
+  const name = document.getElementById('ap-name').value.trim();
+  const cid  = document.getElementById('ap-carrier').value;
+  if (!name || !cid) { showToast('Carrier and plan name are both needed.'); return; }
+  const prem = parseFloat(document.getElementById('ap-prem').value);
+  const carrier = (window._enrollCarrierList || []).find(c => c.id === cid) || {};
+  const pid = document.getElementById('ap-product').value || null;
+  const note = document.getElementById('ap-note').value.trim() || null;
+  const maxSort = (window._enrollOpts || []).reduce((m, o) => Math.max(m, o.sort_order || 0), -1);
+  const p = (window._enrollAddProds || []).find(x => x.id === pid);
+
+  const { error } = await supabaseClient.from('quote_options').insert({
+    quote_id: q.id, carrier_id: cid, carrier_name: carrier.name || 'Carrier',
+    product_id: pid, display_name: name,
+    monthly_premium: isFinite(prem) ? prem : 0,
+    benefit_bullets: (p && p.metadata && Array.isArray(p.metadata.bullets)) ? p.metadata.bullets : [],
+    agent_note: note, line: document.getElementById('ap-line').value,
+    sort_order: maxSort + 1, is_recommended: false,
+  });
+  if (error) { showToast('Could not add it: ' + error.message, 8000); return; }
+  showToast(name + ' added to the quote.');
+  document.getElementById('enroll-add-panel').style.display = 'none';
+  await enrollRefresh_();
+}
+
+async function enrollCloseQuote_() {
+  const q = window._enrollQuote, opts = window._enrollOpts || [];
+  const left = opts.filter(o => !o.outcome);
+  const took = opts.filter(o => o.outcome === 'enrolled');
+  if (!confirm('Close this quote?\n\n'
+      + (left.length ? left.length + ' product' + (left.length === 1 ? '' : 's') + ' still undecided will be recorded as waived.\n\n' : '')
+      + 'It becomes the record of what was offered and what was taken. Nothing on it can be changed afterwards, '
+      + 'and anything new goes on a new quote.')) return;
+  const stamp = new Date().toISOString();
+  for (const o of left) {
+    const { error } = await supabaseClient.from('quote_options')
+      .update({ outcome: 'waived', outcome_at: stamp }).eq('id', o.id);
+    if (error) { showToast('Could not waive "' + o.display_name + '": ' + error.message, 8000); return; }
+  }
+  const { error } = await supabaseClient.from('quotes').update({
+    status: took.length ? 'enrolled' : 'waived',
     locked_at: stamp, locked_by: currentAgent.id,
-    enrolled_at: taken.length ? stamp : null,
+    enrolled_at: took.length ? stamp : null,
   }).eq('id', q.id);
-  if (lockErr) { showToast('Coverage saved, but the quote did not lock: ' + lockErr.message, 8000); return false; }
-
-  showToast(taken.length
-    ? '\u{1F512} Enrolled in ' + taken.length + ' — quote locked.'
-    : 'Recorded as waived — quote locked.');
-
-  if (deal) await advanceDealOnEnrollment_(deal);
-  closeModal();
-  if (deal) { loadDealTree_(deal); loadCoverage_(deal); }
-  return false;
+  if (error) { showToast('Could not close it: ' + error.message, 8000); return; }
+  showToast('\u{1F512} Quote closed.');
+  window._enrollQuote.locked_at = stamp;
+  window._enrollQuote.status = took.length ? 'enrolled' : 'waived';
+  await enrollRefresh_();
 }
 
 // Enrolling moves the deal to its pipeline's Enrolled stage — forward only,

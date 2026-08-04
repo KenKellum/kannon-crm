@@ -8,6 +8,11 @@
 -- Enrolling LOCKS the quote behind it. From that moment its premiums, plans and
 -- bullets are read-only to everyone, because that quote has become the proof of
 -- what the client agreed to. A change of mind is a new quote, never an edit.
+--
+-- ⚠️ SUPERSEDED THE SAME DAY by 20260804b_lock_the_product_not_the_quote.sql.
+-- Locking the whole quote on the first enrollment was the wrong granularity: an
+-- agent enrols one product, comes back later for another, and may add a product
+-- the client asks about at enrollment time. Read that file for what is live.
 
 -- 1. A quote can now end in an outcome. Both outcomes lock it.
 alter table public.quotes drop constraint if exists quotes_status_check;

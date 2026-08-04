@@ -1,11 +1,10 @@
 // Enrollment — the rules that decide what a client is recorded as having.
 //
-// The database guards (a locked quote is read-only, one enrollment per option,
-// a terminated policy needs an end date) are proved against the real database
-// by probe; those cannot be reached from here. What IS here is the code that
-// decides what the agent sees and what gets written: the enrolled/waived
-// choice, the live summary, the stage each pipeline lands on, and the coverage
-// list that the client portal will mirror.
+// The database guards (an enrolled product's numbers are frozen while the rest
+// of the quote stays workable, one enrollment per option, a terminated policy
+// needs an end date, coverage cannot be deleted) are proved against the real
+// database by probe; those cannot be reached from here. What IS here is the
+// code that decides what the agent sees and what gets written.
 const fs = require('fs');
 const src = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
 
@@ -17,29 +16,20 @@ function grab(name) {
   let depth = 0, seen = false;
   for (let j = start; j < src.length; j++) {
     const ch = src[j];
-    if (ch === '{') { depth++; seen = true; }
-    else if (ch === '}') { depth--; if (seen && !depth) return src.slice(start, j + 1); }
+    if (ch === '{' || ch === '[') { depth++; seen = true; }
+    else if (ch === '}' || ch === ']') { depth--; if (seen && !depth) return src.slice(start, j + 1); }
   }
   throw new Error('unbalanced ' + name);
 }
 
-// ── a DOM small enough to hold a form ────────────────────────────────────────
+// A DOM small enough to hold a form.
 const nodes = {};
-let checkedRadio = {};
 function node(id) {
-  if (!nodes[id]) nodes[id] = { id, value: '', checked: false, innerHTML: '', style: {}, textContent: '' };
+  if (!nodes[id]) nodes[id] = { id, value: '', innerHTML: '', style: {}, textContent: '', dataset: {} };
   return nodes[id];
 }
-global.document = {
-  getElementById: id => nodes[id] || null,
-  querySelector: sel => {
-    const m = /input\[name="enroll-(\d+)"\]:checked/.exec(sel);
-    if (!m) return null;
-    const v = checkedRadio[m[1]];
-    return v ? { value: v } : null;
-  },
-};
-function pick(i, v) { checkedRadio[i] = v; }
+global.document = { getElementById: id => nodes[id] || null };
+global.window = global;
 
 eval(grab('escWeb'));
 eval(grab('PIPELINES').replace(/^const /, 'var '));
@@ -47,91 +37,110 @@ eval(grab('ENROLLMENT_STATUS').replace(/^const /, 'var '));
 eval(grab('ENROLL_STAGE').replace(/^const /, 'var '));
 eval(grab('enrollMoney_'));
 eval(grab('enrollDate_'));
-eval(grab('enrollPick_'));
-eval(grab('enrollSummary_'));
-eval(grab('enrollRowChanged_'));
+eval(grab('enrollQuoteExpired_'));
+eval(grab('enrollPortalLink_'));
+eval(grab('enrollCardState_'));
+eval(grab('enrollHeadline_'));
 eval(grab('coverageListHtml_'));
 eval(grab('cvStatusChanged_'));
 
 let bad = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) bad++; };
+const day = d => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
 
-// ── 1. every pipeline that can enrol lands somewhere real ────────────────────
+// ── 1. the stage a deal moves to on enrollment ───────────────────────────────
 console.log('1. the stage a deal moves to on enrollment');
 Object.entries(ENROLL_STAGE).forEach(([pipe, stage]) => {
   const stages = (PIPELINES[pipe] || {}).stages || [];
   ok(stages.includes(stage), pipe + ' -> "' + stage + '" is a real stage in that pipeline');
   ok(stages.indexOf(stage) > 0, pipe + ' -> "' + stage + '" is not the first stage');
 });
-// Every client-facing pipeline needs an answer. Recruiting ones must not have
-// one — an agent is not enrolled in coverage.
 Object.keys(PIPELINES).forEach(p => {
-  if (p.startsWith('agent-')) ok(!ENROLL_STAGE[p], p + ' has no enrollment stage, and should not');
+  if (p.startsWith('agent-')) ok(!ENROLL_STAGE[p], p + ' has no enrollment stage — an agent is contracted, not enrolled');
   else ok(!!ENROLL_STAGE[p], p + ' has an enrollment stage');
 });
-// Forward-only: enrolling must never drag a deal backwards.
-const forwardOnly = (pipe, from) => {
-  const stages = PIPELINES[pipe].stages;
-  return stages.indexOf(from) >= stages.indexOf(ENROLL_STAGE[pipe]);
-};
+const forwardOnly = (pipe, from) =>
+  PIPELINES[pipe].stages.indexOf(from) >= PIPELINES[pipe].stages.indexOf(ENROLL_STAGE[pipe]);
 ok(forwardOnly('individual-family', 'Active Client'), 'an Active Client is not pulled back to Enrolled');
 ok(forwardOnly('medicare', 'Annual Review'), 'a Medicare deal at Annual Review stays there');
 ok(!forwardOnly('individual-family', 'Quoted'), 'a Quoted deal does move up to Enrolled');
 
-// ── 2. the enrolled / waived choice ──────────────────────────────────────────
-console.log('\n2. what the agent picks is what gets written');
-window = global;
-window._enrollOpts = [
-  { id: 'o1', display_name: 'Bronze POS 205', monthly_premium: 120.5 },
-  { id: 'o2', display_name: 'Dental',         monthly_premium: 29.5 },
-  { id: 'o3', display_name: 'Term Life',      monthly_premium: 40 },
-];
-node('enroll-summary');
-[0, 1, 2].forEach(i => { node('enroll-row-' + i); node('enroll-detail-' + i); node('enroll-why-' + i); });
+// ── 2. nobody enrols on a price that has run out ─────────────────────────────
+console.log('\n2. an expired quote cannot be enrolled on');
+ok(enrollQuoteExpired_({ valid_until: day(-1) }), 'yesterday\'s expiry is expired');
+ok(!enrollQuoteExpired_({ valid_until: day(0) }), 'today is still good — they have until the end of it');
+ok(!enrollQuoteExpired_({ valid_until: day(30) }), 'a month out is fine');
+ok(!enrollQuoteExpired_({ valid_until: null }), 'a quote with no expiry never expires');
+ok(!enrollQuoteExpired_({}), 'and a missing field does not read as expired');
 
-pick(0, 'enrolled'); pick(1, 'waived'); pick(2, 'enrolled');
-[0, 1, 2].forEach(enrollRowChanged_);
-ok(enrollPick_(0) === 'enrolled' && enrollPick_(1) === 'waived', 'each row reports its own answer');
-// An unanswered row must read as waived, never as enrolled by accident.
-checkedRadio = {};
-ok(enrollPick_(0) === 'waived', 'an unanswered product defaults to waived, not enrolled');
+// ── 3. the link to where the real enrollment happens ─────────────────────────
+console.log('\n3. the carrier link — this system records, the carrier\'s site enrols');
+const opt = { carrier_name: 'Blue Cross', plan_meta: null };
+ok(!enrollPortalLink_(opt, null, null), 'no link at all rather than a guess');
+ok(enrollPortalLink_(opt, { name: 'Blue Cross', broker_portal_url: 'https://bcbs.example/broker' }, null).url
+   === 'https://bcbs.example/broker', 'the carrier\'s broker portal is used when there is one');
+// The agent's own appointment link carries their writing number — it must win.
+const both = enrollPortalLink_(opt,
+  { name: 'Blue Cross', broker_portal_url: 'https://bcbs.example/broker' },
+  { quoting_url: 'https://bcbs.example/agent/12345' });
+ok(both.url === 'https://bcbs.example/agent/12345', "the agent's own appointment link beats the generic portal");
+ok(both.label === 'Blue Cross', 'and it is labelled with the carrier name: ' + both.label);
+ok(enrollPortalLink_({ plan_meta: { src: 'aca' } }, null, null).url.includes('healthcare.gov'),
+   'a Marketplace plan points at HealthCare.gov');
+ok(enrollPortalLink_({ plan_meta: { src: 'cms' } }, null, null).url.includes('medicare.gov'),
+   'a Medicare plan points at Medicare.gov');
 
-pick(0, 'enrolled'); pick(1, 'waived'); pick(2, 'enrolled');
-[0, 1, 2].forEach(enrollRowChanged_);
-ok(nodes['enroll-detail-0'].style.display === 'flex', 'enrolled shows the effective-date fields');
-ok(nodes['enroll-why-0'].style.display === 'none',    'enrolled hides the "why not" box');
-ok(nodes['enroll-detail-1'].style.display === 'none', 'waived hides the effective-date fields');
-ok(nodes['enroll-why-1'].style.display === 'block',   'waived asks why they passed');
+// ── 4. what each product on the quote reads as ───────────────────────────────
+console.log('\n4. each product\'s state');
+ok(enrollCardState_({ outcome: null }).key === 'undecided', 'a product nobody has decided is undecided');
+ok(enrollCardState_({ outcome: null }).label === 'Not decided yet',
+   'and says so: ' + enrollCardState_({ outcome: null }).label);
+ok(enrollCardState_({ outcome: 'waived' }).key === 'waived', 'a declined product reads as waived');
+// The enrolled label follows the COVERAGE record, so an application waiting on
+// the carrier does not claim to be active.
+ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'submitted' }).label === 'Applied',
+   'enrolled + application in = "Applied"');
+ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'active' }).label === 'Active',
+   'enrolled + approved = "Active"');
+ok(enrollCardState_({ outcome: 'enrolled' }, { status: 'withdrawn' }).label === 'Not taken',
+   'an undone enrollment reads as "Not taken"');
+ok(enrollCardState_({ outcome: 'enrolled' }, null).label === 'Applied',
+   'enrolled with no coverage row yet falls back to Applied, never to Active');
 
-console.log('\n3. the summary tells the truth before the lock goes on');
-const sum = nodes['enroll-summary'].innerHTML;
-ok(/Enrolling in <strong>2<\/strong> of 3/.test(sum), 'counts 2 of 3: ' + sum.replace(/<[^>]+>/g, ''));
-ok(sum.includes('$160.50/mo'), 'adds the premiums of the enrolled ones only');
-pick(0, 'waived'); pick(2, 'waived');
-[0, 1, 2].forEach(enrollRowChanged_);
-ok(/all 3 products recorded as waived/.test(nodes['enroll-summary'].innerHTML),
-   'all-waived says so plainly, and still locks');
+// ── 5. the headline, which is the whole screen in one line ───────────────────
+console.log('\n5. the headline');
+const O = (outcome, prem) => ({ outcome, monthly_premium: prem });
+ok(enrollHeadline_([O(null, 10), O(null, 20)]) === '2 products still to decide.',
+   'nothing decided: ' + enrollHeadline_([O(null, 10), O(null, 20)]));
+ok(enrollHeadline_([O(null, 10)]) === '1 product still to decide.', 'one reads singular');
+const mixed = enrollHeadline_([O('enrolled', 120.5), O('waived', 30), O(null, 18)]);
+ok(/Enrolled in 1 — \$120\.50\/mo/.test(mixed), 'the total counts only what was taken: ' + mixed);
+ok(/1 still to decide/.test(mixed), 'and it says what is left');
+const done = enrollHeadline_([O('enrolled', 120.5), O('enrolled', 29.5)]);
+ok(/\$150\.00\/mo/.test(done), 'two enrolled products add up: ' + done);
+ok(/everything decided/.test(done), 'and it says when there is nothing left');
+ok(enrollHeadline_([O('waived', 10)]) === 'Every product on this quote was waived.',
+   'all waived is stated plainly, not left blank');
 
-// ── 4. money and dates ───────────────────────────────────────────────────────
-console.log('\n4. formatting');
+// ── 6. money and dates ───────────────────────────────────────────────────────
+console.log('\n6. formatting');
 ok(enrollMoney_(0) === '$0.00', 'a free product is $0.00, not blank');
-ok(enrollMoney_(null) === '',   'a missing premium prints nothing rather than $NaN');
+ok(enrollMoney_(null) === '', 'a missing premium prints nothing rather than $NaN');
 ok(enrollMoney_('12.3') === '$12.30', 'a numeric string still formats');
 ok(enrollDate_('2026-03-01').includes('Mar 1, 2026'), 'a date column does not slip a day: ' + enrollDate_('2026-03-01'));
 ok(enrollDate_(null) === '', 'no date prints nothing');
 
-// ── 5. the coverage list — what the portal will mirror ───────────────────────
-console.log('\n5. the coverage list');
+// ── 7. the coverage list — what the portal will mirror ───────────────────────
+console.log('\n7. the coverage list');
 ok(coverageListHtml_([]).includes('Nothing enrolled yet'), 'an empty list explains itself');
 const html = coverageListHtml_([
-  { plan_name: 'Bronze POS 205', carrier_name: 'BCBS', line: 'Health — Individual',
-    status: 'active', monthly_premium: 120.5, effective_date: '2026-01-01', policy_number: 'ABC1',
-    quote_id: 'q-1' },
-  { plan_name: 'Applied Dental', carrier_name: 'Ameritas', line: 'Dental',
+  { id: 'e1', plan_name: 'Bronze POS 205', carrier_name: 'BCBS', line: 'Health — Individual',
+    status: 'active', monthly_premium: 120.5, effective_date: '2026-01-01', policy_number: 'ABC1', quote_id: 'q-1' },
+  { id: 'e2', plan_name: 'Applied Dental', carrier_name: 'Ameritas', line: 'Dental',
     status: 'submitted', monthly_premium: 29.5, effective_date: null },
-  { plan_name: 'Old Plan <script>', carrier_name: 'X', line: 'Life', status: 'terminated',
+  { id: 'e3', plan_name: 'Old Plan <script>', carrier_name: 'X', line: 'Life', status: 'terminated',
     monthly_premium: 40, termination_date: '2025-12-31', termination_reason: 'replaced' },
-  { plan_name: 'Never Started', carrier_name: 'Y', line: 'Life', status: 'withdrawn', source: 'manual' },
+  { id: 'e4', plan_name: 'Never Started', carrier_name: 'Y', line: 'Life', status: 'withdrawn', source: 'manual' },
 ]);
 ok(html.indexOf('Bronze POS 205') < html.indexOf('No longer in force'), 'in-force coverage comes first');
 ok(html.indexOf('Old Plan') > html.indexOf('No longer in force'), 'terminated coverage sits below the divider');
@@ -141,15 +150,14 @@ ok(html.includes('ended Dec 31, 2025') && html.includes('replaced'), 'a terminat
 ok(html.includes('no effective date yet'), 'a pending application says the date is missing');
 ok(html.includes('entered by hand'), 'coverage typed in by hand is marked as such');
 ok(!html.includes('<script>') && html.includes('&lt;script&gt;'), 'a plan name cannot inject markup');
-
 ok(html.includes('manage'), 'each row can be managed');
-ok(!coverageListHtml_([{ plan_name: 'X', carrier_name: 'Y', line: 'Life', status: 'active' }],
+ok(!coverageListHtml_([{ id: 'x', plan_name: 'X', carrier_name: 'Y', line: 'Life', status: 'active' }],
                       { editable: false }).includes('manage'),
    'a read-only list offers no manage link — for a client-facing view later');
 ok(html.includes('quote.html?q='), 'coverage from a quote links back to the quote it was sold on');
 
-// ── 5b. the end of a policy ──────────────────────────────────────────────────
-console.log('\n5b. ending a policy asks for the date the database requires');
+// ── 8. ending a policy ───────────────────────────────────────────────────────
+console.log('\n8. ending a policy asks for the date the database requires');
 node('cv-status'); node('cv-term-wrap'); node('cv-term-why');
 nodes['cv-status'].value = 'active';
 cvStatusChanged_();
@@ -157,19 +165,17 @@ ok(nodes['cv-term-wrap'].style.display === 'none', 'an active policy is not aske
 nodes['cv-status'].value = 'terminated';
 cvStatusChanged_();
 ok(nodes['cv-term-wrap'].style.display === 'block', 'ending it asks when');
-ok(nodes['cv-term-why'].style.display === 'block',  'and asks why');
+ok(nodes['cv-term-why'].style.display === 'block', 'and asks why');
 
-// ── 6. the vocabulary the portal will show a client ──────────────────────────
-console.log('\n6. every status has words a client could read');
+// ── 9. the vocabulary the portal will show a client ──────────────────────────
+console.log('\n9. every status has words a client could read');
 ['submitted', 'active', 'terminated', 'withdrawn'].forEach(s => {
   const m = ENROLLMENT_STATUS[s];
   ok(m && m.label && m.hint && m.color, s + ' -> "' + (m ? m.label : '?') + '"');
 });
-// The database allows exactly these four. A fifth added there without a label
-// here would render as a raw word on a client's screen.
+const mig = 'C:/kannon-crm/supabase/migrations/20260804_enrollment_engine.sql';
 const dbStatuses = /enrollments_status_check[\s\S]*?array\[([^\]]+)\]/.exec(
-  fs.existsSync('C:/kannon-crm/supabase/migrations/20260804_enrollment_engine.sql')
-    ? fs.readFileSync('C:/kannon-crm/supabase/migrations/20260804_enrollment_engine.sql', 'utf8') : '');
+  fs.existsSync(mig) ? fs.readFileSync(mig, 'utf8') : '');
 if (dbStatuses) {
   const wanted = dbStatuses[1].match(/'([a-z_]+)'/g).map(s => s.replace(/'/g, ''));
   wanted.forEach(s => ok(!!ENROLLMENT_STATUS[s], 'database status "' + s + '" has a label in the CRM'));
