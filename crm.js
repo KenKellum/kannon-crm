@@ -1042,7 +1042,7 @@ function renderDashboardAgent() {
   });
   const freshLeads    = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started' || c.sequence_status === 'Fresh');
   const inSequence    = contacts.filter(c => c.sequence_status === 'Active').length;
-  const activeDeals   = deals.filter(d => !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
+  const activeDeals   = deals.filter(d => !d.closed_at && !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
 
   const today         = new Date().toISOString().slice(0, 10);
   const openTasks     = (typeof dealTasks !== 'undefined' ? dealTasks : []).filter(t => !t.completed);
@@ -5885,6 +5885,55 @@ async function markAllNotifsRead() {
   } catch(e) { /* silent */ }
 }
 
+const DEAL_CLOSE_REASONS = [
+  'Went with another agent', 'Price', 'Not eligible', 'Went quiet / no response',
+  'Bought direct', 'Not now — try again later', 'Other'
+];
+
+// Deals are closed, never deleted. Quotes, census records, BAAs and SOAs all
+// point at a deal, and an SOA has a ten-year retention requirement — deleting
+// the deal orphans a record we are legally required to keep. Closing also keeps
+// the reason, which is the part worth having later.
+function openCloseDeal(dealId) {
+  const d = (deals || []).find(x => x.id === dealId);
+  if (!d) { showToast('Deal not found'); return; }
+  if (d.closed_at) { reopenDeal_(dealId); return; }
+  showModal('Close deal — ' + escWeb(d.title || ''), `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+      This takes it off the board but keeps everything attached to it — quotes, any signed
+      SOA, and the history. You can reopen it any time, and a new intake reopens it by itself.</p>
+    <label>Why did it fall through? *</label>
+    <select id="cd-reason">${DEAL_CLOSE_REASONS.map(r => '<option>' + r + '</option>').join('')}</select>
+    <label>Anything worth remembering</label>
+    <textarea id="cd-note" rows="2" placeholder="e.g. said to call back after open enrolment"></textarea>
+    <label>Follow up on <span style="font-weight:400;color:var(--text-muted);">— optional, for "not now"</span></label>
+    <input type="date" id="cd-followup" />
+  `, async function () {
+    const reason = document.getElementById('cd-reason').value;
+    const note   = document.getElementById('cd-note').value.trim();
+    const fu     = document.getElementById('cd-followup').value || null;
+    const stamp  = new Date().toISOString();
+    const { error } = await supabaseClient.from('deals').update({
+      closed_at: stamp, closed_reason: reason, closed_note: note || null, follow_up_on: fu,
+    }).eq('id', dealId);
+    if (error) { showToast('Could not close it: ' + error.message); return false; }
+    Object.assign(d, { closed_at: stamp, closed_reason: reason, closed_note: note || null, follow_up_on: fu });
+    showToast('Closed — ' + reason + (fu ? '. Follow up ' + fu : ''));
+    closeDealPanel(); renderPipelines();
+  }, { confirmLabel: 'Close this deal' });
+}
+
+async function reopenDeal_(dealId) {
+  const d = (deals || []).find(x => x.id === dealId);
+  const { error } = await supabaseClient.from('deals')
+    .update({ closed_at: null, closed_reason: null, closed_note: null, follow_up_on: null })
+    .eq('id', dealId);
+  if (error) { showToast('Could not reopen: ' + error.message); return; }
+  if (d) { d.closed_at = null; d.closed_reason = null; d.closed_note = null; d.follow_up_on = null; }
+  showToast('Reopened — back on the board');
+  closeDealPanel(); renderPipelines();
+}
+
 function closeDealPanel() {
   document.getElementById('deal-panel').classList.remove('open');
   document.getElementById('panel-overlay').style.display = 'none';
@@ -6400,6 +6449,7 @@ function openDealPanel(dealId) {
       + ((contact.phone || contact.email) ? '<div style="font-size:11.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + [contact.phone, contact.email].filter(Boolean).join(' \u00b7 ') + '</div>' : '')
       + '</div>'
       + '<button class="btn btn-primary btn-sm" style="flex-shrink:0;" onclick="closeDealPanel();viewContact(\'' + contact.id + '\',\'\')">\u{1F4C7} Contact Card</button>'
+      + '<button class="btn btn-outline btn-sm" style="flex-shrink:0;" onclick="openCloseDeal(\'' + deal.id + '\')">' + (deal.closed_at ? '\u21BA Reopen' : '\u2716 Close') + '</button>'
       + '</div>'
     : '<div class="panel-field" style="color:var(--text-muted);">No contact linked</div>';
 
@@ -6525,7 +6575,9 @@ function openDealPanel(dealId) {
 // ============================================================
 function renderPipelines() {
   const pipeline = PIPELINES[currentPipeline];
-  const pipelineDeals = deals.filter(d => d.pipeline === currentPipeline);
+  // Closed deals stay in the data — quotes, SOAs and history hang off them —
+  // they just come off the board.
+  const pipelineDeals = deals.filter(d => d.pipeline === currentPipeline && !d.closed_at);
   if (currentPipeline === 'medicare' && !medicareCertified_()) currentPipeline = 'group-employer';
   const tabs = Object.entries(PIPELINES).filter(([key]) => key !== 'medicare' || medicareCertified_()).map(([key, p]) => `<button class="pipeline-tab ${key===currentPipeline?'active':''}" onclick="switchPipeline('${key}')">${p.name}</button>`).join('');
   const columns = pipeline.stages.map(stage => {
