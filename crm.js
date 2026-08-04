@@ -3089,7 +3089,7 @@ const INTAKE_PRODUCTS = [
   { key: 'medicare', group: 'Health cover', label: 'Medicare',
     agentLabel: 'Medicare', formType: 'medicare',
     lines: ['Medicare Advantage','Medicare Supplement','Part D (PDP)'],
-    ids: ['household_members','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','current_carrier',
+    ids: ['household_members','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','currently_insured','current_carrier',
           'med_doctors','med_medications','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental'] },
 
   { key: 'dental', group: 'Health cover', label: 'Dental, vision & hearing',
