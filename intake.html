@@ -449,7 +449,9 @@ function renderField(id, def, prefillVal) {
   } else if (def.type === 'textarea') {
     input = `<textarea id="f_${id}" name="${id}" placeholder="${def.placeholder||''}">${val}</textarea>`;
   }
-  return `<div class="field-group" id="wrap_${id}"><label for="f_${id}">${def.label}</label>${input}</div>`;
+  const extra = id === 'zip'
+    ? `<div id="zip-county" style="margin-top:5px;"></div>` : '';
+  return `<div class="field-group" id="wrap_${id}"><label for="f_${id}">${def.label}</label>${input}${extra}</div>`;
 }
 
 // ---- Household members table: who's covered, age, gender, tobacco ----
@@ -562,6 +564,75 @@ function hhRead_() {
 
 function hhAdd_() { _hh.push({ relationship: 'Child', age: '', gender: '', tobacco: false, covered: true }); hhPaint_(); }
 
+// ---- ZIP to county ----
+// Marketplace and Medicare Advantage plans are priced by COUNTY, and a ZIP can
+// straddle two of them. Resolving it here — on the form, from the person who
+// actually knows — means the quote builder never has to guess and Ken.ai never
+// has to refuse to price. Same Apps Script relay the drug and doctor lookups
+// already use.
+let _countyPicked = null;
+
+async function zipCounty_() {
+  const box = document.getElementById('zip-county');
+  const zip = (_fv('zip') || '').replace(/[^0-9]/g, '');
+  if (!box) return;
+  if (!_needs().has('county') || zip.length !== 5) { box.innerHTML = ''; _countyPicked = null; return; }
+  if (box.dataset.zip === zip) return;                 // already resolved this one
+  box.dataset.zip = zip;
+  box.innerHTML = '<span style="font-size:12.5px;color:#999;">Looking up your area…</span>';
+  let counties = [], gated = false;
+  try {
+    const r = await fetch(PICKER_RELAY + '?action=aca_counties&zip=' + encodeURIComponent(zip));
+    const j = await r.json();
+    counties = (j && j.status === 'ok' && Array.isArray(j.counties)) ? j.counties : [];
+    // The relay currently allows this lookup only for a signed-in agent. Until
+    // that changes it is not a failure the client should be told about — say
+    // nothing rather than apologise for a feature that is not switched on.
+    gated = !!(j && j.status === 'error' && /signed in/i.test(j.message || ''));
+  } catch (e) { counties = []; }
+
+  if (gated) { box.innerHTML = ''; _countyPicked = null; return; }
+  if (!counties.length) {
+    // Never a blocker — the ZIP alone is still enough to get them a call back.
+    box.innerHTML = '<span style="font-size:12.5px;color:#999;">We could not look that ZIP up automatically — your advisor will confirm your county.</span>';
+    _countyPicked = null; return;
+  }
+  if (counties.length === 1) {
+    const c = counties[0];
+    _countyPicked = c;
+    box.innerHTML = '<span style="font-size:12.5px;color:#5a7d5a;">✓ ' + esc_(c.name) + ' County, ' + esc_(c.state) + '</span>'
+      + hiddenCounty_(c);
+    return;
+  }
+  // A ZIP in two counties prices differently in each, so the client picks.
+  _countyPicked = null;
+  box.innerHTML = '<div style="font-size:12.5px;color:#777;margin-bottom:4px;">'
+    + 'That ZIP covers more than one county, and plans differ between them — which one are you in?</div>'
+    + '<select id="zip-county-pick" onchange="zipCountyChose_()" style="max-width:320px;">'
+    + '<option value="">Select your county…</option>'
+    + counties.map(c => '<option value="' + esc_(c.fips) + '">' + esc_(c.name) + ' County, ' + esc_(c.state) + '</option>').join('')
+    + '</select><span id="zip-county-hidden"></span>';
+  window._countyChoices = counties;
+}
+
+function zipCountyChose_() {
+  const fips = document.getElementById('zip-county-pick').value;
+  const c = (window._countyChoices || []).find(x => String(x.fips) === fips);
+  _countyPicked = c || null;
+  document.getElementById('zip-county-hidden').innerHTML = c ? hiddenCounty_(c) : '';
+}
+
+function hiddenCounty_(c) {
+  return '<input type="hidden" name="aca_county_fips" value="' + esc_(c.fips) + '">'
+       + '<input type="hidden" name="aca_county_name" value="' + esc_(c.name) + '">'
+       + '<input type="hidden" name="state" value="' + esc_(c.state) + '">';
+}
+
+function esc_(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 // ---- Conditional questions: only ask what applies ----
 function _fv(id) {
   const el = document.getElementById('f_' + id);
@@ -594,6 +665,7 @@ const FIELD_RULES = {
   aca_qle_date:     () => _sepNeeded_() && _fv('aca_qle') && !/^no\b/i.test(_fv('aca_qle')),
 };
 function applyFieldRules_() {
+  try { zipCounty_(); } catch (e) {}
   Object.keys(FIELD_RULES).forEach(id => {
     const w = document.getElementById('wrap_' + id);
     if (w) w.style.display = FIELD_RULES[id]() ? '' : 'none';
@@ -1042,6 +1114,7 @@ function renderForm(session, contact) {
   // Same frame as the render, so a conditional question never appears and then
   // disappears — that flash reads as a broken field.
   try { applyFieldRules_(); } catch (e) {}
+  try { zipCounty_(); } catch (e) {}
 }
 
 async function submitForm(e, sessionId, contactId, formType, agentId) {
@@ -1118,6 +1191,11 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
     if (responses.zip) _contactUpdate.zip = responses.zip;
     if (responses.street_address) _contactUpdate.street_address = responses.street_address;
     if (responses.business_name) _contactUpdate.company = responses.business_name;
+    // The county they confirmed, so nothing downstream has to guess at a ZIP
+    // that spans two of them.
+    if (responses.aca_county_fips) _contactUpdate.aca_county_fips = responses.aca_county_fips;
+    if (responses.aca_county_name) _contactUpdate.aca_county_name = responses.aca_county_name;
+    if (responses.state) _contactUpdate.state = responses.state;
 
     const ts = new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
     const typeLabel = {'financial':'Life & Financial','medicare':'Medicare','health-individual':'Health \u2014 Individual','health-group':'Health \u2014 Group','career-kfg':'Career \u2014 KFG','career-ia':'Career \u2014 IA'}[formType]||formType;
