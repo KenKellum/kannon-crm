@@ -3078,7 +3078,7 @@ const INTAKE_PRODUCTS = [
     lines: ['Health — Individual','Short-Term Medical','Private/Off-Market Medical','Health Share'],
     // No aca_not_applying: the household widget's per-person "Applying" tick
     // already says who is and isn't, and asking twice invites contradictions.
-    ids: ['household_members','currently_insured','current_carrier','current_premium',
+    ids: ['zip','household_members','currently_insured','current_carrier','current_premium',
           'employer_plan_available','care_frequency','planned_care','med_doctors','med_medications',
           'essential_meds','coverage_goals','health_priority','coverage_start_date','coverage_duration',
           'aca_income','affordable_shock','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date',
@@ -3087,7 +3087,7 @@ const INTAKE_PRODUCTS = [
   { key: 'medicare', group: 'Health Coverage', label: 'Medicare',
     agentLabel: 'Medicare', formType: 'medicare',
     lines: ['Medicare Advantage','Medicare Supplement','Part D (PDP)'],
-    ids: ['household_members','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','currently_insured','current_carrier',
+    ids: ['zip','household_members','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','currently_insured','current_carrier',
           'med_doctors','med_medications','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental'] },
 
   { key: 'dental', group: 'Health Coverage', label: 'Dental, vision & hearing',
@@ -3907,6 +3907,68 @@ function imApplyRules_() {
   });
 }
 
+// ── ZIP to county, agent side ────────────────────────────────────────────────
+// Same lookup the client form does. A ZIP that spans two counties prices
+// differently in each, so it has to be resolved before quoting rather than
+// guessed at afterwards.
+window._imCounty = null;
+
+function imCountyLabel_(c) {
+  // The relay returns "Gallatin County" already; appending another "County"
+  // gave us "Gallatin County County".
+  const n = String(c.name || '').trim();
+  return (/county$/i.test(n) ? n : n + ' County') + ', ' + (c.state || '');
+}
+
+async function imZipCounty_() {
+  const box = document.getElementById('im-zip-county');
+  if (!box) return;
+  const el  = document.getElementById('ifield_zip');
+  const zip = String((el && el.value) || '').replace(/[^0-9]/g, '');
+
+  if (!intakeNeeds_([..._intakeProducts]).has('county') || zip.length !== 5) {
+    box.innerHTML = ''; box.dataset.zip = ''; window._imCounty = null; return;
+  }
+  if (box.dataset.zip === zip) return;              // already resolved this one
+  box.dataset.zip = zip;
+  box.innerHTML = '<span style="color:var(--text-muted);">Looking up the county…</span>';
+
+  let counties = [];
+  try {
+    const r = await acaProxy_('aca_counties', { zip: zip });
+    counties = (r && r.status === 'ok' && Array.isArray(r.counties)) ? r.counties : [];
+  } catch (e) { counties = []; }
+
+  if (!counties.length) {
+    // Never a blocker — the ZIP alone still gets the quote started.
+    box.innerHTML = '<span style="color:var(--text-muted);">Could not look that ZIP up — set the county on the quote.</span>';
+    window._imCounty = null; return;
+  }
+  if (counties.length === 1) {
+    window._imCounty = counties[0];
+    box.innerHTML = '<span style="color:var(--text-success);font-weight:600;">✓ '
+      + escWeb(imCountyLabel_(counties[0])) + '</span>';
+    return;
+  }
+  // Two counties, two sets of plans and prices. Ask rather than assume.
+  window._imCounty = null;
+  window._imCountyChoices = counties;
+  box.innerHTML = '<div style="color:var(--text-muted);margin-bottom:4px;">'
+    + 'That ZIP covers more than one county, and plans differ between them:</div>'
+    + '<select id="im-zip-county-pick" onchange="imZipCountyChose_()" '
+    + 'style="width:100%;padding:7px 10px;border-radius:8px;border:1.5px solid #e2e8f0;font-size:13px;">'
+    + '<option value="">Select the county…</option>'
+    + counties.map(c => '<option value="' + escWeb(String(c.fips)) + '">'
+        + escWeb(imCountyLabel_(c)) + '</option>').join('')
+    + '</select>';
+}
+
+function imZipCountyChose_() {
+  const sel = document.getElementById('im-zip-county-pick');
+  const c = (window._imCountyChoices || []).find(x => String(x.fips) === (sel && sel.value));
+  window._imCounty = c || null;
+}
+
 function _intakeRenderField(id, def, prefillVal) {
   if (id === 'med_medications' || id === 'med_doctors') return _imPickerField_(id, def);
   if (def.type === 'household-table') return _imHHTable_(id, def);
@@ -3939,11 +4001,18 @@ function _intakeRenderField(id, def, prefillVal) {
   } else {
     control = `<input type="${def.type}" ${base}${val}${ph} style="${S}" ${F} />`;
   }
+  // The ZIP carries the county lookup, exactly as it does on the client form.
+  if (id === 'zip') {
+    control = control.replace('<input ', '<input oninput="imZipCounty_()" onchange="imZipCounty_()" ');
+  }
+  const extra = id === 'zip'
+    ? '<div id="im-zip-county" style="margin-top:6px;font-size:12px;"></div>' : '';
+
   return `<div id="iwrap_${id}">
     <label for="ifield_${id}"
       style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;
              letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${def.label}</label>
-    ${control}
+    ${control}${extra}
   </div>`;
 }
 
@@ -3968,6 +4037,15 @@ function _intakeCollectResponses() {
     if (!el) continue;
     if (el.type === 'checkbox') responses[id] = el.checked;
     else responses[id] = el.value;
+  }
+  // The county resolved from the ZIP is not a field anyone types into, so it
+  // rides along here. Quoting needs it: a ZIP spanning two counties has two
+  // different plan sets and two different prices.
+  const cy = window._imCounty;
+  if (cy && cy.fips) {
+    responses.aca_county_fips = String(cy.fips);
+    responses.aca_county_name = String(cy.name || '');
+    if (cy.state && !responses.state) responses.state = String(cy.state);
   }
   return responses;
 }
