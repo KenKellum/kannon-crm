@@ -528,7 +528,7 @@ function hhPaint_() {
           <option value="X"${m.gender === 'X' ? ' selected' : ''}>Decline to answer</option></select>`)}
       ${cell(n.has('tobacco'), `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`)}
       ${cell(n.has('covered'), `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="hhRead_()" style="width:16px;height:16px;">`)}
-      ${cell(n.has('hw'), `<input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:52px;${inp}" oninput="hhRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:52px;margin-left:4px;${inp}" oninput="hhRead_()">`)}
+      ${cell(n.has('hw'), `<span style="display:inline-flex;gap:4px;white-space:nowrap;"><input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:52px;${inp}" oninput="hhRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:52px;${inp}" oninput="hhRead_()"></span>`)}
       ${cell(n.has('hw'), `<input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:62px;${inp}" oninput="hhRead_()">`)}
       ${cell(n.has('amount'), `<select class="hh-amt" onchange="hhRead_()" style="${inp}"><option value=""></option>${bands(m)}</select>`)}
       ${cell(n.has('amount'), `<input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:104px;${inp}" oninput="hhRead_()">`)}

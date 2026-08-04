@@ -3837,7 +3837,7 @@ function imHHPaint_() {
           <option value="X"${m.gender === 'X' ? ' selected' : ''}>Declined</option></select>`)}
       ${cell(n.has('tobacco'), `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`)}
       ${cell(n.has('covered'), `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`)}
-      ${cell(n.has('hw'), `<input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:44px;" oninput="imHHRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:44px;margin-left:3px;" oninput="imHHRead_()">`)}
+      ${cell(n.has('hw'), `<span style="display:inline-flex;gap:4px;white-space:nowrap;"><input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:44px;" oninput="imHHRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:44px;" oninput="imHHRead_()"></span>`)}
       ${cell(n.has('hw'), `<input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:56px;" oninput="imHHRead_()">`)}
       ${cell(n.has('amount'), `<select class="hh-amt" onchange="imHHRead_()"><option value=""></option>${bands(m)}</select>`)}
       ${cell(n.has('amount'), `<input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:88px;" oninput="imHHRead_()">`)}
