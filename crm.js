@@ -9830,55 +9830,10 @@ async function editIntakeSession(sessionId) {
 
   closeModal();
   await showIntakeForm(s.contact_id, { editMode: true });
-  // (legacy modal-edit helpers below are kept but unused)
-  const _UNUSED_responses = s.responses || {};
-  const _UNUSED_sf = s.selected_fields || [];
-  const _UNUSED_typeLabel = INTAKE_TYPE_LABELS[s.form_type] || s.form_type;
-
-  // Build field list: contact fields first, then selected_fields
-  const allFids = [];
-  ['name','email','phone'].forEach(function(f) { if (!allFids.includes(f)) allFids.push(f); });
-  sf.forEach(function(f) { if (!allFids.includes(f)) allFids.push(f); });
-  // Also include any response keys not in selected_fields
-  Object.keys(responses).forEach(function(f) { if (!allFids.includes(f)) allFids.push(f); });
-
-  // Group by section
-  const sections = {};
-  allFids.forEach(function(fid) {
-    const def = INTAKE_FIELD_DEFS[fid];
-    if (!def) return;
-    const sec = def.section || 'Other';
-    if (!sections[sec]) sections[sec] = [];
-    sections[sec].push(fid);
-  });
-
-  let formHtml = '';
-  Object.entries(sections).forEach(function(entry) {
-    const sec = entry[0]; const fids = entry[1];
-    formHtml += '<div style="margin-bottom:18px;">';
-    formHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:10px;">' + sec + '</div>';
-    fids.forEach(function(fid) {
-      const def = INTAKE_FIELD_DEFS[fid];
-      const val = responses[fid];
-      formHtml += _renderIntakeEditField(fid, def, val);
-    });
-    formHtml += '</div>';
-  });
-
-  showModal('&#9998; Edit — ' + typeLabel, formHtml, async function() {
-    const newResp = _collectIntakeEditResponses(allFids);
-    // .select() so a permission-blocked update reports 0 rows instead of
-    // silently succeeding (this exact trap hid an RLS gap for weeks)
-    const { data: saved, error: saveErr } = await supabaseClient
-      .from('intake_sessions')
-      .update({ responses: newResp, status: 'completed', completed_at: new Date().toISOString() })
-      .eq('id', sessionId)
-      .select('id');
-    if (saveErr) { showToast('Save failed: ' + saveErr.message); return false; }
-    if (!saved || !saved.length) { showToast('Save blocked \u2014 nothing was written. Tell Ken/support (intake permissions).'); return false; }
-    showToast('&#10003; Intake saved');
-    setTimeout(function() { viewIntakeSession(sessionId); }, 200);
-  }, { confirmLabel: '&#128190; Save Changes' });
+  // Everything the edit needs is set above; showIntakeForm draws it.
+  // A block of dead modal-edit code used to sit here referencing variables
+  // that had been renamed to _UNUSED_*, so it threw "sf is not defined" on
+  // every edit, after the form had already opened.
 }
 
 function _renderIntakeEditField(fid, def, val) {
