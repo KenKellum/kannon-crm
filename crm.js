@@ -3525,9 +3525,18 @@ function _imSepNeeded_() {
   }
   return true;
 }
+// Must stay in step with FIELD_RULES in intake.html — the agent should never
+// be asked something the client would not have been, or the two forms tell
+// different stories about the same client.
+// tools/check-intake-parity.js compares the two lists.
 const IM_FIELD_RULES = {
-  current_carrier:  () => _imFv_('currently_insured') !== 'No',
-  current_premium:  () => _imFv_('currently_insured') !== 'No',
+  current_carrier:       () => _imFv_('currently_insured') !== 'No',
+  current_premium:       () => _imFv_('currently_insured') !== 'No',
+  current_group_carrier: () => _imFv_('has_current_plan') !== 'No',
+  current_cost_per_emp:  () => _imFv_('has_current_plan') !== 'No',
+  life_coverage_amount:  () => _imFv_('has_life_insurance') !== 'No',
+  med_part_a_date:  () => /enrolled in|advantage|supplement/i.test(_imFv_('med_ab_status')),
+  med_part_b_date:  () => /parts a & b|advantage|supplement/i.test(_imFv_('med_ab_status')),
   aca_ichra_amount: () => _imFv_('aca_ichra_offer') === 'Yes',
   aca_qle:          () => _imSepNeeded_(),
   aca_qle_date:     () => _imSepNeeded_() && _imFv_('aca_qle') && !/^no\b/i.test(_imFv_('aca_qle')),

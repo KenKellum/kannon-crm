@@ -85,7 +85,24 @@ Object.entries(DEF).forEach(([type, ids]) => {
   if (dupes.length) fail(type + ' lists twice: ' + dupes.join(', '));
 });
 
-console.log('\n7. what each intent type asks, in the order it is asked');
+console.log('7. the "only ask what applies" rules match');
+// Both sides hide the same follow-up questions. If they drift, the agent gets
+// asked something the client never was, and the two forms disagree about the
+// same client. Compared by normalised source, so a changed condition is caught.
+const _fv = () => '', _sepNeeded_ = () => true, _imFv_ = () => '', _imSepNeeded_ = () => true;
+const RA = grab(crm, 'const IM_FIELD_RULES = ');
+const RB = grab(html, 'const FIELD_RULES = ');
+const norm = (fn) => String(fn).replace(/_imFv_/g, '_fv').replace(/_imSepNeeded_/g, '_sepNeeded_')
+  .replace(/\s+/g, ' ').trim();
+Object.keys(RA).forEach(id => { if (!RB[id]) fail('rule for ' + id + ' exists in the CRM but not on the client page'); });
+Object.keys(RB).forEach(id => { if (!RA[id]) fail('rule for ' + id + ' exists on the client page but not in the CRM'); });
+Object.keys(RA).forEach(id => {
+  if (RB[id] && norm(RA[id]) !== norm(RB[id])) {
+    fail(id + ' is hidden under different conditions:\n      CRM    ' + norm(RA[id]) + '\n      client ' + norm(RB[id]));
+  }
+});
+
+console.log('\n8. what each intent type asks, in the order it is asked');
 Object.entries(DEF).forEach(([type, ids]) => {
   const set = new Set(ids);
   console.log('\n  ' + type + '  (' + ids.length + ' questions)');
