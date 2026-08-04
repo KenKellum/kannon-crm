@@ -579,6 +579,16 @@ async function zipCounty_() {
   if (box.dataset.zip === zip) return;                 // already resolved this one
   box.dataset.zip = zip;
   box.innerHTML = '<span style="font-size:12.5px;color:#999;">Looking up your area…</span>';
+
+  // City and state come from our own ZIP table — no outside call, so a client's
+  // ZIP never leaves the system to be turned into a place name.
+  let place = null;
+  try {
+    const pr = await supa('/rest/v1/rpc/zip_lookup', { p_zip: zip });
+    if (pr && pr.city) place = pr;
+  } catch (e) { place = null; }
+  window._zipPlace = place;
+
   let counties = [], gated = false;
   try {
     const r = await fetch(PICKER_RELAY + '?action=aca_counties&zip=' + encodeURIComponent(zip));
@@ -590,22 +600,33 @@ async function zipCounty_() {
     gated = !!(j && j.status === 'error' && /signed in/i.test(j.message || ''));
   } catch (e) { counties = []; }
 
-  if (gated) { box.innerHTML = ''; _countyPicked = null; return; }
+  const placeLine = place
+    ? '<span style="font-size:12.5px;color:#5a7d5a;">✓ ' + esc_(place.city) + ', ' + esc_(place.state) + '</span>'
+      + '<input type="hidden" name="city" value="' + esc_(place.city) + '">'
+      + '<input type="hidden" name="state" value="' + esc_(place.state) + '">'
+    : '';
+
+  if (gated) { box.innerHTML = placeLine; _countyPicked = null; return; }
   if (!counties.length) {
     // Never a blocker — the ZIP alone is still enough to get them a call back.
-    box.innerHTML = '<span style="font-size:12.5px;color:#999;">We could not look that ZIP up automatically — your advisor will confirm your county.</span>';
+    box.innerHTML = placeLine || '<span style="font-size:12.5px;color:#999;">We could not look that ZIP up automatically — your advisor will confirm your area.</span>';
     _countyPicked = null; return;
   }
   if (counties.length === 1) {
     const c = counties[0];
     _countyPicked = c;
-    box.innerHTML = '<span style="font-size:12.5px;color:#5a7d5a;">✓ ' + esc_(countyLabel_(c)) + '</span>'
+    box.innerHTML = (place
+        ? '<span style="font-size:12.5px;color:#5a7d5a;">✓ ' + esc_(place.city) + ', ' + esc_(place.state)
+          + ' · ' + esc_(countyLabel_(c)) + '</span>'
+          + '<input type="hidden" name="city" value="' + esc_(place.city) + '">'
+        : '<span style="font-size:12.5px;color:#5a7d5a;">✓ ' + esc_(countyLabel_(c)) + '</span>')
       + hiddenCounty_(c);
     return;
   }
   // A ZIP in two counties prices differently in each, so the client picks.
   _countyPicked = null;
-  box.innerHTML = '<div style="font-size:12.5px;color:#777;margin-bottom:4px;">'
+  box.innerHTML = placeLine
+    + '<div style="font-size:12.5px;color:#777;margin-bottom:4px;">'
     + 'That ZIP covers more than one county, and plans differ between them — which one are you in?</div>'
     + '<select id="zip-county-pick" onchange="zipCountyChose_()" style="max-width:320px;">'
     + '<option value="">Select your county…</option>'
@@ -1224,6 +1245,8 @@ async function submitForm(e, sessionId, contactId, formType, agentId) {
     if (responses.phone) _contactUpdate.phone = responses.phone;
     if (responses.dob) _contactUpdate.date_of_birth = responses.dob;
     if (responses.zip) _contactUpdate.zip = responses.zip;
+    // Resolved from the ZIP, so the contact card shows a city nobody typed.
+    if (responses.city) _contactUpdate.city = responses.city;
     if (responses.street_address) _contactUpdate.street_address = responses.street_address;
     if (responses.business_name) _contactUpdate.company = responses.business_name;
     // The county they confirmed, so nothing downstream has to guess at a ZIP

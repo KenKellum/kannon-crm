@@ -3931,7 +3931,16 @@ async function imZipCounty_() {
   }
   if (box.dataset.zip === zip) return;              // already resolved this one
   box.dataset.zip = zip;
-  box.innerHTML = '<span style="color:var(--text-muted);">Looking up the county…</span>';
+  box.innerHTML = '<span style="color:var(--text-muted);">Looking up the area…</span>';
+
+  // City and state come from our own ZIP table, not an outside service.
+  let place = null;
+  try {
+    const pr = await supabaseClient.rpc('zip_lookup', { p_zip: zip });
+    if (pr && pr.data && pr.data.city) place = pr.data;
+  } catch (e) { place = null; }
+  window._imPlace = place;
+  const placeTxt = place ? escWeb(place.city) + ', ' + escWeb(place.state) : '';
 
   let counties = [];
   try {
@@ -3941,19 +3950,23 @@ async function imZipCounty_() {
 
   if (!counties.length) {
     // Never a blocker — the ZIP alone still gets the quote started.
-    box.innerHTML = '<span style="color:var(--text-muted);">Could not look that ZIP up — set the county on the quote.</span>';
+    box.innerHTML = placeTxt
+      ? '<span style="color:var(--text-success);font-weight:600;">✓ ' + placeTxt + '</span>'
+      : '<span style="color:var(--text-muted);">Could not look that ZIP up — set the county on the quote.</span>';
     window._imCounty = null; return;
   }
   if (counties.length === 1) {
     window._imCounty = counties[0];
     box.innerHTML = '<span style="color:var(--text-success);font-weight:600;">✓ '
-      + escWeb(imCountyLabel_(counties[0])) + '</span>';
+      + (placeTxt ? placeTxt + ' · ' : '') + escWeb(imCountyLabel_(counties[0])) + '</span>';
     return;
   }
   // Two counties, two sets of plans and prices. Ask rather than assume.
   window._imCounty = null;
   window._imCountyChoices = counties;
-  box.innerHTML = '<div style="color:var(--text-muted);margin-bottom:4px;">'
+  box.innerHTML = (placeTxt ? '<div style="color:var(--text-success);font-weight:600;margin-bottom:3px;">✓ '
+      + placeTxt + '</div>' : '')
+    + '<div style="color:var(--text-muted);margin-bottom:4px;">'
     + 'That ZIP covers more than one county, and plans differ between them:</div>'
     + '<select id="im-zip-county-pick" onchange="imZipCountyChose_()" '
     + 'style="width:100%;padding:7px 10px;border-radius:8px;border:1.5px solid #e2e8f0;font-size:13px;">'
@@ -4041,6 +4054,11 @@ function _intakeCollectResponses() {
   // The county resolved from the ZIP is not a field anyone types into, so it
   // rides along here. Quoting needs it: a ZIP spanning two counties has two
   // different plan sets and two different prices.
+  const pl = window._imPlace;
+  if (pl && pl.city) {
+    responses.city = String(pl.city);
+    if (pl.state && !responses.state) responses.state = String(pl.state);
+  }
   const cy = window._imCounty;
   if (cy && cy.fips) {
     responses.aca_county_fips = String(cy.fips);
