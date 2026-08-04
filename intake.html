@@ -679,6 +679,12 @@ function applyFieldRules_() {
   // A card whose every question has just been ruled out is an empty box with a
   // heading on it. Hide the card too, and renumber what is left.
   const shown = [];
+  // The products card is a real step and now the first one, but it holds no
+  // .field-group, so the loop below never saw it — leaving it numbered by the
+  // template while everything after it was renumbered from 1, and the client
+  // saw two conflicting counts.
+  const prodCard = document.getElementById('sec_products');
+  if (prodCard) shown.push(prodCard);
   INTAKE_SECTIONS.forEach(sec => {
     const card = document.getElementById('sec_' + sec.key);
     if (!card) return;
