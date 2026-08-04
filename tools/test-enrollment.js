@@ -51,6 +51,7 @@ eval(grab('enrollPick_'));
 eval(grab('enrollSummary_'));
 eval(grab('enrollRowChanged_'));
 eval(grab('coverageListHtml_'));
+eval(grab('cvStatusChanged_'));
 
 let bad = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) bad++; };
@@ -124,7 +125,8 @@ console.log('\n5. the coverage list');
 ok(coverageListHtml_([]).includes('Nothing enrolled yet'), 'an empty list explains itself');
 const html = coverageListHtml_([
   { plan_name: 'Bronze POS 205', carrier_name: 'BCBS', line: 'Health — Individual',
-    status: 'active', monthly_premium: 120.5, effective_date: '2026-01-01', policy_number: 'ABC1' },
+    status: 'active', monthly_premium: 120.5, effective_date: '2026-01-01', policy_number: 'ABC1',
+    quote_id: 'q-1' },
   { plan_name: 'Applied Dental', carrier_name: 'Ameritas', line: 'Dental',
     status: 'submitted', monthly_premium: 29.5, effective_date: null },
   { plan_name: 'Old Plan <script>', carrier_name: 'X', line: 'Life', status: 'terminated',
@@ -139,6 +141,23 @@ ok(html.includes('ended Dec 31, 2025') && html.includes('replaced'), 'a terminat
 ok(html.includes('no effective date yet'), 'a pending application says the date is missing');
 ok(html.includes('entered by hand'), 'coverage typed in by hand is marked as such');
 ok(!html.includes('<script>') && html.includes('&lt;script&gt;'), 'a plan name cannot inject markup');
+
+ok(html.includes('manage'), 'each row can be managed');
+ok(!coverageListHtml_([{ plan_name: 'X', carrier_name: 'Y', line: 'Life', status: 'active' }],
+                      { editable: false }).includes('manage'),
+   'a read-only list offers no manage link — for a client-facing view later');
+ok(html.includes('quote.html?q='), 'coverage from a quote links back to the quote it was sold on');
+
+// ── 5b. the end of a policy ──────────────────────────────────────────────────
+console.log('\n5b. ending a policy asks for the date the database requires');
+node('cv-status'); node('cv-term-wrap'); node('cv-term-why');
+nodes['cv-status'].value = 'active';
+cvStatusChanged_();
+ok(nodes['cv-term-wrap'].style.display === 'none', 'an active policy is not asked for an end date');
+nodes['cv-status'].value = 'terminated';
+cvStatusChanged_();
+ok(nodes['cv-term-wrap'].style.display === 'block', 'ending it asks when');
+ok(nodes['cv-term-why'].style.display === 'block',  'and asks why');
 
 // ── 6. the vocabulary the portal will show a client ──────────────────────────
 console.log('\n6. every status has words a client could read');

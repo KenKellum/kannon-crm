@@ -5762,7 +5762,7 @@ async function viewContact(contactId, email) {
   document.body.style.overflow = 'hidden';
 
   const gv = q => q.then(r => r.data || []).catch(() => []);
-  const [opens, cc, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds] = await Promise.all([
+  const [opens, cc, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds, coverage] = await Promise.all([
     gv(supabaseClient.from('email_opens').select('*').eq('contact_email', c.email || '\u2205').order('opened_at', { ascending: false }).limit(15)),
     gv(supabaseClient.from('contact_companies').select('companies(name,slug)').eq('contact_id', c.id)),
     supabaseClient.rpc('get_contact_timeline', { p_contact_id: c.id, p_limit: 30 }).then(r => r.data || []).catch(() => []),
@@ -5773,9 +5773,12 @@ async function viewContact(contactId, email) {
     gv(supabaseClient.from('baa_records').select('*').eq('contact_id', c.id).order('created_at', { ascending: false })),
     gv(supabaseClient.from('client_providers').select('npi,name,is_facility,taxonomy,street,city,state,zip').eq('contact_id', c.id).eq('is_active', true)),
     gv(supabaseClient.from('client_medications').select('rxcui,name,quantity,doses_per_day,days_supply').eq('contact_id', c.id).eq('is_active', true)),
+    gv(supabaseClient.from('enrollments')
+         .select('id,line,carrier_name,plan_name,policy_number,monthly_premium,status,effective_date,termination_date,termination_reason,source,quote_id')
+         .eq('contact_id', c.id).order('status', { ascending: true }).order('created_at', { ascending: false })),
   ]);
   window._c360 = {
-    c, opens, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds,
+    c, opens, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds, coverage,
     companies: (cc || []).map(r => r.companies).filter(Boolean),
     deals: deals.filter(d => d.contact_id === c.id),
     tab: 'overview',
@@ -5940,6 +5943,10 @@ function c360Body_(D) {
           ${facs.length ? '\u{1F3E5} ' + escWeb(facs.map(d => d.name).slice(0, 3).join(', ')) + (facs.length > 3 ? ' +' + (facs.length - 3) + ' more' : '') + '<br>' : ''}
           ${md.length ? '\u{1F48A} ' + escWeb(md.map(m => m.name).slice(0, 3).join(', ')) + (md.length > 3 ? ' +' + (md.length - 3) + ' more' : '') : ''}
         </div>` : ''}
+      </div>
+      <div class="panel-section"><div class="panel-label">Coverage${(D.coverage || []).length ? ' (' + (D.coverage || []).filter(x => x.status === 'active' || x.status === 'submitted').length + ' in force)' : ''}</div>
+        <div id="contact-coverage-${c.id}" style="margin-bottom:8px;">${coverageListHtml_(D.coverage || [])}</div>
+        <button class="btn btn-outline btn-sm" onclick="openCoverageEditor_(null,'${c.id}',null)">&#43; Coverage they already have</button>
       </div>
       ${social ? `<div class="panel-section"><div class="panel-label">Social</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${social}</div></div>` : ''}
       <div class="panel-section"><div class="panel-label">Relationship</div>
@@ -6762,7 +6769,8 @@ function openDealPanel(dealId) {
 
   if (!deal.pipeline || !deal.pipeline.startsWith('agent-')) {
     healthHTML += '<div class="panel-section"><div class="panel-label">Coverage</div>'
-      + '<div id="coverage-' + deal.id + '" style="font-size:12px;color:var(--text-muted);">Loading&hellip;</div>'
+      + '<div id="coverage-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Loading&hellip;</div>'
+      + (deal.contact_id ? '<button class="btn btn-outline btn-sm" onclick="openCoverageEditor_(null,\'' + deal.contact_id + '\',\'' + deal.id + '\')">&#43; Coverage they already have</button>' : '')
       + '</div>';
     setTimeout(function() { loadCoverage_(deal); }, 60);
 
@@ -17569,7 +17577,22 @@ async function loadCoverage_(deal) {
   el.innerHTML = coverageListHtml_(data || []);
 }
 
-function coverageListHtml_(rows) {
+// The same list on the contact record, refreshed in place after an edit so the
+// count in the heading and the rows under it can never disagree.
+async function loadContactCoverage_(contactId) {
+  const el = document.getElementById('contact-coverage-' + contactId);
+  if (!el) return;
+  const { data, error } = await supabaseClient.from('enrollments')
+    .select('id,line,carrier_name,plan_name,policy_number,monthly_premium,status,effective_date,termination_date,termination_reason,source,quote_id')
+    .eq('contact_id', contactId)
+    .order('status', { ascending: true }).order('created_at', { ascending: false });
+  if (error) return;
+  if (window._c360 && window._c360.c && window._c360.c.id === contactId) window._c360.coverage = data || [];
+  el.innerHTML = coverageListHtml_(data || []);
+}
+
+function coverageListHtml_(rows, opts) {
+  const canEdit = !opts || opts.editable !== false;
   if (!rows.length) {
     return '<div style="font-size:12px;color:var(--text-muted);">Nothing enrolled yet — enrolling from a quote files it here.</div>';
   }
@@ -17586,14 +17609,119 @@ function coverageListHtml_(rows) {
         <span style="color:var(--text-muted);">${escWeb(r.carrier_name || '')}</span>
         <span style="color:${st.color};font-weight:700;">${st.icon} ${st.label}</span>
         ${r.monthly_premium != null ? '<span style="color:var(--text-success);font-weight:600;">' + enrollMoney_(r.monthly_premium) + '/mo</span>' : ''}
+        ${canEdit ? '<a href="#" style="margin-left:auto;font-size:11px;" onclick="openCoverageEditor_(\'' + r.id + '\'); return false;">manage</a>' : ''}
       </div>
       <div style="color:var(--text-muted);font-size:11px;">${escWeb(r.line || '')} &middot; ${when}
         ${r.policy_number ? ' &middot; policy ' + escWeb(r.policy_number) : ''}
-        ${r.source === 'manual' ? ' &middot; entered by hand' : ''}</div>
+        ${r.source === 'manual' ? ' &middot; entered by hand' : ''}
+        ${r.quote_id ? ' &middot; <a href="quote.html?q=' + r.quote_id + '" target="_blank">the quote they enrolled on &#8599;</a>' : ''}</div>
     </div>`;
   };
   return (live.length ? live.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);">No coverage in force.</div>')
     + (past.length ? '<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:8px;">No longer in force</div>' + past.map(row).join('') : '');
+}
+
+// A policy's whole life happens after the sale: the carrier issues it, it takes
+// effect, and one day it ends. All three are edits to the same record — the
+// client portal reads the answer, so it has to be current here.
+async function openCoverageEditor_(enrollmentId, contactId, dealId) {
+  let r = null;
+  if (enrollmentId) {
+    const { data, error } = await supabaseClient.from('enrollments').select('*').eq('id', enrollmentId).single();
+    if (error || !data) { showToast('Could not open that coverage record.'); return; }
+    r = data;
+  }
+  const isNew = !r;
+  const contact = contacts.find(c => c.id === (r ? r.contact_id : contactId));
+  const statusOpts = Object.entries(ENROLLMENT_STATUS).map(([k, v]) =>
+    `<option value="${k}"${(r && r.status === k) || (!r && k === 'active') ? ' selected' : ''}>${v.label} — ${v.hint}</option>`).join('');
+  const lineOpts = CARRIER_LINES.map(l =>
+    `<option${r && r.line === l ? ' selected' : ''}>${escWeb(l)}</option>`).join('');
+  const val = (k) => escWeb((r && r[k] != null) ? r[k] : '');
+
+  showModal(isNew ? 'Add coverage they already have' : 'Coverage — ' + escWeb(r.plan_name), `
+    ${isNew ? `<p style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">
+      For a policy that did not come from a quote here — something they bought before, or an
+      application taken on paper. It shows up on their record exactly like an enrolled one.</p>` : ''}
+    ${!isNew && r.quote_id ? `<p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+      Enrolled from <a href="quote.html?q=${r.quote_id}" target="_blank">their quote &#8599;</a> on
+      ${enrollDate_(r.applied_on)}. The plan and the premium came from that quote and are part of
+      the locked record — a genuine change of plan is a new enrollment, not an edit of this one.</p>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:180px;"><label>Coverage type *</label>
+        <select id="cv-line" ${isNew ? '' : 'disabled'}>${lineOpts}</select></div>
+      <div style="flex:1;min-width:180px;"><label>Carrier *</label>
+        <input type="text" id="cv-carrier" value="${val('carrier_name')}" ${isNew ? '' : 'disabled'} /></div>
+    </div>
+    <label>Plan name *</label>
+    <input type="text" id="cv-plan" value="${val('plan_name')}" ${isNew ? '' : 'disabled'} />
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:150px;"><label>Monthly premium</label>
+        <input type="number" step="0.01" id="cv-prem" value="${val('monthly_premium')}" ${isNew ? '' : 'disabled'} /></div>
+      <div style="flex:1;min-width:150px;"><label>Policy / member number</label>
+        <input type="text" id="cv-policy" value="${val('policy_number')}" /></div>
+    </div>
+    <label>Where it stands *</label>
+    <select id="cv-status" onchange="cvStatusChanged_()">${statusOpts}</select>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:150px;"><label>Effective date</label>
+        <input type="date" id="cv-eff" value="${r && r.effective_date ? r.effective_date : ''}" /></div>
+      <div style="flex:1;min-width:150px;" id="cv-term-wrap"><label>End date *</label>
+        <input type="date" id="cv-term" value="${r && r.termination_date ? r.termination_date : ''}" /></div>
+    </div>
+    <div id="cv-term-why"><label>Why did it end?</label>
+      <input type="text" id="cv-term-reason" value="${val('termination_reason')}" placeholder="e.g. moved to a group plan" /></div>
+    <label>Note <span style="font-weight:400;color:var(--text-muted);">— for you, not the client</span></label>
+    <textarea id="cv-note" rows="2">${val('agent_note')}</textarea>
+  `, async function () {
+    const status = document.getElementById('cv-status').value;
+    const term   = document.getElementById('cv-term').value || null;
+    if (status === 'terminated' && !term) { showToast('An ended policy needs the date it ended.'); return false; }
+    const patch = {
+      policy_number: document.getElementById('cv-policy').value.trim() || null,
+      status: status,
+      effective_date: document.getElementById('cv-eff').value || null,
+      termination_date: status === 'terminated' ? term : null,
+      termination_reason: status === 'terminated'
+        ? (document.getElementById('cv-term-reason').value.trim() || null) : null,
+      agent_note: document.getElementById('cv-note').value.trim() || null,
+    };
+    if (isNew) {
+      const plan = document.getElementById('cv-plan').value.trim();
+      const carrier = document.getElementById('cv-carrier').value.trim();
+      if (!plan || !carrier) { showToast('Carrier and plan name are both needed.'); return false; }
+      const prem = parseFloat(document.getElementById('cv-prem').value);
+      const { error } = await supabaseClient.from('enrollments').insert(Object.assign({
+        contact_id: contactId, deal_id: dealId || null, agent_id: currentAgent.id,
+        line: document.getElementById('cv-line').value,
+        carrier_name: carrier, plan_name: plan,
+        monthly_premium: isFinite(prem) ? prem : null,
+        applied_on: new Date().toISOString().slice(0, 10),
+        source: 'manual',
+      }, patch));
+      if (error) { showToast('Could not save it: ' + error.message); return false; }
+      showToast('Coverage added.');
+    } else {
+      const { error } = await supabaseClient.from('enrollments').update(patch).eq('id', r.id);
+      if (error) { showToast('Could not save it: ' + error.message); return false; }
+      showToast('Coverage updated.');
+    }
+    const deal = (deals || []).find(d => d.id === (dealId || (r && r.deal_id)))
+              || openDealFor_(contactId || (r && r.contact_id));
+    if (deal) loadCoverage_(deal);
+    if (contact && document.getElementById('contact-coverage-' + contact.id)) loadContactCoverage_(contact.id);
+    return true;
+  }, { confirmLabel: isNew ? 'Add this coverage' : 'Save' });
+
+  cvStatusChanged_();
+}
+
+function cvStatusChanged_() {
+  const ended = (document.getElementById('cv-status') || {}).value === 'terminated';
+  const w = document.getElementById('cv-term-wrap');
+  const y = document.getElementById('cv-term-why');
+  if (w) w.style.display = ended ? 'block' : 'none';
+  if (y) y.style.display = ended ? 'block' : 'none';
 }
 
 // ============================================================
