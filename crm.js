@@ -9637,6 +9637,16 @@ function _refreshNeedsAttentionUI() {
   }
 }
 
+// The deal is created by the submit that raised this alert, so it may not have
+// existed when the row was written. Find it when the button is actually pressed.
+function naOpenDealForContact_(activityId, contactId) {
+  naDismissActivity(activityId);
+  const d = (deals || []).find(x => x.contact_id === contactId);
+  if (!d) { showToast('No deal on this contact yet — opening their record'); viewContact(contactId); return; }
+  showPage('pipelines');
+  setTimeout(function () { openDealPanel(d.id); }, 400);
+}
+
 async function naDismissActivity(activityId) {
   await supabaseClient.from('activities').update({ read_at: new Date().toISOString() }).eq('id', activityId);
   naItems = naItems.filter(x => x.activityId !== activityId);
@@ -10031,8 +10041,9 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="font-size:11px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(names.join(', '))}">${esc(names.join(', ') || 'another product')}</div>
         <div style="font-size:10px;color:var(--text-muted);">They added this themselves.</div>
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
-          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#7c3aed;border-color:#7c3aed;" onclick="${open}">&#128196; Their answers</button>
-          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')" title="Call them">&#128222;</button>
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#7c3aed;border-color:#7c3aed;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">&#128222; Call them</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="${open}" title="Read what they said first">&#128196;</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naOpenDealForContact_('${item.activityId}','${item.contactId}')" title="Open their deal">&#128202;</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
