@@ -6551,11 +6551,10 @@ function openDealPanel(dealId) {
     + notesHTML
     + '</div>'
     + '<div class="panel-footer">'
-    + '<button class="btn btn-outline" onclick="closeDealPanel()">Close</button>'
+    + '<button class="btn btn-outline" onclick="closeDealPanel()">Back</button>'
     + footerContact
     + footerIntake
     + '<button class="btn btn-outline btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border-color:rgba(59,130,246,0.3);" onclick="openDealEmailModal(&#39;' + dealId + '&#39;)">&#9993; Email</button>'
-    + '<button class="btn btn-danger btn-sm" onclick="closeDealPanel();deleteDeal(&#39;' + dealId + '&#39;)">Delete</button>'
     + '<button class="btn btn-primary" onclick="closeDealPanel();editDeal(&#39;' + dealId + '&#39;)">&#9999;&#65039; Edit Deal</button>'
     + '</div>';
 
@@ -6593,7 +6592,7 @@ function renderPipelines() {
         ${deal.next_step ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">&#10145; ${deal.next_step.substring(0,55)}${deal.next_step.length>55?'...':''}</div>` : ''}
         <div class="deal-actions" onclick="event.stopPropagation()">
           <button class="btn btn-outline btn-sm" onclick="editDeal('${deal.id}')">Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteDeal('${deal.id}')">&#10005;</button>
+          <button class="btn btn-outline btn-sm" onclick="openCloseDeal('${deal.id}')">Close Deal</button>
         </div>
       </div>`;
     }).join('');
@@ -6858,11 +6857,6 @@ function editDeal(id) {
   });
 }
 
-async function deleteDeal(id) {
-  if (!confirm('Delete this deal?')) return;
-  await supabaseClient.from('deals').delete().eq('id', id);
-  deals = deals.filter(d => d.id !== id); renderPipelines(); showToast('Deal deleted');
-}
 
 // ============================================================
 // COMPLIANCE — bounced, opted-out, DNC contacts
