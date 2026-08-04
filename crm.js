@@ -5766,57 +5766,54 @@ function c360Body_(D) {
     ].filter(Boolean).join('');
     const ownerAgent = allAgents.find(a => a.id === c.agent_id);
     const seqStatus = c.sequence_status || 'Not Started';
+
+    // Computed up front so the household facts can sit in the same grid as the
+    // rest of "At a glance" instead of starting a second one, which left a hole
+    // at the end of the first row.
+    const arr = v => { if (Array.isArray(v)) return v;
+      if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} } return []; };
+    const hh = arr(c.household_members);
+    const applying = hh.filter(m => m.covered !== false).length;
+    // Count what the label says. A hospital is not a doctor, and the same NPI
+    // listed twice is one provider.
+    const seen = {};
+    const dc = (D.cProviders || []).filter(p => { const k = String(p.npi);
+                 if (seen[k]) return false; seen[k] = 1; return true; });
+    const md = D.cMeds || [];
+    const docs = dc.filter(p => !p.is_facility);
+    const facs = dc.filter(p =>  p.is_facility);
+    // Clickable even when empty — that is how you add the first one.
+    const careCard = (label, n, id, tip) =>
+      `<button type="button" onclick="c360EditCare_('${c.id}','${id}')" title="${tip}"
+         style="text-align:left;background:var(--surface-2,#f1f5f9);border:0.5px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;transition:border-color .12s;"
+         onmouseover="this.style.borderColor='var(--accent,#1d3557)'" onmouseout="this.style.borderColor='var(--border)'">
+         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${label} <span style="opacity:.7;">&#9998;</span></div>
+         <div style="font-size:13.5px;font-weight:600;color:${n ? 'var(--text-primary)' : 'var(--text-muted)'};margin-top:2px;">${n || 'None yet'}</div>
+       </button>`;
+
     return `
       <div class="panel-section"><div class="panel-label">At a glance</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;">
-          ${fact('Date of birth', c.date_of_birth ? fmtD(c.date_of_birth) + (age !== null ? ' \u00b7 ' + age : '') : null)}
+          ${fact('Date of birth', c.date_of_birth ? fmtD(c.date_of_birth) + (age !== null ? ' · ' + age : '') : null)}
           ${fact('Gender', c.gender)}
           ${fact('Tobacco', c.tobacco_use === true ? 'Yes' : c.tobacco_use === false ? 'No' : null)}
           ${fact('City', c.city)}
           ${fact('ZIP / State', [c.zip, c.state].filter(Boolean).join(', '))}
           ${fact('Company', c.company)}
           ${fact('Email status', c.email_status)}
+          ${fact('Household', hh.length ? hh.length + ' member' + (hh.length === 1 ? '' : 's') + (applying ? ' · ' + applying + ' applying' : '') : null)}
+          ${fact('Household income', c.household_income != null ? '$' + Number(c.household_income).toLocaleString() + '/yr' : null)}
         </div>
-        ${(() => {
-          const arr = v => { if (Array.isArray(v)) return v;
-            if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} } return []; };
-          const hh = arr(c.household_members);
-          // Count what the label says. A hospital is not a doctor, and the same
-          // NPI listed twice is one provider.
-          const seen = {};
-          const dc = (D.cProviders || []).filter(p => { const k = String(p.npi);
-                       if (seen[k]) return false; seen[k] = 1; return true; });
-          const md = D.cMeds || [];
-          const docs = dc.filter(p => !p.is_facility);
-          const facs = dc.filter(p =>  p.is_facility);
-          const applying = hh.filter(m => m.covered !== false).length;
-          // Clickable even when empty — that is how you add the first one.
-          const careCard = (label, n, id, tip) =>
-            `<button type="button" onclick="c360EditCare_('${c.id}','${id}')" title="${tip}"
-               style="text-align:left;background:var(--surface-2,#f1f5f9);border:0.5px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer;font:inherit;transition:border-color .12s;"
-               onmouseover="this.style.borderColor='var(--accent,#1d3557)'" onmouseout="this.style.borderColor='var(--border)'">
-               <div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">${label} <span style="opacity:.7;">&#9998;</span></div>
-               <div style="font-size:13.5px;font-weight:700;color:${n ? 'var(--text-primary)' : 'var(--text-muted)'};margin-top:2px;">${n || 'None yet'}</div>
-             </button>`;
-          if (c.household_income == null && !hh.length && !dc.length && !md.length) {
-            return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;">
-              ${careCard('Doctors on file', 0, 'med_doctors', 'Add their doctors')}
-              ${careCard('Medications', 0, 'med_medications', 'Add their medications')}
-            </div>`;
-          }
-          return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;">
-            ${fact('Household income', c.household_income != null ? '$' + Number(c.household_income).toLocaleString() + '/yr' : null)}
-            ${fact('Household', hh.length ? hh.length + ' member' + (hh.length === 1 ? '' : 's') + (applying ? ' · ' + applying + ' applying' : '') : null)}
-            ${careCard('Doctors on file', docs.length, 'med_doctors', 'Click to edit their doctors')}
-            ${facs.length ? careCard('Facilities', facs.length, 'med_doctors', 'Hospitals, clinics and pharmacies on file') : ''}
-            ${careCard('Medications', md.length, 'med_medications', 'Click to edit their medications')}
-          </div>
-          ${dc.length || md.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.6;">
-            ${docs.length ? '\u{1FA7A} ' + escWeb(docs.map(d => d.name).slice(0, 3).join(', ')) + (docs.length > 3 ? ' +' + (docs.length - 3) + ' more' : '') + '<br>' : ''}
-            ${facs.length ? '\u{1F3E5} ' + escWeb(facs.map(d => d.name).slice(0, 3).join(', ')) + (facs.length > 3 ? ' +' + (facs.length - 3) + ' more' : '') + '<br>' : ''}
-            ${md.length ? '\u{1F48A} ' + escWeb(md.map(m => m.name).slice(0, 3).join(', ')) + (md.length > 3 ? ' +' + (md.length - 3) + ' more' : '') : ''}
-          </div>` : ''}`;
-        })()}
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;">
+          ${careCard('Providers', docs.length, 'med_doctors', 'Click to edit their doctors and facilities')}
+          ${facs.length ? careCard('Facilities', facs.length, 'med_doctors', 'Hospitals, clinics and pharmacies on file') : ''}
+          ${careCard('Medications', md.length, 'med_medications', 'Click to edit their medications')}
+        </div>
+        ${dc.length || md.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.6;">
+          ${docs.length ? '\u{1FA7A} ' + escWeb(docs.map(d => d.name).slice(0, 3).join(', ')) + (docs.length > 3 ? ' +' + (docs.length - 3) + ' more' : '') + '<br>' : ''}
+          ${facs.length ? '\u{1F3E5} ' + escWeb(facs.map(d => d.name).slice(0, 3).join(', ')) + (facs.length > 3 ? ' +' + (facs.length - 3) + ' more' : '') + '<br>' : ''}
+          ${md.length ? '\u{1F48A} ' + escWeb(md.map(m => m.name).slice(0, 3).join(', ')) + (md.length > 3 ? ' +' + (md.length - 3) + ' more' : '') : ''}
+        </div>` : ''}
       </div>
       ${social ? `<div class="panel-section"><div class="panel-label">Social</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${social}</div></div>` : ''}
       <div class="panel-section"><div class="panel-label">Relationship</div>
