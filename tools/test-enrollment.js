@@ -40,9 +40,16 @@ eval(grab('DEAL_CLOSE_REASONS').replace(/^const /, 'var '));
 eval(grab('dealWasWon_'));
 eval(grab('enrollMoney_'));
 eval(grab('enrollDate_'));
+eval(grab('CARRIER_LINES').replace(/^const /, 'var '));
+eval(grab('RENEWAL_WINDOW_DAYS').replace(/^const /, 'var '));
+eval(grab('renewalDueWithin_'));
 eval(grab('coverageState_'));
 eval(grab('coverageRollup_'));
 eval(grab('dealCoverageVerdict_'));
+eval(grab('TERM_LIMITED_LINES').replace(/^const /, 'var '));
+eval(grab('PLAN_YEAR_LINES').replace(/^const /, 'var '));
+eval(grab('coverageEndRule_'));
+eval(grab('planYearEnd_'));
 eval(grab('enrollQuoteExpired_'));
 eval(grab('enrollPortalLink_'));
 eval(grab('enrollCardState_'));
@@ -154,6 +161,41 @@ ok(!st(cov({ effective_date: null })).inForce, 'and is not claimed to be in forc
   const r = st({ status: x, effective_date: '2026-01-01', termination_date: x === 'terminated' ? '2026-06-01' : null });
   ok(!!r.label && !!r.color && !!r.icon, x + ' -> "' + r.label + '"');
 });
+
+// ── 1d. when does this cover run out ─────────────────────────────────────────
+//
+// Ken's first real enrollment was a short-term plan with no end date on it. It
+// would have read "In force" forever and never once asked to be looked at,
+// while the client went uninsured the day it quietly stopped.
+console.log('\n1d. the end date, which a short-term plan cannot go without');
+ok(coverageEndRule_('Short-Term Medical').required, 'a short-term plan MUST have an end date');
+ok(/stops on this date/.test(coverageEndRule_('Short-Term Medical').hint),
+   'and the reason is spelled out: ' + coverageEndRule_('Short-Term Medical').hint);
+ok(!coverageEndRule_('Health — Individual').required, 'an ACA plan does not have to have one');
+ok(coverageEndRule_('Health — Individual').planYear, 'but it is offered the plan-year end');
+ok(coverageEndRule_('Medicare Advantage').planYear, 'so is Medicare Advantage');
+ok(coverageEndRule_('Part D (PDP)').planYear, 'and Part D');
+ok(!coverageEndRule_('Life').required && !coverageEndRule_('Life').planYear,
+   'life cover is open-ended — neither demanded nor pre-filled');
+ok(/until somebody cancels/.test(coverageEndRule_('Life').hint), 'and says so');
+// Every line that must have a date has to be a line the quote builder offers,
+// or the rule can never fire.
+TERM_LIMITED_LINES.concat(PLAN_YEAR_LINES).forEach(l =>
+  ok(CARRIER_LINES.includes(l), '"' + l + '" is a real coverage type'));
+
+ok(planYearEnd_('2026-09-01') === '2026-12-31', 'a September start runs to 31 December that year');
+ok(planYearEnd_('2027-01-15') === '2027-12-31', 'and a January start to the end of ITS year, not this one');
+ok(/^\d{4}-12-31$/.test(planYearEnd_(null)), 'no start date still yields a sane year end');
+
+// ── 1e. what is running out soon ─────────────────────────────────────────────
+console.log('\n1e. renewing soon');
+const inDays = n => { const d = new Date(T + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+ok(renewalDueWithin_({ termination_date: inDays(30) }, 60, T), '30 days out is renewing soon');
+ok(renewalDueWithin_({ termination_date: inDays(60) }, 60, T), 'exactly 60 days out still counts');
+ok(!renewalDueWithin_({ termination_date: inDays(61) }, 60, T), '61 days out does not — no crying wolf');
+ok(!renewalDueWithin_({ termination_date: inDays(-1) }, 60, T), 'and one that already ended is not "renewing"');
+ok(!renewalDueWithin_({ termination_date: null }, 60, T), 'a policy with no end date never comes up');
+ok(RENEWAL_WINDOW_DAYS >= 30, 'the default window gives real warning: ' + RENEWAL_WINDOW_DAYS + ' days');
 
 // ── 2. nobody enrols on a price that has run out ─────────────────────────────
 console.log('\n2. an expired quote cannot be enrolled on');

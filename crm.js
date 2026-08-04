@@ -17697,6 +17697,44 @@ function enrollCardState_(opt, enrollment) {
   return { key: 'undecided', label: 'Not decided yet', icon: '○', color: 'var(--text-warning)' };
 }
 
+// ── WHEN DOES THIS COVER RUN OUT? ────────────────────────────────────────────
+//
+// Ken, 2026-08-04: "When we enroll someone, ESPECIALLY for a Short Term Plan.
+// We need to capture the Ending date! Imperative in order to figure out when to
+// reach out to help them renew or find a new plan."
+//
+// He is right, and his own first real enrollment proved it — a Pivot Health
+// short-term plan with no end date on it, which would have read "In force"
+// forever and never once asked to be looked at.
+//
+// A short-term plan STOPS. It does not renew, and the client is uninsured the
+// day after unless somebody acts. So the date is required for those lines. An
+// ACA or Medicare plan runs to 31 December and renews, so the date is offered
+// ready-filled rather than demanded. Everything else is open-ended.
+const TERM_LIMITED_LINES = ['Short-Term Medical'];
+const PLAN_YEAR_LINES = ['Health — Individual', 'Medicare Advantage', 'Part D (PDP)',
+                         'Health — Group', 'Private/Off-Market Medical'];
+
+function coverageEndRule_(line) {
+  if (TERM_LIMITED_LINES.includes(line)) {
+    return { required: true,
+             hint: 'A short-term plan stops on this date — without it nobody knows when to get them covered again.' };
+  }
+  if (PLAN_YEAR_LINES.includes(line)) {
+    return { required: false, planYear: true,
+             hint: 'Runs to the end of the plan year unless it ends sooner.' };
+  }
+  return { required: false, hint: 'Leave blank if it runs until somebody cancels it.' };
+}
+
+// 31 December of the year the cover starts in — the plan-year boundary an ACA
+// or Medicare plan renews on.
+function planYearEnd_(effective) {
+  const y = (effective && /^\d{4}/.test(effective))
+    ? Number(effective.slice(0, 4)) : new Date().getFullYear();
+  return y + '-12-31';
+}
+
 function enrollHeadline_(opts) {
   const took = opts.filter(o => o.outcome === 'enrolled');
   const left = opts.filter(o => !o.outcome);
@@ -17848,17 +17886,22 @@ function enrollExpand_(i, mode) {
   }
   box.dataset.open = mode;
   box.style.display = 'block';
+  const rule = coverageEndRule_(o.line);
   box.innerHTML = mode === 'enrol'
     ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-         <div style="flex:1;min-width:150px;"><label style="font-size:11px;">Effective date</label>
-           <input type="date" id="en-eff-${i}" style="width:100%;" /></div>
-         <div style="flex:1;min-width:150px;"><label style="font-size:11px;">Policy / member number
+         <div style="flex:1;min-width:140px;"><label style="font-size:11px;">Coverage starts</label>
+           <input type="date" id="en-eff-${i}" style="width:100%;" onchange="enrollDatesChanged_(${i})" /></div>
+         <div style="flex:1;min-width:140px;"><label style="font-size:11px;">Coverage ends
+           ${rule.required ? '<span style="color:var(--text-danger);">*</span>' : '<span style="font-weight:400;color:var(--text-muted);">— optional</span>'}</label>
+           <input type="date" id="en-end-${i}" style="width:100%;${rule.required ? 'border-color:var(--border-warning);' : ''}" /></div>
+         <div style="flex:1;min-width:140px;"><label style="font-size:11px;">Policy / member number
            <span style="font-weight:400;color:var(--text-muted);">— if you have it</span></label>
            <input type="text" id="en-pol-${i}" placeholder="often comes later" style="width:100%;" /></div>
          <button class="btn btn-primary btn-sm" onclick="enrollProduct_(${i})">Record it</button>
        </div>
-       <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
-         No effective date yet? Leave it blank — it will read as <em>Applied</em> until you fill it in.</p>`
+       <p style="font-size:11px;color:${rule.required ? 'var(--text-warning)' : 'var(--text-muted)'};margin-top:6px;">
+         ${rule.required ? '⚠ ' : ''}${escWeb(rule.hint)}
+         ${rule.required ? '' : ' No start date yet? Leave it blank — it reads as <em>Applied</em> until you fill it in.'}</p>`
     : `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
          <div style="flex:1;min-width:220px;"><label style="font-size:11px;">Why did they pass on it?
            <span style="font-weight:400;color:var(--text-muted);">— optional</span></label>
@@ -17867,11 +17910,30 @@ function enrollExpand_(i, mode) {
        </div>`;
 }
 
+// Filling in the start date offers the plan-year end for the lines that have
+// one, so the commonest case is one click rather than two dates typed.
+function enrollDatesChanged_(i) {
+  const o = (window._enrollOpts || [])[i];
+  const eff = document.getElementById('en-eff-' + i);
+  const end = document.getElementById('en-end-' + i);
+  if (!o || !eff || !end || end.value || !eff.value) return;
+  const rule = coverageEndRule_(o.line);
+  if (rule.planYear) end.value = planYearEnd_(eff.value);
+}
+
 async function enrollProduct_(i) {
   const q = window._enrollQuote, o = (window._enrollOpts || [])[i];
   if (!o) return;
   const eff = (document.getElementById('en-eff-' + i) || {}).value || null;
+  const end = (document.getElementById('en-end-' + i) || {}).value || null;
   const pol = ((document.getElementById('en-pol-' + i) || {}).value || '').trim() || null;
+  const rule = coverageEndRule_(o.line);
+  if (rule.required && !end) {
+    showToast('When does this cover end? A short-term plan stops on a date — we need it to know when to reach out.', 8000);
+    const el = document.getElementById('en-end-' + i); if (el) el.focus();
+    return;
+  }
+  if (end && eff && end < eff) { showToast('Cover cannot end before it starts.'); return; }
   const today = new Date().toISOString().slice(0, 10);
   const stamp = new Date().toISOString();
 
@@ -17886,6 +17948,9 @@ async function enrollProduct_(i) {
     // yet. Anything without one is an application still in the carrier's hands.
     status: eff ? 'active' : 'submitted',
     applied_on: today, effective_date: eff,
+    // The day cover stops, whether that is a short-term plan running out or a
+    // plan year closing. It is what the renewal reach-out is scheduled from.
+    termination_date: end,
     plan_snapshot: {
       benefit_bullets: o.benefit_bullets || [],
       plan_meta: o.plan_meta || null,
@@ -18133,12 +18198,26 @@ async function advanceDealOnEnrollment_(deal) {
 // can_see_agent_work(), so the same query returns their whole office.
 // ============================================================
 
+// How far ahead "renewing soon" looks. A short-term plan needs replacing before
+// it stops, and a plan-year policy needs the conversation before open enrolment
+// shuts — two months is enough warning for both without crying wolf.
+const RENEWAL_WINDOW_DAYS = 60;
+
+function renewalDueWithin_(r, days, today) {
+  today = today || new Date().toISOString().slice(0, 10);
+  if (!r.termination_date || r.termination_date < today) return false;
+  const limit = new Date(today + 'T12:00:00');
+  limit.setDate(limit.getDate() + (days || RENEWAL_WINDOW_DAYS));
+  return r.termination_date <= limit.toISOString().slice(0, 10);
+}
+
 const CLIENT_FILTERS = {
-  in_force: { label: 'In force',   test: s => s.inForce },
-  pending:  { label: 'Applied',    test: s => s.key === 'applied' || s.key === 'approved' },
-  starting: { label: 'Starting',   test: s => s.key === 'starting' },
-  ending:   { label: 'Ending',     test: s => s.key === 'ending' },
-  ended:    { label: 'Ended',      test: s => s.key === 'ended' || s.key === 'withdrawn' },
+  in_force: { label: 'In force',      test: (s) => s.inForce },
+  renewing: { label: 'Renewing soon', test: (s, r) => s.live && renewalDueWithin_(r) },
+  pending:  { label: 'Applied',       test: (s) => s.key === 'applied' || s.key === 'approved' },
+  starting: { label: 'Starting',      test: (s) => s.key === 'starting' },
+  ending:   { label: 'Ending',        test: (s) => s.key === 'ending' },
+  ended:    { label: 'Ended',         test: (s) => s.key === 'ended' || s.key === 'withdrawn' },
 };
 
 function clientsState_() {
@@ -18186,7 +18265,7 @@ function clientsFilter_(items, S) {
   const f = CLIENT_FILTERS[S.filter];
   const q = (S.q || '').toLowerCase().trim();
   return items.filter(x =>
-    (!f || f.test(x.st))
+    (!f || f.test(x.st, x.r))
     && (!S.line    || x.r.line === S.line)
     && (!S.carrier || x.r.carrier_name === S.carrier)
     && (!S.agent   || x.r.agent_id === S.agent)
@@ -18237,7 +18316,7 @@ function clientsPaint_() {
 
   const counts = {};
   Object.keys(CLIENT_FILTERS).forEach(k =>
-    counts[k] = all.filter(x => CLIENT_FILTERS[k].test(x.st)).length);
+    counts[k] = all.filter(x => CLIENT_FILTERS[k].test(x.st, x.r)).length);
 
   const lines    = [...new Set(S.rows.map(r => r.line).filter(Boolean))].sort();
   const carriers = [...new Set(S.rows.map(r => r.carrier_name).filter(Boolean))].sort();

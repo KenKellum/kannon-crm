@@ -25,6 +25,8 @@ function grab(name) {
 global.window = global;
 eval(grab('enrollDate_'));
 eval(grab('coverageState_'));
+eval(grab('RENEWAL_WINDOW_DAYS').replace(/^const /, 'var '));
+eval(grab('renewalDueWithin_'));
 eval(grab('CLIENT_FILTERS').replace(/^const /, 'var '));
 eval(grab('clientsFilter_'));
 eval(grab('clientsGroup_'));
@@ -86,9 +88,9 @@ ok(names(F({ filter: 'ended' })) === 'Never Started, STM 6mo',
 // The one that matters: a policy cancelled for a future date is BOTH in force
 // and ending, and must show under both.
 const acc = items.find(x => x.r.id === 'e4');
-ok(CLIENT_FILTERS.in_force.test(acc.st) && CLIENT_FILTERS.ending.test(acc.st),
+ok(CLIENT_FILTERS.in_force.test(acc.st, acc.r) && CLIENT_FILTERS.ending.test(acc.st, acc.r),
    'a policy cancelled mid-term is in force AND ending — it appears under both');
-ok(!CLIENT_FILTERS.ended.test(acc.st), 'and it is not filed as already ended');
+ok(!CLIENT_FILTERS.ended.test(acc.st, acc.r), 'and it is not filed as already ended');
 ok(F({ filter: '' }).length === 6, 'Everything shows all six');
 
 // ── 2. the other filters ─────────────────────────────────────────────────────
