@@ -5739,7 +5739,7 @@ async function addContactNote(contactId) {
 // ============================================================
 // NOTIFICATION BELL (Phase 3D)
 // ============================================================
-const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested','quote_refresh_requested'];
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested','quote_refresh_requested','intake_products_added'];
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
@@ -5818,6 +5818,7 @@ function _renderNotificationDropdown() {
     census_received:  { icon: '📋', label: 'Census received',     color: '#0d9488' },
     quote_interested: { icon: '⭐', label: 'Quote interest — HOT', color: '#c8a84b' },
     quote_refresh_requested: { icon: '✨', label: 'Fresh quotes requested', color: '#d97706' },
+    intake_products_added:   { icon: '🛒', label: 'Asked about another product', color: '#7c3aed' },
   };
   const _relTime = ts => {
     const diff = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -9575,7 +9576,7 @@ async function loadNeedsAttention() {
     const { data: acts } = await supabaseClient
       .from('activities')
       .select('id,contact_id,activity_type,subject,body_snippet,metadata,created_at,contacts(name,company)')
-      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested', 'quote_refresh_requested'])
+      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested', 'quote_refresh_requested', 'intake_products_added'])
       .is('read_at', null)
       .eq('agent_id', currentAgent.id)
       .gte('created_at', thirtyDaysAgo)
@@ -9615,7 +9616,7 @@ async function loadNeedsAttention() {
     });
 
     naItems = [
-      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, censusId: (a.metadata && a.metadata.census_id) || null, dealId: (a.metadata && a.metadata.deal_id) || null, quoteId: (a.metadata && a.metadata.quote_id) || null, createdAt: a.created_at })),
+      ...(acts || []).map(a => ({ kind: a.activity_type, activityId: a.id, contactId: a.contact_id, contactName: a.contacts?.name || null, company: a.contacts?.company || null, subject: a.subject, snippet: a.body_snippet, sessionId: (a.metadata && a.metadata.session_id) || null, censusId: (a.metadata && a.metadata.census_id) || null, dealId: (a.metadata && a.metadata.deal_id) || null, quoteId: (a.metadata && a.metadata.quote_id) || null, products: (a.metadata && a.metadata.products) || null, createdAt: a.created_at })),
       ...(appts || []).map(a => ({ kind: 'meeting_canceled', bookingId: a.id, contactId: a.contact_id, contactName: a.contact_name, company: a.company, apptLabel: a.appointment_label || a.appointment_type || 'Appointment', scheduledAt: a.scheduled_at, createdAt: a.created_at }))
     ];
 
@@ -10057,6 +10058,27 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
           <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')">📞 Call</button>
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;flex:1;" onclick="${rescheduleOnclick}">📅 Reschedule</button>
+        </div>
+      </div>`;
+    }
+
+    // A client ticking a product nobody offered them is the warmest lead there
+    // is — they told us what they want to buy, unprompted.
+    if (item.kind === 'intake_products_added') {
+      const names = (item.products || []).map(k => (INTAKE_PRODUCT_BY_KEY[k] || {}).agentLabel || k);
+      const open = item.sessionId
+        ? `naDismissActivity('${item.activityId}');viewIntakeSession('${item.sessionId}')`
+        : `naDismissActivity('${item.activityId}');viewContact('${item.contactId}')`;
+      return `<div style="flex-shrink:0;width:230px;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(124,58,237,0.10),var(--surface-1) 55%);border:1.5px solid #7c3aed;border-left:4px solid #7c3aed;border-radius:8px;padding:9px 11px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:#7c3aed;margin-bottom:4px;">&#128722; Asked About More</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${timeAgo}</div>
+        <div style="font-size:11px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(names.join(', '))}">${esc(names.join(', ') || 'another product')}</div>
+        <div style="font-size:10px;color:var(--text-muted);">They added this themselves.</div>
+        <div style="display:flex;gap:4px;margin-top:auto;padding-top:6px;">
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px;flex:1;background:#7c3aed;border-color:#7c3aed;" onclick="${open}">&#128196; Their answers</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;" onclick="naDismissActivity('${item.activityId}');openCallScript('${item.contactId}')" title="Call them">&#128222;</button>
+          <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 6px;" onclick="naDismissActivity('${item.activityId}')" title="Dismiss">&#10003;</button>
         </div>
       </div>`;
     }
