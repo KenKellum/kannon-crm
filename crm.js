@@ -5758,11 +5758,15 @@ function c360Body_(D) {
 
   if (D.tab === 'overview') {
     const fact = (label, val, color) => `<div style="background:var(--surface-2);border-radius:10px;padding:10px 12px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">${label}</div><div style="font-size:13.5px;font-weight:600;margin-top:2px;${color ? 'color:' + color + ';' : ''}">${val || '<span style="color:var(--text-muted);font-weight:400;">\u2014</span>'}</div></div>`;
-    // Green only for a confirmed-good address, red for any status that says
-    // otherwise. No status at all stays the neutral dash \u2014 never checked is not
-    // the same as bad, and 131 contacts have never been checked.
-    const emailColor = !c.email_status ? null
-      : (String(c.email_status).toLowerCase() === 'valid' ? 'var(--text-success)' : 'var(--text-danger)');
+    // Green for a confirmed-good address, amber while the check is still
+    // running, red for a status that says the address is a problem. No status
+    // at all stays the neutral dash \u2014 never checked is not the same as bad, and
+    // 131 contacts have never been checked.
+    const _es = String(c.email_status || '').toLowerCase();
+    const emailColor = !_es ? null
+      : _es === 'valid'   ? 'var(--text-success)'
+      : _es === 'pending' ? 'var(--text-warning)'
+      : 'var(--text-danger)';
     const social = [
       c.linkedin_url && `<a href="${escWeb((c.linkedin_url.indexOf('http') === 0 ? '' : 'https://') + c.linkedin_url)}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">\u{1F517} LinkedIn</a>`,
       c.facebook_url && `<a href="${escWeb((c.facebook_url.indexOf('http') === 0 ? '' : 'https://') + c.facebook_url)}" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px;text-decoration:none;">\u{1F465} Facebook</a>`,
