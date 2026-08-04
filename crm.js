@@ -3796,7 +3796,10 @@ function _imHHTable_(id, def) {
                 .map(h => '<th>' + (h || '') + '</th>').join('');
   // One insured life (disability) gets no roster and no add button — the label
   // has to stop saying "household members" too.
-  const solo = n.has('solo');
+  // Disability insures one life, but Health needs the whole roster. When both
+  // are selected the roster has to win — a product that wants more people
+  // beats one that wants fewer, or the client cannot enter their family.
+  const solo = n.has('solo') && !n.has('covered');
   const heading = solo ? 'The person being insured' : 'Who needs coverage';
   return `<div id="iwrap_${id}">
     <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${heading}</label>

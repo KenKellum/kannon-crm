@@ -468,10 +468,15 @@ function renderHouseholdTable_(id, def) {
     if (dobVal) { const a = Math.floor((Date.now() - new Date(dobVal + 'T12:00:00')) / 31557600000); if (a > 0 && a < 120) selfAge = a; }
     _hh = [{ relationship: 'Self', age: selfAge, gender: '', tobacco: false, covered: true }];
   }
+  // One insured life (disability) needs no roster — but a product that DOES
+  // need one always wins, or a client buying health cover alongside cannot
+  // enter their family.
+  const _n = _needs();
+  const _solo = _n.has('solo') && !_n.has('covered');
   setTimeout(() => { try { hhPaint_(); } catch (e) {} }, 80);
   return `<div class="field-group" id="wrap_${id}">
-    <label>${def.label}</label>
-    <p style="font-weight:400;color:#777;font-size:12.5px;line-height:1.6;margin:-2px 0 8px;">
+    <label>${_solo ? 'The person being insured' : 'Who needs coverage'}</label>
+    <p style="font-weight:400;color:#777;font-size:12.5px;line-height:1.6;margin:-2px 0 8px;display:${_solo ? 'none' : 'block'};">
       Add everyone you claim on your tax return \u2014 even if they already have coverage and are
       not applying here. Then untick <strong>Applying</strong> for anyone who does not need coverage.
       <span style="color:#999;">Your tax household is what a subsidy is worked out on, so leaving
@@ -483,7 +488,7 @@ function renderHouseholdTable_(id, def) {
       <tbody id="hh-rows"></tbody>
     </table></div>
     <div id="hh-cards" style="display:none;"></div>
-    <button type="button" class="btn-secondary" style="margin-top:8px;padding:8px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;font-size:13px;" onclick="hhAdd_()">+ Add family member</button>
+    ${_solo ? '' : `<button type="button" class="btn-secondary" style="margin-top:8px;padding:8px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;font-size:13px;" onclick="hhAdd_()">+ Add family member</button>`}
     <input type="hidden" name="household_struct" id="f_household_struct">
     <input type="hidden" name="household_size" id="f_household_size">
     <input type="hidden" name="member_ages" id="f_member_ages">
