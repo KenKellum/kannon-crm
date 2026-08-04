@@ -3769,7 +3769,14 @@ function imPickerPick_(id, i) {
   const keyField = id === 'med_medications' ? 'rxcui' : 'npi';
   const arr = window._imPickers[id];
   if (!arr.some(a => String(a[keyField]) === String(x.key))) {
-    const item = { name: x.cleanName || x.name }; item[keyField] = x.key; arr.push(item);
+    const item = { name: x.cleanName || x.name }; item[keyField] = x.key;
+    // Registry facts worth keeping: without isFac a hospital counts as a doctor.
+    if (id !== 'med_medications') {
+      item.isFac    = !!x.isFac;      item.taxonomy = x.taxonomy || '';
+      item.street   = x.street || '';  item.city     = x.city || '';
+      item.state    = x.state || '';   item.zip      = x.zip || '';
+    }
+    arr.push(item);
   }
   document.getElementById('imq_' + id).value = '';
   document.getElementById('imm_' + id).innerHTML = '';
@@ -4003,6 +4010,8 @@ async function intakePromoteLists_(contactId, responses) {
     if (docs.length) {
       await supabaseClient.from('client_providers').upsert(docs.map(d => ({
         contact_id: contactId, npi: String(d.npi), name: d.name || '(unnamed)', source: 'intake',
+        is_active: true, is_facility: !!d.isFac, taxonomy: d.taxonomy || null,
+        street: d.street || null, city: d.city || null, state: d.state || null, zip: d.zip || null,
       })), { onConflict: 'contact_id,npi' });
     }
     if (meds.length) {
@@ -5530,6 +5539,97 @@ function formatTimeAgo(dateStr) {
   return new Date(dateStr).toLocaleDateString();
 }
 
+// ── Doctors, facilities and medications on the contact record ────────────────
+// The contact is the source of truth for these, so they are editable here with
+// the same registry picker the intake uses — not read-only text.
+
+function c360CareLoad_(contactId) {
+  return Promise.all([
+    supabaseClient.from('client_providers')
+      .select('npi,name,is_facility,taxonomy,street,city,state,zip')
+      .eq('contact_id', contactId).eq('is_active', true).order('name'),
+    supabaseClient.from('client_medications')
+      .select('rxcui,name,quantity,doses_per_day,days_supply')
+      .eq('contact_id', contactId).eq('is_active', true).order('name'),
+  ]).then(function(r) {
+    return { providers: (r[0] && r[0].data) || [], meds: (r[1] && r[1].data) || [] };
+  }).catch(function() { return { providers: [], meds: [] }; });
+}
+
+// Open the registry picker on an existing list. id is 'med_doctors' or
+// 'med_medications' — the same field ids the intake uses, so the widget, its
+// search, its chips and its dose boxes all work unchanged.
+function c360EditCare_(contactId, id) {
+  const c = contacts.find(function(x) { return x.id === contactId; });
+  if (!c) { showToast('Contact not loaded'); return; }
+  const D = window._c360;
+  const isMed = id === 'med_medications';
+  const current = isMed ? (D && D.cMeds || []) : (D && D.cProviders || []);
+
+  // The picker seeds itself from _imPrefillAll, and searches near the client's
+  // ZIP via _intakeContactId. Both are what the intake form sets up.
+  const seed = current.map(function(x) {
+    return isMed
+      ? { rxcui: x.rxcui, name: x.name, quantity: x.quantity, doses_per_day: x.doses_per_day, days_supply: x.days_supply }
+      : { npi: x.npi, name: x.name, isFac: !!x.is_facility, taxonomy: x.taxonomy || '',
+          street: x.street || '', city: x.city || '', state: x.state || '', zip: x.zip || '' };
+  });
+  window._imPrefillAll = {}; window._imPrefillAll[id + '_struct'] = JSON.stringify(seed);
+  window._imPickers = window._imPickers || {};
+  _intakeContactId = contactId;
+
+  const def = { label: isMed ? 'Medications' : 'Doctors & facilities' };
+  showModal(
+    (isMed ? '\u{1F48A} Medications — ' : '\u{1FA7A} Doctors & Facilities — ') + escWeb(c.name || 'Contact'),
+    '<div style="padding:2px 0 4px;">'
+      + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">'
+      + (isMed
+          ? 'Search the drug registry and add what they actually take. Dose and quantity drive the yearly cost estimate on Part D and Marketplace quotes.'
+          : 'Search the national provider registry. What you save here is what the quoting tools check networks against.')
+      + '</div>' + _imPickerField_(id, def) + '</div>',
+    function() { return c360SaveCare_(contactId, id); },
+    { confirmLabel: 'Save to contact' }
+  );
+}
+
+async function c360SaveCare_(contactId, id) {
+  const isMed = id === 'med_medications';
+  const list  = (window._imPickers && window._imPickers[id]) || [];
+  const table = isMed ? 'client_medications' : 'client_providers';
+  const key   = isMed ? 'rxcui' : 'npi';
+
+  const rows = list.filter(function(x) { return x && x[key]; }).map(function(x) {
+    if (isMed) {
+      return { contact_id: contactId, rxcui: String(x.rxcui), name: x.name || '(unnamed)',
+               source: 'contact', is_active: true,
+               days_supply: medDaysFrom_(x.quantity, x.doses_per_day) || Number(x.days_supply) || 30,
+               quantity: x.quantity == null ? null : Number(x.quantity),
+               doses_per_day: x.doses_per_day == null ? null : Number(x.doses_per_day) };
+    }
+    return { contact_id: contactId, npi: String(x.npi), name: x.name || '(unnamed)',
+             source: 'contact', is_active: true,
+             is_facility: !!x.isFac, taxonomy: x.taxonomy || null,
+             street: x.street || null, city: x.city || null,
+             state: x.state || null, zip: x.zip || null };
+  });
+
+  // Retire what was removed rather than deleting it, then upsert what remains.
+  const off = await supabaseClient.from(table).update({ is_active: false }).eq('contact_id', contactId);
+  if (off.error) { showToast('Could not save: ' + off.error.message); return false; }
+  if (rows.length) {
+    const up = await supabaseClient.from(table).upsert(rows, { onConflict: 'contact_id,' + key });
+    if (up.error) { showToast('Could not save: ' + up.error.message); return false; }
+  }
+
+  const fresh = await c360CareLoad_(contactId);
+  if (window._c360 && window._c360.c.id === contactId) {
+    window._c360.cProviders = fresh.providers;
+    window._c360.cMeds      = fresh.meds;
+    renderC360_();
+  }
+  showToast('✓ Saved ' + rows.length + ' ' + (isMed ? 'medication' : 'provider') + (rows.length === 1 ? '' : 's'));
+}
+
 // ============================================================
 // CONTACT PANEL
 // ============================================================
@@ -5554,8 +5654,8 @@ async function viewContact(contactId, email) {
     gv(supabaseClient.from('booking_intents').select('*').eq('contact_id', c.id).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(12)),
     gv(supabaseClient.from('soa_records').select('id,status,signed_at,created_at').eq('contact_id', c.id).order('created_at', { ascending: false })),
     gv(supabaseClient.from('baa_records').select('*').eq('contact_id', c.id).order('created_at', { ascending: false })),
-    gv(supabaseClient.from('client_providers').select('npi,name').eq('contact_id', c.id).eq('is_active', true)),
-    gv(supabaseClient.from('client_medications').select('rxcui,name').eq('contact_id', c.id).eq('is_active', true)),
+    gv(supabaseClient.from('client_providers').select('npi,name,is_facility,taxonomy,street,city,state,zip').eq('contact_id', c.id).eq('is_active', true)),
+    gv(supabaseClient.from('client_medications').select('rxcui,name,quantity,doses_per_day,days_supply').eq('contact_id', c.id).eq('is_active', true)),
   ]);
   window._c360 = {
     c, opens, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds,
@@ -5679,17 +5779,40 @@ function c360Body_(D) {
         ${(() => {
           const arr = v => { if (Array.isArray(v)) return v;
             if (typeof v === 'string' && v.trim().startsWith('[')) { try { return JSON.parse(v); } catch (e) {} } return []; };
-          const hh = arr(c.household_members), dc = D.cProviders || [], md = D.cMeds || [];
+          const hh = arr(c.household_members);
+          // Count what the label says. A hospital is not a doctor, and the same
+          // NPI listed twice is one provider.
+          const seen = {};
+          const dc = (D.cProviders || []).filter(p => { const k = String(p.npi);
+                       if (seen[k]) return false; seen[k] = 1; return true; });
+          const md = D.cMeds || [];
+          const docs = dc.filter(p => !p.is_facility);
+          const facs = dc.filter(p =>  p.is_facility);
           const applying = hh.filter(m => m.covered !== false).length;
-          if (c.household_income == null && !hh.length && !dc.length && !md.length) return '';
+          // Clickable even when empty — that is how you add the first one.
+          const careCard = (label, n, id, tip) =>
+            `<button type="button" onclick="c360EditCare_('${c.id}','${id}')" title="${tip}"
+               style="text-align:left;background:var(--surface-2,#f1f5f9);border:0.5px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer;font:inherit;transition:border-color .12s;"
+               onmouseover="this.style.borderColor='var(--accent,#1d3557)'" onmouseout="this.style.borderColor='var(--border)'">
+               <div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">${label} <span style="opacity:.7;">&#9998;</span></div>
+               <div style="font-size:13.5px;font-weight:700;color:${n ? 'var(--text-primary)' : 'var(--text-muted)'};margin-top:2px;">${n || 'None yet'}</div>
+             </button>`;
+          if (c.household_income == null && !hh.length && !dc.length && !md.length) {
+            return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;">
+              ${careCard('Doctors on file', 0, 'med_doctors', 'Add their doctors')}
+              ${careCard('Medications', 0, 'med_medications', 'Add their medications')}
+            </div>`;
+          }
           return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;">
             ${fact('Household income', c.household_income != null ? '$' + Number(c.household_income).toLocaleString() + '/yr' : null)}
-            ${fact('Household', hh.length ? hh.length + ' member' + (hh.length === 1 ? '' : 's') + (applying ? ' \u00b7 ' + applying + ' applying' : '') : null)}
-            ${fact('Doctors on file', dc.length ? dc.length + '' : null)}
-            ${fact('Medications', md.length ? md.length + '' : null)}
+            ${fact('Household', hh.length ? hh.length + ' member' + (hh.length === 1 ? '' : 's') + (applying ? ' · ' + applying + ' applying' : '') : null)}
+            ${careCard('Doctors on file', docs.length, 'med_doctors', 'Click to edit their doctors')}
+            ${facs.length ? careCard('Facilities', facs.length, 'med_doctors', 'Hospitals, clinics and pharmacies on file') : ''}
+            ${careCard('Medications', md.length, 'med_medications', 'Click to edit their medications')}
           </div>
           ${dc.length || md.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.6;">
-            ${dc.length ? '\u{1FA7A} ' + escWeb(dc.map(d => d.name).slice(0, 3).join(', ')) + (dc.length > 3 ? ' +' + (dc.length - 3) + ' more' : '') + '<br>' : ''}
+            ${docs.length ? '\u{1FA7A} ' + escWeb(docs.map(d => d.name).slice(0, 3).join(', ')) + (docs.length > 3 ? ' +' + (docs.length - 3) + ' more' : '') + '<br>' : ''}
+            ${facs.length ? '\u{1F3E5} ' + escWeb(facs.map(d => d.name).slice(0, 3).join(', ')) + (facs.length > 3 ? ' +' + (facs.length - 3) + ' more' : '') + '<br>' : ''}
             ${md.length ? '\u{1F48A} ' + escWeb(md.map(m => m.name).slice(0, 3).join(', ')) + (md.length > 3 ? ' +' + (md.length - 3) + ' more' : '') : ''}
           </div>` : ''}`;
         })()}
@@ -5802,7 +5925,9 @@ function c360Body_(D) {
         <div class="panel-label" style="margin-bottom:0;">Timeline</div>
         <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;" onclick="addContactNote('${c.id}')">\u{1F4DD} Add Note</button>
       </div>
-      <div style="max-height:340px;overflow-y:auto;padding-right:2px;">${_renderActivityTimeline(D.tl, c.id)}</div>
+      <div>${_renderActivityTimeline(D.tl.slice(0, DEAL_TL_PREVIEW), c.id)}</div>
+      ${D.tl.length > DEAL_TL_PREVIEW ? `<div style="text-align:center;padding:10px 0 2px;">
+        <button class="btn btn-outline btn-sm" style="font-size:11.5px;" onclick="openContactActivityLog_('${c.id}')">\u{1F4DC} View all activity (${D.tl.length}${D.tl.length >= 30 ? '+' : ''})</button></div>` : ''}
       ${c.notes ? `<details style="margin-top:10px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;">\u{1F4C1} Historical Notes (pre-upgrade)</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:8px 10px;background:var(--surface-3);border-radius:6px;max-height:180px;overflow-y:auto;line-height:1.5;">${c.notes.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></details>` : ''}
     </div>
     <div class="panel-section"><div class="panel-label">Email Opens (${D.opens.length})</div>
@@ -5876,6 +6001,82 @@ function _renderActivityTimeline(acts, contactId) {
       </div>
     </div>`;
   }).join('');
+}
+
+// ── Contact activity log ─────────────────────────────────────────────────────
+// Same filters as the deal log, but over the contact's own events and rendered
+// with the contact timeline's row style.
+async function openContactActivityLog_(contactId) {
+  const c = contacts.find(function(x) { return x.id === contactId; });
+  showModal('\u{1F4DC} Activity — ' + escWeb((c && c.name) || 'Contact'),
+    '<div id="ctl-root" style="padding:14px 18px 4px;"><div style="color:var(--text-muted);font-size:13px;padding:20px 0;text-align:center;">Loading the full history…</div></div>',
+    null, { wide: true, hideConfirm: true, cancelLabel: 'Close' });
+
+  // The panel shows the newest 30; the log pulls everything.
+  const r = await supabaseClient.rpc('get_contact_timeline', { p_contact_id: contactId, p_limit: 500 });
+  window._ctl = { contactId: contactId, acts: (r && r.data) || [], kind: 'all', days: 0, sort: 'new', q: '' };
+  _ctlPaint_();
+}
+
+function _ctlSet_(field, value) { if (window._ctl) { window._ctl[field] = value; _ctlPaint_(); } }
+function _ctlSearch_(el)        { if (window._ctl) { window._ctl.q = el.value || ''; _ctlPaint_(); } }
+
+function _ctlPaint_() {
+  const S = window._ctl, root = document.getElementById('ctl-root');
+  if (!S || !root) return;
+  const now = Date.now(), q = S.q.trim().toLowerCase();
+  const txt = a => ((ACTIVITY_META[a.activity_type] || {}).label || a.activity_type || '')
+                 + ' ' + (a.subject || '') + ' ' + (a.body_snippet || '');
+
+  let rows = S.acts.filter(function(a) {
+    if (S.kind !== 'all' && _dealTlKind_(a.activity_type) !== S.kind) return false;
+    const ts = new Date(a.created_at).getTime();
+    if (S.days && (now - ts) > S.days * 86400000) return false;
+    if (q && txt(a).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  rows = rows.slice().sort(function(a, b) {
+    const x = new Date(a.created_at).getTime(), y = new Date(b.created_at).getTime();
+    return S.sort === 'old' ? x - y : y - x;
+  });
+
+  const present = {};
+  S.acts.forEach(function(a) { const k = _dealTlKind_(a.activity_type); present[k] = (present[k] || 0) + 1; });
+  const on = 'border-color:var(--accent,#1d3557);color:var(--accent,#1d3557);font-weight:700;';
+  let chips = '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;'
+    + (S.kind === 'all' ? on : '') + '" onclick="_ctlSet_(\'kind\',\'all\')">All (' + S.acts.length + ')</button>';
+  Object.keys(DEAL_TL_KINDS).forEach(function(k) {
+    if (!present[k]) return;
+    chips += '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;'
+      + (S.kind === k ? on : '') + '" onclick="_ctlSet_(\'kind\',\'' + k + '\')">'
+      + DEAL_TL_KINDS[k].icon + ' ' + DEAL_TL_KINDS[k].label + ' (' + present[k] + ')</button>';
+  });
+
+  const ranges = [[0, 'All time'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [365, 'Last year']];
+  const dateSel = '<select onchange="_ctlSet_(\'days\', Number(this.value))" style="font-size:12px;padding:4px 8px;">'
+    + ranges.map(function(r) {
+        return '<option value="' + r[0] + '"' + (S.days === r[0] ? ' selected' : '') + '>' + r[1] + '</option>';
+      }).join('') + '</select>';
+  const sortSel = '<select onchange="_ctlSet_(\'sort\', this.value)" style="font-size:12px;padding:4px 8px;">'
+    + '<option value="new"' + (S.sort === 'new' ? ' selected' : '') + '>Newest first</option>'
+    + '<option value="old"' + (S.sort === 'old' ? ' selected' : '') + '>Oldest first</option></select>';
+
+  root.innerHTML =
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' + chips + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">'
+    +   dateSel + sortSel
+    +   '<input type="text" id="ctl-q" placeholder="Search notes, subjects…" value="' + escWeb(S.q)
+    +     '" oninput="_ctlSearch_(this)" style="flex:1;min-width:160px;font-size:12px;padding:5px 9px;" />'
+    +   '<span style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;">'
+    +     rows.length + ' of ' + S.acts.length + '</span>'
+    + '</div>'
+    + '<div style="max-height:56vh;overflow-y:auto;padding-right:4px;">'
+    +   (rows.length ? _renderActivityTimeline(rows, S.contactId)
+                     : '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:24px 0;">Nothing matches those filters.</div>')
+    + '</div>';
+
+  const box = document.getElementById('ctl-q');
+  if (box && S.q) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
 }
 
 async function addContactNote(contactId) {
@@ -17843,6 +18044,8 @@ async function qbSaveClientLists_() {
     if (docs.length) {
       await supabaseClient.from('client_providers').insert(docs.map(d => ({
         contact_id: c.id, npi: String(d.npi), name: d.name || '(unnamed)', source: 'quote',
+        is_active: true, is_facility: !!d.isFac, taxonomy: d.taxonomy || null,
+        street: d.street || null, city: d.city || null, state: d.state || null, zip: d.zip || null,
       })));
     }
     await supabaseClient.from('client_medications').delete().eq('contact_id', c.id);
