@@ -1094,11 +1094,31 @@ function renderForm(session, contact) {
     plan.push({ sec: { key: 'more', title: 'A few more things' }, fields: orphans, groups: {} });
   }
 
+  // Greet them by first name where we have a real one. A blank, an email
+  // address dropped into the name field, or a lone initial all read worse than
+  // no name at all, so those fall back to the unnamed wording.
+  const greetName = (() => {
+    const n = String(prefill.name || '').trim();
+    if (!n || n.indexOf('@') >= 0) return '';
+    // 59 contacts are businesses, not people. "Thank you for your interest, 406"
+    // is worse than not using a name at all.
+    if (/\b(llc|l\.l\.c|inc|incorporated|corp|corporation|ltd|lp|llp|pllc|p\.c|company|services|group|agency|associates|holdings|enterprises|trust)\b\.?/i.test(n)) return '';
+    const first = n.split(/\s+/)[0].replace(/[,]+$/, '');
+    if (first.length < 2) return '';
+    if (/\d/.test(first)) return '';
+    if (/^(mr|mrs|ms|dr|rev|sir)\.?$/i.test(first)) return '';
+    return first;
+  })();
+
   let html = `
   <div class="card">
     <p style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">Information Request</p>
     <h2 style="font-size:22px;margin-bottom:8px;color:#1a1a2e;">${typeLabel}</h2>
-    <p style="font-size:14px;color:#666;line-height:1.6;">A few questions, grouped so they are quick to work through. Nothing here is compulsory — answer what you can and your advisor will pick up the rest.</p>
+    <p style="font-size:14px;color:#666;line-height:1.6;">${greetName
+      ? "Thank you for your interest, " + esc_(greetName) + " — we’re glad you reached out."
+      : "Thank you for reaching out — we’re glad you’re here."}
+      A few quick questions let your advisor come to you with real numbers rather than guesses.
+      Nothing here is required — answer what you can and we’ll cover the rest together.</p>
   </div>
   <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}','${session.agent_id||''}')">`;
 
