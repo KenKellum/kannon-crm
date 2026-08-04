@@ -130,7 +130,6 @@ const FIELD_DEFS = {
   marital_status:       { label: 'Marital status', type: 'select', options: ['Single','Married','Divorced','Widowed'] },
   best_time:            { label: 'Best time to reach you', type: 'select', options: ['Morning (8am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)','Anytime'] },
   street_address:       { label: 'Street address', type: 'text', placeholder: 'e.g. 123 Main St, Apt 4' },
-  household_income:     { label: 'Annual household income', type: 'select', options: ['Under $25,000','$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','$100,000–$150,000','Over $150,000'] },
   dependents_count:     { label: 'Number of dependents', type: 'number' },
   dependents_ages:      { label: 'Ages of dependents', type: 'text', placeholder: 'e.g. 8, 12, 15' },
   has_life_insurance:   { label: 'Currently have life insurance?', type: 'radio', options: ['Yes','No','Not sure'] },
@@ -148,7 +147,7 @@ const FIELD_DEFS = {
   aca_not_applying:     { label: 'Is anyone in your household NOT applying for this coverage?', type: 'text', placeholder: 'e.g. spouse has coverage through work; kids are on her plan' },
   aca_ichra_offer:      { label: 'Does an employer offer you an ICHRA / HRA (health reimbursement)?', type: 'select', options: ['No','Yes','Not sure'] },
   aca_ichra_amount:     { label: 'If yes: monthly reimbursement amount ($)', type: 'number', placeholder: 'e.g. 400' },
-  aca_qle:              { label: 'Outside Open Enrollment (Nov 1 \u2013 Jan 15), a recent life event is needed to enroll. Any of these happen in the last 60 days?', type: 'select',
+  aca_qle:              { label: 'For ACA Marketplace type Health coverage, we are currently outside Open Enrollment (Nov 1 \u2013 Jan 15), a recent life event is needed to enroll in an ACA plan type. Did any of these happen in the last 60 days?', type: 'select',
                           options: ['No \u2014 none of these','Lost other health coverage','Moved to a new area','Got married','Had or adopted a baby','Divorce or legal separation (lost coverage)','Lost Medicaid/CHIP eligibility','Left incarceration','Gained citizenship or lawful presence','Other qualifying life change'] },
   aca_qle_date:         { label: 'If yes: when did it happen?', type: 'date' },
   aca_tobacco:          { label: 'Does anyone applying for coverage use tobacco?', type: 'text', placeholder: 'e.g. No / Yes \u2014 John' },
@@ -272,16 +271,16 @@ const CHECKBOX_GROUP_LABELS = {
 // tools/check-intake-parity.js compares this against crm.js.
 // ────────────────────────────────────────────────────────────────────────────
 const INTAKE_PRODUCTS = [
-  { key:'health',       group:'Health cover',       label:'Health insurance for me or my family' },
-  { key:'medicare',     group:'Health cover',       label:'Medicare' },
-  { key:'dental',       group:'Health cover',       label:'Dental, vision & hearing' },
-  { key:'supplemental', group:'Health cover',       label:'Accident, hospital or critical illness cover' },
-  { key:'life',         group:'Life & income',      label:'Life insurance' },
-  { key:'disability',   group:'Life & income',      label:'Disability / income protection' },
-  { key:'investments',  group:'Life & income',      label:'Savings, retirement & college funding' },
+  { key:'health',       group:'Health Coverage',       label:'Health insurance for me or my family' },
+  { key:'medicare',     group:'Health Coverage',       label:'Medicare' },
+  { key:'dental',       group:'Health Coverage',       label:'Dental, vision & hearing' },
+  { key:'supplemental', group:'Health Coverage',       label:'Accident, hospital or critical illness cover' },
+  { key:'life',         group:'Life - Income Protection & Investing',      label:'Life insurance' },
+  { key:'disability',   group:'Life - Income Protection & Investing',      label:'Disability / income protection' },
+  { key:'investments',  group:'Life - Income Protection & Investing',      label:'Savings, retirement & college funding' },
   { key:'group',        group:'For a business',     label:'Benefits for my employees' },
-  { key:'property',     group:'Home, auto & business', label:'Auto & home', partner:true },
-  { key:'commercial',   group:'Home, auto & business', label:'Business or commercial coverage', partner:true },
+  { key:'property',     group:'Home, Auto, Umbrella & Business Coverages', label:'Auto & home', partner:true },
+  { key:'commercial',   group:'Home, Auto, Umbrella & Business Coverages', label:'Business or commercial coverage', partner:true },
 ];
 
 const INTAKE_PRODUCT_NEEDS = {
@@ -313,10 +312,10 @@ const INTAKE_PRODUCT_IDS = {
   life: ['household_members','marital_status','med_medications','has_life_insurance',
          'life_coverage_amount','life_work_cover','life_term','health_conditions',
          'goal_protection','goal_debt','goal_college'],
-  disability: ['household_members','current_occupation','current_income',
+  disability: ['household_members','current_occupation','aca_income',
                'di_employment','di_hours','di_existing','di_benefit_wanted','di_elimination',
                'di_benefit_period','health_conditions'],
-  investments: ['household_members','marital_status','household_income','has_investments',
+  investments: ['household_members','marital_status','aca_income','has_investments',
                 'goal_retirement','goal_wealth','goal_college','goal_debt'],
   group: ['business_name','group_legal_name','group_sic','employee_count','enrollment_count',
           'avg_age_range','employee_states','has_current_plan','current_group_carrier',
@@ -395,7 +394,7 @@ const INTAKE_SECTIONS = [
 
   { key: 'money', title: 'Money',
     blurb: 'Your income sets the tax credit you qualify for, so an accurate figure gives an accurate price. It is never sold or shared.',
-    ids: ['aca_income','household_income','affordable_shock',
+    ids: ['aca_income','affordable_shock',
           'aca_ichra_offer','aca_ichra_amount','group_budget','group_contribution'] },
 
   { key: 'timing', title: 'Timing',
@@ -488,7 +487,7 @@ function renderHouseholdTable_(id, def) {
         <th style="padding:4px;">Who</th><th style="padding:4px;">Age</th><th style="padding:4px;">Gender</th>
         <th style="padding:4px;">Tobacco</th><th style="padding:4px;">Applying</th>
         <th style="padding:4px;">Height</th><th style="padding:4px;">Weight</th>
-        <th style="padding:4px;">Coverage wanted</th><th style="padding:4px;">or exact</th><th></th></tr></thead>
+        <th style="padding:4px;">Amt of Life Coverage wanted</th><th style="padding:4px;">Or Exact Amt</th><th></th></tr></thead>
       <tbody id="hh-rows"></tbody>
     </table></div>
     ${_solo ? '' : `<button type="button" class="btn-secondary" style="margin-top:8px;padding:8px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;font-size:13px;" onclick="hhAdd_()">+ Add family member</button>`}
@@ -916,7 +915,7 @@ function pickerPick_(id, i) {
 // What they came for, plus anything else they'd like a look at. Deliberately
 // ADD-ONLY: what the advisor already set up is shown ticked and fixed, so a
 // stray click can't empty the form the client is halfway through.
-function renderProductPicker_(agentChose) {
+function renderProductPicker_(agentChose, stepLabel) {
   const groups = [];
   INTAKE_PRODUCTS.forEach(p => {
     let g = groups.find(x => x[0] === p.group);
@@ -942,7 +941,7 @@ function renderProductPicker_(agentChose) {
       </div>
     </div>`).join('');
   return `<div class="card" id="sec_products">
-    <div class="sec-head"><span class="sec-num" id="prod-num"></span><h3>What are you looking for?</h3></div>
+    <div class="sec-head"><span class="sec-num" id="prod-num">${stepLabel || ''}</span><h3>What products/services are you looking to acquire?</h3></div>
     <p class="sec-blurb">Tick anything you'd like your advisor to look at — even if it isn't why you got in touch.
       Adding something just brings up a few more questions further down.</p>
     ${body}
@@ -1097,16 +1096,15 @@ function renderForm(session, contact) {
   </div>
   <form id="intake-form" onsubmit="submitForm(event,'${session.id}','${session.contact_id||''}','${session.form_type}','${session.agent_id||''}')">`;
 
+  // First, before anything else: what they want decides which sections exist at
+  // all, so asking it later made the form grow and reflow under their cursor.
+  html += renderProductPicker_(window._agentProducts, '1 / ' + (plan.length + 1));
+
   plan.forEach((step, i) => {
-    // Offered early, so anything they add grows the form in its proper place
-    // instead of tacking questions on the end.
-    if (step.sec.key === 'household' || (i === 2 && !plan.some(s => s.sec.key === 'household'))) {
-      html += renderProductPicker_(window._agentProducts);
-    }
     const sec = step.sec;
     html += `<div class="card${sec.sensitive ? ' sec-private' : ''}" id="sec_${sec.key}">
       <div class="sec-head">
-        <span class="sec-num">${i + 1} / ${plan.length}</span>
+        <span class="sec-num">${i + 2} / ${plan.length + 1}</span>
         <h3>${sec.title}</h3>
       </div>
       ${sec.blurb ? `<p class="sec-blurb">${sec.blurb}</p>` : '<div class="sec-rule"></div>'}`;

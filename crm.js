@@ -2772,8 +2772,6 @@ const INTAKE_FIELD_DEFS = {
   marital_status:        { label: 'Marital Status',         type: 'select', section: 'About you',
                            options: ['Single','Married','Divorced','Widowed'] },
   // ── Financial Services ───────────────────────────────────────────────────
-  household_income:      { label: 'Household Income',       type: 'select', section: 'Money',
-                           options: ['Under $25,000','$25,000–$50,000','$50,000–$75,000','$75,000–$100,000','$100,000–$150,000','Over $150,000'] },
   dependents_count:      { label: '# of Dependents',        type: 'number', section: 'Who needs coverage' },
   dependents_ages:       { label: 'Dependent Ages',         type: 'text',   section: 'Who needs coverage',
                            placeholder: 'e.g. 5, 8, 12' },
@@ -2934,7 +2932,7 @@ const INTAKE_TYPE_DEFAULTS = {
                       'dependents_count','dependents_ages',
                       'has_life_insurance','life_coverage_amount','has_investments',
                       'goal_debt','goal_protection','goal_retirement','goal_college','goal_wealth',
-                      'household_income','notes'],
+                      'aca_income','notes'],
   'medicare':        ['dob','zip','best_time',
                       'coverage_intent',
                       'med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage',
@@ -3024,7 +3022,7 @@ const INTAKE_SECTIONS = [
           'goal_debt','goal_protection','goal_college','goal_retirement','goal_wealth','goal_business'] },
 
   { key: 'money',    title: 'Money',
-    ids: ['aca_income','household_income','affordable_shock',
+    ids: ['aca_income','affordable_shock',
           'aca_ichra_offer','aca_ichra_amount','group_budget','group_contribution'] },
 
   { key: 'timing',   title: 'Timing',
@@ -3075,7 +3073,7 @@ const INTAKE_ALL_FIELDS = INTAKE_SECTIONS.map(s => ({ section: s.title, ids: s.i
 // own form types and never show this picker.
 // ────────────────────────────────────────────────────────────────────────────
 const INTAKE_PRODUCTS = [
-  { key: 'health', group: 'Health cover', label: 'Health insurance for me or my family',
+  { key: 'health', group: 'Health Coverage', label: 'Health insurance for me or my family',
     agentLabel: 'Health — Individual/Family', formType: 'health-individual',
     lines: ['Health — Individual','Short-Term Medical','Private/Off-Market Medical','Health Share'],
     // No aca_not_applying: the household widget's per-person "Applying" tick
@@ -3086,21 +3084,21 @@ const INTAKE_PRODUCTS = [
           'aca_income','affordable_shock','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date',
           'aca_lawful','ongoing_condition'] },
 
-  { key: 'medicare', group: 'Health cover', label: 'Medicare',
+  { key: 'medicare', group: 'Health Coverage', label: 'Medicare',
     agentLabel: 'Medicare', formType: 'medicare',
     lines: ['Medicare Advantage','Medicare Supplement','Part D (PDP)'],
     ids: ['household_members','med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage','currently_insured','current_carrier',
           'med_doctors','med_medications','med_pharmacy','mi_supplement','mi_pdp','mi_advantage','mi_dental'] },
 
-  { key: 'dental', group: 'Health cover', label: 'Dental, vision & hearing',
+  { key: 'dental', group: 'Health Coverage', label: 'Dental, vision & hearing',
     agentLabel: 'Dental / Vision / Hearing', lines: ['Dental/Vision/Hearing'], ids: ['household_members','med_doctors'] },
 
-  { key: 'supplemental', group: 'Health cover', label: 'Accident, hospital or critical illness cover',
+  { key: 'supplemental', group: 'Health Coverage', label: 'Accident, hospital or critical illness cover',
     agentLabel: 'Supplemental (accident / hospital / cancer)',
     lines: ['Hospital Indemnity','Accident','Cancer/Critical Illness'],
     ids: ['household_members','affordable_shock','ongoing_condition'] },
 
-  { key: 'life', group: 'Life & income', label: 'Life insurance',
+  { key: 'life', group: 'Life - Income Protection & Investing', label: 'Life insurance',
     agentLabel: 'Life', formType: 'financial', lines: ['Life'],
     // Dependents come from the household widget — count and ages are already
     // in it, per person, with gender and tobacco alongside.
@@ -3108,15 +3106,15 @@ const INTAKE_PRODUCTS = [
           'life_coverage_amount','life_work_cover','life_term','health_conditions',
           'goal_protection','goal_debt','goal_college'] },
 
-  { key: 'disability', group: 'Life & income', label: 'Disability / income protection',
+  { key: 'disability', group: 'Life - Income Protection & Investing', label: 'Disability / income protection',
     agentLabel: 'Disability', lines: ['Disability'],
-    ids: ['household_members','current_occupation','current_income',
+    ids: ['household_members','current_occupation','aca_income',
           'di_employment','di_hours','di_existing','di_benefit_wanted','di_elimination',
           'di_benefit_period','health_conditions'] },
 
-  { key: 'investments', group: 'Life & income', label: 'Savings, retirement & college funding',
+  { key: 'investments', group: 'Life - Income Protection & Investing', label: 'Savings, retirement & college funding',
     agentLabel: 'Savings & Investments', formType: 'financial', lines: [],
-    ids: ['household_members','marital_status','household_income','has_investments',
+    ids: ['household_members','marital_status','aca_income','has_investments',
           'goal_retirement','goal_wealth','goal_college','goal_debt'] },
 
   { key: 'group', group: 'For a business', label: 'Benefits for my employees',
@@ -3129,10 +3127,10 @@ const INTAKE_PRODUCTS = [
   // ── Placed through a partner rather than written here. `referral` is a
   // BEHAVIOUR flag, not a label: it means ask no questions and never imply a
   // quote. The word itself appears nowhere the agent or the client can see it.
-  { key: 'property', group: 'Property & Casualty', label: 'Auto & home',
+  { key: 'property', group: 'Home, Auto, Umbrella & Business Coverages', label: 'Auto & home',
     agentLabel: 'Auto & Home', lines: ['Auto/Home'], ids: [], referral: true },
 
-  { key: 'commercial', group: 'Property & Casualty', label: 'Business or commercial coverage',
+  { key: 'commercial', group: 'Home, Auto, Umbrella & Business Coverages', label: 'Business or commercial coverage',
     agentLabel: 'Commercial', lines: ['Commercial'], ids: [], referral: true },
 ];
 
@@ -3804,7 +3802,7 @@ function _imHHTable_(id, def) {
   const wide = n.has('hw') || n.has('amount');   // cards, not a nine-column table
   const head = ['Who', 'Age', n.has('gender') && 'Gender', n.has('tobacco') && 'Tob.',
                 n.has('covered') && 'Applying', n.has('hw') && 'Ht', n.has('hw') && 'Wt',
-                n.has('amount') && 'Coverage wanted', n.has('amount') && 'or exact', '']
+                n.has('amount') && 'Amt of Life Coverage wanted', n.has('amount') && 'Or Exact Amt', '']
                 .filter(x => x !== false).map(h => '<th style="padding:4px 6px;">' + (h || '') + '</th>').join('');
   // One insured life (disability) gets no roster and no add button — the label
   // has to stop saying "household members" too.
