@@ -1031,11 +1031,11 @@ function renderDashboardAgent() {
     if (c.opt_out_email || c.sequence_status === 'Opted Out' || c.email_status === 'bounced') return false;
     if (c.sequence_status === 'Replied') return true;
     if (c.lead_source === 'web_form') {
-      var d = deals.find(function(x) { return x.contact_id === c.id; });
+      var d = openDealFor_(c.id);
       return !d || d.stage === 'New Lead';
     }
     if (c.lead_source === 'booking_link') {
-      var d = deals.find(function(x) { return x.contact_id === c.id; });
+      var d = openDealFor_(c.id);
       return !d || d.stage === 'Discovery Call';
     }
     return false;
@@ -2056,12 +2056,12 @@ function _dialerScore(contact) {
   score += (statusMap[contact.sequence_status] || 0);
   // Web form + no intake done = high intent inbound lead — boost to hot tier
   if (contact.lead_source === 'web_form') {
-    var _wfd = deals.find(function(x) { return x.contact_id === contact.id; });
+    var _wfd = openDealFor_(contact.id);
     if (!_wfd || _wfd.stage === 'New Lead') score += 950;
   }
   // Booking link + no intake done = they scheduled themselves — top priority
   if (contact.lead_source === 'booking_link') {
-    var _bld = deals.find(function(x) { return x.contact_id === contact.id; });
+    var _bld = openDealFor_(contact.id);
     if (!_bld || _bld.stage === 'Discovery Call') score += 980;
   }
   const opens = window._dashOpens || [];
@@ -2083,14 +2083,14 @@ function _dialerSignal(contact) {
   const op = opens.find(o => (o.contact_email || '').toLowerCase() === (contact.email || '').toLowerCase());
   // Booking link — they scheduled themselves, no intake yet (highest intent)
   if (contact.lead_source === 'booking_link') {
-    var _bld = deals.find(function(x) { return x.contact_id === contact.id; });
+    var _bld = openDealFor_(contact.id);
     if (!_bld || _bld.stage === 'Discovery Call') {
       return { icon: 'ti-calendar-check', label: '📅 Booked appointment — intake needed', sub: 'They scheduled themselves — call to confirm and run intake before the meeting', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.25)' };
     }
   }
   // Web form — filled out landing page, no intake yet
   if (contact.lead_source === 'web_form') {
-    var _wfd = deals.find(function(x) { return x.contact_id === contact.id; });
+    var _wfd = openDealFor_(contact.id);
     if (!_wfd || _wfd.stage === 'New Lead') {
       return { icon: 'ti-world', label: '🌐 Web form lead — first contact', sub: 'They raised their hand — call now while interest is hot, then run intake', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)' };
     }
@@ -2155,7 +2155,7 @@ function _dialerActionRow(contact, isLast) {
   const schedBtn  = '<button class="btn btn-primary" onclick="showScheduleModal(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;background:#1a3a5c;color:#fff;">&#128197; Schedule Appointment</button>';
   const sendLinkBtn = '<button class="btn btn-primary" onclick="dialerSendBookingLink(\'' + contact.id + '\')" style="flex:1;font-size:14px;padding:11px 16px;background:#0e7490;color:#fff;" title="Email the prospect a self-scheduling link">&#128139; Send Booking Link</button>';
 
-  const contactDeal = deals.find(function(d) { return d.contact_id === contact.id; });
+  const contactDeal = openDealFor_(contact.id);
 
   // === PIPELINE (has deal) — View/Deal, no Reset ===
   if (contactDeal) {
@@ -2212,7 +2212,7 @@ async function _loadDialerScripts() {
 }
 
 function _selectDialerScript(contact, allScripts) {
-  var deal = deals.find(function(d) { return d.contact_id === contact.id; });
+  var deal = openDealFor_(contact.id);
   var situation = 'cold';
   if (deal) situation = 'pipeline';
   else if (contact.sequence_status === 'Replied' || contact.sequence_status === 'Interested') situation = 'warm';
@@ -4129,7 +4129,10 @@ async function saveIntakeToCRM() {
       career_existing:   { pipeline: 'agent-kannon',      stage: 'Identified' },
     };
     const _idest = _intakePipelineMap[_intakeFormType] || { pipeline: 'individual-family', stage: 'Needs Assessment' };
-    const _iexisting = deals.find(function(d) { return d.contact_id === _intakeContactId && d.pipeline === _idest.pipeline; });
+    // Prefer a live deal. Only fall back to a closed one so a returning client
+    // revives their old record instead of stranding it off the board.
+    const _imine = deals.filter(function(d) { return d.contact_id === _intakeContactId && d.pipeline === _idest.pipeline; });
+    const _iexisting = _imine.find(function(d) { return !d.closed_at; }) || _imine[0];
     if (!_iexisting) {
       // No deal yet — create one at the intake stage
       const _ititle = c.company || c.name || 'New Deal';
@@ -4148,9 +4151,17 @@ async function saveIntakeToCRM() {
       const _pipelineStages = (PIPELINES[_idest.pipeline] || {}).stages || [];
       const _currentIdx = _pipelineStages.indexOf(_iexisting.stage);
       const _targetIdx  = _pipelineStages.indexOf(_idest.stage);
-      if (_targetIdx > _currentIdx) {
-        await supabaseClient.from('deals').update({ stage: _idest.stage }).eq('id', _iexisting.id);
-        _iexisting.stage = _idest.stage;
+      const _iupd = {};
+      if (_targetIdx > _currentIdx) _iupd.stage = _idest.stage;
+      // A new intake means they are back. Put the deal on the board again.
+      if (_iexisting.closed_at) {
+        _iupd.closed_at = null; _iupd.closed_reason = null;
+        _iupd.closed_note = null; _iupd.follow_up_on = null;
+      }
+      if (Object.keys(_iupd).length) {
+        await supabaseClient.from('deals').update(_iupd).eq('id', _iexisting.id);
+        Object.assign(_iexisting, _iupd);
+        if (_iupd.closed_at === null) showToast('Reopened their closed deal');
       }
     }
 
@@ -4423,7 +4434,7 @@ function renderDialer() {
     : contact.type === 'Group/Employer' ? 'badge-group' : 'badge-individual';
 
   const _signal = _dialerSignal(contact);
-  const _rdDeal = deals.find(function(d) { return d.contact_id === contact.id; });
+  const _rdDeal = openDealFor_(contact.id);
   const _rdBorder = _rdDeal ? '#10b981' : 'var(--accent)';
   const _hasSocial = !!(contact.linkedin_url || contact.facebook_url || contact.instagram_handle || contact.twitter_handle || contact.tiktok_handle || contact.telegram_handle || contact.whatsapp_number);
   const _sA = !!(window._dialerScriptActive);
@@ -5428,6 +5439,15 @@ async function viewContact(contactId, email) {
   renderC360_();
 }
 
+function c360ToggleClosed_() { window._c360.showClosed = !window._c360.showClosed; renderC360_(); }
+
+async function c360Reopen_(id) {
+  await reopenDeal_(id);
+  const D = window._c360;
+  if (D) D.deals = deals.filter(function(d) { return d.contact_id === D.c.id; });
+  renderC360_();
+}
+
 function c360Tab(t) { window._c360.tab = t; renderC360_(); }
 
 function c360OpenDeal_(id) {
@@ -5445,7 +5465,7 @@ function renderC360_() {
   const compCount = D.soas.length + D.baas.length;
   const TABS = [
     ['overview', '\u{1F4C7}', 'Overview', null],
-    ['deals', '\u{1F680}', 'Pipelines', D.deals.length || null],
+    ['deals', '\u{1F680}', 'Pipelines', D.deals.filter(function(d){return !d.closed_at;}).length || null],
     ['quotes', '\u{1F4BC}', 'Quotes', D.quotes.length || null],
     ['intakes', '\u{1F91D}', 'Intakes', D.intakes.length || null],
     ['appts', '\u{1F4C5}', 'Meetings', D.appts.length || null],
@@ -5555,16 +5575,37 @@ function c360Body_(D) {
   }
 
   if (D.tab === 'deals') {
-    if (!D.deals.length) return c360Empty_('Not in any pipeline yet.');
-    return D.deals.map(d => {
+    const openD   = D.deals.filter(function(d) { return !d.closed_at; });
+    const closedD = D.deals.filter(function(d) { return  d.closed_at; });
+    const dealCard = (d, isClosed) => {
       const pl = (typeof PIPELINES !== 'undefined' && PIPELINES[d.pipeline]) ? PIPELINES[d.pipeline].name : d.pipeline;
+      const why = [d.closed_reason || 'Closed', d.closed_at ? fmtD(d.closed_at) : '',
+                   d.follow_up_on ? 'try again ' + fmtD(d.follow_up_on) : ''].filter(Boolean).join(' · ');
       return c360Row_(`
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:13.5px;">${escWeb(d.title || pl)}</div>
-          <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${escWeb(pl)} \u2192 <span style="color:var(--accent,#1d3557);font-weight:700;">${escWeb(d.stage || '\u2014')}</span>${d.value ? ' \u00b7 $' + Number(d.value).toLocaleString() : ''}</div>
+        <div style="flex:1;min-width:0;${isClosed ? 'opacity:.6;' : ''}">
+          <div style="font-weight:700;font-size:13.5px;">${escWeb(d.title || pl)}${isClosed
+            ? ' <span style="font-weight:600;font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:9px;padding:1px 7px;margin-left:5px;vertical-align:middle;">CLOSED</span>' : ''}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${escWeb(pl)} → <span style="color:${isClosed ? 'var(--text-muted)' : 'var(--accent,#1d3557)'};font-weight:700;">${escWeb(d.stage || '—')}</span>${d.value ? ' · $' + Number(d.value).toLocaleString() : ''}</div>
+          ${isClosed ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${escWeb(why)}</div>` : ''}
         </div>
-        <button class="btn btn-primary btn-sm" onclick="c360OpenDeal_('${d.id}')">Open deal \u2192</button>`);
-    }).join('');
+        ${isClosed
+          ? `<button class="btn btn-outline btn-sm" onclick="c360Reopen_('${d.id}')">↺ Reopen</button>`
+          : `<button class="btn btn-primary btn-sm" onclick="c360OpenDeal_('${d.id}')">Open deal →</button>`}`);
+    };
+
+    let html = openD.length ? openD.map(function(d) { return dealCard(d, false); }).join('')
+                            : c360Empty_('Not in any active pipeline.');
+    // Closed deals stay on the record but out of the way. The button only
+    // appears when there is actually something behind it.
+    if (closedD.length) {
+      html += '<div style="margin-top:12px;text-align:center;">'
+            + '<button class="btn btn-outline btn-sm" style="color:var(--text-muted);" onclick="c360ToggleClosed_()">'
+            + (D.showClosed ? '▾ Hide' : '▸ Show') + ' ' + closedD.length + ' closed deal'
+            + (closedD.length === 1 ? '' : 's') + '</button></div>';
+      if (D.showClosed) html += '<div style="margin-top:8px;">'
+            + closedD.map(function(d) { return dealCard(d, true); }).join('') + '</div>';
+    }
+    return html;
   }
 
   if (D.tab === 'quotes') {
@@ -5923,6 +5964,13 @@ function openCloseDeal(dealId) {
   }, { confirmLabel: 'Close this deal' });
 }
 
+// A contact can hold several deals over the years. Anything asking "what is
+// this person's deal?" means the live one - a closed deal must not answer, or
+// the dialer announces a pipeline stage the deal no longer sits in.
+function openDealFor_(contactId) {
+  return (deals || []).find(function(d) { return d.contact_id === contactId && !d.closed_at; });
+}
+
 async function reopenDeal_(dealId) {
   const d = (deals || []).find(x => x.id === dealId);
   const { error } = await supabaseClient.from('deals')
@@ -6137,232 +6185,6 @@ async function toggleDealTask(taskId, dealId, done) {
 async function deleteDealTaskItem(taskId, dealId) {
   var _delRes = await supabaseClient.from('deal_tasks').delete().eq('id', taskId);
   var error = _delRes.error;
-  if (error) { showToast('Error: ' + error.message); return; }
-  dealTasks = dealTasks.filter(function(x) { return x.id !== taskId; });
-  var el = document.getElementById('task-list-' + dealId);
-  if (el) el.innerHTML = renderDealTaskList(dealId);
-}
-
-// ── Send email from deal panel ────────────────────────────────────────────────
-function openDealEmailModal(dealId) {
-  var deal    = deals.find(function(d) { return d.id === dealId; });
-  var contact = deal && deal.contact_id ? contacts.find(function(c) { return c.id === deal.contact_id; }) : null;
-  var aName   = currentAgent ? (currentAgent.name  || '') : '';
-  var aPhone  = currentAgent ? (currentAgent.phone || '') : '';
-  var aEmail  = currentAgent ? (currentAgent.email || '') : '';
-  var toEmail = contact && contact.email ? contact.email : '';
-  var toName  = contact ? (contact.name  || '') : '';
-  var dTitle  = deal    ? (deal.title    || '') : '';
-  var sig     = aName + (aPhone ? '\n' + aPhone : '') + (aEmail ? '\n' + aEmail : '');
-  var defBody = 'Hi ' + toName + ',\n\nI wanted to follow up regarding ' + dTitle + '.\n\nPlease don\'t hesitate to reach out with any questions or to schedule a time to connect.\n\nBest regards,\n' + sig;
-  showModal('Send Email',
-    '<div style="display:flex;flex-direction:column;gap:10px;">'
-    + '<div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);display:block;margin-bottom:3px;">To</label>'
-    + '<input type="text" id="em-to" value="' + toEmail + '" placeholder="recipient@email.com" /></div>'
-    + '<div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);display:block;margin-bottom:3px;">Subject</label>'
-    + '<input type="text" id="em-subj" value="Following up — ' + dTitle + '" /></div>'
-    + '<div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);display:block;margin-bottom:3px;">Message</label>'
-    + '<textarea id="em-body" rows="10" style="width:100%;resize:vertical;background:var(--surface-1);border:0.5px solid var(--border);color:var(--text-primary);border-radius:var(--radius);padding:8px;font-family:inherit;font-size:13px;box-sizing:border-box;">' + defBody + '</textarea></div>'
-    + '</div>',
-    async function() {
-      var to   = (document.getElementById('em-to')   || {}).value || '';
-      var subj = (document.getElementById('em-subj') || {}).value || '';
-      var body = (document.getElementById('em-body') || {}).value || '';
-      to = to.trim(); subj = subj.trim();
-      if (!to || !subj) { showToast('To and Subject are required'); return false; }
-      await sendDealEmail(dealId, to, subj, body);
-      return false;
-    },
-    { confirmLabel: '&#9993; Send Email' }
-  );
-}
-
-async function sendDealEmail(dealId, to, subj, body) {
-  closeModal();
-  showToast('Sending...');
-  try {
-    var sess  = await supabaseClient.auth.getSession();
-    var token = sess.data.session ? sess.data.session.access_token : '';
-    var res   = await fetch(SUPABASE_URL + '/functions/v1/send-deal-email', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body:    JSON.stringify({ deal_id: dealId, to: to, subject: subj,
-                                body: body.replace(/\n/g, '<br>'), agent_id: currentUser.id })
-    });
-    var result = await res.json();
-    if (!res.ok || result.error) { showToast('Error: ' + (result.error || 'Send failed')); return; }
-    dealActivities.unshift({
-      deal_id: dealId, agent_id: currentUser.id, type: 'email',
-      content: 'Email sent to ' + to + ': ' + subj, created_at: new Date().toISOString()
-    });
-    _refreshDealTimeline(dealId);
-    showToast('&#9993; Email sent!');
-  } catch(e) {
-    showToast('Send failed: ' + e.message);
-  }
-}
-
-
-// ── Stage-aware quick actions ─────────────────────────────────────────────────
-function getStageActions(pipeline, stage) {
-  var m = {
-    'group-employer': {
-      'New Lead':   ['Request Employee Census','Schedule Discovery Call','Send Company Overview'],
-      'Contacted':  ['Follow Up on Interest','Schedule Discovery Call','Request Meeting'],
-      'Responded':  ['Send Group Quote','Schedule Benefit Presentation','Request Signed Census'],
-      'Proposal':   ['Follow Up on Proposal','Answer Benefit Questions','Request Decision Date'],
-      'Closing':    ['Send Group Application','Schedule Enrollment Meeting','Confirm Effective Date'],
-      'Won':        ['Set Annual Renewal Reminder','Request Employer Referrals','Plan Renewal Strategy']
-    },
-    'individual-family': {
-      'New Lead':   ['Schedule Needs Analysis','Send Plan Overview','Verify Coverage Needs'],
-      'Contacted':  ['Follow Up with Plan Options','Schedule Call','Confirm Best Time to Talk'],
-      'Responded':  ['Send Individual Quote','Compare Plan Options','Schedule Enrollment Call'],
-      'Proposal':   ['Follow Up on Quote','Answer Plan Questions','Request Enrollment Decision'],
-      'Closing':    ['Complete Application','Confirm Coverage Start Date','Submit Application'],
-      'Won':        ['Set Renewal Reminder','Request Referrals','Confirm Coverage Active']
-    },
-    'agent-insured': {
-      'New Lead':    ['Schedule Recruiting Call','Send Agent Overview','Check License Status'],
-      'Interested':  ['Schedule Recruiting Call','Send Company Overview','Check License Status'],
-      'Meeting Set': ['Prepare Recruiting Packet','Send Contracting Docs','Answer Questions'],
-      'Contracting': ['Follow Up on Contract','Verify Appointment','Check E&O Insurance'],
-      'Active':      ['Check First Month Production','Offer Product Training','Schedule Check-in'],
-      'Won':         ['Set Production Review','Offer Advanced Training','Request Agent Referrals']
-    },
-    'agent-kannon': {
-      'New Lead':    ['Schedule Recruiting Call','Send Kannon Overview','Discuss Opportunity'],
-      'Interested':  ['Schedule Recruiting Call','Send Kannon Overview','Discuss Opportunity'],
-      'Meeting Set': ['Prepare Offer Package','Send Contracting Docs','Answer Questions'],
-      'Contracting': ['Follow Up on Contract','Verify License Transfer','Complete Onboarding'],
-      'Active':      ['Check First Month Production','Offer Training','Schedule Team Meeting'],
-      'Won':         ['Set Production Review','Introduce to Team','Plan Growth Strategy']
-    }
-  };
-  return (m[pipeline] && m[pipeline][stage]) || ['Follow Up','Schedule Call','Log Activity'];
-}
-
-// ── Deal task UI helpers ──────────────────────────────────────────────────────
-function renderDealTaskList(dealId) {
-  var tasks = dealTasks.filter(function(t) { return t.deal_id === dealId; });
-  if (!tasks.length) {
-    return '<div style="color:var(--text-muted);font-size:12px;padding:6px 0;">No tasks yet — add one below or use Quick Actions above</div>';
-  }
-  var open = tasks.filter(function(t) { return !t.completed; });
-  var done = tasks.filter(function(t) { return t.completed;  });
-  var html = '';
-  open.forEach(function(t) {
-    var today   = new Date().toISOString().slice(0, 10);
-    var overdue = t.due_date && t.due_date < today;
-    html += '<div class="task-item">'
-      + '<input type="checkbox" onchange="toggleDealTask(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;,true)" />'
-      + '<span class="task-title">' + (t.title || '') + '</span>'
-      + (t.due_date ? '<span class="task-due-date" style="color:' + (overdue ? '#ef4444' : 'var(--text-muted)') + '">' + t.due_date + '</span>' : '')
-      + '<button class="task-del-btn" onclick="deleteDealTaskItem(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;)" title="Remove task">&#215;</button>'
-      + '</div>';
-  });
-  if (done.length) {
-    html += '<details style="margin-top:6px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;list-style:none;">&#9654; Done (' + done.length + ')</summary>';
-    done.forEach(function(t) {
-      html += '<div class="task-item">'
-        + '<input type="checkbox" checked onchange="toggleDealTask(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;,false)" />'
-        + '<span class="task-title" style="text-decoration:line-through;opacity:0.45;">' + (t.title || '') + '</span>'
-        + '<button class="task-del-btn" onclick="deleteDealTaskItem(&#39;' + t.id + '&#39;,&#39;' + dealId + '&#39;)">&#215;</button>'
-        + '</div>';
-    });
-    html += '</details>';
-  }
-  return html;
-}
-
-// Dashboard widget — returns a full dash-card HTML string
-function renderTasksWidget() {
-  var today    = new Date().toISOString().slice(0, 10);
-  var open     = dealTasks.filter(function(t) { return !t.completed; });
-  var overdue  = open.filter(function(t) { return t.due_date && t.due_date < today; });
-  var dueToday = open.filter(function(t) { return t.due_date === today; });
-  var upcoming = open.filter(function(t) { return t.due_date && t.due_date > today; });
-  var showList = overdue.concat(dueToday).concat(upcoming).slice(0, 5);
-  var badge    = open.length
-    ? ' <span style="background:rgba(99,102,241,0.15);color:#818cf8;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600;">' + open.length + '</span>'
-    : '';
-  var header = _ctitle('ti-checks', 'My Tasks' + badge);
-  if (!showList.length) {
-    return '<div class="dash-card">' + header
-      + '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;">'
-      + '<i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:4px;color:var(--text-success);"></i>'
-      + 'No open tasks — all caught up!</div>'
-      + '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage(\'pipelines\')">View Pipelines &rarr;</button></div>'
-      + '</div>';
-  }
-  var rows = showList.map(function(t) {
-    var deal    = deals.find(function(d) { return d.id === t.deal_id; });
-    var isOver  = t.due_date && t.due_date < today;
-    var isToday = t.due_date === today;
-    var dueLbl  = t.due_date
-      ? (isOver  ? '<span style="color:#ef4444;">Overdue: ' + t.due_date + '</span>'
-                 : isToday ? '<span style="color:#f59e0b;">Due today</span>'
-                 : t.due_date)
-      : '';
-    return '<div class="action-item" style="padding:6px 0;">'
-      + '<div class="action-item-info">'
-      + '<div class="action-item-name" style="font-size:12px;">' + (t.title || '') + '</div>'
-      + '<div class="action-item-sub">' + (deal ? deal.title : 'Pipeline deal')
-      + (dueLbl ? ' &bull; ' + dueLbl : '') + '</div></div>'
-      + '<button class="btn btn-outline btn-sm" onclick="openDealPanel(&#39;' + t.deal_id + '&#39;)">Open</button>'
-      + '</div>';
-  }).join('');
-  return '<div class="dash-card">' + header + rows
-    + (open.length > 5
-      ? '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm btn-full" onclick="showPage(\'pipelines\')">' + open.length + ' tasks total &rarr;</button></div>'
-      : '')
-    + '</div>';
-}
-
-// ── Deal task CRUD ────────────────────────────────────────────────────────────
-async function quickAddTask(dealId, title) {
-  var ins = await supabaseClient.from('deal_tasks')
-    .insert({ deal_id: dealId, user_id: currentUser.id, title: title, completed: false })
-    .select().single();
-  if (ins.error) { showToast('Error: ' + ins.error.message); return; }
-  dealTasks.push(ins.data);
-  var el = document.getElementById('task-list-' + dealId);
-  if (el) el.innerHTML = renderDealTaskList(dealId);
-  showToast('Task added: ' + title);
-}
-
-async function addDealTaskFromInput(dealId) {
-  var inp    = document.getElementById('task-input-' + dealId);
-  var dateEl = document.getElementById('task-date-' + dealId);
-  if (!inp || !inp.value.trim()) return;
-  var title = inp.value.trim();
-  var due   = dateEl && dateEl.value ? dateEl.value : null;
-  var ins = await supabaseClient.from('deal_tasks')
-    .insert({ deal_id: dealId, user_id: currentUser.id, title: title, due_date: due, completed: false })
-    .select().single();
-  if (ins.error) { showToast('Error: ' + ins.error.message); return; }
-  dealTasks.push(ins.data);
-  inp.value = '';
-  if (dateEl) dateEl.value = '';
-  var el = document.getElementById('task-list-' + dealId);
-  if (el) el.innerHTML = renderDealTaskList(dealId);
-  showToast('Task added');
-}
-
-async function toggleDealTask(taskId, dealId, done) {
-  var upd = done
-    ? { completed: true,  completed_at: new Date().toISOString() }
-    : { completed: false, completed_at: null };
-  var { error } = await supabaseClient.from('deal_tasks').update(upd).eq('id', taskId);
-  if (error) { showToast('Error: ' + error.message); return; }
-  var t = dealTasks.find(function(x) { return x.id === taskId; });
-  if (t) { t.completed = done; t.completed_at = done ? new Date().toISOString() : null; }
-  var el = document.getElementById('task-list-' + dealId);
-  if (el) el.innerHTML = renderDealTaskList(dealId);
-}
-
-async function deleteDealTaskItem(taskId, dealId) {
-  var { error } = await supabaseClient.from('deal_tasks').delete().eq('id', taskId);
   if (error) { showToast('Error: ' + error.message); return; }
   dealTasks = dealTasks.filter(function(x) { return x.id !== taskId; });
   var el = document.getElementById('task-list-' + dealId);
