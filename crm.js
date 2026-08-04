@@ -3005,7 +3005,7 @@ const INTAKE_SECTIONS = [
           'employee_states','group_sic'] },
 
   { key: 'medicare', title: 'Where you are with Medicare',
-    ids: ['med_ab_status','med_part_a_date','med_part_b_date','med_employer_coverage'] },
+    ids: ['med_ab_status','med_part_a_date','med_employer_coverage','med_part_b_date'] },
 
   { key: 'current',  title: 'What you have now',
     ids: ['currently_insured','current_carrier','employer_plan_available','current_premium',
