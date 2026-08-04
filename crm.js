@@ -10120,6 +10120,24 @@ async function naReengage(activityId, contactId) {
   if (contactId) viewContact(contactId);
 }
 
+// Clicking a Needs Attention card opens the person it is about. The buttons on
+// the card keep their own jobs — the handler bails when the click landed on one,
+// so Call, Dismiss and the rest are unaffected.
+function naOpenContact_(ev, contactId) {
+  if (!contactId) return;
+  if (ev && ev.target && ev.target.closest && ev.target.closest('button, a, input, select, textarea')) return;
+  viewContact(contactId);
+}
+
+// Every card variant opens with the same wrapper, so one substitution makes the
+// whole set clickable instead of eight near-identical edits.
+function _naClickable_(html, contactId) {
+  if (!html || !contactId) return html || '';
+  return html.replace('<div style="flex-shrink:0;width:220px;',
+    '<div onclick="naOpenContact_(event,\'' + contactId + '\')" title="Open contact card"'
+    + ' style="cursor:pointer;flex-shrink:0;width:220px;');
+}
+
 function _buildNeedsAttentionHTML(appointmentsOnly) {
   // Combine: pending booking_intents (from calAppointments) + naItems
   // When appointmentsOnly=true (Appointments page), skip naItems — only show pending/rescheduled bookings
@@ -10133,7 +10151,9 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
   const headerBg    = hasUrgent ? 'rgba(239,68,68,0.05)' : 'rgba(251,191,36,0.05)';
   const headerBord  = hasUrgent ? 'rgba(239,68,68,0.3)'  : 'rgba(217,119,6,0.3)';
 
-  const pendingCards = pending.map(a => {
+  const pendingCards = pending.map(a => _naClickable_(_naApptBody_(a), a.contact_id)).join('');
+
+  function _naApptBody_(a) {
     const name = a.booker_name || a.contact_name || '—';
     const received = new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     let badge = '', borderColor = '#d97706', btnLabel = '📋 Schedule';
@@ -10159,9 +10179,12 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
         <button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;" onclick="apptCancel('${a.id}')">✕</button>
       </div>
     </div>`;
-  }).join('');
+  }
 
-  const naCards = activeNaItems.map(item => {
+  const naCards = activeNaItems
+    .map(item => _naClickable_(_naCardBody_(item), item.contactId)).join('');
+
+  function _naCardBody_(item) {
     const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const contact = contacts.find(x => x.id === item.contactId);
     const name = (contact && contact.name) || item.contactName || 'Unknown Contact';
@@ -10320,7 +10343,7 @@ function _buildNeedsAttentionHTML(appointmentsOnly) {
     }
 
     return '';
-  }).join('');
+  }
 
   return `<div style="background:${headerBg};border:0.5px solid ${headerBord};border-radius:10px;padding:10px 14px;margin-bottom:10px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
