@@ -3046,7 +3046,9 @@ const INTAKE_PRODUCTS = [
   { key: 'health', group: 'Health cover', label: 'Health insurance for me or my family',
     agentLabel: 'Health — Individual/Family', formType: 'health-individual',
     lines: ['Health — Individual','Short-Term Medical','Private/Off-Market Medical','Health Share'],
-    ids: ['household_members','aca_not_applying','currently_insured','current_carrier','current_premium',
+    // No aca_not_applying: the household widget's per-person "Applying" tick
+    // already says who is and isn't, and asking twice invites contradictions.
+    ids: ['household_members','currently_insured','current_carrier','current_premium',
           'employer_plan_available','care_frequency','planned_care','med_doctors','med_medications',
           'essential_meds','coverage_goals','health_priority','coverage_start_date','coverage_duration',
           'aca_income','affordable_shock','aca_ichra_offer','aca_ichra_amount','aca_qle','aca_qle_date',
@@ -3068,7 +3070,9 @@ const INTAKE_PRODUCTS = [
 
   { key: 'life', group: 'Life & income', label: 'Life insurance',
     agentLabel: 'Life', formType: 'financial', lines: ['Life'],
-    ids: ['marital_status','dependents_count','dependents_ages','has_life_insurance',
+    // Dependents come from the household widget — count and ages are already
+    // in it, per person, with gender and tobacco alongside.
+    ids: ['marital_status','has_life_insurance',
           'life_coverage_amount','goal_protection','goal_debt','goal_college'] },
 
   { key: 'disability', group: 'Life & income', label: 'Disability / income protection',
@@ -3077,7 +3081,7 @@ const INTAKE_PRODUCTS = [
 
   { key: 'investments', group: 'Life & income', label: 'Savings, retirement & college funding',
     agentLabel: 'Savings & Investments', formType: 'financial', lines: [],
-    ids: ['marital_status','household_income','has_investments','dependents_count','dependents_ages',
+    ids: ['marital_status','household_income','has_investments',
           'goal_retirement','goal_wealth','goal_college','goal_debt'] },
 
   { key: 'group', group: 'For a business', label: 'Benefits for my employees',
@@ -3758,7 +3762,7 @@ function _imHHTable_(id, def) {
   const n = intakeNeeds_([..._intakeProducts]);
   const wide = n.has('hw') || n.has('amount');   // cards, not a nine-column table
   const head = ['Who', 'Age', n.has('gender') && 'Gender', n.has('tobacco') && 'Tob.',
-                n.has('covered') && 'Cover', ''].filter(x => x !== false)
+                n.has('covered') && 'Applying', ''].filter(x => x !== false)
                 .map(h => '<th>' + (h || '') + '</th>').join('');
   return `<div id="iwrap_${id}">
     <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${def.label}</label>
@@ -3813,8 +3817,8 @@ function imHHPaint_() {
           <span style="font-size:11px;color:var(--text-muted);">Age</span>${age(m)}
           <span style="font-size:11px;color:var(--text-muted);${n.has('gender') ? '' : 'display:none;'}">Gender</span>
           <span style="${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</span>
-          <label style="font-size:11px;color:var(--text-muted);display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${tob(m)} Tobacco</label>
-          <label style="font-size:11px;color:var(--text-muted);display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${cov(m)} Cover</label>
+          <label style="font-size:11px;color:var(--text-muted);display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${tob(m)} Uses tobacco</label>
+          <label style="font-size:11px;color:var(--text-muted);display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${cov(m)} Applying for cover</label>
           <span style="flex:1;"></span>
           ${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}
         </div>
@@ -3870,11 +3874,11 @@ function _imSepNeeded_() {
 // different stories about the same client.
 // tools/check-intake-parity.js compares the two lists.
 const IM_FIELD_RULES = {
-  current_carrier:       () => _imFv_('currently_insured') !== 'No',
-  current_premium:       () => _imFv_('currently_insured') !== 'No',
-  current_group_carrier: () => _imFv_('has_current_plan') !== 'No',
-  current_cost_per_emp:  () => _imFv_('has_current_plan') !== 'No',
-  life_coverage_amount:  () => _imFv_('has_life_insurance') !== 'No',
+  current_carrier:       () => _imFv_('currently_insured') === 'Yes',
+  current_premium:       () => _imFv_('currently_insured') === 'Yes',
+  current_group_carrier: () => _imFv_('has_current_plan') === 'Yes',
+  current_cost_per_emp:  () => _imFv_('has_current_plan') === 'Yes',
+  life_coverage_amount:  () => _imFv_('has_life_insurance') === 'Yes',
   med_part_a_date:  () => /enrolled in|advantage|supplement/i.test(_imFv_('med_ab_status')),
   med_part_b_date:  () => /parts a & b|advantage|supplement/i.test(_imFv_('med_ab_status')),
   aca_ichra_amount: () => _imFv_('aca_ichra_offer') === 'Yes',
