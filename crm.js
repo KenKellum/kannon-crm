@@ -4215,17 +4215,50 @@ async function _refreshDealTimeline(dealId) {
   tl.innerHTML = _renderDealMergedTimeline(dealId, _sa);
 }
 
-// ── Render merged timeline: manual deal_activities + contact system activities ──
-function _renderDealMergedTimeline(dealId, sysActs) {
+// ── Merged deal timeline ──────────────────────────────────────────────────────
+// Manual deal_activities plus the contact's system events, in one list. Split
+// into build / render-row / render-list so the panel preview and the full log
+// modal show exactly the same rows and can never drift apart.
+
+const DEAL_TL_PREVIEW = 3;
+
+const DEAL_TL_KINDS = {
+  call:    { label: 'Calls',             icon: '\u{1F4DE}' },
+  email:   { label: 'Email',             icon: '✉️' },
+  meeting: { label: 'Meetings',          icon: '\u{1F4C5}' },
+  note:    { label: 'Notes',             icon: '\u{1F4DD}' },
+  intake:  { label: 'Intake',            icon: '\u{1F4CB}' },
+  status:  { label: 'Status',            icon: '⚡' },
+  problem: { label: 'Delivery problems', icon: '⚠️' },
+  other:   { label: 'Other',             icon: '\u{1F4CC}' },
+};
+
+// One bucket per activity type, so the filter offers a handful of choices
+// instead of the twenty-odd raw type names nobody wants to read.
+function _dealTlKind_(activityType) {
+  var t = String(activityType || '');
+  if (/^call_/.test(t)) return 'call';
+  if (/^email_(bounced|blocked|opted_out|complained)/.test(t)) return 'problem';
+  if (/^email_/.test(t)) return 'email';
+  if (/^(meeting_|calendar_)/.test(t)) return 'meeting';
+  if (t === 'note_added') return 'note';
+  if (/^intake_/.test(t)) return 'intake';
+  if (t === 'status_changed' || t === 'deal_reopened') return 'status';
+  return 'other';
+}
+
+function _dealTimelineItems_(dealId, sysActs) {
   const manualActs = dealActivities.filter(function(a) { return a.deal_id === dealId; });
-  const MAN_ICONS = { note: '📝', call: '📞', email: '✉️', stage_change: '⚡' };
+  const MAN_ICONS = { note: '\u{1F4DD}', call: '\u{1F4DE}', email: '✉️', stage_change: '⚡' };
+  const MAN_KIND  = { note: 'note', call: 'call', email: 'email', stage_change: 'status' };
   const items = [];
 
   manualActs.forEach(function(a) {
     items.push({
       ts:         new Date(a.created_at).getTime(),
       source:     'manual',
-      icon:       MAN_ICONS[a.type] || '📌',
+      kind:       MAN_KIND[a.type] || 'other',
+      icon:       MAN_ICONS[a.type] || '\u{1F4CC}',
       color:      null,
       label:      a.type.charAt(0).toUpperCase() + a.type.slice(1),
       text:       a.content || '',
@@ -4236,18 +4269,19 @@ function _renderDealMergedTimeline(dealId, sysActs) {
 
   (sysActs || []).forEach(function(a) {
     var meta = (typeof ACTIVITY_META !== 'undefined' && ACTIVITY_META[a.activity_type])
-               || { icon: '📋', color: '#64748b', label: a.activity_type };
+               || { icon: '\u{1F4CB}', color: '#64748b', label: a.activity_type };
     var text = '';
     if (a.subject)      text = a.subject;
     if (a.body_snippet) text += (text ? ' — ' : '') + a.body_snippet;
     var extra = '';
     var md = a.metadata || {};
     if (a.activity_type === 'intake_completed' && md.session_id) {
-      extra = '<button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:11px;padding:3px 10px;" onclick="viewIntakeSession(\'' + md.session_id + '\')">📋 View Intake</button>';
+      extra = '<button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:11px;padding:3px 10px;" onclick="viewIntakeSession(\'' + md.session_id + '\')">\u{1F4CB} View Intake</button>';
     }
     items.push({
       ts:         new Date(a.created_at).getTime(),
       source:     'system',
+      kind:       _dealTlKind_(a.activity_type),
       icon:       meta.icon,
       color:      meta.color || null,
       label:      meta.label,
@@ -4257,32 +4291,125 @@ function _renderDealMergedTimeline(dealId, sysActs) {
     });
   });
 
+  items.sort(function(a, b) { return b.ts - a.ts; });
+  return items;
+}
+
+function _dealTimelineRow_(item) {
+  var dt = new Date(item.created_at);
+  var ds = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+         + ' ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  var badge = item.source === 'system'
+    ? '<span style="font-size:10px;background:#f1f5f9;color:#64748b;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">auto</span>'
+    : '<span style="font-size:10px;background:var(--bg-info);color:#3b82f6;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">manual</span>';
+  var dotStyle = item.color
+    ? 'background:' + item.color + '22;color:' + item.color + ';border:1px solid ' + item.color + '44;font-size:14px;'
+    : 'font-size:14px;';
+  return '<div class="activity-item">'
+    + '<div class="activity-dot" style="' + dotStyle + '">' + item.icon + '</div>'
+    + '<div class="activity-body">'
+    + '<div class="activity-content"><strong>' + esc(item.label) + '</strong>' + badge
+    + (item.text ? '<div style="margin-top:3px;font-size:12px;color:var(--text-muted);">' + esc(item.text) + '</div>' : '')
+    + (item.extra ? '<div>' + item.extra + '</div>' : '')
+    + '</div>'
+    + '<div class="activity-meta">' + ds + '</div>'
+    + '</div></div>';
+}
+
+// The panel shows only the newest few. A deal worked for months would otherwise
+// bury the tasks and the footer under a timeline nobody scrolls.
+function _renderDealMergedTimeline(dealId, sysActs) {
+  var items = _dealTimelineItems_(dealId, sysActs);
   if (!items.length) {
     return '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No activity yet.</div>';
   }
+  var html = items.slice(0, DEAL_TL_PREVIEW).map(_dealTimelineRow_).join('');
+  if (items.length > DEAL_TL_PREVIEW) {
+    html += '<div style="text-align:center;padding:10px 0 2px;">'
+      + '<button class="btn btn-outline btn-sm" style="font-size:11.5px;" onclick="openDealActivityLog_(\'' + dealId + '\')">'
+      + '\u{1F4DC} View all activity (' + items.length + ')</button></div>';
+  }
+  return html;
+}
 
-  items.sort(function(a, b) { return b.ts - a.ts; });
+// ── Full activity log ─────────────────────────────────────────────────────────
+async function openDealActivityLog_(dealId) {
+  var deal = deals.find(function(d) { return d.id === dealId; });
+  showModal('\u{1F4DC} Activity — ' + esc((deal && deal.title) || 'Deal'),
+    '<div id="dtl-root" style="padding:14px 18px 4px;"><div style="color:var(--text-muted);font-size:13px;padding:20px 0;text-align:center;">Loading the full history…</div></div>',
+    null, { wide: true, hideConfirm: true, cancelLabel: 'Close' });
 
-  return items.map(function(item) {
-    var dt = new Date(item.created_at);
-    var ds = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-           + ' ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    var badge = item.source === 'system'
-      ? '<span style="font-size:10px;background:#f1f5f9;color:#64748b;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">auto</span>'
-      : '<span style="font-size:10px;background:var(--bg-info);color:#3b82f6;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;">manual</span>';
-    var dotStyle = item.color
-      ? 'background:' + item.color + '22;color:' + item.color + ';border:1px solid ' + item.color + '44;font-size:14px;'
-      : 'font-size:14px;';
-    return '<div class="activity-item">'
-      + '<div class="activity-dot" style="' + dotStyle + '">' + item.icon + '</div>'
-      + '<div class="activity-body">'
-      + '<div class="activity-content"><strong>' + esc(item.label) + '</strong>' + badge
-      + (item.text ? '<div style="margin-top:3px;font-size:12px;color:var(--text-muted);">' + esc(item.text) + '</div>' : '')
-      + (item.extra ? '<div>' + item.extra + '</div>' : '')
-      + '</div>'
-      + '<div class="activity-meta">' + ds + '</div>'
-      + '</div></div>';
-  }).join('');
+  // The panel only pulls the newest 25 system events; the log wants everything.
+  var sys = [];
+  if (deal && deal.contact_id) {
+    var r = await supabaseClient.rpc('get_contact_timeline', { p_contact_id: deal.contact_id, p_limit: 500 });
+    sys = (r && r.data) || [];
+  }
+  window._dtl = { items: _dealTimelineItems_(dealId, sys), kind: 'all', days: 0, sort: 'new', q: '' };
+  _dtlPaint_();
+}
+
+function _dtlSet_(field, value) {
+  if (!window._dtl) return;
+  window._dtl[field] = value;
+  _dtlPaint_();
+}
+function _dtlSearch_(el) { if (window._dtl) { window._dtl.q = el.value || ''; _dtlPaint_(); } }
+
+function _dtlPaint_() {
+  var S = window._dtl, root = document.getElementById('dtl-root');
+  if (!S || !root) return;
+  var now = Date.now(), q = S.q.trim().toLowerCase();
+
+  var rows = S.items.filter(function(it) {
+    if (S.kind !== 'all' && it.kind !== S.kind) return false;
+    if (S.days && (now - it.ts) > S.days * 86400000) return false;
+    if (q && (it.label + ' ' + it.text).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  rows.sort(function(a, b) { return S.sort === 'old' ? a.ts - b.ts : b.ts - a.ts; });
+
+  // Only offer a type filter for the types this deal actually has.
+  var present = {};
+  S.items.forEach(function(it) { present[it.kind] = (present[it.kind] || 0) + 1; });
+  var on = 'border-color:var(--accent,#1d3557);color:var(--accent,#1d3557);font-weight:700;';
+  var chips = '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;'
+    + (S.kind === 'all' ? on : '') + '" onclick="_dtlSet_(\'kind\',\'all\')">All ('
+    + S.items.length + ')</button>';
+  Object.keys(DEAL_TL_KINDS).forEach(function(k) {
+    if (!present[k]) return;
+    chips += '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;'
+      + (S.kind === k ? on : '') + '" onclick="_dtlSet_(\'kind\',\'' + k + '\')">'
+      + DEAL_TL_KINDS[k].icon + ' ' + DEAL_TL_KINDS[k].label + ' (' + present[k] + ')</button>';
+  });
+
+  var ranges = [[0, 'All time'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [365, 'Last year']];
+  var dateSel = '<select onchange="_dtlSet_(\'days\', Number(this.value))" style="font-size:12px;padding:4px 8px;">'
+    + ranges.map(function(r) {
+        return '<option value="' + r[0] + '"' + (S.days === r[0] ? ' selected' : '') + '>' + r[1] + '</option>';
+      }).join('') + '</select>';
+  var sortSel = '<select onchange="_dtlSet_(\'sort\', this.value)" style="font-size:12px;padding:4px 8px;">'
+    + '<option value="new"' + (S.sort === 'new' ? ' selected' : '') + '>Newest first</option>'
+    + '<option value="old"' + (S.sort === 'old' ? ' selected' : '') + '>Oldest first</option></select>';
+
+  root.innerHTML =
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' + chips + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">'
+    +   dateSel + sortSel
+    +   '<input type="text" id="dtl-q" placeholder="Search notes, subjects…" value="' + esc(S.q)
+    +     '" oninput="_dtlSearch_(this)" style="flex:1;min-width:160px;font-size:12px;padding:5px 9px;" />'
+    +   '<span style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;">'
+    +     rows.length + ' of ' + S.items.length + '</span>'
+    + '</div>'
+    + '<div class="activity-timeline" style="max-height:56vh;overflow-y:auto;padding-right:4px;">'
+    +   (rows.length
+          ? rows.map(_dealTimelineRow_).join('')
+          : '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:24px 0;">Nothing matches those filters.</div>')
+    + '</div>';
+
+  // Re-rendering the box on every keystroke must not cost the caret its place.
+  var box = document.getElementById('dtl-q');
+  if (box && S.q) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
 }
 
 async function sendIntakeLink() {
