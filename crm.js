@@ -7825,42 +7825,194 @@ async function loadIntakeHistoryPanel(contactId) {
   }).join('');
 }
 
-// A client who has bought something is not a row to be tidied away. Their
-// coverage record carries a policy they hold today, and the enrollments table
-// refuses to let go of the contact it belongs to — so this now checks first and
-// says so, rather than firing off four deletes, ignoring every error and
-// reporting success either way, which is what it used to do.
+// ── Deleting a contact ────────────────────────────────────────────────────────
+//
+// Ken's rule, 2026-08-04: a contact can be deleted with everything attached to
+// them, but ONLY if they hold no coverage of any kind — and never without being
+// shown first what is about to go.
+//
+// The old version fired four deletes, checked none of them, and said "Contact
+// deleted" whether or not anything had happened. What it did not say was that
+// it takes the whole activity timeline, the intake forms, the quotes those
+// intakes produced, the doctors and medications, and every deal with its call
+// log and task list. All of that is a cascade in the database, so it happens
+// whether or not anyone meant it.
+//
+// A signed SOA is the one thing that survives — it has a ten-year CMS retention
+// rule and its own copy of the signer's name — but it loses the link to the
+// person. That is called out by name in the warning, because it is a compliance
+// record and the decision to sever it is Ken's, not this function's.
+
+// Everything that hangs off a contact, and what deleting them does to it.
+// `fate` is what the DATABASE does — cascade, orphan, or refuse — not what we
+// would like it to do.
+// Both forms are written out. "timeline entry" does not pluralise by adding an
+// s, and neither does "doctor or facility" — a rule that derives one from the
+// other produces "40 timeline entrys" in front of a client's name.
+const CONTACT_DELETE_ATTACHMENTS = [
+  { key: 'enrollments',    one: 'coverage record',     many: 'coverage records',      fate: 'refuse'    },
+  { key: 'lockedQuotes',   one: 'locked quote',        many: 'locked quotes',         fate: 'refuse'    },
+  // Ken, 2026-08-04: "do not delete if there are any signed SOA's". A signed
+  // Scope of Appointment carries a ten-year CMS retention rule, and severing it
+  // from the person it was signed by is not something to do by accident.
+  { key: 'signedSoas',     one: 'signed SOA',          many: 'signed SOAs',           fate: 'refuse'    },
+  { key: 'deals',          one: 'deal',                many: 'deals',                 fate: 'destroyed' },
+  { key: 'dealActivities', one: 'logged call or note', many: 'logged calls and notes',fate: 'destroyed' },
+  { key: 'dealTasks',      one: 'task',                many: 'tasks',                 fate: 'destroyed' },
+  { key: 'quotes',         one: 'quote',               many: 'quotes',                fate: 'destroyed' },
+  { key: 'intakes',        one: 'intake form',         many: 'intake forms',          fate: 'destroyed' },
+  { key: 'activities',     one: 'timeline entry',      many: 'timeline entries',      fate: 'destroyed' },
+  { key: 'providers',      one: 'doctor or facility',  many: 'doctors and facilities',fate: 'destroyed' },
+  { key: 'medications',    one: 'medication',          many: 'medications',           fate: 'destroyed' },
+  { key: 'baas',           one: 'signed HIPAA BAA',    many: 'signed HIPAA BAAs',     fate: 'orphaned'  },
+  { key: 'censuses',       one: 'employee census',     many: 'employee censuses',     fate: 'orphaned'  },
+];
+
+// Pure, so it can be tested without a database: turn the counts into the words
+// the agent reads and the verdict the button obeys.
+function contactDeleteSummary_(counts) {
+  const n = k => Number(counts[k] || 0);
+  const pick = fate => CONTACT_DELETE_ATTACHMENTS
+    .filter(a => a.fate === fate && n(a.key) > 0)
+    .map(a => ({ key: a.key, text: n(a.key) + ' ' + (n(a.key) === 1 ? a.one : a.many) }));
+
+  const blockers = pick('refuse');
+  return {
+    blocked: blockers.length ? blockers : null,
+    destroyed: pick('destroyed'),
+    orphaned: pick('orphaned'),
+    // A contact with nothing of record is a duplicate or a typo: one click.
+    // Anything of record going means typing the name, the same hard
+    // confirmation Ken asked for on quotes.
+    needsTypedName: n('deals') + n('quotes') + n('baas') + n('censuses') > 0,
+    nothingAttached: !CONTACT_DELETE_ATTACHMENTS.some(a => n(a.key) > 0),
+  };
+}
+
 async function deleteContact(id) {
   const contact = contacts.find(c => c.id === id);
-  const { data: cover } = await supabaseClient.from('enrollments')
-    .select('plan_name,carrier_name,status').eq('contact_id', id);
-  if (cover && cover.length) {
-    const live = cover.filter(x => x.status === 'active' || x.status === 'submitted');
-    showModal('Cannot delete ' + escWeb((contact && contact.name) || 'this contact'), `
-      <p style="font-size:13px;">They have <strong>${cover.length} coverage record${cover.length === 1 ? '' : 's'}</strong>
-      on file${live.length ? ', ' + live.length + ' still in force' : ''}:</p>
+  const name = (contact && contact.name) || 'this contact';
+  const head = t => supabaseClient.from(t).select('id', { count: 'exact', head: true });
+  const num = r => (r && typeof r.count === 'number') ? r.count : 0;
+
+  let counts, cover;
+  try {
+    const [enr, lockedQ, dl, qs, ins, acts, prov, meds, soas, baas, cens] = await Promise.all([
+      supabaseClient.from('enrollments').select('plan_name,carrier_name,status').eq('contact_id', id),
+      head('quotes').eq('contact_id', id).not('locked_at', 'is', null),
+      head('deals').eq('contact_id', id),
+      head('quotes').eq('contact_id', id),
+      head('intake_sessions').eq('contact_id', id),
+      head('activities').eq('contact_id', id),
+      head('client_providers').eq('contact_id', id),
+      head('client_medications').eq('contact_id', id),
+      head('soa_records').eq('contact_id', id).eq('status', 'signed'),
+      head('baa_records').eq('contact_id', id).eq('status', 'signed'),
+      head('census_requests').eq('contact_id', id),
+    ]);
+    cover = enr.data || [];
+    // A deal's calls and tasks cascade with the deal, so they are counted per
+    // deal rather than per contact.
+    const { data: dealRows } = await supabaseClient.from('deals').select('id').eq('contact_id', id);
+    const dealIds = (dealRows || []).map(d => d.id);
+    let dActs = 0, dTasks = 0;
+    if (dealIds.length) {
+      const [a, t] = await Promise.all([
+        head('deal_activities').in('deal_id', dealIds),
+        head('deal_tasks').in('deal_id', dealIds),
+      ]);
+      dActs = num(a); dTasks = num(t);
+    }
+    counts = {
+      enrollments: cover.length, lockedQuotes: num(lockedQ), deals: num(dl), quotes: num(qs),
+      intakes: num(ins), activities: num(acts), providers: num(prov), medications: num(meds),
+      signedSoas: num(soas), baas: num(baas), censuses: num(cens),
+      dealActivities: dActs, dealTasks: dTasks,
+    };
+  } catch (e) {
+    showToast('Could not check what is attached to them: ' + (e.message || e), 8000);
+    return;
+  }
+
+  const s = contactDeleteSummary_(counts);
+
+  if (s.blocked) {
+    const live = cover.filter(x => x.status === 'active' || x.status === 'submitted').length;
+    showModal('Cannot delete ' + escWeb(name), `
+      <p style="font-size:13px;">They hold records we are not allowed to lose:</p>
       <ul style="font-size:12.5px;margin:8px 0 12px 18px;">
-        ${cover.map(x => '<li>' + escWeb(x.plan_name) + ' — ' + escWeb(x.carrier_name)
-            + ' <span style="color:var(--text-muted);">' + ((ENROLLMENT_STATUS[x.status] || {}).label || x.status) + '</span></li>').join('')}
+        ${s.blocked.map(b => '<li style="font-weight:700;">' + escWeb(b.text) + '</li>').join('')}
       </ul>
-      <p style="font-size:12.5px;color:var(--text-muted);">A policy we sold is a record we keep. If they have
-      left us, end the coverage with a date instead — it stays on the file and stops counting as in force.</p>
+      ${cover.length ? `<div style="font-size:12.5px;margin-bottom:10px;">
+        <div style="font-weight:700;margin-bottom:3px;">Their coverage${live ? ' — ' + live + ' still in force' : ''}</div>
+        <ul style="margin-left:18px;">
+          ${cover.map(x => '<li>' + escWeb(x.plan_name) + ' — ' + escWeb(x.carrier_name)
+              + ' <span style="color:var(--text-muted);">' + ((ENROLLMENT_STATUS[x.status] || {}).label || x.status) + '</span></li>').join('')}
+        </ul></div>` : ''}
+      ${counts.signedSoas ? `<p style="font-size:12.5px;">A signed Scope of Appointment carries a
+        <strong>ten-year CMS retention rule</strong>. It stays, and it stays attached to the person who signed it.</p>` : ''}
+      ${counts.lockedQuotes ? `<p style="font-size:12.5px;">A locked quote is one a client enrolled or waived on —
+        it is the proof of what they were offered, and the database will not let it go either.</p>` : ''}
+      <p style="font-size:12.5px;color:var(--text-muted);">If they have left us, end the coverage with a date
+      instead — it stays on the file and stops counting as in force.</p>
     `, null, { hideConfirm: true, cancelLabel: 'Leave them alone' });
     return;
   }
-  if (!confirm('Delete this contact and all their associated data (deals, email opens)?')) return;
-  const results = await Promise.all([
-    supabaseClient.from('contact_companies').delete().eq('contact_id', id),
-    supabaseClient.from('deals').delete().eq('contact_id', id),
-    contact && contact.email
-      ? supabaseClient.from('email_opens').delete().eq('contact_email', contact.email)
-      : Promise.resolve({}),
-  ]);
-  const failed = results.find(r => r && r.error);
-  if (failed) { showToast('Could not delete: ' + failed.error.message, 8000); return; }
+
+  if (s.nothingAttached) {
+    if (!confirm('Delete ' + name + '?\n\nThere is nothing attached to them.')) return;
+    return contactDeleteRun_(id, contact, name);
+  }
+
+  const line = (x, danger) => '<li' + (danger ? ' style="color:var(--text-danger);font-weight:700;"' : '')
+    + '>' + escWeb(x.text) + '</li>';
+  showModal('Delete ' + escWeb(name) + '?', `
+    <div style="background:var(--bg-danger);border:1px solid var(--border-danger);color:var(--text-danger);
+                border-radius:8px;padding:10px 12px;font-size:12.5px;margin-bottom:12px;">
+      <strong>This cannot be undone.</strong> Deleting them takes everything below with them.
+    </div>
+    ${s.destroyed.length ? `<div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">Destroyed</div>
+      <ul style="font-size:12.5px;margin:0 0 12px 18px;">${s.destroyed.map(x => line(x, false)).join('')}</ul>` : ''}
+    ${s.orphaned.length ? `<div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">Kept, but no longer attached to anybody</div>
+      <ul style="font-size:12.5px;margin:0 0 8px 18px;">${s.orphaned.map(x => line(x, /BAA/.test(x.text))).join('')}</ul>
+      ${counts.baas ? `<p style="font-size:12px;color:var(--text-danger);margin-bottom:12px;">
+        A signed HIPAA BAA survives with the name that was signed on it, but nothing will tie it to this
+        person again.</p>` : ''}` : ''}
+    ${s.needsTypedName ? `<label>Type <strong>${escWeb(name)}</strong> to confirm</label>
+      <input type="text" id="del-confirm-name" placeholder="${escWeb(name)}" autocomplete="off" />` : ''}
+  `, async function () {
+    if (s.needsTypedName) {
+      const typed = (document.getElementById('del-confirm-name').value || '').trim();
+      if (typed.toLowerCase() !== String(name).trim().toLowerCase()) {
+        showToast('That is not their name — nothing was deleted.');
+        return false;
+      }
+    }
+    await contactDeleteRun_(id, contact, name);
+    return true;
+  }, { confirmLabel: '\u{1F5D1} Delete ' + name });
+}
+
+// The deletes themselves. Every one is checked — the old version threw them all
+// at the database and reported success regardless.
+async function contactDeleteRun_(id, contact, name) {
+  const steps = [
+    ['their company links', supabaseClient.from('contact_companies').delete().eq('contact_id', id)],
+    ['their deals',         supabaseClient.from('deals').delete().eq('contact_id', id)],
+  ];
+  if (contact && contact.email) {
+    steps.push(['their email opens',
+      supabaseClient.from('email_opens').delete().eq('contact_email', contact.email)]);
+  }
+  for (const [what, q] of steps) {
+    const { error } = await q;
+    if (error) { showToast('Stopped while removing ' + what + ': ' + error.message, 8000); return; }
+  }
   const { error } = await supabaseClient.from('contacts').delete().eq('id', id);
-  if (error) { showToast('Could not delete: ' + error.message, 8000); return; }
-  contacts = contacts.filter(c => c.id !== id); renderContacts(); showToast('Contact deleted');
+  if (error) { showToast('Could not delete ' + name + ': ' + error.message, 8000); return; }
+  contacts = contacts.filter(c => c.id !== id);
+  renderContacts();
+  showToast(name + ' deleted.');
 }
 // ── Email Verification ────────────────────────────────────────────────────────
 
