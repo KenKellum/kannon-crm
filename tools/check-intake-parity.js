@@ -110,7 +110,7 @@ const PRODS = grab(crm, 'const INTAKE_PRODUCTS = ');
 const LINES = grab(crm, 'const CARRIER_LINES = ');
 const NEEDS = grab(crm, 'const INTAKE_PRODUCT_NEEDS = ');
 const CAPS = new Set(['household', 'gender', 'tobacco', 'covered', 'meds', 'providers',
-                      'county', 'hw', 'amount']);
+                      'county', 'hw', 'amount', 'solo']);
 const knownLines = new Set(LINES);
 const seenKeys = new Set();
 Object.keys(NEEDS).forEach(k => {

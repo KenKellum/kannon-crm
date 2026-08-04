@@ -2887,10 +2887,10 @@ const INTAKE_FIELD_DEFS = {
   products_sold:         { label: 'Products Sold',          type: 'text',   section: 'Your book of business',
                            placeholder: 'e.g. ACA, Medicare, Life' },
   // ── Life ────────────────────────────────────────────────────────────────
-  life_term:             { label: 'How long do they need the cover?', type: 'select', section: 'What this needs to do',
+  life_term:             { label: 'How long do they need the coverage?', type: 'select', section: 'What this needs to do',
                            options: ['10 years','15 years','20 years','25 years','30 years',
                                      'For life (permanent)','Not sure — advise me'] },
-  life_work_cover:       { label: 'Cover through work?', type: 'select', section: 'What you have now',
+  life_work_cover:       { label: 'Coverage through work?', type: 'select', section: 'What you have now',
                            options: ['No','Yes — and it ends if I leave','Yes — I can take it with me','Not sure'] },
   health_conditions:     { label: 'Any conditions or medications we should know about?', type: 'textarea',
                            section: 'A few private questions' },
@@ -2898,7 +2898,7 @@ const INTAKE_FIELD_DEFS = {
   di_employment:         { label: 'Employment type', type: 'select', section: 'Your background',
                            options: ['W-2 employee','Self-employed / 1099','Business owner','Other'] },
   di_hours:              { label: 'Hours worked per week', type: 'number', section: 'Your background' },
-  di_existing:           { label: 'Disability cover through work?', type: 'select', section: 'What you have now',
+  di_existing:           { label: 'Disability coverage through work?', type: 'select', section: 'What you have now',
                            options: ['No','Yes — short term only','Yes — long term','Yes — both','Not sure'] },
   di_benefit_wanted:     { label: 'Monthly benefit wanted ($)', type: 'number', section: 'What this needs to do' },
   di_elimination:        { label: 'How long could they go before benefits start?', type: 'select',
@@ -3110,7 +3110,7 @@ const INTAKE_PRODUCTS = [
 
   { key: 'disability', group: 'Life & income', label: 'Disability / income protection',
     agentLabel: 'Disability', lines: ['Disability'],
-    ids: ['household_members','current_occupation','current_income','med_medications',
+    ids: ['household_members','current_occupation','current_income',
           'di_employment','di_hours','di_existing','di_benefit_wanted','di_elimination',
           'di_benefit_period','health_conditions'] },
 
@@ -3169,7 +3169,7 @@ const INTAKE_PRODUCT_NEEDS = {
   health:       ['household', 'gender', 'tobacco', 'covered', 'meds', 'providers', 'county'],
   medicare:     ['household', 'gender', 'tobacco', 'covered', 'meds', 'providers', 'county'],
   life:         ['household', 'gender', 'tobacco', 'covered', 'meds', 'hw', 'amount'],
-  disability:   ['household', 'gender', 'tobacco', 'meds', 'hw'],
+  disability:   ['household', 'solo', 'gender', 'tobacco', 'hw'],
   supplemental: ['household', 'gender', 'tobacco', 'covered'],
   dental:       ['household', 'covered', 'providers'],
   investments:  ['household'],
@@ -3794,15 +3794,19 @@ function _imHHTable_(id, def) {
   const head = ['Who', 'Age', n.has('gender') && 'Gender', n.has('tobacco') && 'Tob.',
                 n.has('covered') && 'Applying', ''].filter(x => x !== false)
                 .map(h => '<th>' + (h || '') + '</th>').join('');
+  // One insured life (disability) gets no roster and no add button — the label
+  // has to stop saying "household members" too.
+  const solo = n.has('solo');
+  const heading = solo ? 'The person being insured' : 'Who needs coverage';
   return `<div id="iwrap_${id}">
-    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${def.label}</label>
+    <label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">${heading}</label>
     ${wide
       ? `<div id="im-hh-rows" style="display:flex;flex-direction:column;gap:8px;"></div>`
       : `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
            <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">${head}</tr></thead>
            <tbody id="im-hh-rows"></tbody>
          </table></div>`}
-    <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="imHHAdd_()">+ Add member</button>
+    ${solo ? '' : `<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="imHHAdd_()">+ Add member</button>`}
   </div>`;
 }
 
@@ -3825,6 +3829,12 @@ function imHHPaint_() {
   const tob = m => `<input type="checkbox" class="hh-tob"${m.tobacco ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`;
   const cov = m => `<input type="checkbox" class="hh-cov"${m.covered !== false ? ' checked' : ''} onchange="imHHRead_()" style="width:15px;height:15px;">`;
   const hidden = (cls, v) => `<input type="hidden" class="${cls}" value="${v == null ? '' : v}">`;
+  // A label and its box are one thing. Left to wrap independently they drift
+  // onto separate lines and the card reads as nonsense — "Gender" above an
+  // empty row, "Weight" stranded beside a height box.
+  const pair_ = (label, control, show) => show === false ? '' :
+    `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+       <span style="font-size:11px;color:var(--text-muted);">${label}</span>${control}</span>`;
 
   if (!wide) {
     tb.innerHTML = window._imHH.map((m, i) => {
@@ -3841,29 +3851,23 @@ function imHHPaint_() {
     const bands = m => LIFE_AMOUNT_BANDS.map(b =>
       `<option${m.amount_band === b ? ' selected' : ''}>${b}</option>`).join('');
     tb.innerHTML = window._imHH.map((m, i) => `
-      <div class="hh-card" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-1,#fbfcfd);">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <div class="hh-card" style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--surface-1,#fbfcfd);">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
           ${rel(m, i)}
-          <span style="font-size:11px;color:var(--text-muted);">Age</span>${age(m)}
-          <span style="font-size:11px;color:var(--text-muted);${n.has('gender') ? '' : 'display:none;'}">Gender</span>
-          <span style="${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</span>
-          <label style="font-size:11px;color:var(--text-muted);display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${tob(m)} Uses tobacco</label>
-          <label style="font-size:11px;color:var(--text-muted);display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:4px;">${cov(m)} Applying for cover</label>
+          ${pair_('Age', age(m))}
+          ${pair_('Gender', gen(m), n.has('gender'))}
+          <label style="font-size:11px;color:var(--text-muted);display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:5px;white-space:nowrap;margin:0;">${tob(m)} Uses tobacco</label>
+          <label style="font-size:11px;color:var(--text-muted);display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:5px;white-space:nowrap;margin:0;">${cov(m)} Applying for coverage</label>
           <span style="flex:1;"></span>
           ${i === 0 ? '' : `<button type="button" onclick="window._imHH.splice(${i},1);imHHPaint_();" style="background:none;border:none;color:var(--danger);cursor:pointer;">&#10005;</button>`}
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;${n.has('hw') ? '' : 'display:none;'}">
-          <span style="font-size:11px;color:var(--text-muted);">Height</span>
-          <input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:52px;" oninput="imHHRead_()">
-          <input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:52px;" oninput="imHHRead_()">
-          <span style="font-size:11px;color:var(--text-muted);">Weight</span>
-          <input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:64px;" oninput="imHHRead_()">
+        <div style="display:${n.has('hw') ? 'flex' : 'none'};align-items:center;gap:14px;flex-wrap:wrap;">
+          ${pair_('Height', `<input type="number" class="hh-hft" value="${m.height_ft == null ? '' : m.height_ft}" placeholder="ft" style="width:54px;" oninput="imHHRead_()"><input type="number" class="hh-hin" value="${m.height_in == null ? '' : m.height_in}" placeholder="in" style="width:54px;margin-left:4px;" oninput="imHHRead_()">`)}
+          ${pair_('Weight', `<input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:68px;" oninput="imHHRead_()">`)}
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;${n.has('amount') ? '' : 'display:none;'}">
-          <span style="font-size:11px;color:var(--text-muted);">Cover wanted</span>
-          <select class="hh-amt" onchange="imHHRead_()"><option value=""></option>${bands(m)}</select>
-          <span style="font-size:11px;color:var(--text-muted);">or exact</span>
-          <input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:104px;" oninput="imHHRead_()">
+        <div style="display:${n.has('amount') ? 'flex' : 'none'};align-items:center;gap:14px;flex-wrap:wrap;margin-top:8px;">
+          ${pair_('Coverage wanted', `<select class="hh-amt" onchange="imHHRead_()"><option value=""></option>${bands(m)}</select>`)}
+          ${pair_('or exact', `<input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:108px;" oninput="imHHRead_()">`)}
         </div>
       </div>`).join('');
   }

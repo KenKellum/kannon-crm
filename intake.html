@@ -226,16 +226,16 @@ const FIELD_DEFS = {
   mi_pdp:               { label: 'Prescription Drug Plan (Part D)', type: 'checkbox-field', group: 'medinterest' },
   mi_advantage:         { label: 'Medicare Advantage', type: 'checkbox-field', group: 'medinterest' },
   mi_dental:            { label: 'Dental / Vision / Hearing options', type: 'checkbox-field', group: 'medinterest' },
-  life_term:            { label: 'How long do you need this cover to last?', type: 'select',
+  life_term:            { label: 'How long do you need this coverage to last?', type: 'select',
                           options: ['10 years','15 years','20 years','25 years','30 years','For life (permanent)','Not sure — advise me'] },
-  life_work_cover:      { label: 'Do you have life cover through work?', type: 'select',
+  life_work_cover:      { label: 'Do you have life coverage through work?', type: 'select',
                           options: ['No','Yes — and it ends if I leave','Yes — I can take it with me','Not sure'] },
   health_conditions:    { label: 'Any conditions or medications we should know about?', type: 'textarea',
                           placeholder: 'This affects the price more than almost anything else, and it stays between you and your advisor.' },
   di_employment:        { label: 'How are you employed?', type: 'select',
                           options: ['W-2 employee','Self-employed / 1099','Business owner','Other'] },
   di_hours:             { label: 'Hours you work per week', type: 'number' },
-  di_existing:          { label: 'Disability cover through work?', type: 'select',
+  di_existing:          { label: 'Disability coverage through work?', type: 'select',
                           options: ['No','Yes — short term only','Yes — long term','Yes — both','Not sure'] },
   di_benefit_wanted:    { label: 'Monthly benefit you would need ($)', type: 'number' },
   di_elimination:       { label: 'How long could you manage before benefits started?', type: 'select',
@@ -288,7 +288,7 @@ const INTAKE_PRODUCT_NEEDS = {
   health:       ['household','gender','tobacco','covered','meds','providers','county'],
   medicare:     ['household','gender','tobacco','covered','meds','providers','county'],
   life:         ['household','gender','tobacco','covered','meds','hw','amount'],
-  disability:   ['household','gender','tobacco','meds','hw'],
+  disability:   ['household','solo','gender','tobacco','hw'],
   supplemental: ['household','gender','tobacco','covered'],
   dental:       ['household','covered','providers'],
   investments:  ['household'],
@@ -313,7 +313,7 @@ const INTAKE_PRODUCT_IDS = {
   life: ['household_members','marital_status','med_medications','has_life_insurance',
          'life_coverage_amount','life_work_cover','life_term','health_conditions',
          'goal_protection','goal_debt','goal_college'],
-  disability: ['household_members','current_occupation','current_income','med_medications',
+  disability: ['household_members','current_occupation','current_income',
                'di_employment','di_hours','di_existing','di_benefit_wanted','di_elimination',
                'di_benefit_period','health_conditions'],
   investments: ['household_members','marital_status','household_income','has_investments',
@@ -473,7 +473,7 @@ function renderHouseholdTable_(id, def) {
     <label>${def.label}</label>
     <p style="font-weight:400;color:#777;font-size:12.5px;line-height:1.6;margin:-2px 0 8px;">
       Add everyone you claim on your tax return \u2014 even if they already have coverage and are
-      not applying here. Then untick <strong>Applying</strong> for anyone who does not need cover.
+      not applying here. Then untick <strong>Applying</strong> for anyone who does not need coverage.
       <span style="color:#999;">Your tax household is what a subsidy is worked out on, so leaving
       someone off can change the price.</span></p>
     <div style="overflow-x:auto;" id="hh-table"><table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -546,7 +546,7 @@ function hhPaint_() {
           <span style="font-size:12px;color:#777;${n.has('gender') ? '' : 'display:none;'}">Gender</span>
           <span style="${n.has('gender') ? '' : 'display:none;'}">${gen(m)}</span>
           <label style="font-size:12px;color:#777;display:${n.has('tobacco') ? 'inline-flex' : 'none'};align-items:center;gap:5px;margin:0;">${tob(m)} Uses tobacco</label>
-          <label style="font-size:12px;color:#777;display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:5px;margin:0;">${cov(m)} Applying for cover</label>
+          <label style="font-size:12px;color:#777;display:${n.has('covered') ? 'inline-flex' : 'none'};align-items:center;gap:5px;margin:0;">${cov(m)} Applying for coverage</label>
           <span style="flex:1;"></span>${del(i)}
         </div>
         <div style="display:${n.has('hw') ? 'flex' : 'none'};align-items:center;gap:8px;flex-wrap:wrap;">
@@ -557,7 +557,7 @@ function hhPaint_() {
           <input type="number" class="hh-wt" value="${m.weight == null ? '' : m.weight}" placeholder="lb" style="width:72px;${inp}" oninput="hhRead_()">
         </div>
         <div style="display:${n.has('amount') ? 'flex' : 'none'};align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <span style="font-size:12px;color:#777;">Cover wanted</span>
+          <span style="font-size:12px;color:#777;">Coverage wanted</span>
           <select class="hh-amt" onchange="hhRead_()" style="${inp}"><option value=""></option>${bands(m)}</select>
           <span style="font-size:12px;color:#777;">or exact</span>
           <input type="number" class="hh-amtx" value="${m.amount_exact == null ? '' : m.amount_exact}" placeholder="$" style="width:120px;${inp}" oninput="hhRead_()">
