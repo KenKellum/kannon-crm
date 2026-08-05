@@ -5804,8 +5804,9 @@ async function viewContact(contactId, email, opts = {}) {
 function c360Refresh_() {
   const D = window._c360;
   const panel = document.getElementById('contact-panel');
-  if (!D || !D.c || !panel || !panel.classList.contains('open')) return;
+  if (!D || !D.c || !panel || !panel.classList.contains('open')) return false;
   viewContact(D.c.id, null, { silent: true, keepTab: true });
+  return true;
 }
 
 function c360ToggleClosed_() { window._c360.showClosed = !window._c360.showClosed; renderC360_(); }
@@ -5873,13 +5874,13 @@ function renderC360_() {
       <button class="btn btn-outline btn-sm" onclick="logOutreach('${c.id}','','')" style="font-size:12px;">\u{1F4DD} Log Outreach</button>
       ${(c.whatsapp_number || c.phone) ? `<button class="btn btn-outline btn-sm" onclick="openWhatsApp('${c.id}')" style="font-size:12px;color:#25d366;border-color:#25d366;">\u{1F4AC} WhatsApp</button>` : ''}
       ${_canSend
-        ? `<button class="btn btn-outline btn-sm" onclick="closeContactPanel();transferContact('${c.id}')"><i class="ti ti-arrows-exchange"></i> Transfer</button>`
+        ? `<button class="btn btn-outline btn-sm" onclick="transferContact('${c.id}')"><i class="ti ti-arrows-exchange"></i> Transfer</button>`
         : ''}
       ${_canSend
         ? `<button class="btn btn-accent btn-sm" onclick="recruitContact('${c.id}')">\u{1F465} Recruit</button>`
         : ''}
       <button class="btn btn-outline btn-sm" onclick="startSequence('${c.id}')">\u25B6 Sequence</button>
-      <button class="btn btn-primary" onclick="closeContactPanel();editContact('${c.id}')">\u270F\uFE0F Edit</button>
+      <button class="btn btn-primary" onclick="editContact('${c.id}')">\u270F\uFE0F Edit</button>
     </div>`;
 }
 
@@ -6546,6 +6547,18 @@ function closeDealPanel() {
   document.getElementById('deal-panel').classList.remove('open');
   document.getElementById('panel-overlay').style.display = 'none';
   document.body.style.overflow = '';
+  window._openDealId = null;
+}
+
+// Same contract as c360Refresh_ (see [dialogs stack above panels]): the deal
+// panel now stays OPEN behind its dialogs, so it can go stale. Redraws from the
+// in-memory deals array and re-runs loadDealTree_, and returns whether it did
+// anything so callers can fall back to closing.
+function dealPanelRefresh_() {
+  const panel = document.getElementById('deal-panel');
+  if (!window._openDealId || !panel || !panel.classList.contains('open')) return false;
+  openDealPanel(window._openDealId);
+  return true;
 }
 
 function renderActivityTimeline(dealId) {
@@ -6814,6 +6827,7 @@ async function sendDealEmail(dealId, to, subj, body) {
 function openDealPanel(dealId) {
   try {
   const deal    = deals.find(d => d.id === dealId); if (!deal) return;
+  window._openDealId = dealId;   // so dealPanelRefresh_ knows what to redraw
   const contact = contacts.find(c => c.id === deal.contact_id);
   const pipeline = PIPELINES[deal.pipeline] || { name: deal.pipeline };
   const dealCfg = DEAL_EDIT_CONFIG[deal.pipeline] || null;
@@ -6893,7 +6907,7 @@ function openDealPanel(dealId) {
 
   var footerContact = '';
   var footerIntake = contact
-    ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="closeDealPanel();setTimeout(function(){dialerViewIntake(&#39;' + contact.id + '&#39;);},150)">&#128196; View Intakes</button>'
+    ? '<button class="btn btn-outline btn-sm" style="background:rgba(139,92,246,0.08);color:#8b5cf6;border-color:rgba(139,92,246,0.3);" onclick="dialerViewIntake(&#39;' + contact.id + '&#39;)">&#128196; View Intakes</button>'
     : '';
 
   document.getElementById('deal-panel').innerHTML =
@@ -6943,7 +6957,7 @@ function openDealPanel(dealId) {
     + footerContact
     + footerIntake
     + '<button class="btn btn-outline btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border-color:rgba(59,130,246,0.3);" onclick="openDealEmailModal(&#39;' + dealId + '&#39;)">&#9993; Email</button>'
-    + '<button class="btn btn-primary" onclick="closeDealPanel();editDeal(&#39;' + dealId + '&#39;)">&#9999;&#65039; Edit Deal</button>'
+    + '<button class="btn btn-primary" onclick="editDeal(&#39;' + dealId + '&#39;)">&#9999;&#65039; Edit Deal</button>'
     + '</div>';
 
   document.getElementById('panel-overlay').style.display = 'block';
@@ -7861,7 +7875,10 @@ function editContact(id, onSave) {
       if (ac && ac.length > 0) await supabaseClient.from('contact_companies').insert(ac.map(r => ({ contact_id: id, company_id: r.company_id })));
     }
 
-    Object.assign(c, updates); showToast('Contact updated!'); if (typeof onSave === 'function') { onSave(); } else { renderContacts(); closeContactPanel(); }
+    // The card now stays open behind the edit dialog, so refresh it instead of
+    // closing it. Only fall back to closing when it is not open (edit reached
+    // from the contacts list, where there is no card to return to).
+    Object.assign(c, updates); showToast('Contact updated!'); if (typeof onSave === 'function') { onSave(); } else { renderContacts(); if (!c360Refresh_()) closeContactPanel(); }
   });
   loadIntakeHistoryPanel(id);
 }
@@ -9070,9 +9087,10 @@ function closeModal() {
   qbCloseIntakeDrawer_();
   qbCloseWorkbench_();
   window._qbWbActive = null; document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null;
-  // Land back on a CURRENT contact card. No-op unless the card is open, which
-  // is only the case for dialogs launched from it.
+  // Land back on a CURRENT panel. Both are no-ops unless that panel is open,
+  // which is only the case for dialogs launched from one.
   c360Refresh_();
+  dealPanelRefresh_();
 }
 
 // ============================================================
