@@ -48,6 +48,10 @@ eval(grab('coverageRollup_'));
 eval(grab('dealCoverageVerdict_'));
 eval(grab('TERM_LIMITED_LINES').replace(/^const /, 'var '));
 eval(grab('PLAN_YEAR_LINES').replace(/^const /, 'var '));
+eval(grab('RENEWAL_KIND').replace(/^const /, 'var '));
+eval(grab('renewalKind_'));
+eval(grab('nextAnniversary_'));
+eval(grab('coverageRenewalDate_'));
 eval(grab('coverageEndRule_'));
 eval(grab('planYearEnd_'));
 eval(grab('enrollQuoteExpired_'));
@@ -196,6 +200,50 @@ ok(!renewalDueWithin_({ termination_date: inDays(61) }, 60, T), '61 days out doe
 ok(!renewalDueWithin_({ termination_date: inDays(-1) }, 60, T), 'and one that already ended is not "renewing"');
 ok(!renewalDueWithin_({ termination_date: null }, 60, T), 'a policy with no end date never comes up');
 ok(RENEWAL_WINDOW_DAYS >= 30, 'the default window gives real warning: ' + RENEWAL_WINDOW_DAYS + ' days');
+
+// ── 1f. the three different jobs called "renewal" ────────────────────────────
+console.log('\n1f. how each line renews');
+ok(renewalKind_('Short-Term Medical') === 'replace', 'a short-term plan must be REPLACED — it stops');
+ok(renewalKind_('Health — Individual') === 'plan_year', 'ACA renews on the plan year');
+ok(renewalKind_('Medicare Advantage') === 'plan_year', 'so does Medicare Advantage');
+ok(renewalKind_('Part D (PDP)') === 'plan_year', 'and Part D');
+// Ken: "medicare Supplements auto renew unless the client wishes to pick a new
+// plan or new carrier."
+ok(renewalKind_('Medicare Supplement') === 'auto', 'a Medicare Supplement renews itself');
+ok(renewalKind_('Life') === 'auto', 'life cover renews itself');
+ok(renewalKind_('Something Nobody Listed') === 'auto',
+   'an unknown line renews itself rather than being wrongly marked as stopping');
+// The two must agree: anything that MUST have an end date is something that
+// stops, and anything that stops must demand one.
+Object.keys(RENEWAL_KIND).forEach(l => {
+  if (renewalKind_(l) === 'replace') ok(coverageEndRule_(l).required, l + ' stops, so its end date is required');
+  if (coverageEndRule_(l).required) ok(renewalKind_(l) === 'replace', l + ' demands an end date, so it must be a "replace" line');
+});
+
+console.log('\n1g. when the renewal conversation is due');
+ok(nextAnniversary_('2025-11-15', T) === '2026-11-15', 'an anniversary later this year');
+ok(nextAnniversary_('2025-03-01', T) === '2027-03-01', 'one already past this year rolls to next year');
+ok(nextAnniversary_('2026-08-04', T) === '2027-08-04', 'today\'s anniversary counts as done, next is a year out');
+ok(nextAnniversary_(null, T) === null, 'no start date, no anniversary');
+
+// A short-term plan counts from its end date; a Medigap policy from its
+// anniversary, because that is the only thing that ever moves.
+ok(coverageRenewalDate_({ line: 'Short-Term Medical', status: 'active',
+    effective_date: '2026-08-05', termination_date: '2027-02-04' }, T) === '2027-02-04',
+   'a short-term plan counts down to the day it stops');
+ok(coverageRenewalDate_({ line: 'Medicare Supplement', status: 'active',
+    effective_date: '2025-09-01' }, T) === '2026-09-01',
+   'a Medigap policy counts down to its anniversary, with no end date at all');
+ok(coverageRenewalDate_({ line: 'Life', status: 'submitted', effective_date: '2025-09-01' }, T) === null,
+   'an application that has not been approved is not up for renewal');
+ok(coverageRenewalDate_({ line: 'Health — Individual', status: 'active', effective_date: '2026-01-01' }, T) === null,
+   'a plan-year policy with no end date recorded has nothing to count to — which is why the date is offered at enrollment');
+
+// The renewing-soon chip has to catch a Medigap anniversary, not just an end date.
+ok(renewalDueWithin_({ line: 'Medicare Supplement', status: 'active', effective_date: '2025-09-15' }, 60, T),
+   'a Medigap anniversary six weeks out shows as renewing soon');
+ok(!renewalDueWithin_({ line: 'Medicare Supplement', status: 'active', effective_date: '2025-12-15' }, 60, T),
+   'one four months out does not');
 
 // ── 2. nobody enrols on a price that has run out ─────────────────────────────
 console.log('\n2. an expired quote cannot be enrolled on');

@@ -6114,6 +6114,8 @@ const ACTIVITY_META = {
   status_changed:      { icon: '🔄', color: '#94a3b8', label: 'Status Changed' },
   intake_completed:    { icon: '📋', color: '#8b5cf6', label: 'Intake Completed' },
   enrolled:            { icon: '✅', color: '#34d399', label: 'Enrolled' },
+  coverage_renewed:    { icon: '🔁', color: '#34d399', label: 'Coverage Renewed' },
+  coverage_repriced:   { icon: '💲', color: '#fbbf24', label: 'Premium Changed' },
   coverage_activated:  { icon: '🛡️', color: '#34d399', label: 'Coverage Active' },
   coverage_terminated: { icon: '🛑', color: '#94a3b8', label: 'Coverage Ended' },
   coverage_updated:    { icon: '🔄', color: '#60a5fa', label: 'Coverage Updated' },
@@ -17715,6 +17717,63 @@ const TERM_LIMITED_LINES = ['Short-Term Medical'];
 const PLAN_YEAR_LINES = ['Health — Individual', 'Medicare Advantage', 'Part D (PDP)',
                          'Health — Group', 'Private/Off-Market Medical'];
 
+// ── HOW A LINE RENEWS ────────────────────────────────────────────────────────
+//
+// Three different jobs wearing the same word, and Ken named all three:
+//
+//   replace   The plan STOPS. Short-term medical. If nobody acts the client is
+//             uninsured the next morning. New policy, new number.
+//   plan_year The plan year closes and a new one opens. ACA, Medicare
+//             Advantage, Part D, group. New policy, and Ken: "Most times a
+//             renewal that keeps the same plan DOES need a new policy number.
+//             Some carriers will carry it over, but VERY few!"
+//   auto      It renews itself. Ken: "medicare Supplements auto renew unless
+//             the client wishes to pick a new plan or new carrier." Same
+//             policy, same number, no new record — only the premium moves, on
+//             the anniversary. That anniversary is the rate-review prompt.
+const RENEWAL_KIND = {
+  'Short-Term Medical':        'replace',
+  'Health — Individual':       'plan_year',
+  'Private/Off-Market Medical':'plan_year',
+  'Health — Group':            'plan_year',
+  'Medicare Advantage':        'plan_year',
+  'Part D (PDP)':              'plan_year',
+  'Medicare Supplement':       'auto',
+  'Dental/Vision/Hearing':     'auto',
+  'Hospital Indemnity':        'auto',
+  'Accident':                  'auto',
+  'Cancer/Critical Illness':   'auto',
+  'Life':                      'auto',
+  'Disability':                'auto',
+  'Auto/Home':                 'auto',
+  'Commercial':                'auto',
+};
+
+function renewalKind_(line) { return RENEWAL_KIND[line] || 'auto'; }
+
+// The next anniversary of a start date — when an auto-renewing policy's rate
+// moves. Guards against 29 February by letting the Date roll it forward.
+function nextAnniversary_(effective, today) {
+  if (!effective) return null;
+  today = today || new Date().toISOString().slice(0, 10);
+  const [, m, d] = effective.split('-');
+  let year = Number(today.slice(0, 4));
+  let a = year + '-' + m + '-' + d;
+  if (a <= today) a = (year + 1) + '-' + m + '-' + d;
+  return a;
+}
+
+// The date that actually matters for reaching out. A policy with an end date
+// counts from that; one that renews itself counts from its anniversary, which
+// is the only thing that moves.
+function coverageRenewalDate_(r, today) {
+  if (r.termination_date) return r.termination_date;
+  if (renewalKind_(r.line) === 'auto' && r.status === 'active') {
+    return nextAnniversary_(r.effective_date, today);
+  }
+  return null;
+}
+
 function coverageEndRule_(line) {
   if (TERM_LIMITED_LINES.includes(line)) {
     return { required: true,
@@ -18205,10 +18264,11 @@ const RENEWAL_WINDOW_DAYS = 60;
 
 function renewalDueWithin_(r, days, today) {
   today = today || new Date().toISOString().slice(0, 10);
-  if (!r.termination_date || r.termination_date < today) return false;
+  const due = coverageRenewalDate_(r, today);
+  if (!due || due < today) return false;
   const limit = new Date(today + 'T12:00:00');
   limit.setDate(limit.getDate() + (days || RENEWAL_WINDOW_DAYS));
-  return r.termination_date <= limit.toISOString().slice(0, 10);
+  return due <= limit.toISOString().slice(0, 10);
 }
 
 const CLIENT_FILTERS = {
@@ -18423,7 +18483,10 @@ function clientsRowHtml_({ r, st, agent }) {
         ${agent ? ' &middot; ' + escWeb(agent) : ''}</div></span>
     ${r.monthly_premium != null ? '<span style="color:var(--text-success);font-weight:600;">'
         + enrollMoney_(r.monthly_premium) + '/mo</span>' : ''}
-    ${st.live ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
+    ${st.live ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;${
+        renewalDueWithin_(r) ? 'border-color:var(--border-warning);color:var(--text-warning);font-weight:700;' : ''}"
+        onclick="openRenewal_('${r.id}')" title="Renew it, re-price it, or quote them something else">↻ Renew</button>
+      <button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
         onclick="clientsEndCoverage_('${r.id}')" title="Record that this policy is ending">End it</button>` : ''}
     <button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
       onclick="openCoverageEditor_('${r.id}')">Manage</button>
@@ -18441,6 +18504,178 @@ function clientsToggle_(id) {
   const S = clientsState_();
   S.expanded[id] = S.expanded[id] === false;
   clientsPaint_();
+}
+
+// ── RENEWING ─────────────────────────────────────────────────────────────────
+//
+// Ken: "Some clients just want to renew what they have. Same plan, etc but the
+// premium may have changed. OR maybe they want to select a different type of
+// plan altogether... it needs to be quick and easy for the CRM User and client!"
+//
+// So no new intake — nothing about who they are has changed. What has changed
+// is one of three things, and the dialog offers exactly the ones that apply:
+//
+//   Same plan again   A NEW policy record, chained to the old one, which is
+//                     ended the day before the new term starts. Last year's
+//                     premium stays put as the record of last year.
+//   New premium only  Auto-renewing lines only. Same policy, same number, the
+//                     rate moves. No new record — the cover never broke.
+//   Something else    That is a quote, and the quote builder does it.
+async function openRenewal_(enrollmentId) {
+  const { data: r, error } = await supabaseClient.from('enrollments').select('*').eq('id', enrollmentId).single();
+  if (error || !r) { showToast('Could not open that policy.'); return; }
+  const kind = renewalKind_(r.line);
+  const today = new Date().toISOString().slice(0, 10);
+  const due = coverageRenewalDate_(r, today);
+  // A new term starts the day after the old one ends; an auto-renewing policy
+  // moves on its anniversary.
+  const nextStart = r.termination_date
+    ? new Date(new Date(r.termination_date + 'T12:00:00').getTime() + 86400000).toISOString().slice(0, 10)
+    : (due || today);
+  const endRule = coverageEndRule_(r.line);
+  const nextEnd = kind === 'plan_year' ? planYearEnd_(nextStart)
+                : (r.effective_date && r.termination_date
+                    ? new Date(new Date(nextStart + 'T12:00:00').getTime()
+                        + (new Date(r.termination_date) - new Date(r.effective_date))).toISOString().slice(0, 10)
+                    : '');
+  window._renewFrom = r;
+
+  showModal('Renew — ' + escWeb(r.plan_name), `
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;">
+      <strong>${escWeb(r.plan_name)}</strong> &middot; ${escWeb(r.carrier_name || '')}
+      ${r.policy_number ? ' &middot; policy ' + escWeb(r.policy_number) : ''}<br>
+      <span style="color:var(--text-muted);">${escWeb(r.line || '')} &middot; ${enrollMoney_(r.monthly_premium)}/mo
+      &middot; ${r.effective_date ? 'from ' + enrollDate_(r.effective_date) : 'no start date'}
+      ${r.termination_date ? ' to ' + enrollDate_(r.termination_date) : ''}</span>
+    </div>
+    ${kind === 'auto' ? `<p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;">
+      This line renews itself — the policy and its number carry on, and normally only the premium moves.
+      Record the new rate below, or shop them if they want to look around.</p>` : ''}
+    ${kind === 'replace' ? `<p style="font-size:12.5px;color:var(--text-warning);margin-bottom:10px;">
+      ⚠ A short-term plan stops and does not renew itself. Unless something replaces it, they are
+      uninsured from ${r.termination_date ? enrollDate_(r.termination_date) : 'the day it ends'}.</p>` : ''}
+
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+      ${kind === 'auto'
+        ? `<button class="btn btn-primary btn-sm" onclick="renewPick_('reprice')">New premium, same policy</button>
+           <button class="btn btn-outline btn-sm" onclick="renewPick_('same')">Re-write it as a new term</button>`
+        : `<button class="btn btn-primary btn-sm" onclick="renewPick_('same')">Same plan, new term</button>`}
+      <button class="btn btn-outline btn-sm" onclick="renewShop_()">Something different → quote</button>
+    </div>
+
+    <div id="rn-reprice" style="display:none;">
+      <label>New monthly premium *</label>
+      <input type="number" step="0.01" id="rn-rate" value="${r.monthly_premium || ''}" />
+      <label>From when</label>
+      <input type="date" id="rn-rate-from" value="${due || today}" />
+      <p style="font-size:11px;color:var(--text-muted);margin-top:5px;">
+        The policy, its number and its start date all stay as they are. Only the rate changes, and the
+        change lands on their timeline so "why has it gone up?" has an answer.</p>
+    </div>
+
+    <div id="rn-same" style="display:none;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;"><label>New premium *</label>
+          <input type="number" step="0.01" id="rn-prem" value="${r.monthly_premium || ''}" /></div>
+        <div style="flex:1;min-width:140px;"><label>New term starts *</label>
+          <input type="date" id="rn-start" value="${nextStart}" /></div>
+        <div style="flex:1;min-width:140px;"><label>New term ends
+          ${endRule.required ? '<span style="color:var(--text-danger);">*</span>' : ''}</label>
+          <input type="date" id="rn-end" value="${nextEnd}" /></div>
+      </div>
+      <label>New policy / member number</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" id="rn-policy" placeholder="the carrier's new number" style="flex:1;" />
+        ${r.policy_number ? `<button class="btn btn-outline btn-sm" style="white-space:nowrap;"
+            onclick="document.getElementById('rn-policy').value='${escWeb(r.policy_number)}'">Carried over</button>` : ''}
+      </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:5px;">
+        Most carriers issue a new number on renewal; a few carry the old one over, which is what that
+        button is for. The old policy is ended the day before this one starts, and the two stay linked.</p>
+    </div>
+  `, async function () {
+    const mode = window._renewMode;
+    if (!mode) { showToast('Pick how they are renewing first.'); return false; }
+    return mode === 'reprice' ? renewReprice_(r) : renewSamePlan_(r);
+  }, { confirmLabel: 'Save' });
+  window._renewMode = null;
+}
+
+function renewPick_(mode) {
+  window._renewMode = mode;
+  const a = document.getElementById('rn-reprice'), b = document.getElementById('rn-same');
+  if (a) a.style.display = mode === 'reprice' ? 'block' : 'none';
+  if (b) b.style.display = mode === 'same' ? 'block' : 'none';
+}
+
+// Same policy, new rate. No new record — the cover never broke.
+async function renewReprice_(r) {
+  const rate = parseFloat(document.getElementById('rn-rate').value);
+  if (!isFinite(rate)) { showToast('A new premium is needed.'); return false; }
+  const { error } = await supabaseClient.from('enrollments')
+    .update({ monthly_premium: rate }).eq('id', r.id);
+  if (error) { showToast('Could not save it: ' + error.message, 8000); return false; }
+  showToast(r.plan_name + ' now ' + enrollMoney_(rate) + '/mo.');
+  clientsRefresh_();
+  return true;
+}
+
+// A new term is a new policy. The old one ends the day before, and the two link.
+async function renewSamePlan_(r) {
+  const prem  = parseFloat(document.getElementById('rn-prem').value);
+  const start = document.getElementById('rn-start').value;
+  const end   = document.getElementById('rn-end').value || null;
+  const pol   = document.getElementById('rn-policy').value.trim() || null;
+  if (!isFinite(prem)) { showToast('A new premium is needed.'); return false; }
+  if (!start) { showToast('When does the new term start?'); return false; }
+  if (coverageEndRule_(r.line).required && !end) {
+    showToast('A short-term plan needs its end date, or nobody knows when to reach out again.', 8000);
+    return false;
+  }
+  if (end && end < start) { showToast('The new term cannot end before it starts.'); return false; }
+
+  const { error: e1 } = await supabaseClient.from('enrollments').insert({
+    contact_id: r.contact_id, deal_id: r.deal_id, agent_id: currentAgent.id,
+    quote_id: r.quote_id, quote_option_id: null,
+    line: r.line, carrier_id: r.carrier_id, carrier_name: r.carrier_name,
+    product_id: r.product_id, plan_name: r.plan_name,
+    policy_number: pol, monthly_premium: prem,
+    status: 'active', applied_on: new Date().toISOString().slice(0, 10),
+    effective_date: start, termination_date: end,
+    plan_snapshot: r.plan_snapshot, source: r.source || 'quote',
+    renewed_from_id: r.id,
+  });
+  if (e1) { showToast('Could not create the new term: ' + e1.message, 8000); return false; }
+
+  // End the old one the day before, so there is never a gap or an overlap
+  // somebody has to notice and clean up.
+  const dayBefore = new Date(new Date(start + 'T12:00:00').getTime() - 86400000).toISOString().slice(0, 10);
+  const { error: e2 } = await supabaseClient.from('enrollments').update({
+    status: 'terminated',
+    termination_date: (r.termination_date && r.termination_date < dayBefore) ? r.termination_date : dayBefore,
+    termination_reason: r.termination_reason || 'Renewed onto a new term',
+  }).eq('id', r.id);
+  if (e2) { showToast('New term saved, but the old one did not close: ' + e2.message, 8000); }
+
+  showToast('Renewed — ' + r.plan_name + ' from ' + enrollDate_(start) + ' at ' + enrollMoney_(prem) + '/mo.');
+  const deal = r.deal_id ? (deals || []).find(x => x.id === r.deal_id) : openDealFor_(r.contact_id);
+  if (deal) await advanceDealOnEnrollment_(deal);
+  clientsRefresh_();
+  return true;
+}
+
+// They want something else. That is a quote, pre-loaded from what they have.
+function renewShop_() {
+  const r = window._renewFrom;
+  if (!r) return;
+  const deal = r.deal_id ? (deals || []).find(x => x.id === r.deal_id) : openDealFor_(r.contact_id);
+  if (!deal) {
+    showToast('They have no open deal to quote against — reopen one from their record first.', 8000);
+    return;
+  }
+  closeModal();
+  showToast('Quoting alternatives for ' + (r.plan_name || 'their cover') + '…');
+  openQuoteBuilder(deal.id);
 }
 
 // Ending a policy from the list, which is where an agent actually notices it —
