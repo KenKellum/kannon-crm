@@ -17107,11 +17107,28 @@ async function openQuoteBuilder(dealId, opts) {
     const hdr = document.querySelector('#modal-container .modal-header h2');
     if (hdr) hdr.textContent = 'Renewing — ' + (opts.renewFrom.plan_name || contact.name || '');
     const note = document.getElementById('qb-renew-note');
+    const avail = window._qbRenewAvail || { ok: true };
     if (note) {
       note.style.display = 'block';
-      note.innerHTML = '\u{1F501} <strong>Renewing ' + escWeb(opts.renewFrom.plan_name || '') + '</strong>'
-        + (opts.renewFrom.termination_date ? ' — their current term ends ' + enrollDate_(opts.renewFrom.termination_date) : '')
-        + '. Change the premium and save, or add products from the pickers to give them a choice.';
+      const ends = opts.renewFrom.termination_date
+        ? ' — their current term ends ' + enrollDate_(opts.renewFrom.termination_date) : '';
+      if (avail.ok) {
+        note.style.background = 'var(--bg-info)'; note.style.borderColor = 'var(--border-info)';
+        note.style.color = 'var(--text-info)';
+        note.innerHTML = '\u{1F501} <strong>Renewing ' + escWeb(opts.renewFrom.plan_name || '') + '</strong>' + ends
+          + '. Change the premium and save, or add products from the pickers to give them a choice.';
+      } else {
+        // The plan is gone. Say so before the agent quotes something that
+        // cannot be sold, and put the picker one click away.
+        note.style.background = 'var(--bg-warning)'; note.style.borderColor = 'var(--border-warning)';
+        note.style.color = 'var(--text-warning)';
+        note.innerHTML = '⚠ <strong>This plan is not available to renew.</strong> ' + avail.why + ends
+          + '<div style="margin-top:8px;">'
+          + (avail.action === 'pick'
+              ? '<button type="button" class="btn btn-primary btn-sm" onclick="qbRenewPickReplacement_()">Pick a replacement plan</button>'
+              : '<button type="button" class="btn btn-primary btn-sm" onclick="qbWorkbenchOpen_(true)">Open the quoting tools</button>')
+          + '</div>';
+      }
     }
   }
 }
@@ -18888,10 +18905,81 @@ async function renewShop_() {
   await openQuoteBuilder(deal.id, { renewFrom: r });
 }
 
+// ── CAN THEY EVEN HAVE THIS PLAN AGAIN? ──────────────────────────────────────
+//
+// Ken: "the plan we are 'renewing' may or MAY NOT be an active plan anymore!!!
+// which then we would HAVE to pick a new plan from some carrier!"
+//
+// Products get discontinued, carriers get dropped, and a Marketplace or
+// Medicare plan may simply not exist in this year's list. Pre-loading a plan
+// that cannot be sold is worse than pre-loading nothing, because it looks
+// finished. So the prefill checks first and says what it found.
+function qbRenewAvailability_(r) {
+  const out = { ok: true, why: null, action: null };
+
+  // The carrier: is it still one the agent can write?
+  const car = (window._qbCarriers || []).find(c => c.id === r.carrier_id)
+           || (window._qbCarriers || []).find(c => c.name === r.carrier_name);
+  if (r.carrier_id && !car) {
+    out.ok = false;
+    out.why = 'You are no longer appointed with <strong>' + escWeb(r.carrier_name || 'that carrier')
+            + '</strong>, so this plan cannot be written as it stands.';
+    out.action = 'pick';
+    return out;
+  }
+
+  // The product: still on the shelf? _qbProds is already filtered to active,
+  // undiscontinued products for the carriers this agent can write.
+  if (r.product_id) {
+    const prod = (window._qbProds || []).find(p => p.id === r.product_id);
+    if (!prod) {
+      out.ok = false;
+      out.why = '<strong>' + escWeb(r.plan_name || 'This plan') + '</strong> is no longer on '
+              + escWeb(r.carrier_name || 'the carrier') + '’s current list — it has been discontinued or replaced.';
+      out.action = 'pick';
+      return out;
+    }
+  }
+
+  // An official plan carries a year with it. One from a previous plan year is
+  // not something to quote at last year's price.
+  const meta = (r.plan_snapshot || {}).plan_meta || {};
+  if ((meta.src === 'aca' || meta.src === 'cms') && meta.year) {
+    const thisYear = new Date().getFullYear();
+    if (Number(meta.year) < thisYear) {
+      out.ok = false;
+      out.why = 'This is a ' + escWeb(String(meta.year)) + ' plan. Run the '
+              + (meta.src === 'aca' ? 'Marketplace' : 'Medicare') + ' tool to see whether it still exists '
+              + 'this year and what it costs now.';
+      out.action = 'tool';
+    }
+  }
+  return out;
+}
+
+// Straight to the right picker for the line they are renewing, with the dead
+// plan's name and price already cleared off the option.
+function qbRenewPickReplacement_() {
+  const r = window._qbRenewFrom;
+  if (!r) return;
+  ['qb-name-0', 'qb-prem-0', 'qb-bul-0'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const ro = el.readOnly; el.readOnly = false; el.value = ''; el.readOnly = ro; }
+  });
+  delete (window._qbPpMeta || {})[0];
+  qbPpOptionView_(0);
+  const src = qbAutoSources_().find(s => s.line === r.line);
+  if (src && src.el === 'qb-pp-strip') { openProductPicker_(r.line); return; }
+  if (src) { qbWorkbenchOpen_(true, src.key); return; }
+  qbWorkbenchOpen_(true);
+  showToast('No automated list for ' + (r.line || 'this coverage type') + ' — pick a carrier and type the plan.', 7000);
+}
+
 // Put the policy they already hold onto option 1, as the card it came from.
 function qbPrefillFromEnrollment_(r) {
   const snap = r.plan_snapshot || {};
   const meta = snap.plan_meta || null;
+  window._qbRenewAvail = qbRenewAvailability_(r);
 
   const ol = document.getElementById('qb-optline-0');
   if (ol && r.line && [...ol.options].some(x => x.value === r.line)) { ol.value = r.line; qbOptLineChanged_(0); }
@@ -18908,9 +18996,13 @@ function qbPrefillFromEnrollment_(r) {
   }
   const nm = document.getElementById('qb-name-0'); if (nm && !nm.value) nm.value = r.plan_name || '';
   // Last year's premium is a starting point, not the answer — it is the one
-  // number a renewal almost always changes.
+  // number a renewal almost always changes. And if the plan is gone, it is not
+  // even that: leaving a dead plan's price on the option is how a wrong number
+  // reaches a client.
   const pr = document.getElementById('qb-prem-0');
-  if (pr && !pr.value && r.monthly_premium != null) pr.value = Number(r.monthly_premium).toFixed(2);
+  if (pr && !pr.value && r.monthly_premium != null && window._qbRenewAvail.ok) {
+    pr.value = Number(r.monthly_premium).toFixed(2);
+  }
   const bul = document.getElementById('qb-bul-0');
   if (bul && !bul.value && (snap.benefit_bullets || []).length) {
     const ro = bul.readOnly; bul.readOnly = false;
