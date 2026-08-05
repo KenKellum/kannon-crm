@@ -1,6 +1,7 @@
 // Exercise the real timeline code out of crm.js against fixture activity.
 const fs = require('fs');
-const src = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, '..', 'crm.js'), 'utf8');
 
 function grab(name) {
   const decl = new RegExp('(?:^|\\n)(?:const |function )' + name + '\\b');

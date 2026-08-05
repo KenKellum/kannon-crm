@@ -6,7 +6,8 @@
 // answer has to be right without anybody maintaining a status by hand. These
 // run the real functions out of crm.js against a book spanning every state.
 const fs = require('fs');
-const src = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, '..', 'crm.js'), 'utf8');
 
 function grab(name) {
   const decl = new RegExp('(?:^|\\n)(?:const |function |async function )' + name + '\\b');

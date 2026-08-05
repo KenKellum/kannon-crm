@@ -6,7 +6,8 @@
 // This asserts coverage against the builder itself, so a new card or a new
 // width fails here rather than in Ken's hands.
 const fs = require('fs');
-const src = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, '..', 'crm.js'), 'utf8');
 
 let bad = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) bad++; };

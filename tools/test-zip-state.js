@@ -2,7 +2,8 @@
 // right for every ZIP, not almost all of them. Checked against the same data
 // that populates zip_places.
 const fs = require('fs');
-const src = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, '..', 'crm.js'), 'utf8');
 function grab(name, opener) {
   const i = src.indexOf((name === 'zipToState_' ? 'function ' : 'const ') + name);
   if (i < 0) throw new Error('missing ' + name);
@@ -15,7 +16,7 @@ function grab(name, opener) {
 }
 eval(grab('ZIP3_STATE', '[') + ';' + grab('ZIP_STATE_FIX', '{') + ';' + grab('zipToState_', '{'));
 
-const ref = 'C:/kannon-crm/tools/.zipref.csv';
+const ref = path.join(__dirname, '..', 'tools/.zipref.csv');
 if (!fs.existsSync(ref)) { console.log('reference CSV missing — skipping'); process.exit(0); }
 let checked = 0, wrong = 0; const ex = [];
 for (const line of fs.readFileSync(ref, 'utf8').split('\n').slice(1)) {

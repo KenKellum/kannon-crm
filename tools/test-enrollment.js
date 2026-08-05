@@ -6,7 +6,8 @@
 // database by probe; those cannot be reached from here. What IS here is the
 // code that decides what the agent sees and what gets written.
 const fs = require('fs');
-const src = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, '..', 'crm.js'), 'utf8');
 
 function grab(name) {
   const decl = new RegExp('(?:^|\\n)(?:const |function |async function )' + name + '\\b');
@@ -355,7 +356,7 @@ console.log('\n9. every status has words a client could read');
   const m = ENROLLMENT_STATUS[s];
   ok(m && m.label && m.hint && m.color, s + ' -> "' + (m ? m.label : '?') + '"');
 });
-const mig = 'C:/kannon-crm/supabase/migrations/20260804_enrollment_engine.sql';
+const mig = path.join(__dirname, '..', 'supabase/migrations/20260804_enrollment_engine.sql');
 const dbStatuses = /enrollments_status_check[\s\S]*?array\[([^\]]+)\]/.exec(
   fs.existsSync(mig) ? fs.readFileSync(mig, 'utf8') : '');
 if (dbStatuses) {

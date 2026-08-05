@@ -9,7 +9,8 @@
 // either way — the point of testing the verdict rather than the request is that
 // the verdict is what decides whether anything runs at all.
 const fs = require('fs');
-const src = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, '..', 'crm.js'), 'utf8');
 
 function grab(name) {
   const decl = new RegExp('(?:^|\\n)(?:const |function |async function )' + name + '\\b');

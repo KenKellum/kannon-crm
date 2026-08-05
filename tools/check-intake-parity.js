@@ -1,5 +1,6 @@
 // Does the agent's catalogue and the client's catalogue still agree?
 const fs = require('fs');
+const path = require('path');
 
 function grab(src, decl) {
   const i = src.indexOf(decl);
@@ -21,8 +22,8 @@ function grab(src, decl) {
   throw new Error('unbalanced: ' + decl);
 }
 
-const crm = fs.readFileSync('C:/kannon-crm/crm.js', 'utf8');
-const html = fs.readFileSync('C:/kannon-crm/intake.html', 'utf8');
+const crm = fs.readFileSync(path.join(__dirname, '..', 'crm.js'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'intake.html'), 'utf8');
 
 const A = grab(crm, 'const INTAKE_FIELD_DEFS = ');
 const B = grab(html, 'const FIELD_DEFS = ');
