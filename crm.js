@@ -6033,7 +6033,7 @@ function c360Body_(D) {
             return `<div style="font-size:11.5px;color:var(--text-muted);padding:1px 0;">\u{1F4BC} ${escWeb(q.line)} \u00b7 <span style="color:${col};font-weight:700;">${lbl}</span> \u00b7 <a href="quote.html?q=${q.id}" target="_blank">view quote \u2197</a></div>`;
           }).join('')}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">no quotes from this intake yet</div>'}
       </div>
-      <button class="btn btn-outline btn-sm" style="white-space:nowrap;align-self:flex-start;" onclick="closeContactPanel();setTimeout(function(){viewIntakeSession('${s.id}');},150)">\u{1F4C4} View Intake Summary</button>`);
+      <button class="btn btn-outline btn-sm" style="white-space:nowrap;align-self:flex-start;" onclick="closeContactPanel();setTimeout(function(){viewIntakeSession('${s.id}');},150)">\u{1F4C4} Intake Summary</button>`);
     }).join('') : c360Empty_('No intakes yet.');
     return rows + `<div style="display:flex;gap:8px;margin-top:12px;">
       <button class="btn btn-outline btn-sm" onclick="closeContactPanel();setTimeout(function(){dialerViewIntake('${c.id}');},150)">\u{1F4C4} View / Manage</button>
