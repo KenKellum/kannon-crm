@@ -15460,6 +15460,14 @@ function qbPpOptionView_(i) {
   const factKeys = Object.keys(facts).slice(0, 6);
   const chosen = Object.entries(m.chosen || {});
   const prem = parseFloat((document.getElementById('qb-prem-' + i) || {}).value);
+  // network is an object on a brochure-extracted product (name / type /
+  // provided_by), a plain string on older ones. Printing it raw gave
+  // "[object Object]" on the first card that reached a screen.
+  const net = m.network && typeof m.network === 'object'
+    ? (m.network.name || m.network.type || '')
+    : (m.network || '');
+  const netTip = m.network && typeof m.network === 'object'
+    ? [m.network.type, m.network.provided_by].filter(Boolean).join(' · ') : '';
 
   card.style.display = 'block';
   card.innerHTML = `
@@ -15467,7 +15475,7 @@ function qbPpOptionView_(i) {
       <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
         <span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">
           ${escWeb(m.carrier_name || '')}</span>
-        ${m.network ? `<span class="pk-pill unk">${escWeb(String(m.network).slice(0, 28))}</span>` : ''}
+        ${net ? `<span class="pk-pill unk" title="${escWeb(netTip)}">${escWeb(String(net).slice(0, 34))}</span>` : ''}
       </div>
       <div style="font-size:15px;font-weight:800;margin:2px 0 6px;">${escWeb(m.name || '')}</div>
       ${m.underwriter ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">
