@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Browser__navigate",
+      "mcp__Claude_Browser__read_page",
+      "mcp__Claude_Browser__get_page_text",
+      "mcp__Claude_Browser__read_console_messages",
+      "mcp__Claude_Browser__read_network_requests",
+      "mcp__Claude_Browser__find",
+      "mcp__Claude_Browser__resize_window",
+      "mcp__Claude_Browser__tabs_context",
+      "mcp__Claude_Browser__preview_logs",
+      "mcp__f6d5b719-34ed-4581-9658-68c002fc8cea__list_deployments",
+      "mcp__f6d5b719-34ed-4581-9658-68c002fc8cea__get_deployment",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__get_edge_function",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__get_logs",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__get_advisors",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__list_tables",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__list_migrations",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__list_edge_functions",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__get_project_url",
+      "mcp__466365b7-c018-4825-8b0f-db315dd4b42c__generate_typescript_types"
+    ]
+  }
+}
