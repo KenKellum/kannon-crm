@@ -15408,6 +15408,11 @@ function ppAdd_(prodId) {
     prescription: meta.prescription || null,
     facts: meta.facts || null,
     chosen: choice,
+    // The raw choice values are objects on a multi-part dimension (amount +
+    // period, tier + limit). ppFmt_/ppChoiceLabel_ already turn them into the
+    // words that go in the bullets — keep those alongside, so anything showing
+    // the choices back to a human has something readable to show.
+    chosen_labels: chosen,
     limitations: meta.limitations || null,
     compliance_notes: meta.compliance_notes || null,
   };
@@ -15458,7 +15463,15 @@ function qbPpOptionView_(i) {
 
   const facts = m.facts || {};
   const factKeys = Object.keys(facts).slice(0, 6);
-  const chosen = Object.entries(m.chosen || {});
+  // Prefer the labels the picker already formatted. Falling back to the raw
+  // choice object is what printed "deductible: [object Object]" on the first
+  // card that reached a screen, so anything non-scalar is dropped rather than
+  // stringified.
+  const chosen = (m.chosen_labels || []).length
+    ? m.chosen_labels.slice()
+    : Object.entries(m.chosen || {})
+        .filter(([, v]) => v == null || typeof v !== 'object')
+        .map(([k, v]) => String(k).replace(/_/g, ' ') + ': ' + v);
   const prem = parseFloat((document.getElementById('qb-prem-' + i) || {}).value);
   // network is an object on a brochure-extracted product (name / type /
   // provided_by), a plain string on older ones. Printing it raw gave
@@ -15493,7 +15506,7 @@ function qbPpOptionView_(i) {
       ${chosen.length ? `<div style="margin-top:9px;border-top:1px solid var(--border);padding-top:7px;">
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:4px;">What you chose</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;">
-          ${chosen.map(([k, v]) => `<span class="pk-pill ok">${escWeb(String(k).replace(/_/g, ' '))}: ${escWeb(String(v))}</span>`).join('')}
+          ${chosen.map(x => `<span class="pk-pill ok">${escWeb(String(x))}</span>`).join('')}
         </div></div>` : ''}
 
       ${factKeys.length ? `<div style="margin-top:9px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:7px;">
