@@ -6018,15 +6018,22 @@ function c360Body_(D) {
     const B = { interested: ['\u2b50 INTERESTED', 'var(--text-success)'], viewed: ['Viewed', '#3b82f6'], sent: ['Sent', 'var(--text-secondary)'], draft: ['Draft', '#f59e0b'] };
     const rows = D.intakes.length ? D.intakes.map(s => {
       const kids = (D.quotes || []).filter(q => q.intake_session_id === s.id);
+      // The intake row carries its OWN action. Without one, the only "view" on a
+      // row was the nested QUOTE link, so clicking what read as "view this
+      // intake" opened a quote instead (Ken, 2026-08-05).
+      // It must close the panel first: .modal-overlay is z-index 200 and
+      // #contact-panel is 299, so a modal opened over the panel renders
+      // UNDERNEATH it and the click looks dead.
       return c360Row_(`
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:700;font-size:13.5px;">${escWeb(s.form_type || 'intake')}</div>
+        <div style="font-weight:700;font-size:13.5px;">${escWeb(INTAKE_TYPE_LABELS[s.form_type] || s.form_type || 'intake')}</div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${fmtD(s.created_at)} \u00b7 ${s.status === 'completed' ? '<span style="color:var(--text-success);font-weight:700;">Completed</span>' : '<span style="color:#f59e0b;">Pending</span>'}</div>
         ${kids.length ? `<div style="margin-top:6px;border-left:2px solid var(--border-selected);padding-left:9px;">
           ${kids.map(q => { const [lbl, col] = B[q.status] || [q.status, 'var(--text-muted)'];
-            return `<div style="font-size:11.5px;color:var(--text-muted);padding:1px 0;">\u{1F4BC} ${escWeb(q.line)} \u00b7 <span style="color:${col};font-weight:700;">${lbl}</span> \u00b7 <a href="quote.html?q=${q.id}" target="_blank">view \u2197</a></div>`;
+            return `<div style="font-size:11.5px;color:var(--text-muted);padding:1px 0;">\u{1F4BC} ${escWeb(q.line)} \u00b7 <span style="color:${col};font-weight:700;">${lbl}</span> \u00b7 <a href="quote.html?q=${q.id}" target="_blank">view quote \u2197</a></div>`;
           }).join('')}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">no quotes from this intake yet</div>'}
-      </div>`);
+      </div>
+      <button class="btn btn-outline btn-sm" style="white-space:nowrap;align-self:flex-start;" onclick="closeContactPanel();setTimeout(function(){viewIntakeSession('${s.id}');},150)">\u{1F4C4} view form</button>`);
     }).join('') : c360Empty_('No intakes yet.');
     return rows + `<div style="display:flex;gap:8px;margin-top:12px;">
       <button class="btn btn-outline btn-sm" onclick="closeContactPanel();setTimeout(function(){dialerViewIntake('${c.id}');},150)">\u{1F4C4} View / Manage</button>
