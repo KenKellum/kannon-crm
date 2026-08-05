@@ -5752,13 +5752,19 @@ async function c360SaveCare_(contactId, id) {
 // ============================================================
 // CONTACT PANEL
 // ============================================================
-async function viewContact(contactId, email) {
+// opts.silent  \u2014 refetch without the "Pulling everything\u2026" placeholder, so a
+//                 refresh behind a closing dialog does not flash the card away.
+// opts.keepTab \u2014 stay on the tab the user was looking at instead of Overview.
+async function viewContact(contactId, email, opts = {}) {
   let c = contactId ? contacts.find(x => x.id === contactId) : null;
   if (!c && email) c = contacts.find(x => x.email && x.email.toLowerCase() === email.toLowerCase());
   if (!c) { showToast('Contact not found'); return; }
 
+  const prevTab = (opts.keepTab && window._c360 && window._c360.c.id === c.id) ? window._c360.tab : null;
   const panel = document.getElementById('contact-panel');
-  panel.innerHTML = '<div style="padding:70px 20px;text-align:center;color:var(--text-muted);">Pulling everything on ' + escWeb(c.name || 'this contact') + '\u2026</div>';
+  if (!opts.silent) {
+    panel.innerHTML = '<div style="padding:70px 20px;text-align:center;color:var(--text-muted);">Pulling everything on ' + escWeb(c.name || 'this contact') + '\u2026</div>';
+  }
   panel.classList.add('open');
   document.getElementById('panel-overlay').style.display = 'block';
   document.body.style.overflow = 'hidden';
@@ -5783,9 +5789,23 @@ async function viewContact(contactId, email) {
     c, opens, tl, quotes, intakes, appts, soas, baas, cProviders, cMeds, coverage,
     companies: (cc || []).map(r => r.companies).filter(Boolean),
     deals: deals.filter(d => d.contact_id === c.id),
-    tab: 'overview',
+    tab: prevTab || 'overview',
   };
   renderC360_();
+}
+
+// The contact card now stays OPEN behind its dialogs (.modal-overlay is z-index
+// 350, above #contact-panel at 299), so closing a dialog lands the user back on
+// the card they came from. That only works if the card is not stale: create an
+// intake, close the dialog, and the Intakes tab must show it. Silent + keepTab
+// so the refresh is invisible — no placeholder flash, same tab. Scroll position
+// inside the card is NOT preserved: renderC360_ replaces the panel's innerHTML,
+// so a long card returns to the top. Worth fixing if it ever grates.
+function c360Refresh_() {
+  const D = window._c360;
+  const panel = document.getElementById('contact-panel');
+  if (!D || !D.c || !panel || !panel.classList.contains('open')) return;
+  viewContact(D.c.id, null, { silent: true, keepTab: true });
 }
 
 function c360ToggleClosed_() { window._c360.showClosed = !window._c360.showClosed; renderC360_(); }
@@ -6033,11 +6053,11 @@ function c360Body_(D) {
             return `<div style="font-size:11.5px;color:var(--text-muted);padding:1px 0;">\u{1F4BC} ${escWeb(q.line)} \u00b7 <span style="color:${col};font-weight:700;">${lbl}</span> \u00b7 <a href="quote.html?q=${q.id}" target="_blank">view quote \u2197</a></div>`;
           }).join('')}</div>` : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">no quotes from this intake yet</div>'}
       </div>
-      <button class="btn btn-outline btn-sm" style="white-space:nowrap;align-self:flex-start;" onclick="closeContactPanel();setTimeout(function(){viewIntakeSession('${s.id}');},150)">\u{1F4C4} Intake Summary</button>`);
+      <button class="btn btn-outline btn-sm" style="white-space:nowrap;align-self:flex-start;" onclick="viewIntakeSession('${s.id}')">\u{1F4C4} Intake Summary</button>`);
     }).join('') : c360Empty_('No intakes yet.');
     return rows + `<div style="display:flex;gap:8px;margin-top:12px;">
-      <button class="btn btn-outline btn-sm" onclick="closeContactPanel();setTimeout(function(){dialerViewIntake('${c.id}');},150)">\u{1F4C4} View / Manage</button>
-      <button class="btn btn-accent btn-sm" onclick="closeContactPanel();setTimeout(function(){showIntakeForm('${c.id}');},150)">\u{1F91D} New Intake</button>
+      <button class="btn btn-outline btn-sm" onclick="dialerViewIntake('${c.id}')">\u{1F4C4} View / Manage</button>
+      <button class="btn btn-accent btn-sm" onclick="showIntakeForm('${c.id}')">\u{1F91D} New Intake</button>
     </div>`;
   }
 
@@ -9049,7 +9069,11 @@ async function handleModalSave() {
 function closeModal() {
   qbCloseIntakeDrawer_();
   qbCloseWorkbench_();
-  window._qbWbActive = null; document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null; }
+  window._qbWbActive = null; document.getElementById('modal-container').innerHTML = ''; window._modalSaveHandler = null;
+  // Land back on a CURRENT contact card. No-op unless the card is open, which
+  // is only the case for dialogs launched from it.
+  c360Refresh_();
+}
 
 // ============================================================
 // TOAST
