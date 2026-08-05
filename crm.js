@@ -15353,11 +15353,13 @@ function ppAdd_(prodId) {
   const existing = ppAddedSlot_(prodId);
   if (existing >= 0) {
     delete pp.sel[existing];
+    delete (window._qbPpMeta || {})[existing];
     ['qb-name-', 'qb-prem-', 'qb-bul-', 'qb-note-'].forEach(pref => {
       const el = document.getElementById(pref + existing); if (el) el.value = '';
     });
     const pr0 = document.getElementById('qb-prod-' + existing); if (pr0) pr0.value = '';
     const rec = document.getElementById('qb-rec-' + existing); if (rec) rec.checked = false;
+    qbPpOptionView_(existing);    // card away, plain fields back
     qbTidyOptions_();
     renderProductPicker_();
     return;
@@ -15413,8 +15415,122 @@ function ppAdd_(prodId) {
   qbRenumberOptions_();
   qbSectionSummary_();
   if (typeof qbQuoteLinkPaint_ === 'function') qbQuoteLinkPaint_(slot);
+  qbPpOptionView_(slot);          // it becomes a card, not three text boxes
   showToast('Added as Option ' + qbOptionNo_(slot) + '.');
   renderProductPicker_();
+}
+
+// ── THE CARD A PICKED PLAN TURNS INTO ────────────────────────────────────────
+//
+// Ken, 2026-08-04: "Everything that comes through the Workbench tools Plan
+// Pickers, generated a 'Fancy Card' similar to the ACA and medicare supplement
+// Cards!!!"
+//
+// He was right and I was wrong: the option block had card containers for aca,
+// cms and medigap and NONE for the product picker, so a short-term, hospital
+// indemnity, accident or cancer plan picked from the workbench collapsed back
+// into three plain text boxes the moment it landed on the quote — losing the
+// underwriter, the network, the benefit table and the choices the agent had
+// just made in the picker. All of that was already being captured in
+// _qbPpMeta and only ever read again at save time.
+//
+// The premium stays typed. Ken: "we do NOT need the rates until we have them in
+// the quote list OR when we pick the plan and put it in then" — so this follows
+// the Medigap rule for a plan with no rate on file: card AND the manual fields,
+// rather than a card that pretends to know a price it does not.
+function qbPpOptionView_(i) {
+  const card = document.getElementById('qb-pp-card-' + i);
+  const manual = document.getElementById('qb-manual-' + i);
+  const carprod = document.getElementById('qb-carprod-' + i);
+  const m = (window._qbPpMeta || {})[i];
+  if (!card) return;
+
+  if (!m) {
+    card.style.display = 'none'; card.innerHTML = '';
+    if (manual) manual.style.display = '';
+    if (carprod) carprod.style.display = '';
+    return;
+  }
+  // The picker already chose the carrier and the product; offering the
+  // dropdowns again is the "two editable copies of one fact" trap.
+  if (carprod) carprod.style.display = 'none';
+  if (manual) manual.style.display = '';
+
+  const facts = m.facts || {};
+  const factKeys = Object.keys(facts).slice(0, 6);
+  const chosen = Object.entries(m.chosen || {});
+  const prem = parseFloat((document.getElementById('qb-prem-' + i) || {}).value);
+
+  card.style.display = 'block';
+  card.innerHTML = `
+    <div class="pk-card is-selected" style="border-radius:12px;padding:12px 14px;">
+      <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
+        <span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);">
+          ${escWeb(m.carrier_name || '')}</span>
+        ${m.network ? `<span class="pk-pill unk">${escWeb(String(m.network).slice(0, 28))}</span>` : ''}
+      </div>
+      <div style="font-size:15px;font-weight:800;margin:2px 0 6px;">${escWeb(m.name || '')}</div>
+      ${m.underwriter ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">
+        Underwritten by <strong>${escWeb(m.underwriter)}</strong></div>` : ''}
+
+      <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:var(--accent,#1d3557);line-height:1;">
+            ${isFinite(prem) ? '$' + prem.toFixed(2) : '—'}<span style="font-size:10.5px;font-weight:500;color:var(--text-muted);"> /mo</span></div>
+          ${!isFinite(prem) ? `<div style="font-size:10.5px;color:var(--text-warning);margin-top:2px;">
+            Put the premium in below — no rate on file for this one.</div>` : ''}
+        </div>
+      </div>
+
+      ${chosen.length ? `<div style="margin-top:9px;border-top:1px solid var(--border);padding-top:7px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:4px;">What you chose</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${chosen.map(([k, v]) => `<span class="pk-pill ok">${escWeb(String(k).replace(/_/g, ' '))}: ${escWeb(String(v))}</span>`).join('')}
+        </div></div>` : ''}
+
+      ${factKeys.length ? `<div style="margin-top:9px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:7px;">
+        ${factKeys.map(k => `<div style="border:1px solid var(--border);border-radius:9px;padding:6px 9px;">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">${escWeb(k.replace(/_/g, ' '))}</div>
+          <div style="font-size:13px;font-weight:800;">${escWeb(String(facts[k]))}</div></div>`).join('')}
+      </div>` : ''}
+
+      ${(m.limitations || []).length ? `<div class="pk-bar warn" style="border-radius:8px;border:1px solid;margin-top:9px;font-size:11.5px;">
+        ⚠️ ${escWeb(String((m.limitations || [])[0]))}${(m.limitations || []).length > 1
+          ? ' <span style="opacity:.8;">+' + ((m.limitations || []).length - 1) + ' more in Plan details</span>' : ''}</div>` : ''}
+
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="ppDetail_('${escWeb(m.product_id)}')">Plan details</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openProductPicker_(${JSON.stringify(
+          (document.getElementById('qb-optline-' + i) || {}).value || '').replace(/"/g, '&quot;')})">\u{1F5D6} Change plan</button>
+        <button type="button" class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);"
+          onclick="ppRemoveFromOption_(${i})">\u{1F5D1} Remove</button>
+      </div>
+    </div>`;
+}
+
+// Taking a picked plan back off an option, from the option itself rather than
+// from inside the picker.
+function ppRemoveFromOption_(i) {
+  const pp = ppState_();
+  const prodId = pp.sel[i];
+  if (prodId) { ppAdd_(prodId); return; }   // ppAdd_ toggles a chosen plan off
+  delete (window._qbPpMeta || {})[i];
+  qbPpOptionView_(i);
+}
+
+// A picked plan restored from a saved quote, so re-opening or re-quoting looks
+// the same as building it did.
+function qbPpHydrateOption_(i, o) {
+  const m = o.plan_meta || {};
+  window._qbPpMeta = window._qbPpMeta || {};
+  window._qbPpMeta[i] = Object.assign({}, m, {
+    name: m.name || o.display_name,
+    carrier_name: m.carrier_name || o.carrier_name || null,
+    product_id: m.product_id || o.product_id || null,
+  });
+  const pp = ppState_();
+  if (window._qbPpMeta[i].product_id) pp.sel[i] = window._qbPpMeta[i].product_id;
+  qbPpOptionView_(i);
 }
 
 // ---------------------------------------- detail and compare, ABOVE the picker
@@ -16021,6 +16137,9 @@ async function requoteFromQuote_(quoteId, dealId) {
       }
       if (o.plan_meta && o.plan_meta.src === 'aca') qbAcaHydrateOption_(i, o);
       if (o.plan_meta && o.plan_meta.src === 'cms') qbCmsHydrateOption_(i, o);
+      // A plan picked from a workbench picker comes back as its card too —
+      // this is the path Ken came in on, re-quoting an enrolled short-term plan.
+      if (o.plan_meta && o.plan_meta.src === 'stm') qbPpHydrateOption_(i, o);
       if ((!o.plan_meta || o.plan_meta.src !== 'medigap')
           && (o.line === 'Medicare Supplement' || /medicare supplement/i.test(o.display_name || ''))) {
         const L = mgLetterFromName_(o.display_name);
@@ -16622,6 +16741,7 @@ async function openQuoteBuilder(dealId, opts) {
       <div id="qb-aca-card-${i}" style="display:none;"></div>
       <div id="qb-cms-card-${i}" style="display:none;"></div>
       <div id="qb-mg-card-${i}" style="display:none;"></div>
+      <div id="qb-pp-card-${i}" style="display:none;"></div>
       <div id="qb-manual-${i}">
         <label>Plan name shown to client *</label><input type="text" id="qb-name-${i}" placeholder="e.g. Medicare Supplement Plan G" />
         <label>Monthly premium ($) *</label><input type="number" step="0.01" id="qb-prem-${i}" placeholder="e.g. 128.50" />
@@ -19502,6 +19622,12 @@ function qbHideOption_(i) {
   delete (window._qbAcaSel || {})[i];
   delete (window._qbCmsSel || {})[i];
   delete (window._qbMgSel || {})[i];
+  // ...and the picker's, which was missed. A left-behind snapshot would have
+  // ridden along on whatever plan landed in this slot next, putting one plan's
+  // benefits and limitations under another plan's name on a saved quote.
+  delete (window._qbPpMeta || {})[i];
+  try { delete ppState_().sel[i]; } catch (e) {}
+  qbPpOptionView_(i);
   const addBtn = document.getElementById('qb-add-opt'); if (addBtn) addBtn.style.display = '';
   // a hidden slot must also drop its picker link, or the plan still reads as chosen
   const sel = document.getElementById('qb-aca-' + i); if (sel) sel.value = '';
