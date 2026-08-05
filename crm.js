@@ -16773,6 +16773,8 @@ async function openQuoteBuilder(dealId, opts) {
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
       <div id="qb-intake-note" style="font-size:11.5px;color:var(--text-muted);">${intakeNote}</div>
+      <div id="qb-renew-note" style="display:none;font-size:12px;margin-top:7px;padding:8px 11px;border-radius:8px;
+           background:var(--bg-info);border:1px solid var(--border-info);color:var(--text-info);"></div>
       <button type="button" class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 9px;"
         onclick="qbToggleIntakeDrawer_()">\u{1F4C4} Their answers</button>
       <button type="button" class="btn btn-primary btn-sm" id="kenai-btn" style="font-size:11px;padding:2px 9px;"
@@ -17075,6 +17077,7 @@ async function openQuoteBuilder(dealId, opts) {
     const { error: e2 } = await supabaseClient.from('quote_options')
       .insert(options.map(o => Object.assign({ quote_id: q.id }, o)));
     if (e2) { showToast('Error saving options: ' + e2.message); return false; }
+    window._qbLastSavedOptions = options.length;
     closeModal();
     openQuoteReady_(q, contact);
     loadDealTree_(deal);
@@ -17094,6 +17097,23 @@ async function openQuoteBuilder(dealId, opts) {
   // The agent tells us what each option is; we don't guess on their behalf.
   for (let i = 0; i < QB_MAX_OPTIONS; i++) qbOptFields_(i);
   qbGroupOptions_();
+
+  // Opened from a renewal? Then the builder knows it, and the policy they
+  // already hold goes straight onto option 1 — change the premium and save,
+  // or add products from the pickers alongside it.
+  window._qbRenewFrom = opts.renewFrom || null;
+  if (opts.renewFrom) {
+    qbPrefillFromEnrollment_(opts.renewFrom);
+    const hdr = document.querySelector('#modal-container .modal-header h2');
+    if (hdr) hdr.textContent = 'Renewing — ' + (opts.renewFrom.plan_name || contact.name || '');
+    const note = document.getElementById('qb-renew-note');
+    if (note) {
+      note.style.display = 'block';
+      note.innerHTML = '\u{1F501} <strong>Renewing ' + escWeb(opts.renewFrom.plan_name || '') + '</strong>'
+        + (opts.renewFrom.termination_date ? ' — their current term ends ' + enrollDate_(opts.renewFrom.termination_date) : '')
+        + '. Change the premium and save, or add products from the pickers to give them a choice.';
+    }
+  }
 }
 
 // The top-level line drives the automated data (ACA / CMS / rate charts).
@@ -17620,7 +17640,31 @@ function qbReRate_() {
 
 function openQuoteReady_(q, contact) {
   const link = 'https://crm.thekannongroup.com/quote.html?q=' + q.id;
+  // Ken: "if we just renew the same plan except for premium change we don't
+  // really need to send them the quote!" So when the builder was opened from a
+  // renewal and only one plan came out of it, going straight to enrolling is
+  // the first offer — sending is still there for when they want to see it.
+  const renew = window._qbRenewFrom;
+  const optCount = (window._qbLastSavedOptions || 0);
+  if (renew && optCount === 1) {
+    showModal('Renewal quote saved', `
+      <p style="font-size:13px;">One plan — <strong>${escWeb(renew.plan_name || '')}</strong> — so there is probably
+      nothing for them to choose between.</p>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="closeModal();openEnrollment_('${q.id}','${q.deal_id || ''}')">
+          ✓ Record the renewal now</button>
+        ${contact.email ? `<button class="btn btn-outline" onclick="sendQuote_('${q.id}', this)">✉ Send it to them anyway</button>` : ''}
+        <a class="btn btn-outline" href="${link}" target="_blank" style="text-decoration:none;">Preview &#8599;</a>
+      </div>
+      <p style="font-size:11.5px;color:var(--text-muted);margin-top:12px;">
+        Recording it enrols them on this quote and locks the numbers, the same as any other enrollment.
+        Send it instead if the premium has moved enough that they should see it in writing first.</p>
+    `, null, { hideConfirm: true });
+    return;
+  }
   showModal('Quote ready to send', `
+    ${renew ? `<p style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;">
+      A renewal with ${optCount} options — worth sending, so they can pick.</p>` : ''}
     <p style="font-size:13px;">The client's page is live at:</p>
     <input type="text" value="${link}" readonly onclick="this.select()" style="width:100%;font-size:12px;" />
     <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
@@ -18792,18 +18836,101 @@ async function renewSamePlan_(r) {
   return true;
 }
 
-// They want something else. That is a quote, pre-loaded from what they have.
-function renewShop_() {
+// A renewal needs somewhere to live. The client's deal was closed as won when
+// their cover went in force, so renewing REOPENS it rather than starting a
+// second one — the same rule a new intake already follows. One deal per client
+// that comes back to life each renewal, instead of a new one every year.
+//
+// If they never had a deal (coverage typed in by hand), one is created.
+async function renewEnsureDeal_(r, stageKey) {
+  const contact = (contacts || []).find(c => c.id === r.contact_id);
+  let deal = openDealFor_(r.contact_id)
+          || (deals || []).find(d => d.id === r.deal_id)
+          || (deals || []).find(d => d.contact_id === r.contact_id);
+
+  if (!deal) {
+    const { data, error } = await supabaseClient.from('deals').insert({
+      contact_id: r.contact_id, agent_id: currentAgent.id,
+      title: (contact && contact.name) || 'Renewal',
+      pipeline: 'individual-family', stage: 'Needs Assessment',
+    }).select().single();
+    if (error) { showToast('Could not open a deal for the renewal: ' + error.message, 8000); return null; }
+    deals.push(data);
+    deal = data;
+  }
+
+  const target = (COVERAGE_STAGE[deal.pipeline] || {})[stageKey];
+  const patch = {};
+  if (deal.closed_at) { patch.closed_at = null; patch.closed_reason = null; patch.closed_note = null; }
+  // Coming back for a renewal is a step BACK into the pipeline on purpose, so
+  // this one is not forward-only — a client who finished at Active Client has
+  // live work again.
+  if (target && deal.stage !== target) patch.stage = target;
+  if (Object.keys(patch).length) {
+    const { error } = await supabaseClient.from('deals').update(patch).eq('id', deal.id);
+    if (error) { showToast('Could not reopen the deal: ' + error.message, 8000); return deal; }
+    Object.assign(deal, patch);
+    try { renderPipelines(); } catch (e) {}
+  }
+  return deal;
+}
+
+// They want something else. That is a quote — pre-loaded with what they have,
+// so the agent changes a premium or adds a product rather than starting from a
+// blank page. (It did not do that; it opened an empty builder. Ken's report.)
+async function renewShop_() {
   const r = window._renewFrom;
   if (!r) return;
-  const deal = r.deal_id ? (deals || []).find(x => x.id === r.deal_id) : openDealFor_(r.contact_id);
-  if (!deal) {
-    showToast('They have no open deal to quote against — reopen one from their record first.', 8000);
-    return;
-  }
   closeModal();
-  showToast('Quoting alternatives for ' + (r.plan_name || 'their cover') + '…');
-  openQuoteBuilder(deal.id);
+  const deal = await renewEnsureDeal_(r, 'applied');
+  if (!deal) return;
+  showToast('Renewing ' + (r.plan_name || 'their cover') + ' — their current plan is on the quote.');
+  await openQuoteBuilder(deal.id, { renewFrom: r });
+}
+
+// Put the policy they already hold onto option 1, as the card it came from.
+function qbPrefillFromEnrollment_(r) {
+  const snap = r.plan_snapshot || {};
+  const meta = snap.plan_meta || null;
+
+  const ol = document.getElementById('qb-optline-0');
+  if (ol && r.line && [...ol.options].some(x => x.value === r.line)) { ol.value = r.line; qbOptLineChanged_(0); }
+
+  const car = (window._qbCarriers || []).find(c => c.id === r.carrier_id)
+           || (window._qbCarriers || []).find(c => c.name === r.carrier_name);
+  if (car) {
+    const cs = document.getElementById('qb-car-0');
+    if (cs) { cs.value = car.id; qbFillProducts_(0); }
+    if (r.product_id) {
+      const ps = document.getElementById('qb-prod-0');
+      if (ps && [...ps.options].some(x => x.value === r.product_id)) { ps.value = r.product_id; qbApplyProduct_(0); }
+    }
+  }
+  const nm = document.getElementById('qb-name-0'); if (nm && !nm.value) nm.value = r.plan_name || '';
+  // Last year's premium is a starting point, not the answer — it is the one
+  // number a renewal almost always changes.
+  const pr = document.getElementById('qb-prem-0');
+  if (pr && !pr.value && r.monthly_premium != null) pr.value = Number(r.monthly_premium).toFixed(2);
+  const bul = document.getElementById('qb-bul-0');
+  if (bul && !bul.value && (snap.benefit_bullets || []).length) {
+    const ro = bul.readOnly; bul.readOnly = false;
+    bul.value = (snap.benefit_bullets || []).join('\n');
+    bul.readOnly = ro;
+  }
+  // ...and bring the card back, whichever picker it came from.
+  const asOption = { display_name: r.plan_name, carrier_name: r.carrier_name,
+                     product_id: r.product_id, monthly_premium: r.monthly_premium,
+                     line: r.line, plan_meta: meta };
+  if (meta) {
+    window._qbRequoteOpt = window._qbRequoteOpt || {};
+    window._qbRequoteOpt[0] = { plan_meta: meta, display_name: r.plan_name };
+    if (meta.src === 'aca') qbAcaHydrateOption_(0, asOption);
+    else if (meta.src === 'cms') qbCmsHydrateOption_(0, asOption);
+    else if (meta.src === 'stm') qbPpHydrateOption_(0, asOption);
+  }
+  qbRenumberOptions_();
+  qbGroupOptions_();
+  qbSectionSummary_();
 }
 
 // Ending a policy from the list, which is where an agent actually notices it —
