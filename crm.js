@@ -1043,6 +1043,11 @@ function renderDashboardAgent() {
     return false;
   });
   const freshLeads    = contacts.filter(c => !c.sequence_status || c.sequence_status === 'Not Started' || c.sequence_status === 'not_started' || c.sequence_status === 'Fresh');
+  // Personal Prospects — someone scanned this agent's card and sent their
+  // details back, so nobody has said yet what the conversation was about.
+  // Defined by having no type at all: categorise one and it leaves the list
+  // on its own, with no separate flag to fall out of step.
+  const needsCategory = contacts.filter(c => !c.type);
   const inSequence    = contacts.filter(c => c.sequence_status === 'Active').length;
   const activeDeals   = deals.filter(d => !d.closed_at && !['Enrolled','Active Client','Active Agent','Contracted'].includes(d.stage)).length;
 
@@ -1117,6 +1122,9 @@ function renderDashboardAgent() {
         <button onclick="viewFreshLeads()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:var(--text-primary);font-size:13px;cursor:pointer;">
           🌱 <strong style="color:#f59e0b;">${freshLeads.length}</strong> Fresh Lead${freshLeads.length !== 1 ? 's' : ''}
         </button>
+        ${needsCategory.length ? `<button onclick="viewPersonalProspects()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid rgba(52,211,153,0.4);background:rgba(52,211,153,0.12);color:var(--text-primary);font-size:13px;cursor:pointer;">
+          🤝 <strong style="color:#34d399;">${needsCategory.length}</strong> Personal Prospect${needsCategory.length !== 1 ? 's' : ''}
+        </button>` : ''}
         <button onclick="showPage('contacts');openAddContact()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 0 8px rgba(22,163,74,0.4);"><i class="ti ti-plus"></i> Add new lead</button>
       </div>
     </div>
@@ -1337,6 +1345,75 @@ function viewFreshLeads() {
   contactTypeFilter = '';
   showPage('contacts');
   renderContacts();
+}
+
+// ---- Personal Prospects — contacts waiting on a category -----------------
+// Someone scanned an agent's business card and sent their details back. The
+// public card form deliberately doesn't ask a stranger to file themselves, so
+// the agent does it here once they know what the conversation was about.
+
+// Only the categories this agent's company actually uses.
+function _prospectTypes() {
+  const brand = (currentAgent && currentAgent.brand) || 'both';
+  return CONTACT_TYPES.filter(t =>
+    (t !== 'Agent — Insured America'  || brand === 'ia'  || brand === 'both') &&
+    (t !== 'Agent — Kannon Financial' || brand === 'kfg' || brand === 'both')
+  );
+}
+
+function viewPersonalProspects() {
+  const list = contacts.filter(c => !c.type);
+  if (!list.length) {
+    showToast('Nothing waiting — every contact has a category.');
+    renderDashboard();
+    return;
+  }
+  const opts = _prospectTypes().map(t => `<option value="${escWeb(t)}">${escWeb(t)}</option>`).join('');
+  showModal('Personal Prospects', `
+    <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px;">
+      These people sent their details from your digital business card. Give each
+      one a category and they drop off this list.
+    </p>
+    ${list.map(c => {
+      const reach = [c.email, c.phone].filter(Boolean).join(' &middot; ');
+      // The note is whatever they typed on the card page — the most useful
+      // thing on screen for deciding which bucket they belong in.
+      const note = (c.notes || '').split('\n').filter(l => l.trim() && !/^Scanned /.test(l)).join(' ');
+      return `<div style="border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;" id="pp-row-${c.id}">
+        <div style="font-weight:600;font-size:14px;">${escWeb(c.name || 'Unnamed')}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escWeb(reach)}${c.created_at ? ' &middot; ' + _dashTimeAgo(c.created_at) : ''}</div>
+        ${note ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:6px;font-style:italic;">&ldquo;${escWeb(note)}&rdquo;</div>` : ''}
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
+          <select id="pp-type-${c.id}" style="flex:1;min-width:170px;padding:6px 8px;font-size:13px;">${opts}</select>
+          <button class="btn btn-outline btn-sm" onclick="categorizeProspect('${c.id}', false)">Save</button>
+          <button class="btn btn-primary btn-sm" onclick="categorizeProspect('${c.id}', true)">Save &amp; sequence</button>
+        </div>
+      </div>`;
+    }).join('')}
+  `, null, { hideConfirm: true, cancelLabel: 'Done' });
+}
+
+async function categorizeProspect(contactId, thenSequence) {
+  const sel = document.getElementById('pp-type-' + contactId);
+  const type = sel && sel.value;
+  if (!type) return;
+  const { error } = await supabaseClient.from('contacts').update({ type }).eq('id', contactId);
+  if (error) { showToast('Error: ' + error.message); return; }
+  const c = contacts.find(x => x.id === contactId);
+  if (c) c.type = type;
+
+  if (thenSequence) {
+    // startSequence opens its own track picker and will default to the type
+    // just set, so the agent confirms the track rather than retyping it.
+    closeModal();
+    startSequence(contactId);
+    return;
+  }
+  const row = document.getElementById('pp-row-' + contactId);
+  if (row) row.remove();
+  showToast('✓ ' + ((c && c.name) || 'Contact') + ' filed as ' + type);
+  // Nothing left? Close and refresh the chip.
+  if (!contacts.filter(x => !x.type).length) { closeModal(); renderDashboard(); }
 }
 
 function _dashTimeAgo(isoStr) {
@@ -9022,7 +9099,8 @@ async function startSequence(contactId) {
     <select id="seq-track-select" style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:12px;">
       <option value="Individual/Family" ${cur === 'Individual/Family' ? 'selected' : ''}>B2C — Individual / Family</option>
       <option value="Group/Employer" ${cur === 'Group/Employer' ? 'selected' : ''}>B2B — Group / Employer</option>
-      <option value="Recruit" ${cur === 'Recruit' ? 'selected' : ''}>Recruit — State Farm Agent</option>
+      <option value="Agent — Kannon Financial" ${cur === 'Agent — Kannon Financial' ? 'selected' : ''}>Recruiting — Kannon Financial</option>
+      <option value="Agent — Insured America" ${cur === 'Agent — Insured America' ? 'selected' : ''}>Recruiting — Insured America</option>
       <option value="medicare">Medicare — Insured America</option>
     </select>
     <p style="font-size:11px;color:var(--text-muted);margin:0;">Changing the track also updates the contact type. Any previous sequence progress is reset.</p>
