@@ -405,7 +405,7 @@ async function renderOffice() {
     supabaseClient.from('companies').select('id,name').order('name'),
     supabaseClient.from('carriers').select('id,name,lines_of_business').eq('is_active', true).order('name'),
     supabaseClient.from('agency_carriers').select('carrier_id,is_active').eq('agency_id', _officeId),
-    supabaseClient.from('agents').select('id,name,email,role,status').eq('agency_id', _officeId).order('name'),
+    supabaseClient.from('agents').select('id,name,email,role,status,terminated_at,successor_agent_id').eq('agency_id', _officeId).order('name'),
     supabaseClient.from('carrier_products').select('id,carrier_id,name,line_of_business,states')
       .eq('is_active', true).is('discontinued_on', null).order('name'),
     supabaseClient.from('agency_products').select('product_id,is_active').eq('agency_id', _officeId),
@@ -471,16 +471,158 @@ async function renderOffice() {
         'The catalogue is shared across the franchise. Tick what this office has contracted — and, within a carrier, which plans it offers. Leave every plan ticked to carry all of them.')}
 
       ${card('People in this office',
-        (people || []).length ? (people || []).map(a => `
-          <div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:13px;">
+        (people || []).length ? (people || []).map(a => {
+          const gone = a.status !== 'active' && a.terminated_at;
+          // The button is hidden on the three the database refuses anyway --
+          // yourself, the system owner, and anyone already gone. Hiding it is
+          // courtesy; can_terminate_agent() is what actually decides.
+          const mayEnd = canEdit && !gone && a.status === 'active'
+            && a.id !== currentAgent.id && a.role !== 'system_owner';
+          const mayBack = canEdit && gone;
+          return `
+          <div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:13px;${gone ? 'opacity:.6;' : ''}">
             <span style="font-weight:600;">${escWeb(a.name)}</span>
             <span style="font-size:11px;color:var(--text-muted);">${escWeb(a.email || '')}</span>
+            ${gone ? `<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--danger);border:1px solid currentColor;border-radius:5px;padding:1px 6px;">Terminated</span>` : ''}
             <span style="margin-left:auto;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">
               ${a.role === 'broker_owner' ? 'Broker Owner' : a.role === 'system_owner' ? 'System Owner' : 'Agent'}</span>
-          </div>`).join('')
+            ${mayEnd ? `<button class="btn btn-outline btn-sm" onclick="officeTerminate_('${a.id}')">Terminate</button>` : ''}
+            ${mayBack ? `<button class="btn btn-outline btn-sm" onclick="officeReinstate_('${a.id}')">Reinstate</button>` : ''}
+          </div>`; }).join('')
           : '<div style="font-size:13px;color:var(--text-muted);">Nobody seated here yet.</div>',
-        'An agent sees only their own contacts and deals. A Broker Owner sees the whole office.')}
+        'An agent sees only their own contacts and deals. A Broker Owner sees the whole office. Terminating ends the login and hands the book on — it never deletes anything, and it can be undone.')}
     </div>`;
+}
+
+// ---- Terminating an agent -----------------------------------------------
+//
+// Nothing is deleted. The book moves, the login is suspended, and both can be
+// undone by reinstating. That is the whole design: SOAs carry a ten-year
+// retention rule, so a person leaving can never be allowed to take records
+// with them or erase them.
+//
+// The confirmation names what is about to move, the same way deleting a
+// contact already warns before it acts. The counts come from the database,
+// not from anything counted here, so what the dialog promises and what the
+// termination does cannot drift apart.
+
+async function officeTerminate_(agentId) {
+  const [{ data: prev, error: e1 }, { data: heirs, error: e2 }] = await Promise.all([
+    supabaseClient.rpc('agent_termination_preview', { p_agent_id: agentId }),
+    supabaseClient.rpc('termination_successors',    { p_agent_id: agentId }),
+  ]);
+  if (e1 || e2) { showToast((e1 || e2).message || 'Could not read that agent.'); return; }
+
+  const options = heirs || [];
+  // Whoever is doing this receives the book unless they name someone else.
+  const mine = options.some(o => o.id === currentAgent.id) ? currentAgent.id
+                                                           : (options[0] || {}).id;
+  const n = (x) => Number(x || 0);
+  const line = (count, one, many) =>
+    !count ? '' : `<li><strong>${count}</strong> ${count === 1 ? one : many}</li>`;
+
+  const moving = [
+    line(n(prev.contacts),     'contact moves across',       'contacts move across'),
+    line(n(prev.open_deals),   'open deal moves across',     'open deals move across'),
+    line(n(prev.appointments), 'booked appointment moves',   'booked appointments move'),
+  ].join('');
+
+  showModal(`Terminate ${escWeb(prev.agent_name)}`, `
+    <p style="font-size:13px;line-height:1.6;margin-bottom:12px;">
+      This ends their access to the whole system. Nothing is deleted, and you can
+      reinstate them later.</p>
+
+    <div style="border:1px solid var(--border);border-radius:9px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:6px;">
+        What happens</div>
+      <ul style="font-size:13px;line-height:1.7;margin:0;padding-left:18px;">
+        ${moving || '<li>They hold no contacts, deals or appointments.</li>'}
+        ${prev.has_login ? '<li>Their login is <strong>suspended</strong> — they cannot sign in.</li>'
+                         : '<li>They have no login on file, so there is nothing to suspend.</li>'}
+        <li>Their public card comes down and points visitors at their new agent.</li>
+        ${n(prev.introductions_queued) ? `<li><strong>${n(prev.introductions_queued)}</strong> introduction ${n(prev.introductions_queued) === 1 ? 'email is' : 'emails are'} queued to clients with live business.</li>` : ''}
+        ${n(prev.introductions_skipped_opted_out) ? `<li style="color:var(--text-muted);"><strong>${n(prev.introductions_skipped_opted_out)}</strong> ${n(prev.introductions_skipped_opted_out) === 1 ? 'client is' : 'clients are'} skipped — they opted out of email, or have none on file.</li>` : ''}
+      </ul>
+    </div>
+
+    <label>Who takes the book</label>
+    <select id="term-to">
+      ${options.map(o => `<option value="${o.id}"${o.id === mine ? ' selected' : ''}>${escWeb(o.name)}${o.role === 'agent' ? '' : ' — Broker Owner'}</option>`).join('')}
+    </select>
+    <p style="font-size:11.5px;color:var(--text-muted);margin:5px 0 12px;line-height:1.5;">
+      Sequences already running carry on, sent from whoever now holds the contact.</p>
+
+    <label>Reason <span style="font-weight:400;color:var(--text-muted);">(optional, internal)</span></label>
+    <textarea id="term-why" rows="2" placeholder="Left the firm, moved to another office…"></textarea>`,
+    async () => {
+      const to  = (document.getElementById('term-to')  || {}).value || null;
+      const why = ((document.getElementById('term-why') || {}).value || '').trim();
+      if (!to) { showToast('Nobody is available to take the book.'); return false; }
+      showToast('Terminating…');
+      const out = await agentLifecycle_({ action: 'terminate', agent_id: agentId,
+                                          to_agent_id: to, reason: why || null });
+      if (!out) return false;
+      const s = out.summary || {};
+      showToast(`${prev.agent_name} terminated — ${n(s.contacts_moved)} contacts moved, login ${out.login}.`);
+      agentListsRefresh_();
+    },
+    { confirmLabel: `Terminate ${escWeb((prev.agent_name || '').split(' ')[0])}` });
+}
+
+async function officeReinstate_(agentId) {
+  const { data: a } = await supabaseClient.from('agents')
+    .select('name,terminated_at,successor_agent_id').eq('id', agentId).single();
+  const { data: heir } = a && a.successor_agent_id
+    ? await supabaseClient.from('agents').select('name').eq('id', a.successor_agent_id).single()
+    : { data: null };
+
+  showModal(`Reinstate ${escWeb((a || {}).name || 'this agent')}`, `
+    <p style="font-size:13px;line-height:1.6;margin-bottom:12px;">
+      Their login is switched back on and they return to active.</p>
+    <label style="display:flex;gap:9px;align-items:flex-start;font-weight:400;">
+      <input type="checkbox" id="rein-book" style="width:auto;margin-top:3px;" checked />
+      <span style="font-size:13px;line-height:1.55;">
+        Give back the book they had${heir ? ` — the contacts that went to <strong>${escWeb(heir.name)}</strong>` : ''}.
+        <span style="color:var(--text-muted);">Anything reassigned to someone else since then stays where it is.</span>
+      </span></label>
+    <p style="font-size:11.5px;color:var(--text-muted);margin-top:12px;line-height:1.55;">
+      Their public card stays offline until it is published again from their profile —
+      coming back to the team and going back on the website are two separate decisions.</p>`,
+    async () => {
+      const back = !!(document.getElementById('rein-book') || {}).checked;
+      showToast('Reinstating…');
+      const out = await agentLifecycle_({ action: 'reinstate', agent_id: agentId, return_book: back });
+      if (!out) return false;
+      showToast(`${(a || {}).name || 'Agent'} is active again — login ${out.login}.`);
+      agentListsRefresh_();
+    },
+    { confirmLabel: 'Reinstate' });
+}
+
+// The buttons sit on two screens — My Office and the admin agent list — so the
+// cached roster is refreshed and whichever screen you are looking at redrawn.
+async function agentListsRefresh_() {
+  const { data } = await supabaseClient.from('agents')
+    .select('*, agencies!agents_agency_id_fkey(name)').order('name');
+  if (data) allAgents = data;
+  if (_currentPage === 'office') renderOffice(); else renderAdmin();
+}
+
+// One door for both. The edge function moves the data as the signed-in person
+// -- so the permission rules apply -- and only then touches the login, which
+// needs privileges the browser must never hold.
+async function agentLifecycle_(payload) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/agent-lifecycle`, {
+      method: 'POST', headers: await fnHeaders_(), body: JSON.stringify(payload),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(out.error || `That did not go through (${res.status}).`); return null; }
+    return out;
+  } catch (e) {
+    showToast('That did not go through: ' + ((e && e.message) || e));
+    return null;
+  }
 }
 
 async function officeRename_() {
@@ -8653,19 +8795,25 @@ async function renderAdmin() {
     const agencyName = a.agencies?.name || '—';
     const roleBadge = a.role === 'system_owner' ? 'badge-sys' : a.role === 'broker_owner' ? 'badge-owner' : 'badge-agent';
     const roleLabel = { system_owner: 'System Owner', broker_owner: 'Broker Owner', agency_owner: 'Broker Owner', agent: 'Agent' }[a.role] || a.role;
-    return `<div class="agent-row">
+    // Terminated is not the same as never-activated, and the difference matters
+    // when you are deciding whether to reinstate someone.
+    const gone = a.status !== 'active' && a.terminated_at;
+    return `<div class="agent-row"${gone ? ' style="opacity:.65;"' : ''}>
       <div class="agent-info">
         <div class="agent-name">${a.name}</div>
         <div class="agent-meta">
           <span>${a.email}</span>
           <span>&#127970; ${agencyName}</span>
           <span class="badge ${roleBadge}" style="font-size:10px;">${roleLabel}</span>
-          ${a.auth_user_id ? '<span style="color:var(--success);">&#10003; Linked</span>' : '<span style="color:var(--muted);">&#9679; Not logged in yet</span>'}
+          ${gone ? `<span style="color:var(--danger);">&#9679; Terminated ${new Date(a.terminated_at).toLocaleDateString()}</span>`
+                 : a.auth_user_id ? '<span style="color:var(--success);">&#10003; Linked</span>' : '<span style="color:var(--muted);">&#9679; Not logged in yet</span>'}
         </div>
       </div>
       <div class="agent-actions">
         <button class="btn btn-outline btn-sm" onclick="editAgent('${a.id}')">Edit</button>
-        ${a.id !== currentAgent.id ? `<button class="btn btn-danger btn-sm" onclick="deleteAgent('${a.id}')">&#10005;</button>` : ''}
+        ${gone ? `<button class="btn btn-outline btn-sm" onclick="officeReinstate_('${a.id}')">Reinstate</button>`
+          : a.id !== currentAgent.id && a.role !== 'system_owner'
+            ? `<button class="btn btn-outline btn-sm" onclick="officeTerminate_('${a.id}')">Terminate</button>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -9071,10 +9219,23 @@ function editAgent(id) {
   });
 }
 
+// Deleting an agent used to be a button here. It hard-deleted the row and left
+// their whole book unassigned -- no record of who had held it, no way back.
+// That cannot stand alongside a ten-year retention rule on signed SOAs, so
+// termination replaced it: the book moves to a named person, every move is
+// logged, the login is suspended rather than destroyed, and all of it can be
+// undone. The function is kept only to answer anything still calling it.
 async function deleteAgent(id) {
-  if (!confirm('Remove this agent? Their contacts will remain but become unassigned.')) return;
-  await supabaseClient.from('agents').delete().eq('id', id);
-  allAgents = allAgents.filter(a => a.id !== id); renderAdmin(); showToast('Agent removed');
+  const a = allAgents.find(x => x.id === id);
+  showModal('Agents are not deleted', `
+    <p style="font-size:13px;line-height:1.65;">
+      Removing ${a ? `<strong>${escWeb(a.name)}</strong>` : 'an agent'} outright would leave their
+      contacts, deals and signed documents with nobody attached to them, and signed
+      SOAs have to be kept for ten years.</p>
+    <p style="font-size:13px;line-height:1.65;">
+      <strong>Terminate</strong> them instead. It ends their login, hands their book to
+      a named agent, keeps a record of who held what, and can be undone.</p>`,
+    null, { hideConfirm: true, cancelLabel: 'Close' });
 }
 
 // ============================================================
