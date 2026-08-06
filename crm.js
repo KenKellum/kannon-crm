@@ -8954,6 +8954,10 @@ function editAgent(id) {
     <label>Page URL slug ${a.slug ? `— <a href="https://thekannongroup.com/team/${escWeb(a.slug)}" target="_blank" style="font-weight:400;">view live ↗</a>` : ''}</label>
     <input type="text" id="ag-slug" value="${escWeb(a.slug || '')}" placeholder="auto-generated from name" />
     <label>Bio</label><textarea id="ag-bio" rows="4">${escWeb(a.bio || '')}</textarea>
+    <label>Business card phone — PUBLIC, shown to anyone who scans their card</label>
+    <input type="text" id="ag-card-phone" value="${escWeb(a.card_phone || '')}" placeholder="Blank = show the company main line" />
+    <label>Business card email — PUBLIC, shown to anyone who scans their card</label>
+    <input type="text" id="ag-card-email" value="${escWeb(a.card_email || '')}" placeholder="Blank = show no email" />
     <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="ag-public" style="width:auto;" ${a.public_profile?'checked':''}/> Show this agent on the website</label>
   `, async () => {
     const v = x => (document.getElementById('ag-' + x) || { value: '' }).value.trim();
@@ -8980,6 +8984,8 @@ function editAgent(id) {
       headshot_url: v('headshot') || null,
       slug: slug || null,
       bio: v('bio') || null,
+      card_phone: v('card-phone') || null,
+      card_email: v('card-email') || null,
       public_profile: chk('public'),
     };
     const { error } = await supabaseClient.from('agents').update(updates).eq('id', id);
@@ -9396,6 +9402,19 @@ async function renderSettings() {
             <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Headshot image URL</label>
             <input type="text" id="swp-headshot" value="${escWeb(currentAgent.headshot_url||'')}" placeholder="https://..." style="width:100%;box-sizing:border-box;" />
           </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Business card phone — public</label>
+            <input type="text" id="swp-card-phone" value="${escWeb(currentAgent.card_phone||'')}" placeholder="Blank = company main line" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Business card email — public</label>
+            <input type="text" id="swp-card-email" value="${escWeb(currentAgent.card_email||'')}" placeholder="Blank = show no email" style="width:100%;box-sizing:border-box;" />
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+          Anyone who scans your business card QR code can see these. Leave them blank rather than putting a personal number here.
         </div>
         <div style="margin-top:10px;">
           <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">Office address (shown to clients who choose an in-person meeting on your booking page)</label>
@@ -11847,6 +11866,10 @@ function openAgentWebsiteProfile(id) {
     <label>URL slug ${a.slug ? `— <a href="https://thekannongroup.com/team/${escWeb(a.slug)}" target="_blank" style="font-weight:400;">view live page ↗</a>` : ''}</label>
     <input type="text" id="wp-slug" value="${escWeb(a.slug || '')}" placeholder="auto-generated from name" />
     <label>Bio</label><textarea id="wp-bio" rows="4">${escWeb(a.bio || '')}</textarea>
+    <label>Business card phone — PUBLIC, shown to anyone who scans their card</label>
+    <input type="text" id="wp-card-phone" value="${escWeb(a.card_phone || '')}" placeholder="Blank = show the company main line" />
+    <label>Business card email — PUBLIC, shown to anyone who scans their card</label>
+    <input type="text" id="wp-card-email" value="${escWeb(a.card_email || '')}" placeholder="Blank = show no email" />
     <label style="display:flex;gap:8px;align-items:center;margin-top:12px;">
       <input type="checkbox" id="wp-public" style="width:auto;margin:0;" ${a.public_profile ? 'checked' : ''} /> Show this agent on the website
     </label>
@@ -11866,6 +11889,8 @@ function openAgentWebsiteProfile(id) {
       ahip_certified_year: parseInt(v('ahip'), 10) || null,
       headshot_url: v('headshot') || null,
       bio: v('bio') || null,
+      card_phone: v('card-phone') || null,
+      card_email: v('card-email') || null,
       public_profile: document.getElementById('wp-public').checked,
     };
     const { error } = await supabaseClient.from('agents').update(patch).eq('id', id);
@@ -11894,6 +11919,8 @@ async function saveMyWebsiteProfile() {
     bio: document.getElementById('swp-bio').value.trim() || null,
     specialties: list(document.getElementById('swp-specs').value),
     headshot_url: document.getElementById('swp-headshot').value.trim() || null,
+    card_phone: document.getElementById('swp-card-phone').value.trim() || null,
+    card_email: document.getElementById('swp-card-email').value.trim() || null,
     office_address: document.getElementById('swp-office').value.trim() || null,
     meeting_link: document.getElementById('swp-meet').value.trim() || null,
   };
