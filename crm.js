@@ -635,6 +635,15 @@ async function officeTerminate_(agentId) {
       const split = n(s.contacts_assigned_individually);
       showToast(`${prev.agent_name} terminated — ${n(s.contacts_moved)} contacts moved`
         + (split ? `, ${split} placed individually` : '') + `, login ${out.login}.`);
+
+      // The introductions are already queued and an hourly job would send them
+      // anyway; this just stops a client wondering for up to an hour who their
+      // agent is now. Deliberately not awaited — the termination has already
+      // happened and must not appear to fail because a mail nudge did.
+      if (n(s.introductions_queued)) {
+        fetch(APPS_SCRIPT_URL + '?action=send_transfer_intros')
+          .catch(e => console.warn('introduction nudge failed; the hourly job will pick them up', e));
+      }
       agentListsRefresh_();
     },
     { confirmLabel: `Terminate ${escWeb((prev.agent_name || '').split(' ')[0])}` });

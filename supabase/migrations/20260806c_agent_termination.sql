@@ -38,11 +38,11 @@ alter table public.agents
 -- A and the trail back would be gone. Since handing the book back is the whole
 -- point of keeping it, this is a history, not a field.
 create table if not exists public.contact_transfers (
-  id             uuid primary key default gen_random_uuid(),
+  id             bigserial primary key,
   contact_id     uuid not null references public.contacts(id) on delete cascade,
   from_agent_id  uuid references public.agents(id),
   to_agent_id    uuid references public.agents(id),
-  reason         text not null,
+  reason         text not null default 'termination',
   transferred_by uuid references public.agents(id),
   transferred_at timestamptz not null default now()
 );
@@ -50,20 +50,34 @@ create index if not exists contact_transfers_contact_idx on public.contact_trans
 create index if not exists contact_transfers_from_idx    on public.contact_transfers(from_agent_id);
 
 -- Introductions are QUEUED, not sent. There is no outbound mail queue in the
--- database -- Apps Script sends directly -- so these rows sit here until an
+-- database -- Apps Script sends directly -- so these rows sit here until the
 -- Apps Script job drains them through the branded shell (kfgEmailHeader_).
--- Until that job exists, this table is a to-do list somebody must action.
+-- That job is runAgentTransferIntroductions() in Code.gs, added 2026-08-06.
+--
+-- The status default was 'pending' when this table was first created and every
+-- consumer written afterwards said 'queued'. Corrected in migration
+-- `transfer_notices_status_is_queued`; the value is 'queued' and there is now
+-- a check constraint naming the legal set, so the next person to invent a
+-- status has to decide whether the sender knows about it.
 create table if not exists public.agent_transfer_notices (
-  id            uuid primary key default gen_random_uuid(),
+  id            bigserial primary key,
   contact_id    uuid not null references public.contacts(id) on delete cascade,
   from_agent_id uuid references public.agents(id),
-  to_agent_id   uuid references public.agents(id),
-  reason        text not null,
-  status        text not null default 'queued',
+  to_agent_id   uuid not null references public.agents(id),
+  reason        text not null default 'open_deal',
+  status        text not null default 'queued'
+                check (status in ('queued','sent','failed','skipped_opted_out','skipped_no_email')),
   created_at    timestamptz not null default now(),
-  sent_at       timestamptz
+  sent_at       timestamptz,
+  -- added by `transfer_notice_send_bookkeeping`, so a permanently stuck
+  -- introduction becomes visible instead of retrying for ever
+  attempts      integer not null default 0,
+  last_error    text,
+  last_tried_at timestamptz
 );
 create index if not exists agent_transfer_notices_status_idx on public.agent_transfer_notices(status);
+create index if not exists agent_transfer_notices_queued_idx
+  on public.agent_transfer_notices (status, created_at) where status = 'queued';
 
 alter table public.contact_transfers      enable row level security;
 alter table public.agent_transfer_notices enable row level security;
