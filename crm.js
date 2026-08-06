@@ -506,15 +506,24 @@ async function renderOffice() {
 // not from anything counted here, so what the dialog promises and what the
 // termination does cannot drift apart.
 
+// How many contacts get their own row before the list stops being a list and
+// starts being a wall. Anyone past this still moves -- they follow the default
+// recipient -- and the dialog says how many, because a silently truncated list
+// reads as "that was all of them".
+const TERM_ROWS_MAX = 60;
+
 async function officeTerminate_(agentId) {
-  const [{ data: prev, error: e1 }, { data: heirs, error: e2 }] = await Promise.all([
-    supabaseClient.rpc('agent_termination_preview', { p_agent_id: agentId }),
-    supabaseClient.rpc('termination_successors',    { p_agent_id: agentId }),
-  ]);
-  if (e1 || e2) { showToast((e1 || e2).message || 'Could not read that agent.'); return; }
+  const [{ data: prev, error: e1 }, { data: heirs, error: e2 }, { data: book, error: e3 }] =
+    await Promise.all([
+      supabaseClient.rpc('agent_termination_preview', { p_agent_id: agentId }),
+      supabaseClient.rpc('termination_successors',    { p_agent_id: agentId }),
+      supabaseClient.rpc('termination_book',          { p_agent_id: agentId }),
+    ]);
+  if (e1 || e2 || e3) { showToast((e1 || e2 || e3).message || 'Could not read that agent.'); return; }
 
   const options = heirs || [];
-  // Whoever is doing this receives the book unless they name someone else.
+  const rows = book || [];
+  // Whoever is doing this receives the book unless they place people elsewhere.
   const mine = options.some(o => o.id === currentAgent.id) ? currentAgent.id
                                                            : (options[0] || {}).id;
   const n = (x) => Number(x || 0);
@@ -526,6 +535,52 @@ async function officeTerminate_(agentId) {
     line(n(prev.open_deals),   'open deal moves across',     'open deals move across'),
     line(n(prev.appointments), 'booked appointment moves',   'booked appointments move'),
   ].join('');
+
+  const picker = (id, selected) => `<select id="${id}" data-termrow="1" data-touched="0"
+      onchange="this.dataset.touched='1'" style="width:auto;min-width:170px;font-size:12.5px;padding:4px 8px;">
+      ${options.map(o => `<option value="${o.id}"${o.id === selected ? ' selected' : ''}>${escWeb(o.name)}</option>`).join('')}
+    </select>`;
+
+  // What makes this contact worth placing by hand rather than in the bulk.
+  const activity = (r) => {
+    const bits = [];
+    if (n(r.open_deals)) bits.push(`${n(r.open_deals)} open deal${n(r.open_deals) === 1 ? '' : 's'}`);
+    if (r.next_appointment) {
+      bits.push(`appointment ${new Date(r.next_appointment).toLocaleDateString(undefined,
+        { month: 'short', day: 'numeric' })}`);
+    }
+    if (r.opted_out) bits.push('opted out of email');
+    return bits.join(' · ');
+  };
+
+  const shown = rows.slice(0, TERM_ROWS_MAX);
+  const hidden = rows.length - shown.length;
+  const liveCount = rows.filter(r => r.has_activity).length;
+
+  const list = !rows.length ? '' : `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 8px;">
+      <div style="font-weight:800;font-size:13px;">Who gets each contact</div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-left:auto;"
+        onclick="termAssignAll_()">Put everyone with the default</button>
+    </div>
+    <p style="font-size:11.5px;color:var(--text-muted);margin:0 0 8px;line-height:1.5;">
+      ${liveCount ? `The <strong>${liveCount}</strong> with live business ${liveCount === 1 ? 'is' : 'are'} listed first — those are the ones where the wrong agent costs something.`
+                  : 'Nobody here has an open deal or a booked appointment.'}
+      Change any row to place that person somewhere else.</p>
+    <div style="border:1px solid var(--border);border-radius:9px;max-height:280px;overflow:auto;">
+      ${shown.map((r, i) => `
+        <div style="display:flex;gap:10px;align-items:center;padding:7px 11px;${i ? 'border-top:0.5px solid var(--border);' : ''}${r.has_activity ? '' : 'opacity:.75;'}">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${escWeb(r.name || 'Unnamed contact')}</div>
+            <div style="font-size:11px;color:${r.has_activity ? 'var(--text-secondary)' : 'var(--text-muted)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${escWeb(activity(r) || r.email || r.phone || '—')}</div>
+          </div>
+          ${picker('ta-' + r.contact_id, mine)}
+        </div>`).join('')}
+    </div>
+    ${hidden ? `<p style="font-size:11.5px;color:var(--text-muted);margin:7px 0 0;line-height:1.5;">
+      Plus <strong>${hidden}</strong> more with no live business — they go to the default recipient.</p>` : ''}`;
 
   showModal(`Terminate ${escWeb(prev.agent_name)}`, `
     <p style="font-size:13px;line-height:1.6;margin-bottom:12px;">
@@ -540,33 +595,67 @@ async function officeTerminate_(agentId) {
         ${prev.has_login ? '<li>Their login is <strong>suspended</strong> — they cannot sign in.</li>'
                          : '<li>They have no login on file, so there is nothing to suspend.</li>'}
         <li>Their public card comes down and points visitors at their new agent.</li>
-        ${n(prev.introductions_queued) ? `<li><strong>${n(prev.introductions_queued)}</strong> introduction ${n(prev.introductions_queued) === 1 ? 'email is' : 'emails are'} queued to clients with live business.</li>` : ''}
+        ${n(prev.introductions_queued) ? `<li><strong>${n(prev.introductions_queued)}</strong> introduction ${n(prev.introductions_queued) === 1 ? 'email is' : 'emails are'} queued, each from the agent who actually receives that client.</li>` : ''}
         ${n(prev.introductions_skipped_opted_out) ? `<li style="color:var(--text-muted);"><strong>${n(prev.introductions_skipped_opted_out)}</strong> ${n(prev.introductions_skipped_opted_out) === 1 ? 'client is' : 'clients are'} skipped — they opted out of email, or have none on file.</li>` : ''}
       </ul>
     </div>
 
-    <label>Who takes the book</label>
-    <select id="term-to">
+    <label>Default recipient</label>
+    <select id="term-to" onchange="termDefaultChanged_(this.value)">
       ${options.map(o => `<option value="${o.id}"${o.id === mine ? ' selected' : ''}>${escWeb(o.name)}${o.role === 'agent' ? '' : ' — Broker Owner'}</option>`).join('')}
     </select>
-    <p style="font-size:11.5px;color:var(--text-muted);margin:5px 0 12px;line-height:1.5;">
-      Sequences already running carry on, sent from whoever now holds the contact.</p>
+    <p style="font-size:11.5px;color:var(--text-muted);margin:5px 0 0;line-height:1.5;">
+      Everyone goes here unless placed elsewhere below. Sequences already running
+      carry on, sent from whoever ends up holding the contact.</p>
 
-    <label>Reason <span style="font-weight:400;color:var(--text-muted);">(optional, internal)</span></label>
+    ${list}
+
+    <label style="margin-top:16px;">Reason <span style="font-weight:400;color:var(--text-muted);">(optional, internal)</span></label>
     <textarea id="term-why" rows="2" placeholder="Left the firm, moved to another office…"></textarea>`,
     async () => {
       const to  = (document.getElementById('term-to')  || {}).value || null;
       const why = ((document.getElementById('term-why') || {}).value || '').trim();
       if (!to) { showToast('Nobody is available to take the book.'); return false; }
+
+      // Only the exceptions travel. Anyone not named follows the default, which
+      // is also how the unlisted remainder is handled -- one rule, not two.
+      const assignments = [];
+      document.querySelectorAll('select[data-termrow]').forEach(sel => {
+        if (sel.value && sel.value !== to) {
+          assignments.push({ contact_id: sel.id.slice(3), to_agent_id: sel.value });
+        }
+      });
+
       showToast('Terminating…');
       const out = await agentLifecycle_({ action: 'terminate', agent_id: agentId,
-                                          to_agent_id: to, reason: why || null });
+                                          to_agent_id: to, reason: why || null,
+                                          assignments: assignments.length ? assignments : null });
       if (!out) return false;
       const s = out.summary || {};
-      showToast(`${prev.agent_name} terminated — ${n(s.contacts_moved)} contacts moved, login ${out.login}.`);
+      const split = n(s.contacts_assigned_individually);
+      showToast(`${prev.agent_name} terminated — ${n(s.contacts_moved)} contacts moved`
+        + (split ? `, ${split} placed individually` : '') + `, login ${out.login}.`);
       agentListsRefresh_();
     },
     { confirmLabel: `Terminate ${escWeb((prev.agent_name || '').split(' ')[0])}` });
+}
+
+// A row the owner has not touched should follow the default when the default
+// changes -- otherwise picking a different recipient at the top silently leaves
+// every row pointing at the first one.
+function termDefaultChanged_(value) {
+  document.querySelectorAll('select[data-termrow]').forEach(sel => {
+    if (sel.dataset.touched !== '1') sel.value = value;
+  });
+}
+
+function termAssignAll_() {
+  const to = (document.getElementById('term-to') || {}).value;
+  if (!to) return;
+  document.querySelectorAll('select[data-termrow]').forEach(sel => {
+    sel.value = to; sel.dataset.touched = '0';
+  });
+  showToast('Everyone set to the default recipient.');
 }
 
 async function officeReinstate_(agentId) {
