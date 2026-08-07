@@ -738,7 +738,7 @@ function chimeUnlock_() {
 
 
 const CHIME_FACE_ = {
-  voice: ['🗣️', 'Says "I—A" — click for the doorbell'],
+  voice: ['🗣️', 'Sings "I—A" — click for the doorbell'],
   bell:  ['🔔', 'Doorbell — click for silence'],
   off:   ['🔇', 'Silent — click to hear "I—A"']
 };
@@ -762,23 +762,52 @@ function chimeToggle_() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintChimeBtn_);
 else paintChimeBtn_();
 
-/* It should SAY "I—A", not merely chime it. Every current browser has speech
-   synthesis built in — no audio file, no voice licence. Falls back to the bell
-   whenever no voice is installed, because silence would look exactly like the
-   suspended-context bug above. */
+/* A woman's voice, singing it to the doorbell's tune.
+   Pitch cannot change part-way through an utterance, so the tune is two
+   utterances queued back to back — "I" high, "Ay" low — a falling third, the
+   same interval as the bell. A voice carries no gender field, only a name, so
+   the choice is made by scoring names against the ones the major platforms
+   ship. Falls back to the bell when nothing is installed, because silence would
+   look exactly like the suspended-context bug above. */
+const FEMALE_VOICE_ = new RegExp([
+  'female', 'zira', 'hazel', 'susan', 'linda', 'heera', 'catherine', 'eva',
+  'michelle', 'samantha', 'victoria', 'karen', 'moira', 'tessa', 'fiona',
+  'allison', 'ava', 'serena', 'nicky', 'kathy', 'aria', 'jenny', 'ana',
+  'emma', 'sonia', 'libby', 'natasha', 'clara', 'amber', 'nova'
+].join('|'), 'i');
+let _voice = null;
+function pickVoice_() {
+  if (_voice) return _voice;
+  const all = window.speechSynthesis.getVoices() || [];
+  if (!all.length) return null;
+  const en = all.filter(v => /^en/i.test(v.lang));
+  const pool = (en.length ? en : all).slice();
+  /* Female first, then LOCAL — a local voice speaks offline and starts instantly,
+     where a cloud voice can lag past the moment it was meant to mark. */
+  const score = v => (FEMALE_VOICE_.test(v.name) ? 4 : 0)
+                   + (v.localService ? 2 : 0)
+                   + (/^en[-_]US/i.test(v.lang) ? 1 : 0);
+  pool.sort((a, b) => score(b) - score(a));
+  _voice = pool[0] || null;
+  return _voice;
+}
+try { window.speechSynthesis.addEventListener('voiceschanged', () => { _voice = null; }); } catch (e) {}
+
 function speakIA_() {
   try {
     if (!('speechSynthesis' in window)) return false;
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices || !voices.length) return false;      // none installed yet
-    window.speechSynthesis.cancel();                  // never queue up a backlog
-    const u = new SpeechSynthesisUtterance('I A');
-    u.rate = 0.8; u.pitch = 1.05; u.volume = 0.95;
-    // A local English voice: it still speaks offline and never lags on a round trip.
-    const v = voices.find(x => x.localService && /^en/i.test(x.lang))
-           || voices.find(x => /^en/i.test(x.lang));
-    if (v) u.voice = v;
-    window.speechSynthesis.speak(u);
+    const v = pickVoice_();
+    if (!v) return false;                             // none installed
+    const ss = window.speechSynthesis;
+    ss.cancel();                                      // never queue up a backlog
+    const sing = (text, pitch, rate) => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = v; u.lang = v.lang;
+      u.pitch = pitch; u.rate = rate; u.volume = 0.95;
+      ss.speak(u);
+    };
+    sing('I',  1.6,  0.8);      // ding — the higher note
+    sing('Ay', 1.05, 0.6);      // dong — lower, and held about half again as long
     return true;
   } catch (e) { return false; }
 }
