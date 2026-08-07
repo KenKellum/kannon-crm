@@ -898,6 +898,48 @@ async function reopenCensus() {
 /* Start the employee list again from scratch. Only clears the grid on screen —
    nothing is deleted on our side until they actually send, and the version
    already with carriers is archived regardless. */
+/* Show back what they already told us. Everything below saved correctly the
+   first time and then redrew its defaults on reload, which to the employer looks
+   exactly like losing the lot — and the natural response is to type it all again.
+   A form that accepts an answer has to be able to show that answer back. */
+function restoreEligibility_(rows) {
+  if (!rows || !rows.length) return;
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el && v !== null && v !== undefined && v !== '') el.value = v;
+  };
+
+  const base   = rows.find(r => r.is_default) || rows[0];
+  const others = rows.filter(r => r !== base);
+
+  set('el-hours', base.min_hours);
+  set('el-wait',  base.waiting_period);
+  set('el-basis', base.basis);
+  set('el-emp',   base.employee_pct);
+  set('el-benchmark',  base.pct_basis_plan);
+  set('el-dep-basis',  base.dependent_basis);
+  set('el-dep',        base.dependent_pct);
+
+  if (others.length) {
+    document.getElementById('el-multi').checked = true;
+    document.getElementById('el-classes').style.display = 'block';
+    document.getElementById('el-class-list').innerHTML = '';
+    others.forEach(r => addClassRow_({
+      name:  r.name,
+      hours: r.min_hours,
+      emp:   r.employee_pct,
+      dep:   r.dependent_pct
+    }));
+    // addClassRow_ cannot set a <select> through an attribute, so do it after.
+    document.querySelectorAll('#el-class-list .el-class').forEach((row, i) => {
+      const b = row.querySelector('.ec-basis');
+      if (b && others[i] && others[i].basis) b.value = others[i].basis;
+    });
+    syncClassOptionsFromRules_();
+  }
+  explainContribution_();
+}
+
 function toggleSecondClass() {
   const on = document.getElementById('el-multi').checked;
   document.getElementById('el-classes').style.display = on ? 'block' : 'none';
@@ -1124,6 +1166,8 @@ async function init() {
     'c-street': 'company_street', 'c-city': 'company_city', 'c-state': 'company_state', 'c-zip': 'company_zip',
     'c-cname': 'contact_name', 'c-ctitle': 'contact_title', 'c-cphone': 'contact_phone', 'c-cemail': 'contact_email' };
   for (const id in pre) { if (req[pre[id]]) document.getElementById(id).value = req[pre[id]]; }
+
+  restoreEligibility_((_loaded && _loaded.eligibility) || []);
 
   // HIPAA BAA gate: if this request carries an unsigned agreement, it becomes Step 2
   if (req.baa_record_id) {
