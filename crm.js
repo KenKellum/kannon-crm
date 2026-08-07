@@ -1313,9 +1313,35 @@ async function miaSend() {
   const { data, error } = await supabaseClient.rpc('agent_reply', {
     p_kind: miaThread.kind, p_thread: miaThread.id, p_body: text });
   btn.disabled = false; btn.textContent = 'Send reply';
-  if (error || data !== true) { showToast('Could not send: ' + (error ? error.message : 'try again')); return; }
+  // agent_reply returns {ok, notify} now, not a bare boolean.
+  if (error || !data || !data.ok) {
+    showToast('Could not send: ' + (error ? error.message : 'try again'));
+    return;
+  }
   box.value = '';
   miaOpen(miaThread.kind, miaThread.id, miaThread.title);
+  if (data.notify) miaNotifyClient_(miaThread.kind, miaThread.id);
+}
+
+/* The reply went to somebody who stopped watching, so tell them it is there.
+   The DATABASE decided that — it is the only thing that saw the timings before
+   the message existed. This just delivers the verdict.
+   Deliberately not awaited and deliberately quiet: the reply is already saved,
+   and a mail failure must not make a successful send look broken. It is logged
+   for anyone looking, and the client still sees the message when they next open
+   the workspace. */
+async function miaNotifyClient_(kind, id) {
+  if (kind !== 'employer') return;
+  try {
+    const { data: s } = await supabaseClient.auth.getSession();
+    const tok = s && s.session && s.session.access_token;
+    if (!tok) return;
+    const r = await fetch(APPS_SCRIPT_URL + '?action=workspace_reply_notice'
+      + '&employer_id=' + encodeURIComponent(id) + '&tok=' + encodeURIComponent(tok));
+    const out = await r.json().catch(() => null);
+    if (out && out.status === 'ok' && out.sent) showToast('They have been emailed that you replied.');
+    else if (out && out.status !== 'ok') console.info('[reply notice]', out);
+  } catch (e) { console.info('[reply notice] could not send:', e && e.message); }
 }
 
 function miaWhen(iso) {

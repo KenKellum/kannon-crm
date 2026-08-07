@@ -104,6 +104,11 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
 .drawer-close:hover{background:rgba(255,255,255,.24)}
 .drawer .thread{flex:1;min-height:0;max-height:none}
 .rail-sub{padding:12px 18px 0;font-size:12.5px;color:var(--muted);flex-shrink:0}
+/* Quiet on purpose. It has to be read once and then stop competing with the
+   conversation, so it is small and muted rather than a warning banner — nothing
+   here is going wrong. */
+.composer-note{padding:0 18px 14px;margin-top:-4px;font-size:11.5px;line-height:1.5;
+       color:var(--muted);flex-shrink:0}
 .scrim{position:fixed;inset:0;background:rgba(10,25,48,.34);z-index:60;opacity:0;
        pointer-events:none;transition:opacity .3s}
 .scrim.open{opacity:1;pointer-events:auto}
@@ -378,6 +383,14 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
       <textarea id="msg" rows="1" placeholder="Ask your agent anything…"></textarea>
       <button class="btn btn-primary" id="send-btn" onclick="sendMsg()">Send</button>
     </div>
+    <!-- Under the composer, not in the header: this is read at the moment
+         somebody is about to send, which is when the expectation actually
+         matters. At the top it is scenery they scroll past on the way in.
+         It also promises the email, so nobody sits watching the screen. -->
+    <p class="composer-note">
+      This is a message centre, not a live chat — your agent may not be at their
+      desk right now. We will email you the moment they reply.
+    </p>
   </aside>
 
   <div class="foot">
@@ -560,9 +573,12 @@ function paintThread() {
   }
   const sub = el('rail-sub');
   if (sub) {
+    /* "No waiting on hold" was promising immediacy this cannot keep — the note
+       under the composer now sets the expectation, so the header just says where
+       the message goes. */
     sub.textContent = msgs.length
       ? 'Straight to ' + ((WS.agent || {}).name || 'your agent') + ' — everything you have said is kept here.'
-      : 'Straight to your agent — no inbox, no waiting on hold.';
+      : 'Straight to your agent — no phone tree, no inbox to dig through.';
   }
   if (!msgs.length) {
     t.innerHTML = '<div class="empty">No messages yet. Anything you send here goes straight to '
