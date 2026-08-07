@@ -20273,7 +20273,28 @@ function openCensusRequest(dealId) {
     try { fetch(APPS_SCRIPT_URL + '?action=send_census&census_id=' + r.id, { mode: 'no-cors' }); } catch (e) {}
     showToast('Census request sent to ' + email + ' (HIPAA agreement included if needed).');
     loadCensusStatus_(deal);
+    // A database trigger just moved this deal to Census Requested. The board is
+    // holding a copy from before that happened, so ask what the stage actually
+    // is rather than assuming — the trigger declines to move a closed deal or
+    // one already further along, and guessing here would show a lie.
+    refreshDealStage_(deal);
   }, { confirmLabel: 'Send Request' });
+}
+
+// Deals now advance themselves in the database — a reply, a booking, a census
+// going out or coming back all move the card without the CRM being involved.
+// Anything that triggers one of those from in here has to re-read the stage
+// instead of predicting it.
+async function refreshDealStage_(deal) {
+  if (!deal || !deal.id) return;
+  const { data, error } = await supabaseClient.from('deals')
+    .select('stage').eq('id', deal.id).maybeSingle();
+  if (error || !data || data.stage === deal.stage) return;
+  const moved = deal.stage;
+  deal.stage = data.stage;
+  if (typeof renderPipelines === 'function' && document.getElementById('page-pipelines')) renderPipelines();
+  dealPanelRefresh_();
+  showToast('Moved ' + moved + ' → ' + data.stage);
 }
 
 async function resendCensus_(reqId, a) {
