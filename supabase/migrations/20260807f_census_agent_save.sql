@@ -1,0 +1,33 @@
+-- Agent census edits: stop destroying SSNs, stop silently overwriting the
+-- employer. 2026-08-07. Applied live as census_agent_save_with_conflict_guard.
+--
+-- Ken asked the right question: "what if I make changes, and then the employer
+-- comes back and makes some changes?" It was worse than a conflict.
+--
+-- 1. THE AGENT'S SAVE WIPED EVERY SSN. It rebuilt the roster with
+--    delete-then-insert straight from the browser, and the agent grid has no SSN
+--    column — so ssn_enc was simply absent from the rewrite and every number
+--    vanished. Silently. The employer's own submission had carry-over from the
+--    start; the agent path never did, because it wrote the table directly
+--    instead of going through a function.
+--
+-- 2. LOST UPDATES IN BOTH DIRECTIONS. The dialog claimed the employer's page
+--    "stays locked to what they submitted", which stopped being true the moment
+--    census_reopen shipped. Employer resubmits after an agent edit: the agent's
+--    corrections are gone. Agent saves a dialog opened before that resubmit: the
+--    employer's newer data is gone. Nobody is told either way.
+--
+-- census_agent_save is agent-only and seat-scoped, carries SSNs across using the
+-- same person-key as the employer path (name, or number when nameless, plus date
+-- of birth), and refuses the write when content_version has moved since the
+-- dialog was opened. content_version is bumped by BOTH writers, so neither side
+-- can quietly win.
+--
+-- Company details now travel in the same call as the roster. Writing them first
+-- and the rows second meant a refused roster left the company half-changed with
+-- no way to tell which half had landed.
+--
+-- VERIFIED: with one SSN on file, an agent edit that sends no SSN field at all
+-- leaves it in place and the ZIP change applies; a second save using the old
+-- version is refused with reason 'stale' and the roster is untouched.
+select 'census_agent_save: documented, applied via census_agent_save_with_conflict_guard' as note;

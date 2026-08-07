@@ -20786,7 +20786,7 @@ async function openCensusEditor(reqId) {
         </table>
       </div>
       ${eligHTML}
-      <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Edits are saved to the CRM record only — the employer's page stays locked to what they submitted. Use "download CSV" on the deal for the carrier-ready file after saving.</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Your edits and the employer's share one record — they can still update their census from their workspace. If they save while you have this open, your save is refused rather than overwriting them, and you reopen to get their latest. Social Security numbers are carried across untouched; they are never shown here. Use "download CSV" on the deal for the carrier-ready file.</div>
     </div>
   `, async () => {
     const trs = [...document.querySelectorAll('#ce-rows tr')];
@@ -20802,15 +20802,17 @@ async function openCensusEditor(reqId) {
         return false;
       }
     }
+    /* Company details go in the SAME call as the roster. Writing them first and
+       the rows second meant a refused roster left the company half-changed, with
+       no way to tell which half had landed. */
     const g = id => document.getElementById(id).value.trim() || null;
-    const { error: e1 } = await supabaseClient.from('census_requests').update({
+    const companyPatch = {
       company_legal_name: g('ce-legal'), company_dba: g('ce-dba'), sic_code: g('ce-sic'),
       company_street: g('ce-street'), company_city: g('ce-city'),
       company_state: (g('ce-state') || '').toUpperCase() || null, company_zip: g('ce-zip'),
       contact_name: g('ce-cname'), contact_title: g('ce-ctitle'),
       contact_phone: g('ce-cphone'), contact_email: g('ce-cemail'),
-    }).eq('id', reqId);
-    if (e1) { showToast('Error: ' + e1.message); return false; }
+    };
     let lastEmp = '';
     const rows = trs.map((t, i) => {
       const name = t.querySelector('.f-name').value.trim();
@@ -20828,11 +20830,22 @@ async function openCensusEditor(reqId) {
         sort_order: i,
       };
     });
-    const { error: e2 } = await supabaseClient.from('census_employees').delete().eq('request_id', reqId);
+    /* Saved through census_agent_save, not by writing the table directly. The
+       old delete-then-insert had no ssn_enc in its payload, so every agent edit
+       silently destroyed every Social Security number on the census. The
+       function carries them across by person, exactly as the employer's own
+       submission does, and refuses the write outright if the employer has saved
+       since this dialog was opened. */
+    const { data: res, error: e2 } = await supabaseClient.rpc('census_agent_save', {
+      p_request: reqId,
+      p_company: companyPatch,
+      p_employees: rows,
+      p_expected_version: r.content_version ?? null,
+    });
     if (e2) { showToast('Error: ' + e2.message); return false; }
-    if (rows.length) {
-      const { error: e3 } = await supabaseClient.from('census_employees').insert(rows);
-      if (e3) { showToast('Error: ' + e3.message); return false; }
+    if (!res || res.ok !== true) {
+      showToast(res && res.message ? res.message : 'Could not save — please reopen the census.', 9000);
+      return false;
     }
     showToast('Census updated.');
     const deal = r.deal_id ? deals.find(d => d.id === r.deal_id) : null;
