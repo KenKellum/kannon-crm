@@ -65,6 +65,12 @@
       --text-selected: #dbeafe;
       --shadow: 0 2px 8px rgba(0,0,0,0.4);
       --radius: 8px;
+      /* MyIApro wordmark. The identity is the ALTERNATION of Insured America's
+         navy and crimson, so on a dark surface both are lightened rather than
+         swapped for something else — same two hues, readable. The true values
+         (#1d3557 / #6e3335) are used wherever the surface is light. */
+      --mia-navy: #8fb4e3;
+      --mia-crimson: #dd949a;
     }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--surface-0); color: var(--text-primary); min-height: 100vh; }
 
@@ -382,6 +388,9 @@
       --bg-selected-card: #e6eefc;
       --border-selected: #3b82f6;
       --text-selected: #1d4ed8;
+      /* Light surfaces get the brand colours exactly as they are. */
+      --mia-navy: #1d3557;
+      --mia-crimson: #6e3335;
     }
     html.light-theme .sidebar-nav button { background: rgba(0,0,0,0.03); }
     html.light-theme .sidebar-nav button:hover { background: rgba(0,0,0,0.06); }
@@ -599,8 +608,8 @@
 <aside id="mia-drawer" class="mia-drawer" role="dialog" aria-label="MyIApro message centre" aria-hidden="true">
   <div class="mia-head">
     <button class="mia-back" id="mia-back" onclick="miaShowList()" style="display:none;" title="All conversations">&#8592;</button>
-    <span class="mia-title"><span style="color:#fff;">My</span><span style="color:var(--accent);">I</span><span style="color:#fff;">A</span><span style="color:var(--accent);">pro</span>
-      <span style="font-weight:400;opacity:.75;" id="mia-sub">&mdash; Messages</span></span>
+    <span class="mia-title"><span style="color:var(--mia-navy);">My</span><span style="color:var(--mia-crimson);">I</span><span style="color:var(--mia-navy);">A</span><span style="color:var(--mia-crimson);">pro</span>
+      <span style="font-weight:400;opacity:.75;color:var(--text-secondary);" id="mia-sub">&mdash; Messages</span></span>
     <button class="mia-close" id="mia-mute" onclick="chimeToggle_()" title="Chime on — click to mute" style="margin-left:auto;font-size:13px;">&#128276;</button>
     <button class="mia-close" onclick="miaToggle(false)" aria-label="Close">&times;</button>
   </div>
@@ -713,6 +722,6 @@
     }
   });
 </script>
-<script src="./crm.js?v=20260807-298"></script>
+<script src="./crm.js?v=20260807-299"></script>
 </body>
 </html>

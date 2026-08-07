@@ -16,6 +16,10 @@
      crimson, never a bright red. It is used for MEANING, not decoration:
      anything crimson on this page is something the employer still has to do. */
   --crimson:#6e3335; --crimson-dark:#63242a; --crimson-pale:#f5e8ea;
+  /* The wordmark on a NAVY surface. Same two hues as the page version, lightened
+     so both are legible — the identity is the alternation, so substituting
+     something else for the unreadable one would break it. */
+  --mia-navy-on-dark:#a8c8f0; --mia-crimson-on-dark:#e6a3a8;
   --ink:#16202e; --body:#41506414; --text:#33415a; --muted:#6b7a90;
   --line:#e4e9f0; --paper:#ffffff; --wash:#f6f8fb;
   --ok:#177245; --ok-bg:#eaf4ee; --warn:#8a6100; --warn-bg:#fdf6e6;
@@ -355,7 +359,7 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 
   <aside class="drawer" id="drawer" role="dialog" aria-label="MyIApro Message Centre" aria-hidden="true">
     <div class="drawer-head">
-      <span class="rail-title"><span style="color:#fff;">My</span><span style="color:var(--gold);">I</span><span style="color:#fff;">A</span><span style="color:var(--gold);">pro</span>
+      <span class="rail-title"><span style="color:var(--mia-navy-on-dark);">My</span><span style="color:var(--mia-crimson-on-dark);">I</span><span style="color:var(--mia-navy-on-dark);">A</span><span style="color:var(--mia-crimson-on-dark);">pro</span>
         <span style="font-weight:400;opacity:.72;">&mdash; Message Centre</span></span>
       <button class="drawer-close" id="ws-mute" onclick="chimeToggle_()" title="Sound on — click to mute" style="margin-left:auto;font-size:14px;">&#128276;</button>
       <button class="drawer-close" onclick="toggleDrawer(false)" aria-label="Close messages" style="margin-left:6px;">&times;</button>
