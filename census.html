@@ -673,7 +673,8 @@ function fillHours_() {
   rpt.innerHTML = filled
     ? '<strong>&#10003; Set ' + filled + ' employee' + (filled === 1 ? '' : 's') + ' to ' + esc(n)
       + ' hours a week.</strong>'
-      + (skipped ? ' ' + skipped + ' already had hours and were left alone.' : '')
+      + (skipped ? ' ' + skipped + (skipped === 1 ? ' already had hours and was' : ' already had hours and were')
+                 + ' left alone.' : '')
       + ' Change any of them individually below.'
     : '<strong>Nothing to fill.</strong> Every employee already has hours listed &mdash; '
       + 'they were left exactly as they are.';
