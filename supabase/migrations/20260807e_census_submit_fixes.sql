@@ -1,0 +1,37 @@
+-- Two census_submit bugs found by actually submitting, 2026-08-07.
+-- Applied live as census_submit_no_temp_table and
+-- ssn_carryover_keys_the_person_not_the_family.
+--
+-- 1. EVERY SUBMISSION FAILED. The SSN carry-over used a temp table emptied with
+--    a bare "delete from _prior_ssn". API connections run in safe-update mode,
+--    which rejects a DELETE with no WHERE clause, so the page got SQLSTATE 21000
+--    on every send while the same function tested fine as postgres over SQL.
+--
+--    The lesson is the test, not the syntax: a function reached by anon has to
+--    be exercised THROUGH PostgREST as anon. The role and the connection
+--    settings are part of its behaviour, and calling it as the owner proves the
+--    logic and nothing about whether it can be called at all.
+--
+--    The temp table is gone rather than patched — the prior values live in a
+--    jsonb map inside the function, so there is no session-scoped object and
+--    nothing to empty.
+--
+-- 2. A CHILD INHERITED THEIR PARENT'S SSN. The carry-over keyed on
+--    employee_number, which was safe until dependants began SHARING their
+--    employee's number to link families. Then a child matched their parent's key
+--    and took their parent's Social Security number — silently, looking exactly
+--    like data, and it would have travelled to a carrier.
+--
+--    Caught by reading the masked values after a submission rather than
+--    trusting that it returned true. "It returned success" is not the same as
+--    "it did the right thing", and for anything holding an SSN that gap is the
+--    whole risk.
+--
+--    The key is now the PERSON — name, or number when nameless, plus date of
+--    birth — so a family sharing one employee number cannot share one identity.
+--    Anything still ambiguous is dropped rather than guessed.
+--
+-- VERIFIED end to end through the anon endpoint: submit succeeds; an edit with
+-- blank SSN fields keeps the employee's number and leaves the dependant with
+-- none; a new person's typed SSN is stored.
+select 'census_submit fixes: documented, applied via named migrations' as note;
