@@ -885,37 +885,127 @@ async function miaRefreshBadge(silent) {
   } catch (e) {}
 }
 
-/* A short two-note chime, synthesised rather than fetched: no asset to host, no
-   CDN to fail, and it works offline. Muteable and remembered — a sound an agent
-   cannot switch off is a sound they will close the tab to escape.
-   Browsers refuse audio before the user has interacted with the page, so a
-   failure here is expected and silently ignored rather than logged as an error. */
-function chimeMuted_()  { try { return localStorage.getItem('mia-chime') === 'off'; } catch (e) { return false; } }
-function chimeToggle_() {
-  const off = !chimeMuted_();
-  try { localStorage.setItem('mia-chime', off ? 'off' : 'on'); } catch (e) {}
-  const b = document.getElementById('mia-mute');
-  if (b) { b.textContent = off ? '🔇' : '🔔'; b.title = off ? 'Chime off — click to turn on' : 'Chime on — click to mute'; }
-  if (!off) chime_();          // let them hear what they just switched on
+/* ── the arrival sound ────────────────────────────────────────────────────
+   Synthesised and spoken, never fetched: no asset to host, no CDN to fail, and
+   it works offline.
+
+   Three states on one button, because a voice is the sort of thing you either
+   love or switch off within a week, and that should be a one-click decision:
+       Voice  → it says "I—A"
+       Bell   → a two-note doorbell, for when the voice wears thin
+       Off    → silence
+   Each click previews what you just picked, so the button teaches itself.
+   The old on/off key is migrated, so nobody who muted it gets a surprise. */
+function chimeMode_() {
+  try {
+    const m = localStorage.getItem('mia-chime-mode');
+    if (m === 'voice' || m === 'bell' || m === 'off') return m;
+    return localStorage.getItem('mia-chime') === 'off' ? 'off' : 'voice';   // legacy key
+  } catch (e) { return 'voice'; }
 }
-function chime_() {
-  if (chimeMuted_()) return;
+function chimeMuted_() { return chimeMode_() === 'off'; }
+
+const CHIME_FACE_ = {
+  voice: ['🗣️', 'Says "I—A" — click for the doorbell'],
+  bell:  ['🔔', 'Doorbell — click for silence'],
+  off:   ['🔇', 'Silent — click to hear "I—A"']
+};
+function paintChimeBtn_() {
+  const face = CHIME_FACE_[chimeMode_()];
+  ['mia-mute', 'ws-mute'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.textContent = face[0]; b.title = face[1]; }
+  });
+}
+/* Same name the buttons already call, so the markup does not change. */
+function chimeToggle_() {
+  const next = { voice: 'bell', bell: 'off', off: 'voice' }[chimeMode_()];
+  try { localStorage.setItem('mia-chime-mode', next); localStorage.removeItem('mia-chime'); } catch (e) {}
+  paintChimeBtn_();
+  chimeUnlock_();
+  if (next !== 'off') chime_(true);          // hear what you just chose
+}
+/* readyState guard: if the script is parsed after the document is already
+   complete, DOMContentLoaded has been and gone and would never fire. */
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintChimeBtn_);
+else paintChimeBtn_();
+
+/* ONE AudioContext, unlocked by the first click anywhere on the page.
+   The first version built a fresh context per chime and never resumed it, and a
+   context created without a user gesture starts SUSPENDED — so it played perfect
+   silence and reported no error at all. Nothing to hear, nothing to debug. */
+let _ac = null;
+function chimeUnlock_() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
-    const ctx = new Ctx();
-    [[880, 0], [1174.7, 0.13]].forEach(([hz, at]) => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = 'sine'; o.frequency.value = hz;
-      o.connect(g); g.connect(ctx.destination);
-      const t = ctx.currentTime + at;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
-      o.start(t); o.stop(t + 0.36);
-    });
-    setTimeout(() => { try { ctx.close(); } catch (e) {} }, 900);
+    if (!_ac) _ac = new Ctx();
+    if (_ac.state === 'suspended') _ac.resume().catch(() => {});
   } catch (e) {}
+}
+['pointerdown', 'keydown'].forEach(ev =>
+  document.addEventListener(ev, chimeUnlock_, { passive: true }));
+
+/* Ken asked for it to SAY "I—A", not merely chime it. Every current browser has
+   speech synthesis built in — no audio file, no voice licence. Falls back to the
+   bell whenever no voice is installed, because silence would look exactly like
+   the bug above. */
+function speakIA_() {
+  try {
+    if (!('speechSynthesis' in window)) return false;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || !voices.length) return false;
+    window.speechSynthesis.cancel();                  // never let a backlog queue up
+    const u = new SpeechSynthesisUtterance('I A');
+    u.rate = 0.8; u.pitch = 1.05; u.volume = 0.95;
+    // A local voice, so it still speaks offline and never lags on a round trip.
+    const v = voices.find(x => x.localService && /^en/i.test(x.lang))
+           || voices.find(x => /^en/i.test(x.lang));
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+/* Chrome fills the voice list asynchronously; without this nudge the very first
+   chime after a cold load finds it empty and quietly falls back to the bell. */
+try { if ('speechSynthesis' in window) window.speechSynthesis.getVoices(); } catch (e) {}
+
+/* The bell: a doorbell FALLS. The first attempt rose (A up to D), which reads as
+   a notification blip rather than someone at the door. E5 down to C5 — the
+   descending major third nearly every two-note chime uses. A quiet octave above
+   each fundamental and a long decay make it a bell rather than a beep, and the
+   second note is left to ring about twice as long. */
+function chime_(force) {
+  const mode = chimeMode_();
+  if (mode === 'off' && !force) return;
+  if (mode !== 'bell' && speakIA_()) return;          // bell is the fallback
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!_ac) _ac = new Ctx();
+    if (_ac.state === 'suspended') {
+      _ac.resume().catch(() => {});
+      if (_ac.state === 'suspended') {
+        console.info('[chime] blocked until the page is clicked once — browser autoplay policy.');
+        return;
+      }
+    }
+    const ctx = _ac;
+    const note = (hz, at, dur, level) => {
+      [[hz, level], [hz * 2, level * 0.22]].forEach(([f, amp]) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        o.connect(g); g.connect(ctx.destination);
+        const t = ctx.currentTime + at;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(amp, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.start(t); o.stop(t + dur + 0.02);
+      });
+    };
+    note(659.25, 0,    0.55, 0.22);   // ding — E5
+    note(523.25, 0.28, 1.05, 0.24);   // dong — C5, lower, and left to ring
+  } catch (e) { console.info('[chime] could not play:', e && e.message); }
 }
 
 function miaToggle(force) {

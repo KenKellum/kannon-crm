@@ -617,9 +617,10 @@
   <div class="mia-composer" id="mia-composer" style="display:none;">
     <textarea id="mia-text" rows="2" placeholder="Reply&hellip;"></textarea>
     <button class="btn btn-primary btn-sm" id="mia-send" onclick="miaSend()">Send reply</button>
-    <!-- Under Send and hard left: filing a conversation away is a deliberate,
-         occasional act, so it sits apart from the thing done every time. -->
-    <div style="display:flex;">
+    <!-- Under Send and right-aligned beneath it: filing a conversation away is a
+         deliberate, occasional act, so it sits on its own row rather than
+         competing with the button pressed every time. -->
+    <div style="display:flex;justify-content:flex-end;">
       <button class="btn btn-outline btn-sm" id="mia-archive"
               style="display:none;font-size:11px;padding:4px 10px;"></button>
     </div>
@@ -728,6 +729,6 @@
     }
   });
 </script>
-<script src="./crm.js?v=20260807-300"></script>
+<script src="./crm.js?v=20260807-301"></script>
 </body>
 </html>
