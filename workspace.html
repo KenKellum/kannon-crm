@@ -31,9 +31,11 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
           background:linear-gradient(90deg,var(--gold) 0%,var(--gold-soft) 45%,transparent 100%)}
 .mast-inner{max-width:940px;margin:0 auto;padding:22px 28px;
           display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.mark{width:46px;height:46px;border-radius:3px;background:#fff;color:var(--ia);
-      display:flex;align-items:center;justify-content:center;flex-shrink:0;
-      font-family:var(--serif);font-weight:700;font-size:19px;letter-spacing:-.5px}
+/* The real IA mark, on the white tile the email header uses so the logo keeps
+   its own background rather than sitting on navy. */
+.mark{background:#fff;padding:5px;border-radius:3px;flex-shrink:0;line-height:0;
+      box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.mark img{display:block;width:46px;height:46px;object-fit:contain}
 .mast-name{font-family:var(--serif);font-size:17px;font-weight:700;
           letter-spacing:.06em;line-height:1.2}
 .mast-tag{font-size:10.5px;color:var(--gold);letter-spacing:.16em;
@@ -129,7 +131,7 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 
 <div class="masthead">
   <div class="mast-inner">
-    <div class="mark">IA</div>
+    <div class="mark"><img src="ia_logo_email.png" alt="The Insured America Agency" /></div>
     <div>
       <div class="mast-name">THE INSURED AMERICA AGENCY</div>
       <div class="mast-tag">&ldquo;Protect &amp; Build Your Potential&rdquo;</div>
@@ -312,10 +314,23 @@ async function init() {
   try {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) {
-      gate('This link has expired',
-        'Workspace links are single use and time limited, which is what keeps your '
-        + 'employees’ information safe. Ask your agent to send a fresh one and it will '
-        + 'open straight away.');
+      /* Two different situations that look identical if you conflate them:
+         arriving with a token that did not work (expired), and simply typing
+         the address in (never had one). Telling someone their link expired when
+         they never clicked one sends them chasing the wrong problem. */
+      const cameFromALink = /access_token|error|type=magiclink|code=/.test(
+        window.location.hash + window.location.search);
+      if (cameFromALink) {
+        gate('This link has expired',
+          'Workspace links are single use and time limited, which is what keeps your '
+          + 'employees’ information safe. Ask your agent to send a fresh one and it will '
+          + 'open straight away.');
+      } else {
+        gate('This page opens from your email',
+          'Your workspace is private to your company, so it opens from the secure link '
+          + 'your agent sent you — there is no password to remember. Find that email and '
+          + 'follow the link, or reply to your agent and they will send another.');
+      }
       return;
     }
     const { data, error } = await sb.rpc('get_my_workspace');

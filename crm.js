@@ -6648,7 +6648,7 @@ async function addContactNote(contactId) {
 // ============================================================
 // NOTIFICATION BELL (Phase 3D)
 // ============================================================
-const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested','quote_refresh_requested','intake_products_added'];
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested','quote_refresh_requested','intake_products_added','workspace_message'];
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
@@ -6725,6 +6725,7 @@ function _renderNotificationDropdown() {
     meeting_no_show:  { icon: '👻', label: 'No-show',             color: '#fbbf24' },
     meeting_canceled: { icon: '❌', label: 'Meeting canceled',    color: '#fbbf24' },
     census_received:  { icon: '📋', label: 'Census received',     color: '#0d9488' },
+    workspace_message:{ icon: '💬', label: 'Workspace message',   color: '#1d3557' },
     quote_interested: { icon: '⭐', label: 'Quote interest — HOT', color: '#c8a84b' },
     quote_refresh_requested: { icon: '✨', label: 'Fresh quotes requested', color: '#d97706' },
     intake_products_added:   { icon: '🛒', label: 'Asked about another product', color: '#7c3aed' },
@@ -10679,7 +10680,7 @@ async function loadNeedsAttention() {
     const { data: acts } = await supabaseClient
       .from('activities')
       .select('id,contact_id,activity_type,subject,body_snippet,metadata,created_at,contacts(name,company)')
-      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested', 'quote_refresh_requested', 'intake_products_added'])
+      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested', 'quote_refresh_requested', 'intake_products_added', 'workspace_message'])
       .is('read_at', null)
       .eq('agent_id', currentAgent.id)
       .gte('created_at', thirtyDaysAgo)
@@ -19924,11 +19925,17 @@ async function loadEmployerLine_(deal) {
     + '<div style="margin-top:8px;">'
     + '<button class="btn btn-outline btn-sm" onclick="openEmployerEditor(\'' + emp.id + '\',\'' + deal.id + '\')">&#9998; Employer details</button> '
     + '<button class="btn btn-outline btn-sm" onclick="openEmployerPeople(\'' + emp.id + '\',\'' + deal.id + '\')">&#128101; People &amp; roles</button>'
+    + '</div>'
+    + '<div class="panel-label" style="margin-top:14px;">Their workspace</div>'
+    + '<div id="workspace-line-' + deal.id + '" style="font-size:12px;">Checking&hellip;</div>'
+    + '<div style="margin-top:8px;">'
     + (win.window_state === 'waiting'
         ? ' <button class="btn btn-outline btn-sm" onclick="holdOutreachForEmployer_(\'' + emp.id + '\',\'' + deal.id + '\')" '
           + 'title="Stop emailing them until 120 days before renewal">&#9202; Hold outreach until their window</button>'
         : '')
     + '</div>';
+
+  loadWorkspaceLine_(deal, emp.id);
 }
 
 // Group business is won 90-120 days before renewal, so the only question that
@@ -19987,6 +19994,150 @@ function qualificationChecklistHTML_(deal, emp, people) {
     + row(hasDecider, 'Who decides',      'attach someone as decision maker or benefits admin')
     + '<div style="color:var(--text-muted);margin-top:4px;">The card moves to Qualified by itself once these are known.</div>'
     + '</div>';
+}
+
+// ── the employer's workspace, from the agent's side ──────────────────────────
+// One place for the employer's whole life with us — census now, proposals and
+// the sandbox later, then the client portal. It exists from the moment the
+// employer record does, but it stays dark until somebody is invited into it.
+async function loadWorkspaceLine_(deal, employerId) {
+  const el = document.getElementById('workspace-line-' + deal.id);
+  if (!el) return;
+
+  const [{ data: ws }, { data: members }, { data: msgs }] = await Promise.all([
+    supabaseClient.from('employer_workspaces').select('status,activated_at').eq('employer_id', employerId).maybeSingle(),
+    supabaseClient.from('employer_workspace_members').select('*').eq('employer_id', employerId),
+    supabaseClient.from('employer_workspace_messages')
+      .select('id,sender_kind,sender_name,body,created_at,read_by_agent_at')
+      .eq('employer_id', employerId).order('created_at', { ascending: false }).limit(30),
+  ]);
+
+  const unread = (msgs || []).filter(m => m.sender_kind === 'employer' && !m.read_by_agent_at).length;
+  const live   = (members || []).filter(m => m.status !== 'revoked');
+
+  const roleLabel = r => (EMPLOYER_ROLES.find(x => x[0] === r) || [null, r])[1];
+  const memberLines = live.length
+    ? live.map(m =>
+        '<div style="padding:3px 0;">' + escWeb(m.email)
+        + ' <span style="color:var(--text-muted);">(' + escWeb(roleLabel(m.role))
+        + (m.status === 'invited' ? ', invited — not signed in yet' : ', active') + ')</span>'
+        + ' &middot; <a href="#" onclick="inviteWorkspaceMember_(\'' + employerId + '\',\'' + (m.contact_id || '') + '\',\'' + m.role + '\',\'' + deal.id + '\'); return false;">resend link</a>'
+        + ' &middot; <a href="#" onclick="revokeWorkspaceMember_(\'' + m.id + '\',\'' + employerId + '\',\'' + deal.id + '\'); return false;">revoke</a>'
+        + '</div>').join('')
+    : '<span style="color:var(--text-muted);">Nobody invited yet — the workspace is dark.</span>';
+
+  el.innerHTML =
+      '<div>Status: <strong>' + escWeb((ws && ws.status) || 'dark') + '</strong>'
+    + (unread ? ' &middot; <span style="color:var(--warning);font-weight:700;">' + unread + ' unread message'
+                + (unread === 1 ? '' : 's') + '</span>' : '')
+    + '</div>'
+    + '<div style="margin-top:6px;">' + memberLines + '</div>'
+    + '<div style="margin-top:8px;">'
+    + '<button class="btn btn-outline btn-sm" onclick="openWorkspaceInvite(\'' + employerId + '\',\'' + deal.id + '\')">&#128231; Invite someone</button> '
+    + '<button class="btn btn-outline btn-sm" onclick="openWorkspaceThread(\'' + employerId + '\',\'' + deal.id + '\')">&#128172; Messages'
+    + (unread ? ' (' + unread + ')' : '') + '</button>'
+    + '</div>';
+}
+
+function openWorkspaceInvite(employerId, dealId) {
+  const deal = deals.find(d => d.id === dealId);
+  // Only people already attached to this employer can be invited — the
+  // membership row is the whole access grant, so it must not be typed freehand.
+  supabaseClient.from('employer_contacts').select('contact_id,role').eq('employer_id', employerId)
+    .then(({ data: rows }) => {
+      const opts = (rows || []).map(r => {
+        const c = contacts.find(x => x.id === r.contact_id);
+        if (!c) return '';
+        return '<option value="' + c.id + '|' + r.role + '"' + (c.email ? '' : ' disabled')
+          + '>' + escWeb(c.name) + (c.email ? ' — ' + escWeb(c.email) : ' — no email address on file') + '</option>';
+      }).join('');
+      if (!opts) {
+        showToast('Attach someone to this employer first — People & roles.');
+        return;
+      }
+      showModal('Invite to the workspace', `
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+          They get a branded email with a link that signs them straight in — no password to
+          create. The link is theirs alone and is time limited. Access comes from this
+          invitation and nothing else, so forwarding the email gives nobody anything.
+        </p>
+        <label>Who</label>
+        <select id="wi-who">${opts}</select>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">
+          Their role comes from how they are attached to the employer. Change it under
+          People &amp; roles if it is wrong.
+        </p>
+      `, async () => {
+        const [contactId, role] = document.getElementById('wi-who').value.split('|');
+        await inviteWorkspaceMember_(employerId, contactId, role, dealId);
+      }, { confirmLabel: 'Send invitation' });
+    });
+}
+
+async function inviteWorkspaceMember_(employerId, contactId, role, dealId) {
+  if (!contactId) { showToast('That person has no contact record.'); return; }
+  const { data: memberId, error } = await supabaseClient.rpc('workspace_invite_member', {
+    p_employer_id: employerId, p_contact_id: contactId, p_role: role || 'benefits_admin'
+  });
+  if (error) { showToast('Error: ' + error.message); return; }
+  try {
+    const s = await supabaseClient.auth.getSession();
+    const tok = s && s.data && s.data.session ? s.data.session.access_token : '';
+    fetch(APPS_SCRIPT_URL + '?action=send_workspace_invite&member_id=' + memberId
+          + '&tok=' + encodeURIComponent(tok), { mode: 'no-cors' });
+  } catch (e) {}
+  showToast('Invitation sent — their workspace is live.');
+  const deal = deals.find(d => d.id === dealId);
+  if (deal) loadWorkspaceLine_(deal, employerId);
+}
+
+async function revokeWorkspaceMember_(memberId, employerId, dealId) {
+  if (!confirm('Revoke this person’s access? Their existing link stops working immediately.')) return;
+  const { error } = await supabaseClient.from('employer_workspace_members')
+    .update({ status: 'revoked', revoked_at: new Date().toISOString() }).eq('id', memberId);
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast('Access revoked.');
+  const deal = deals.find(d => d.id === dealId);
+  if (deal) loadWorkspaceLine_(deal, employerId);
+}
+
+async function openWorkspaceThread(employerId, dealId) {
+  const { data: msgs } = await supabaseClient.from('employer_workspace_messages')
+    .select('*').eq('employer_id', employerId).order('created_at');
+
+  const thread = (msgs || []).length ? (msgs || []).map(m => {
+    const mine = m.sender_kind === 'agent';
+    return '<div style="display:flex;flex-direction:column;align-items:' + (mine ? 'flex-end' : 'flex-start') + ';margin-bottom:10px;">'
+      + '<div style="max-width:78%;padding:9px 13px;border-radius:12px;font-size:13px;'
+      + (mine ? 'background:var(--accent);color:#000;border-bottom-right-radius:4px;'
+              : 'background:var(--surface-2);border:0.5px solid var(--border);border-bottom-left-radius:4px;')
+      + '">' + escWeb(m.body).replace(/\n/g, '<br>') + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">'
+      + escWeb(mine ? 'You' : (m.sender_name || 'Them')) + ' &middot; '
+      + new Date(m.created_at).toLocaleString() + '</div></div>';
+  }).join('') : '<div style="color:var(--text-muted);font-size:12px;">No messages yet.</div>';
+
+  showModal('Workspace messages', `
+    <div style="max-height:400px;overflow-y:auto;padding-right:4px;margin-bottom:12px;">${thread}</div>
+    <label>Reply</label>
+    <textarea id="wt-body" rows="3" placeholder="They see this the moment they open their workspace…"></textarea>
+  `, async () => {
+    const body = document.getElementById('wt-body').value.trim();
+    if (!body) { showToast('Nothing to send.'); return false; }
+    const { error } = await supabaseClient.from('employer_workspace_messages').insert({
+      employer_id: employerId, sender_kind: 'agent', sender_agent_id: currentAgent.id,
+      sender_name: currentAgent.display_name || currentAgent.name, body: body,
+    });
+    if (error) { showToast('Error: ' + error.message); return false; }
+    showToast('Sent.');
+    const deal = deals.find(d => d.id === dealId);
+    if (deal) loadWorkspaceLine_(deal, employerId);
+  }, { confirmLabel: 'Send reply' });
+
+  // Opening the thread is reading it.
+  await supabaseClient.from('employer_workspace_messages')
+    .update({ read_by_agent_at: new Date().toISOString() })
+    .eq('employer_id', employerId).eq('sender_kind', 'employer').is('read_by_agent_at', null);
 }
 
 async function holdOutreachForEmployer_(employerId, dealId) {
