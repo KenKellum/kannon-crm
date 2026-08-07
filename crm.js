@@ -994,11 +994,38 @@ function speakIA_() {
       u.pitch = pitch; u.rate = rate; u.volume = 0.95;
       ss.speak(u);
     };
-    sing('I',  1.6,  0.8);      // ding — the higher note
-    sing('Ay', 1.05, 0.6);      // dong — lower, and held about half again as long
+    /* The letter, not the word. "Ay" is a rare word and engines mangle it —
+       standalone capital letters get explicit letter-name handling, which is the
+       long A we actually want. And rate 0.6 was a drawl: slowing a voice that far
+       stretches the vowel until it stops sounding like the letter at all. */
+    sing('I', 1.45, 0.9);       // ding — the higher note
+    sing(IA_SECOND_, 1.0, 0.8); // dong — lower, a touch longer
     return true;
   } catch (e) { return false; }
 }
+
+/* Which spelling produces a clean long A depends on the engine, and there is no
+   way to ask it — you have to listen. iaAudition() plays the candidates in order
+   so the winner can be chosen by ear rather than guessed at; iaVoices() lists
+   what is actually installed. Set the winner in IA_SECOND_ and this goes away. */
+let IA_SECOND_ = 'A';
+window.iaAudition = function () {
+  const tries = ['A', 'Ay', 'Aye', 'ay', 'Ai', 'eigh'];
+  console.log('%cAuditioning the second note — listen, then tell Claude the number.',
+              'font-weight:bold');
+  tries.forEach((t, i) => setTimeout(() => {
+    console.log((i + 1) + ')  I — ' + JSON.stringify(t));
+    IA_SECOND_ = t;
+    speakIA_();
+  }, i * 2200));
+  setTimeout(() => { IA_SECOND_ = 'A'; }, tries.length * 2200 + 500);
+};
+window.iaVoices = function () {
+  const v = window.speechSynthesis.getVoices() || [];
+  console.table(v.map(x => ({ name: x.name, lang: x.lang, local: x.localService })));
+  const p = pickVoice_();
+  console.log('Currently using:', p ? p.name + '  (' + p.lang + ')' : 'none');
+};
 /* Chrome fills the voice list asynchronously; without this nudge the very first
    chime after a cold load finds it empty and quietly falls back to the bell. */
 try { if ('speechSynthesis' in window) window.speechSynthesis.getVoices(); } catch (e) {}
