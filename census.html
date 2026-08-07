@@ -49,6 +49,25 @@
 </style>
 </head>
 <body>
+<!-- Return to the workspace. Only rendered when they actually came from one:
+     these pages are also opened straight from an email by employers who have no
+     workspace, and a link back to a place they cannot enter would be worse than
+     no link at all. -->
+<div id="ws-back" style="display:none;position:sticky;top:0;z-index:40;
+     background:#1d3557;color:#fff;padding:9px 16px;font-size:13.5px;
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <a href="workspace.html" style="color:#fff;text-decoration:none;font-weight:600;">
+    &#8592; Back to your workspace</a>
+</div>
+<script>
+(function () {
+  if (new URLSearchParams(location.search).get('from') !== 'workspace') return;
+  var bar = document.getElementById('ws-back');
+  if (bar) bar.style.display = 'block';
+  window.WS_RETURN = true;
+})();
+</script>
+
 <div class="card">
   <div class="head">
     <div class="brand">KANNON FINANCIAL GROUP</div>
@@ -156,15 +175,42 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
 let reqId = null, req = null;
 
+/* This used to return res.ok for ANY non-GET, which threw away the body of
+   every POST. Three things depended on that body and all three were broken:
+   census_load returned true instead of the record, so the page could never
+   open; and baa_status returned true instead of 'signed', so the signature
+   watcher never fired AND the submit gate could never be satisfied — meaning a
+   census could not be sent even after the HIPAA agreement was signed.
+
+   Now: give back the parsed body whenever there is one, and fall back to a
+   plain true/false only when a write genuinely returns nothing. Callers that
+   just check truthiness are unaffected; callers that need the answer get it.
+   'return=minimal' is not sent on RPC calls, since an RPC's return value is the
+   entire point of calling it. */
 async function supa(path, opts) {
   opts = opts || {};
-  opts.headers = Object.assign({
-    'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
-    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-  }, opts.headers || {});
-  const res = await fetch(SUPA_URL + path, opts);
-  if (opts.method && opts.method !== 'GET') return res.ok;
-  return res.ok ? res.json() : null;
+  const isWrite = !!(opts.method && opts.method !== 'GET');
+  const isRpc   = path.indexOf('/rpc/') !== -1;
+  opts.headers = Object.assign(
+    { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json' },
+    isRpc ? {} : { 'Prefer': 'return=minimal' },
+    opts.headers || {});
+  let res;
+  try {
+    res = await fetch(SUPA_URL + path, opts);
+  } catch (e) {
+    console.error('supa network error', path, e);
+    return isWrite ? false : null;
+  }
+  if (!res.ok) {
+    console.error('supa ' + res.status + ' on ' + path, await res.text().catch(() => ''));
+    return isWrite ? false : null;
+  }
+  const text = await res.text();
+  if (!text) return isWrite ? true : null;
+  try { return JSON.parse(text); }
+  catch (e) { return isWrite ? true : null; }
 }
 function show(id) {
   ['loader','main','done','already','error-screen'].forEach(x => {
@@ -562,6 +608,24 @@ async function submitCensus() {
 }
 
 init();
+</script>
+
+<script>
+/* On any finished screen, offer the way onward rather than leaving them on a
+   dead end wondering what happens next. */
+(function () {
+  if (!window.WS_RETURN) return;
+  ['done', 'already', 'signed'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var a = document.createElement('a');
+    a.href = 'workspace.html';
+    a.textContent = 'Back to your workspace →';
+    a.style.cssText = 'display:inline-block;margin-top:18px;background:#1d3557;color:#fff;' +
+      'text-decoration:none;font-weight:600;padding:12px 26px;border-radius:8px;font-size:14.5px;';
+    el.appendChild(a);
+  });
+})();
 </script>
 </body>
 </html>
