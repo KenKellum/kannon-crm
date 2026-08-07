@@ -19,7 +19,10 @@
   /* The wordmark on a NAVY surface. Same two hues as the page version, lightened
      so both are legible — the identity is the alternation, so substituting
      something else for the unreadable one would break it. */
-  --mia-navy-on-dark:#a8c8f0; --mia-crimson-on-dark:#e6a3a8;
+  /* #e6a3a8 measured 4.37 against the lighter navy of the handle gradient —
+     under AA for normal text, and a 13px bold label is not 'large text'.
+     #ebb0b5 clears it on both the handle and the darker drawer header. */
+  --mia-navy-on-dark:#a8c8f0; --mia-crimson-on-dark:#ebb0b5;
   --ink:#16202e; --body:#41506414; --text:#33415a; --muted:#6b7a90;
   --line:#e4e9f0; --paper:#ffffff; --wash:#f6f8fb;
   --ok:#177245; --ok-bg:#eaf4ee; --warn:#8a6100; --warn-bg:#fdf6e6;
@@ -71,8 +74,13 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
          padding:18px 11px;box-shadow:-3px 0 16px rgba(21,39,65,.22);
          font-family:inherit;transition:padding .15s,box-shadow .15s}
 .msg-tab:hover{padding-right:15px;box-shadow:-4px 0 22px rgba(21,39,65,.3)}
-.msg-tab-label{writing-mode:vertical-rl;text-orientation:mixed;font-size:12.5px;
-         font-weight:600;letter-spacing:.11em;text-transform:uppercase}
+/* No text-transform: the capitalisation is part of the mark, and uppercase
+   flattens MyIApro to MYIAPRO. */
+.msg-tab-label{writing-mode:vertical-rl;text-orientation:mixed;font-size:13px;
+         font-weight:700;letter-spacing:.02em}
+.msg-tab-label .ask{font-weight:500;opacity:.8;letter-spacing:.06em}
+.msg-tab-label .n{color:var(--mia-navy-on-dark)}
+.msg-tab-label .c{color:var(--mia-crimson-on-dark)}
 .msg-tab .dotmark{width:7px;height:7px;border-radius:50%;background:var(--crimson);
          box-shadow:0 0 0 3px rgba(110,51,53,.28)}
 .badge{background:var(--crimson);color:#fff;font-size:11px;font-weight:700;
@@ -353,7 +361,7 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
   <button class="msg-tab" id="msg-tab" onclick="toggleDrawer()"
           aria-controls="drawer" aria-expanded="false" title="Ask MyIApro — Message Centre">
     <span class="dotmark"></span>
-    <span class="msg-tab-label">Ask MyIApro</span>
+    <span class="msg-tab-label"><span class="ask">Ask </span><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span></span>
     <span class="badge" id="msg-badge" style="display:none;">0</span>
   </button>
 

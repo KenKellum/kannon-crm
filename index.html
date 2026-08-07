@@ -602,7 +602,7 @@
 <div id="mia-scrim" class="mia-scrim" onclick="miaToggle(false)"></div>
 <button id="mia-tab" class="mia-tab" onclick="miaToggle()" title="MyIApro — messages" style="display:none;">
   <span class="mia-dot"></span>
-  <span class="mia-tab-label">MyIApro</span>
+  <span class="mia-tab-label"><span class="ask">Ask </span><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span></span>
   <span class="mia-badge" id="mia-badge" style="display:none;">0</span>
 </button>
 <aside id="mia-drawer" class="mia-drawer" role="dialog" aria-label="MyIApro message centre" aria-hidden="true">
@@ -634,8 +634,14 @@
   padding:16px 10px;box-shadow:-3px 0 16px rgba(0,0,0,.45);font-family:inherit;
   transition:padding .15s,box-shadow .15s}
 .mia-tab:hover{padding-right:14px;box-shadow:-4px 0 22px rgba(0,0,0,.6)}
-.mia-tab-label{writing-mode:vertical-rl;text-orientation:mixed;font-size:12px;font-weight:600;
-  letter-spacing:.11em;text-transform:uppercase}
+/* No text-transform: MyIApro's capitalisation is part of the mark, and
+   uppercase flattens it to MYIAPRO. Letter-spacing eased off too — it was there
+   to make small caps readable and it fights a mixed-case wordmark. */
+.mia-tab-label{writing-mode:vertical-rl;text-orientation:mixed;font-size:12.5px;
+  font-weight:700;letter-spacing:.02em}
+.mia-tab-label .ask{font-weight:500;opacity:.75;letter-spacing:.06em}
+.mia-tab-label .n{color:var(--mia-navy)}
+.mia-tab-label .c{color:var(--mia-crimson)}
 .mia-dot{width:7px;height:7px;border-radius:50%;background:var(--text-muted)}
 .mia-tab.has-unread .mia-dot{background:#6e3335;box-shadow:0 0 0 3px rgba(110,51,53,.3);
   animation:miaPulse 1.9s ease-in-out infinite}
@@ -722,6 +728,6 @@
     }
   });
 </script>
-<script src="./crm.js?v=20260807-299"></script>
+<script src="./crm.js?v=20260807-300"></script>
 </body>
 </html>
