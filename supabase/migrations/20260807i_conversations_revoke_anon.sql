@@ -1,0 +1,25 @@
+-- Caught by PROBING, not by reading: after the DROP + CREATE in 20260807h, anon
+-- could EXECUTE agent_conversations, which it could not before.
+--
+-- The cause is a trap worth writing down, because it will happen again.
+-- Supabase sets DEFAULT PRIVILEGES on the public schema granting EXECUTE on new
+-- functions to anon, authenticated and service_role. So every DROP + CREATE
+-- silently re-grants anon, and
+--     revoke all on function ... from public
+-- does NOT undo it — PUBLIC and anon are different grantees. The revoke read as
+-- though it covered this. It did not.
+--
+-- The damage was bounded: is_an_agent() gates every row, so anon received an
+-- empty array rather than data. But "the rows happen to be gated" is not the
+-- same as "the door is shut", and the door was shut before this change. Two
+-- independent controls had become one.
+--
+-- RULE: any DROP of a SECURITY DEFINER function in this schema must revoke anon
+-- BY NAME, and then be probed with a real anon key. Reasoning about the grant is
+-- what produced this in the first place.
+--
+-- Verified after applying — anon receives 42501 permission denied, and the four
+-- sibling message RPCs (agent_unread_messages, agent_unread_messages_all,
+-- agent_thread, agent_reply) were checked at the same time and are all closed.
+
+revoke execute on function public.agent_conversations(text, text) from anon;

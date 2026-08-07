@@ -899,7 +899,20 @@ async function miaAnnounce_() {
     const hot = (data || [])
       .filter(c => c.unread > 0)
       .sort((a, b) => new Date(b.last_at) - new Date(a.last_at))[0];
-    if (hot) who = String(hot.title || '');
+    if (hot) {
+      /* The person AND the company: "Dana Whitfield, Bozeman Ironworks." One
+         tells you who is asking, the other tells you which file to open.
+         last_who is the sender recorded on the message itself. subtitle is only
+         a fallback — it names the most recently activated member of the
+         workspace, which is the wrong person the moment two people share one. */
+      /* Tighter caps per part than a lone name gets: two of them are spoken back
+         to back, and an announcement you have to sit through stops being useful. */
+      const person  = sayableName_(hot.last_who || hot.subtitle, 30);
+      const company = sayableName_(hot.title, 34);
+      who = (person && person !== 'Workspace' && person !== company)
+          ? person + ', ' + company
+          : company;
+    }
   } catch (e) {}
   chime_(false, who);
 }
@@ -907,13 +920,14 @@ async function miaAnnounce_() {
 /* Company names are written to be read, not spoken. An ampersand becomes a word,
    the punctuation that would be recited aloud goes, and anything absurdly long is
    cut — "Ironworks" is what identifies them, not their full registered name. */
-function sayableName_(s) {
+function sayableName_(s, max) {
   let t = String(s || '')
     .replace(/&/g, ' and ')
     .replace(/[_/\\|*#@~<>"'`\[\]{}]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (t.length > 46) t = t.slice(0, 46).replace(/\s+\S*$/, '');   // never mid-word
+  const cap = max || 46;
+  if (t.length > cap) t = t.slice(0, cap).replace(/\s+\S*$/, '');   // never mid-word
   return t;
 }
 
