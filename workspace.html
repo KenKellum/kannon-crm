@@ -610,7 +610,7 @@ document.addEventListener('keydown', e => {
    the handle is the whole point of the handle; it just stops while the tab is in
    the background. */
 let wsStamp = null;
-setInterval(async () => {
+async function wsPoll() {
   if (document.visibilityState !== 'visible' || !WS) return;
   try {
     const { data, error } = await sb.rpc('workspace_message_stamp');
@@ -641,7 +641,14 @@ setInterval(async () => {
       }
     }
   } catch (e) {}
-}, 6000);
+}
+setInterval(wsPoll, 6000);
+/* Coming back to the tab checks straight away. Polling stops while the tab is in
+   the background, so a reply that arrived while they were elsewhere would
+   otherwise sit unannounced for the remainder of the cycle after they returned. */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') wsPoll();
+});
 
 async function sendMsg() {
   const box = el('msg'), btn = el('send-btn');
@@ -723,17 +730,34 @@ function chimeMuted_() { return chimeMode_() === 'off'; }
    debug. Now: one context, unlocked on first interaction, resumed before every
    play, and a console note if the browser still refuses so the next person is
    not guessing either. */
-let _ac = null, _acReady = false;
+let _ac = null;
+function audioReady_() { return !!_ac && _ac.state === 'running'; }
+
+/* A chime that fires before the page has been clicked is DISCARDED by the
+   browser — silently, with no error. That is why nothing was heard until the
+   Message Centre was opened: opening it was the first click, and everything
+   before it fell on the floor. So a chime that cannot play is held, and played
+   the moment the page is next touched. Five minutes, after which it is stale. */
+let _pendingChime = null;
 function chimeUnlock_() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!_ac) _ac = new Ctx();
-    if (_ac.state === 'suspended') _ac.resume().then(() => { _acReady = true; }).catch(() => {});
-    else _acReady = true;
+    if (_ac.state === 'suspended') _ac.resume().then(flushPending_).catch(() => {});
+    else flushPending_();
   } catch (e) {}
 }
-['pointerdown', 'keydown'].forEach(ev =>
+function flushPending_() {
+  if (!_pendingChime || !audioReady_()) return;
+  const at = _pendingChime;
+  _pendingChime = null;
+  if (Date.now() - at < 5 * 60 * 1000) chime_();
+}
+/* click and touchstart as well as pointerdown: pointer events do not fire on
+   every browser for every input, and this is the one listener that decides
+   whether the feature works at all. Employers arrive on whatever they own. */
+['pointerdown', 'click', 'touchstart', 'keydown'].forEach(ev =>
   document.addEventListener(ev, chimeUnlock_, { once: false, passive: true }));
 
 
@@ -839,6 +863,9 @@ try { if ('speechSynthesis' in window) window.speechSynthesis.getVoices(); } cat
 function chime_(force) {
   const mode = chimeMode_();
   if (mode === 'off' && !force) return;
+  /* Nothing can play until the page has been clicked. Hold it rather than
+     throwing it away, and chimeUnlock_ will let it out. */
+  if (!audioReady_()) { _pendingChime = Date.now(); chimeUnlock_(); return; }
   bell_();
   if (mode !== 'bell') setTimeout(speakIA_, 900);        // over the dong's tail, on purpose
 }

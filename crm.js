@@ -846,12 +846,7 @@ function miaBoot() {
   const tab = document.getElementById('mia-tab');
   if (!tab || !currentAgent) return;
   tab.style.display = 'flex';
-  const mb = document.getElementById('mia-mute');
-  if (mb) {
-    const off = chimeMuted_();
-    mb.textContent = off ? '🔇' : '🔔';
-    mb.title = off ? 'Chime off — click to turn on' : 'Chime on — click to mute';
-  }
+  paintChimeBtn_();        // three states now; this was still painting the old two
   miaRefreshBadge(true);   // first read sets the baseline, never chimes
   /* 15s, not 60s. The pulsing dot is only useful if it starts pulsing near when
      the message actually arrives — a minute late and the agent has already
@@ -861,6 +856,13 @@ function miaBoot() {
   miaTimer = setInterval(() => {
     if (document.visibilityState === 'visible') miaRefreshBadge();
   }, 15000);
+  /* Coming back to the tab checks immediately rather than waiting out the rest of
+     the 15s. Polling stops while the tab is in the background, so a message that
+     arrived while the agent was elsewhere would otherwise sit unannounced for up
+     to a quarter of a minute after they returned — which reads as broken. */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') miaRefreshBadge();
+  });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.getElementById('mia-drawer').classList.contains('open')) miaToggle(false);
   });
@@ -981,15 +983,36 @@ else paintChimeBtn_();
    context created without a user gesture starts SUSPENDED — so it played perfect
    silence and reported no error at all. Nothing to hear, nothing to debug. */
 let _ac = null;
+function audioReady_() { return !!_ac && _ac.state === 'running'; }
+
+/* A chime that fires before the page has been clicked is DISCARDED by the
+   browser — silently, with no error. That is why nothing was heard until the
+   drawer was opened: opening it was the first click, and everything before it
+   fell on the floor. Switching windows back to the CRM is not a click, so an
+   agent who alt-tabs in to check messages had never granted sound.
+   So a chime that cannot play is held, and played the moment they next touch the
+   page. Five minutes, after which it is stale and saying it would be misleading
+   rather than useful. */
+let _pendingSay = null;
 function chimeUnlock_() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!_ac) _ac = new Ctx();
-    if (_ac.state === 'suspended') _ac.resume().catch(() => {});
+    if (_ac.state === 'suspended') _ac.resume().then(flushPending_).catch(() => {});
+    else flushPending_();
   } catch (e) {}
 }
-['pointerdown', 'keydown'].forEach(ev =>
+function flushPending_() {
+  if (!_pendingSay || !audioReady_()) return;
+  const p = _pendingSay;
+  _pendingSay = null;
+  if (Date.now() - p.at < 5 * 60 * 1000) chime_(false, p.who);
+}
+/* click and touchstart as well as pointerdown: pointer events do not fire on
+   every browser for every input, and this is the one listener that decides
+   whether the feature works at all. */
+['pointerdown', 'click', 'touchstart', 'keydown'].forEach(ev =>
   document.addEventListener(ev, chimeUnlock_, { passive: true }));
 
 /* A woman's voice, singing it to the doorbell's tune.
@@ -1078,9 +1101,14 @@ try { if ('speechSynthesis' in window) window.speechSynthesis.getVoices(); } cat
 function chime_(force, who) {
   const mode = chimeMode_();
   if (mode === 'off' && !force) return;
+  /* Nothing can play until the page has been clicked. Hold it rather than
+     throwing it away, and chimeUnlock_ will let it out. */
+  if (!audioReady_()) { _pendingSay = { who: who || '', at: Date.now() }; chimeUnlock_(); return; }
   bell_();
-  // over the dong's tail, on purpose — the version Ken picked by ear
-  if (mode !== 'bell') setTimeout(() => speakIA_(who), 900);
+  /* 1300ms, not the 900 the workspace uses. A name is a great deal more to take
+     in than "I A", and it landed on top of the dong still ringing. The workspace
+     keeps 900 — it says the short phrase, and that timing was chosen by ear. */
+  if (mode !== 'bell') setTimeout(() => speakIA_(who), 1300);
 }
 
 function bell_() {
