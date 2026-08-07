@@ -357,7 +357,8 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
     <div class="drawer-head">
       <span class="rail-title"><span style="color:#fff;">My</span><span style="color:var(--gold);">I</span><span style="color:#fff;">A</span><span style="color:var(--gold);">pro</span>
         <span style="font-weight:400;opacity:.72;">&mdash; Message Centre</span></span>
-      <button class="drawer-close" onclick="toggleDrawer(false)" aria-label="Close messages">&times;</button>
+      <button class="drawer-close" id="ws-mute" onclick="chimeToggle_()" title="Sound on — click to mute" style="margin-left:auto;font-size:14px;">&#128276;</button>
+      <button class="drawer-close" onclick="toggleDrawer(false)" aria-label="Close messages" style="margin-left:6px;">&times;</button>
     </div>
     <div class="rail-sub" id="rail-sub">Straight to your agent — no inbox, no waiting on hold.</div>
     <div class="thread" id="thread"></div>
@@ -608,7 +609,13 @@ setInterval(async () => {
     wsStamp = s;
     const { data: fresh } = await sb.rpc('get_my_workspace');
     if (!fresh) return;
-    WS.messages = fresh.messages || [];
+    const msgs = fresh.messages || [];
+    /* Only when the newest message is theirs. Sending appends locally, which
+       moves the stamp — chiming at somebody for their own message is the fastest
+       way to get a sound switched off for good. */
+    const newest = msgs[msgs.length - 1];
+    if (newest && !newest.mine) chime_();
+    WS.messages = msgs;
     paintThread();
     /* If they are not looking at the drawer, make the handle say so rather than
        quietly updating a panel nobody has open. */
@@ -676,7 +683,47 @@ async function useToken(tok) {
     return;
   }
   history.replaceState(null, '', window.location.pathname);
-  init();
+  paintChimeBtn_();
+init();
+}
+
+/* A short two-note chime, synthesised rather than fetched: no asset to host, no
+   CDN to fail, and it works offline. Muteable and remembered — a sound somebody
+   cannot switch off is a sound they close the tab to escape. Browsers refuse
+   audio before the page has been interacted with, so a failure here is expected
+   and silently ignored. */
+function chimeMuted_()  { try { return localStorage.getItem('mia-chime') === 'off'; } catch (e) { return false; } }
+function chimeToggle_() {
+  const off = !chimeMuted_();
+  try { localStorage.setItem('mia-chime', off ? 'off' : 'on'); } catch (e) {}
+  paintChimeBtn_();
+  if (!off) chime_();
+}
+function paintChimeBtn_() {
+  const b = el('ws-mute');
+  if (!b) return;
+  const off = chimeMuted_();
+  b.textContent = off ? '🔇' : '🔔';
+  b.title = off ? 'Sound off — click to turn on' : 'Sound on — click to mute';
+}
+function chime_() {
+  if (chimeMuted_()) return;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [[880, 0], [1174.7, 0.13]].forEach(([hz, at]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = hz;
+      o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + at;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      o.start(t); o.stop(t + 0.36);
+    });
+    setTimeout(() => { try { ctx.close(); } catch (e) {} }, 900);
+  } catch (e) {}
 }
 
 /* Nobody should ever have to ask us for another link. Enumeration-safe: the

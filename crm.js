@@ -846,19 +846,28 @@ function miaBoot() {
   const tab = document.getElementById('mia-tab');
   if (!tab || !currentAgent) return;
   tab.style.display = 'flex';
-  miaRefreshBadge();
-  // Cheap count, and only while the tab is actually in front — a background tab
-  // polling for ever is how a laptop battery disappears.
+  const mb = document.getElementById('mia-mute');
+  if (mb) {
+    const off = chimeMuted_();
+    mb.textContent = off ? '🔇' : '🔔';
+    mb.title = off ? 'Chime off — click to turn on' : 'Chime on — click to mute';
+  }
+  miaRefreshBadge(true);   // first read sets the baseline, never chimes
+  /* 15s, not 60s. The pulsing dot is only useful if it starts pulsing near when
+     the message actually arrives — a minute late and the agent has already
+     wandered off. Still only while the tab is in front; a background tab polling
+     for ever is how a laptop battery disappears. */
   if (miaTimer) clearInterval(miaTimer);
   miaTimer = setInterval(() => {
     if (document.visibilityState === 'visible') miaRefreshBadge();
-  }, 60000);
+  }, 15000);
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.getElementById('mia-drawer').classList.contains('open')) miaToggle(false);
   });
 }
 
-async function miaRefreshBadge() {
+let miaLastUnread = null;
+async function miaRefreshBadge(silent) {
   try {
     const { data, error } = await supabaseClient.rpc('agent_unread_messages');
     if (error) return;
@@ -869,6 +878,43 @@ async function miaRefreshBadge() {
     badge.textContent = n;
     badge.style.display = n ? 'inline-block' : 'none';
     tab.classList.toggle('has-unread', !!n);   // the dot pulses when something waits
+    // Only when it has genuinely gone UP, and never on the first read of a
+    // session — otherwise every page load chimes for messages already seen.
+    if (!silent && miaLastUnread !== null && n > miaLastUnread) chime_();
+    miaLastUnread = n;
+  } catch (e) {}
+}
+
+/* A short two-note chime, synthesised rather than fetched: no asset to host, no
+   CDN to fail, and it works offline. Muteable and remembered — a sound an agent
+   cannot switch off is a sound they will close the tab to escape.
+   Browsers refuse audio before the user has interacted with the page, so a
+   failure here is expected and silently ignored rather than logged as an error. */
+function chimeMuted_()  { try { return localStorage.getItem('mia-chime') === 'off'; } catch (e) { return false; } }
+function chimeToggle_() {
+  const off = !chimeMuted_();
+  try { localStorage.setItem('mia-chime', off ? 'off' : 'on'); } catch (e) {}
+  const b = document.getElementById('mia-mute');
+  if (b) { b.textContent = off ? '🔇' : '🔔'; b.title = off ? 'Chime off — click to turn on' : 'Chime on — click to mute'; }
+  if (!off) chime_();          // let them hear what they just switched on
+}
+function chime_() {
+  if (chimeMuted_()) return;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [[880, 0], [1174.7, 0.13]].forEach(([hz, at]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = hz;
+      o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + at;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      o.start(t); o.stop(t + 0.36);
+    });
+    setTimeout(() => { try { ctx.close(); } catch (e) {} }, 900);
   } catch (e) {}
 }
 
