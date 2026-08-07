@@ -7388,7 +7388,46 @@ function renderPipelines() {
       <button class="btn btn-accent" onclick="openAddDeal()">+ New Deal</button>
     </div>
     <div class="pipeline-tabs">${tabs}</div>
+    ${currentPipeline === 'group-employer' ? '<div id="renewal-watch" style="margin-bottom:14px;"></div>' : ''}
     <div class="kanban-board">${columns}</div>`;
+  if (currentPipeline === 'group-employer') setTimeout(loadRenewalWatch_, 40);
+}
+
+// The renewal clock, as one line above the board: who is workable RIGHT NOW.
+// Group benefits is a calendar business, and the mistake it prevents is working
+// whoever was added most recently instead of whoever can actually buy.
+async function loadRenewalWatch_() {
+  const el = document.getElementById('renewal-watch'); if (!el) return;
+  const { data, error } = await supabaseClient.from('employer_renewal_windows')
+    .select('employer_id,legal_name,next_renewal,days_to_renewal,days_until_window,window_state,size_class')
+    .order('days_to_renewal');
+  if (error || !data || !data.length) { el.innerHTML = ''; return; }
+
+  const now  = data.filter(r => r.window_state === 'work now');
+  const soon = data.filter(r => r.window_state === 'opens soon');
+  if (!now.length && !soon.length) { el.innerHTML = ''; return; }
+
+  const chip = r =>
+    '<span style="display:inline-block;background:var(--surface-1);border:0.5px solid var(--border);'
+    + 'border-radius:999px;padding:3px 10px;margin:2px 4px 2px 0;font-size:12px;">'
+    + escWeb(r.legal_name)
+    + '<span style="color:var(--text-muted);"> &middot; ' + r.days_to_renewal + 'd</span>'
+    + (r.size_class === 'large' ? '<span style="color:var(--warning);"> &middot; 50+</span>' : '')
+    + '</span>';
+
+  el.innerHTML =
+    '<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;">'
+    + (now.length
+        ? '<div><span style="color:var(--success);font-weight:700;">&#9679; Work these now</span> '
+          + '<span style="color:var(--text-muted);font-size:12px;">— inside the 90&ndash;120 day window before renewal</span>'
+          + '<div style="margin-top:6px;">' + now.map(chip).join('') + '</div></div>'
+        : '')
+    + (soon.length
+        ? '<div style="margin-top:' + (now.length ? '8px' : '0') + ';">'
+          + '<span style="color:var(--warning);font-weight:700;">Opening soon</span>'
+          + '<div style="margin-top:6px;">' + soon.map(chip).join('') + '</div></div>'
+        : '')
+    + '</div>';
 }
 
 function switchPipeline(key) { currentPipeline = key; renderPipelines(); }
@@ -19850,6 +19889,11 @@ async function loadEmployerLine_(deal) {
   }
   const { data: people } = await supabaseClient.from('employer_contacts')
     .select('role,is_primary,contact_id').eq('employer_id', emp.id);
+  // The window maths lives in the database so the clock reads the same here, in
+  // a trigger, and in any report later.
+  const { data: winRows } = await supabaseClient.from('employer_renewal_windows')
+    .select('*').eq('employer_id', emp.id).limit(1);
+  const win = (winRows && winRows[0]) || {};
 
   const roleLabel = r => (EMPLOYER_ROLES.find(x => x[0] === r) || [null, r])[1];
   const peopleLine = (people || []).length
@@ -19866,10 +19910,6 @@ async function loadEmployerLine_(deal) {
       ? 'Under 50 (small group)'
       : '<span style="color:var(--text-muted);">size unknown — this decides the whole product menu</span>';
 
-  const renewal = emp.renewal_date
-    ? fmtDate(emp.renewal_date)
-    : (emp.renewal_month ? MONTHS[emp.renewal_month - 1] : null);
-
   el.innerHTML =
       '<div style="font-weight:700;font-size:13px;">' + escWeb(emp.legal_name)
     + (emp.dba ? ' <span style="font-weight:400;color:var(--text-muted);">dba ' + escWeb(emp.dba) + '</span>' : '')
@@ -19878,31 +19918,85 @@ async function loadEmployerLine_(deal) {
         : ' <span title="Our research — the employer has not confirmed it" style="color:var(--text-muted);font-weight:400;">unverified</span>')
     + '</div>'
     + '<div style="margin-top:4px;">' + size + '</div>'
-    + '<div>' + (renewal
-        ? 'Renews <strong>' + escWeb(renewal) + '</strong>'
-          + (emp.current_carrier ? ' &middot; with ' + escWeb(emp.current_carrier) : '')
-          + renewalWindowNote_(emp)
-        : '<span style="color:var(--warning);">No renewal month yet — outreach cannot be timed without it.</span>')
-    + '</div>'
+    + '<div>' + renewalClockHTML_(win, emp) + '</div>'
     + '<div style="margin-top:4px;">' + peopleLine + '</div>'
+    + qualificationChecklistHTML_(deal, emp, people || [])
     + '<div style="margin-top:8px;">'
     + '<button class="btn btn-outline btn-sm" onclick="openEmployerEditor(\'' + emp.id + '\',\'' + deal.id + '\')">&#9998; Employer details</button> '
     + '<button class="btn btn-outline btn-sm" onclick="openEmployerPeople(\'' + emp.id + '\',\'' + deal.id + '\')">&#128101; People &amp; roles</button>'
+    + (win.window_state === 'waiting'
+        ? ' <button class="btn btn-outline btn-sm" onclick="holdOutreachForEmployer_(\'' + emp.id + '\',\'' + deal.id + '\')" '
+          + 'title="Stop emailing them until 120 days before renewal">&#9202; Hold outreach until their window</button>'
+        : '')
     + '</div>';
 }
 
-// Group business is won 90-120 days before renewal. Saying so on the panel is
-// the cheapest possible version of the renewal clock, and it works today.
-function renewalWindowNote_(emp) {
-  const m = emp.renewal_month || (emp.renewal_date ? new Date(emp.renewal_date + 'T00:00:00').getMonth() + 1 : null);
-  if (!m) return '';
-  const now = new Date();
-  let months = (m - 1) - now.getMonth();
-  if (months < 0) months += 12;
-  const days = months * 30;
-  if (days >= 90 && days <= 135) return ' &middot; <span style="color:var(--success);font-weight:700;">in the window now</span>';
-  if (days < 90) return ' &middot; <span style="color:var(--text-muted);">window has passed for this year</span>';
-  return ' &middot; <span style="color:var(--text-muted);">window opens in about ' + (months - 4) + ' months</span>';
+// Group business is won 90-120 days before renewal, so the only question that
+// matters about a group is whether that window is open. The dates come from the
+// database view, not from month arithmetic here, so the clock reads the same
+// everywhere.
+function renewalClockHTML_(win, emp) {
+  if (!win || !win.next_renewal) {
+    return '<span style="color:var(--warning);">No renewal date yet — outreach cannot be timed without it, '
+         + 'and timing is most of what wins group business.</span>';
+  }
+  const carrier = emp && emp.current_carrier ? ' &middot; with ' + escWeb(emp.current_carrier) : '';
+  const renews  = 'Renews <strong>' + escWeb(fmtDate(win.next_renewal) || win.next_renewal) + '</strong>' + carrier;
+  const d       = win.days_to_renewal;
+
+  switch (win.window_state) {
+    case 'work now':
+      return renews + '<br><span style="color:var(--success);font-weight:700;">&#9679; Work them now</span> &mdash; '
+           + d + ' days out, inside the 90&ndash;120 day window.';
+    case 'opens soon':
+      return renews + '<br><span style="color:var(--warning);font-weight:700;">Window opens in '
+           + win.days_until_window + ' days</span> (' + escWeb(fmtDate(win.window_opens_on) || '') + ').';
+    case 'too late this year':
+      return renews + '<br><span style="color:var(--text-muted);">Only ' + d + ' days out — too late to displace this year. '
+           + 'Worth a call to be first in line for next.</span>';
+    default:
+      return renews + '<br><span style="color:var(--text-muted);">Window opens '
+           + escWeb(fmtDate(win.window_opens_on) || '') + ' — ' + win.days_until_window + ' days away. '
+           + 'Nothing to do until then.</span>';
+  }
+}
+
+// Qualified is not a feeling. It means we know when they renew, how big they
+// are, and who decides — and until all three are true, outreach is a guess.
+// The database advances the card on its own the moment the last box fills in;
+// this only shows which box is still empty.
+function qualificationChecklistHTML_(deal, emp, people) {
+  const stages = (PIPELINES['group-employer'] || {}).stages || [];
+  if (stages.indexOf(deal.stage) > stages.indexOf('Qualified')) return '';
+
+  const hasRenewal = !!(emp.renewal_date || emp.renewal_month);
+  const hasSize    = emp.fte_count != null || emp.employee_count != null;
+  const hasDecider = people.some(p => p.role === 'decision_maker' || p.role === 'benefits_admin');
+  const row = (ok, label, why) =>
+    '<div style="padding:2px 0;">'
+    + (ok ? '<span style="color:var(--success);">&#10003;</span> '
+          : '<span style="color:var(--warning);">&#9633;</span> ')
+    + (ok ? escWeb(label) : '<strong>' + escWeb(label) + '</strong> <span style="color:var(--text-muted);">— ' + why + '</span>')
+    + '</div>';
+
+  if (hasRenewal && hasSize && hasDecider) return '';
+  return '<div style="margin-top:8px;padding:8px;background:var(--surface-2);border-radius:6px;">'
+    + '<div style="font-weight:700;margin-bottom:4px;">To qualify this group</div>'
+    + row(hasRenewal, 'Renewal month',    'decides when they get worked')
+    + row(hasSize,    'Headcount or FTE', 'decides the whole product menu at 50')
+    + row(hasDecider, 'Who decides',      'attach someone as decision maker or benefits admin')
+    + '<div style="color:var(--text-muted);margin-top:4px;">The card moves to Qualified by itself once these are known.</div>'
+    + '</div>';
+}
+
+async function holdOutreachForEmployer_(employerId, dealId) {
+  const { data, error } = await supabaseClient.rpc('hold_outreach_until_window',
+    { p_employer_id: employerId });
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast(data ? 'Outreach held for ' + data + ' contact(s) until their window opens.'
+                 : 'Nothing to hold — their window is already open, or nobody is attached.');
+  const deal = deals.find(d => d.id === dealId);
+  if (deal) loadEmployerLine_(deal);
 }
 
 // Create or link. The duplicate check runs BEFORE the insert, because 318 group
