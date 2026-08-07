@@ -180,7 +180,10 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 @media(max-width:900px){
   /* On a narrow screen the drawer takes the full width and the handle shrinks
      to the dot and the count — a vertical word is wasted space on a phone. */
-  .drawer{width:100vw}
+  /* left:0 rather than width:100vw — 100vw counts the scrollbar, so on a narrow
+     window the panel hangs off the left edge and drags a horizontal scrollbar
+     onto the page with it. */
+  .drawer{left:0;width:auto}
   .msg-tab{padding:14px 9px;top:auto;bottom:22px;transform:none;border-radius:12px 0 0 12px}
   .msg-tab-label{display:none}
 }
