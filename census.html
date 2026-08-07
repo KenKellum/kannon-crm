@@ -550,7 +550,7 @@ function ingestRows(rows, filename) {
       const v = String((rows[i] || [])[map.employee_class] || '').trim();
       if (v && seen.indexOf(v) === -1) seen.push(v);
     }
-    if (seen.length) setClassOptions_(seen);
+    if (seen.length) setClassOptions_(seen, 'upload');
   }
 
   let imported = 0, lastEmployeeName = '';
@@ -636,8 +636,10 @@ function addRow(rowType, data) {
     const isEmp = this.value === 'employee';
     tr.className = isEmp ? '' : 'dep';
     tr.dataset.rowType = isEmp ? 'employee' : 'dependent';
+    applyRowKind_(tr);
     tally();
   });
+  applyRowKind_(tr);
   tb.appendChild(tr);
   document.getElementById('grid-wrap').style.display = 'block';
   tally();
@@ -652,6 +654,31 @@ function addRow(rowType, data) {
 /* Empty the table and nothing else. Used by the importer, which must not ask
    the user to reconfirm a choice they already made by picking a file. */
 function emptyRows_() { document.getElementById('rows').innerHTML = ''; tally(); }
+
+/* A class belongs to an EMPLOYEE. A spouse or child inherits whatever their
+   employee is in, so offering them their own is a question with no right answer
+   — and any value typed there would be noise a carrier has to ignore. Same for
+   hours: dependants do not work here.
+   Hidden rather than removed so the column still lines up with its header, and
+   cleared on the way so a row switched from employee to dependant cannot leave
+   a stale class behind. */
+function applyRowKind_(tr) {
+  const isEmp = tr.dataset.rowType === 'employee';
+  [['.f-class', 'Inherited'], ['.f-hrs', '—']].forEach(([sel, ph]) => {
+    const f = tr.querySelector(sel);
+    if (!f) return;
+    if (isEmp) {
+      f.style.visibility = '';
+      f.disabled = false;
+      f.title = '';
+    } else {
+      f.value = '';
+      f.style.visibility = 'hidden';
+      f.disabled = true;
+      f.title = ph;
+    }
+  });
+}
 
 /* Most uploads have no hours column, and typing 40 forty times is the kind of
    chore that makes someone abandon a form. Fills BLANKS ONLY — an employer who
@@ -686,10 +713,21 @@ function clearRows() { startCensusOver(); }
 /* The employer's own class names, gathered from whatever they uploaded and
    offered as suggestions. A datalist rather than a select on purpose: they can
    pick one OR type a new one, and the field stays optional either way. */
+/* Two sources, kept apart on purpose. Classes found in their upload are settled
+   and do not change; the ones they are typing change on every keystroke. The
+   list is REBUILT from both each time rather than accumulated — merging on
+   keystroke meant typing "Full-time" left F, Fu, Ful, Full… in the dropdown for
+   ever, which is exactly what Ken saw. */
+window.CLASS_FROM_UPLOAD = [];
 window.CLASS_OPTIONS = [];
-function setClassOptions_(list) {
-  const merged = window.CLASS_OPTIONS.slice();
-  (list || []).forEach(v => { if (v && merged.indexOf(v) === -1) merged.push(v); });
+function setClassOptions_(list, source) {
+  if (source === 'upload') {
+    window.CLASS_FROM_UPLOAD = (list || []).filter(Boolean);
+  }
+  const typed = (source === 'rules') ? (list || []).filter(Boolean) : null;
+  const merged = [];
+  window.CLASS_FROM_UPLOAD.concat(typed || currentRuleNames_())
+    .forEach(v => { if (v && merged.indexOf(v) === -1) merged.push(v); });
   window.CLASS_OPTIONS = merged;
   let dl = document.getElementById('class-options');
   if (!dl) {
@@ -785,13 +823,19 @@ function addClassRow_(preset) {
 /* The groups they name here are the ones offered in the census Class column.
    Merged with anything found in their upload rather than replacing it, because
    both are their own words and neither should quietly win. */
-function syncClassOptionsFromRules_() {
+function currentRuleNames_() {
   const names = [];
   document.querySelectorAll('#el-class-list .ec-name').forEach(i => {
     const v = (i.value || '').trim();
     if (v && names.indexOf(v) === -1) names.push(v);
   });
-  if (names.length) setClassOptions_(names);
+  return names;
+}
+
+/* Rebuilds from the upload list plus whatever is currently typed, so removing a
+   group or correcting a spelling takes the old value back out again. */
+function syncClassOptionsFromRules_() {
+  setClassOptions_(currentRuleNames_(), 'rules');
 }
 
 /* Say back what the answer MEANS in money. These two questions decide more
