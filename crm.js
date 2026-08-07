@@ -51,7 +51,14 @@ const GMAIL_SCOPES = 'https://mail.google.com/ https://www.googleapis.com/auth/c
   };
 })();
 const PIPELINES = {
-  'group-employer': { name: 'Group / Employer', stages: ['New Lead','Researched','Outreach Sent','Responded','Discovery Call','Proposal','Enrolled','Active Client'] },
+  // Group stages say what is true of the PROSPECT, not what we last did to
+  // them. That is what lets a stage tell an agent what to do next. Renamed
+  // 2026-08-06 (Researched->Qualified, Outreach Sent->Outreach,
+  // Responded->Engaged, Discovery Call->Discovery) with the two census states
+  // added, because a census sitting unreturned for three weeks was invisible.
+  // 'Active Client' is deliberately absent — active clients are the book of
+  // business, read from enrollments, not a parking column on a sales board.
+  'group-employer': { name: 'Group / Employer', stages: ['New Lead','Qualified','Outreach','Engaged','Discovery','Census Requested','Census Received','Marketing','Proposal','Enrolled'] },
   'individual-family': { name: 'Individual & Family', stages: ['New Lead','Contacted','Needs Assessment','Quoted','Application','Enrolled','Active Client'] },
   'medicare': { name: 'Medicare — Insured America', stages: ['Inquiry','Intake Complete','SOA Signed','Needs Analysis','Plan Comparison','Application Submitted','Enrolled','Annual Review'] },
   'agent-insured': { name: 'Agent Recruiting — Insured America', stages: ['Identified','Contacted','Applied','Interested','Interview','Licensing Support','Contracted','Active Agent'] },
@@ -60,21 +67,59 @@ const PIPELINES = {
 
 const CONTACT_TYPES = ['Group/Employer','Individual/Family','Agent — Insured America','Agent — Kannon Financial'];
 
-// Lead source config — each source sets initial pipeline stage and temperature hint
+// Lead source config. A source says HOW WARM the lead is — it must never name a
+// stage, because the same source feeds five different pipelines and a stage
+// belongs to exactly one of them. Naming stages here is what put referred
+// employers on 'Contacted' (an Individual & Family stage) where the group board
+// had no column to draw them in: the deal existed and appeared nowhere. Every
+// source now carries an `entry` level, and ENTRY_STAGE below translates that
+// into a stage the destination pipeline actually has.
 const LEAD_SOURCES = {
-  referral:          { label: '🤝 Referral',          stage: 'Contacted',      temp: 'warm', hint: 'Call first — skip cold sequence' },
-  inbound_call:      { label: '📞 Inbound Call',       stage: 'Responded',      temp: 'hot',  hint: 'Already engaged — jump straight to pipeline' },
-  agent_prospecting: { label: '🔍 Agent Prospecting',  stage: 'New Lead',       temp: 'cold', hint: 'Standard cold outreach sequence',  noPipeline: true },
-  partner:           { label: '🏢 Partner Referral',   stage: 'Contacted',      temp: 'warm', hint: 'Mention the referring partner on first touch' },
-  web_form:          { label: '🌐 Web Form',           stage: 'New Lead',       temp: 'warm', hint: 'Auto-sequence starts immediately' },
-  booking_link:      { label: '📅 Booking Link',       stage: 'Discovery Call', temp: 'hot',  hint: 'Appointment already scheduled' },
-  paid_ads:          { label: '📢 Paid Ads',           stage: 'New Lead',       temp: 'cold', hint: 'Standard cold sequence',            noPipeline: true },
-  event:             { label: '🎪 Event / Networking', stage: 'Contacted',      temp: 'warm', hint: 'Personal follow-up first — met in person' },
-  purchased_list:    { label: '📋 Purchased List',     stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence',            noPipeline: true },
-  csv_import:        { label: '📥 CSV Import',         stage: 'New Lead',       temp: 'cold', hint: 'Cold outreach sequence',            noPipeline: true },
-  cross_sell:        { label: '♻️ Cross-sell',         stage: 'Contacted',      temp: 'hot',  hint: 'Existing client relationship — already trusts you' },
-  agent_book:        { label: '📓 Agent Book',         stage: 'Contacted',      temp: 'warm', hint: 'Personal book of business' },
+  referral:          { label: '🤝 Referral',          entry: 'warm',     temp: 'warm', hint: 'Call first — skip cold sequence' },
+  inbound_call:      { label: '📞 Inbound Call',       entry: 'engaged',  temp: 'hot',  hint: 'Already engaged — jump straight to pipeline' },
+  agent_prospecting: { label: '🔍 Agent Prospecting',  entry: 'cold',     temp: 'cold', hint: 'Standard cold outreach sequence',  noPipeline: true },
+  partner:           { label: '🏢 Partner Referral',   entry: 'warm',     temp: 'warm', hint: 'Mention the referring partner on first touch' },
+  web_form:          { label: '🌐 Web Form',           entry: 'cold',     temp: 'warm', hint: 'Auto-sequence starts immediately' },
+  booking_link:      { label: '📅 Booking Link',       entry: 'booked',   temp: 'hot',  hint: 'Appointment already scheduled' },
+  paid_ads:          { label: '📢 Paid Ads',           entry: 'cold',     temp: 'cold', hint: 'Standard cold sequence',            noPipeline: true },
+  event:             { label: '🎪 Event / Networking', entry: 'warm',     temp: 'warm', hint: 'Personal follow-up first — met in person' },
+  purchased_list:    { label: '📋 Purchased List',     entry: 'cold',     temp: 'cold', hint: 'Cold outreach sequence',            noPipeline: true },
+  csv_import:        { label: '📥 CSV Import',         entry: 'cold',     temp: 'cold', hint: 'Cold outreach sequence',            noPipeline: true },
+  cross_sell:        { label: '♻️ Cross-sell',         entry: 'warm',     temp: 'hot',  hint: 'Existing client relationship — already trusts you' },
+  agent_book:        { label: '📓 Agent Book',         entry: 'warm',     temp: 'warm', hint: 'Personal book of business' },
 };
+
+// How warm a lead is, translated into each pipeline's own words.
+//
+//   cold     nothing known yet
+//   warm     a real person we can call, but the opportunity is unqualified
+//   outreach we have started working them (a booking link went out)
+//   engaged  they responded, or came to us
+//   booked   a meeting is on the calendar
+//
+// A referred employer lands on New Lead rather than Qualified on purpose: we
+// know a human, we still do not know their headcount or renewal month, and
+// Qualified means we do. The warmth is carried by `temp`, not by skipping the
+// gate. Individual & Family has no meeting stage, so several levels correctly
+// collapse onto Contacted — that is the pipeline being honest about itself.
+const ENTRY_STAGE = {
+  'group-employer':    { cold: 'New Lead',   warm: 'New Lead',   outreach: 'Outreach',  engaged: 'Engaged',    booked: 'Discovery' },
+  'individual-family': { cold: 'New Lead',   warm: 'Contacted',  outreach: 'Contacted', engaged: 'Contacted',  booked: 'Contacted' },
+  'medicare':          { cold: 'Inquiry',    warm: 'Inquiry',    outreach: 'Inquiry',   engaged: 'Inquiry',    booked: 'Inquiry' },
+  'agent-insured':     { cold: 'Identified', warm: 'Contacted',  outreach: 'Contacted', engaged: 'Interested', booked: 'Interview' },
+  'agent-kannon':      { cold: 'Identified', warm: 'Contacted',  outreach: 'Contacted', engaged: 'Interested', booked: 'Interview' },
+};
+
+// The only way a deal should ever be given its opening stage. Falls back to the
+// pipeline's first stage rather than to a literal, so adding a pipeline without
+// an ENTRY_STAGE row degrades to something visible instead of something lost.
+function entryStage_(pipeline, entry) {
+  const m = ENTRY_STAGE[pipeline] || {};
+  const stages = (PIPELINES[pipeline] || {}).stages || [];
+  const picked = m[entry] || m.cold;
+  return (picked && stages.includes(picked)) ? picked : (stages[0] || 'New Lead');
+}
+window.entryStage_ = entryStage_;
 
 // Global HTML-escape helper (also redefined locally in some render functions)
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -1278,7 +1323,7 @@ function renderDashboardAgent() {
     }
     if (c.lead_source === 'booking_link') {
       var d = openDealFor_(c.id);
-      return !d || d.stage === 'Discovery Call';
+      return !d || d.stage === entryStage_(d.pipeline, 'booked');
     }
     return false;
   });
@@ -1851,13 +1896,15 @@ async function sendBookingLinkEmail(toEmail, firstName, lastName, personalNote, 
   const toName = [firstName, lastName].filter(Boolean).join(' ');
 
   const contactType  = contactTypeRaw || 'Individual/Family';
-  const pipelineMap  = {
-    'Individual/Family':        { pipeline: 'individual-family', stage: 'Contacted' },
-    'Group/Employer':           { pipeline: 'group-employer',    stage: 'Outreach Sent' },
-    'Agent — Kannon Financial': { pipeline: 'agent-kannon',      stage: 'Contacted' },
-    'Agent — Insured America':  { pipeline: 'agent-insured',     stage: 'Contacted' },
-  };
-  const pipeInfo = pipelineMap[contactType] || pipelineMap['Individual/Family'];
+  // Sending a booking link is outbound work, not a booking — the stage says
+  // "we are working them", and only an actual booking moves it to Discovery.
+  const _pipeForType = {
+    'Individual/Family':        'individual-family',
+    'Group/Employer':           'group-employer',
+    'Agent — Kannon Financial': 'agent-kannon',
+    'Agent — Insured America':  'agent-insured',
+  }[contactType] || 'individual-family';
+  const pipeInfo = { pipeline: _pipeForType, stage: entryStage_(_pipeForType, 'outreach') };
   const btn = document.querySelector('#booking-modal-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
@@ -2381,7 +2428,7 @@ function _dialerScore(contact) {
   // Booking link + no intake done = they scheduled themselves — top priority
   if (contact.lead_source === 'booking_link') {
     var _bld = openDealFor_(contact.id);
-    if (!_bld || _bld.stage === 'Discovery Call') score += 980;
+    if (!_bld || _bld.stage === entryStage_(_bld.pipeline, 'booked')) score += 980;
   }
   const opens = window._dashOpens || [];
   const op = opens.find(o => (o.contact_email || '').toLowerCase() === (contact.email || '').toLowerCase());
@@ -2403,7 +2450,7 @@ function _dialerSignal(contact) {
   // Booking link — they scheduled themselves, no intake yet (highest intent)
   if (contact.lead_source === 'booking_link') {
     var _bld = openDealFor_(contact.id);
-    if (!_bld || _bld.stage === 'Discovery Call') {
+    if (!_bld || _bld.stage === entryStage_(_bld.pipeline, 'booked')) {
       return { icon: 'ti-calendar-check', label: '📅 Booked appointment — intake needed', sub: 'They scheduled themselves — call to confirm and run intake before the meeting', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.25)' };
     }
   }
@@ -4560,14 +4607,14 @@ async function saveIntakeToCRM() {
     const _intakePipelineMap = {
       'health-individual': { pipeline: 'individual-family', stage: 'Needs Assessment' }, // intake IS the needs assessment
       'financial':         { pipeline: 'individual-family', stage: 'Needs Assessment' },
-      'health-group':      { pipeline: 'group-employer',    stage: 'Responded' },        // prospect engaged, info gathered
+      'health-group':      { pipeline: 'group-employer',    stage: 'Engaged' },          // prospect engaged, info gathered
       'career-kfg':        { pipeline: 'agent-kannon',      stage: 'Identified' },
       'career-ia':         { pipeline: 'agent-insured',     stage: 'Identified' },
       'medicare':          { pipeline: 'medicare',          stage: 'Intake Complete' },
       health_individual: { pipeline: 'individual-family', stage: 'Needs Assessment' },
       health_family:     { pipeline: 'individual-family', stage: 'Needs Assessment' },
       life_individual:   { pipeline: 'individual-family', stage: 'Needs Assessment' },
-      health_group:      { pipeline: 'group-employer',    stage: 'Responded' },
+      health_group:      { pipeline: 'group-employer',    stage: 'Engaged' },
       career_new:        { pipeline: 'agent-kannon',      stage: 'Identified' },
       career_existing:   { pipeline: 'agent-kannon',      stage: 'Identified' },
     };
@@ -5216,7 +5263,7 @@ async function dialerMarkInterested(contactId) {
     if (contact && contact.type) {
       const t = contact.type;
       let dest = null;
-      if      (t === 'Group/Employer')         dest = { pipeline: 'group-employer',    stage: 'Responded' };
+      if      (t === 'Group/Employer')         dest = { pipeline: 'group-employer',    stage: 'Engaged' };
       else if (t === 'Individual/Family')      dest = { pipeline: 'individual-family', stage: 'Contacted' };
       else if (t === 'Agent — Kannon Financial') dest = { pipeline: 'agent-kannon',  stage: 'Interested' };
       else if (t.includes('Insured America'))  dest = { pipeline: 'agent-insured',     stage: 'Interested' };
@@ -6768,7 +6815,9 @@ function dealWasWon_(d) { return !!d && d.closed_reason === DEAL_WON_REASON; }
 const COVERAGE_STAGE = {
   'individual-family': { applied: 'Application',           settled: 'Enrolled', in_force: 'Active Client' },
   'medicare':          { applied: 'Application Submitted', settled: 'Enrolled', in_force: 'Annual Review' },
-  'group-employer':    { applied: 'Enrolled',              settled: 'Enrolled', in_force: 'Active Client' },
+  // Group has no 'Active Client' column any more — Enrolled is terminal and the
+  // live book is read from enrollments, so all three states land on Enrolled.
+  'group-employer':    { applied: 'Enrolled',              settled: 'Enrolled', in_force: 'Enrolled' },
 };
 
 // What a client's whole book says, in one object. Pure, so the rule that
@@ -6913,13 +6962,20 @@ async function saveDealActivity(dealId) {
 // ── Stage-aware quick actions ─────────────────────────────────────────────────
 function getStageActions(pipeline, stage) {
   var m = {
+    // Every group stage carries its own actions, and the last one in each list
+    // is that stage's exit criterion — the thing that earns the card its move.
+    // Labels are interpolated into an onclick, so no apostrophes.
     'group-employer': {
-      'New Lead':   ['Request Employee Census','Schedule Discovery Call','Send Company Overview'],
-      'Contacted':  ['Follow Up on Interest','Schedule Discovery Call','Request Meeting'],
-      'Responded':  ['Send Group Quote','Schedule Benefit Presentation','Request Signed Census'],
-      'Proposal':   ['Follow Up on Proposal','Answer Benefit Questions','Request Decision Date'],
-      'Closing':    ['Send Group Application','Schedule Enrollment Meeting','Confirm Effective Date'],
-      'Won':        ['Set Annual Renewal Reminder','Request Employer Referrals','Plan Renewal Strategy']
+      'New Lead':         ['Find renewal month and headcount','Identify the decision maker','Check who they are with now'],
+      'Qualified':        ['Start renewal-timed outreach','Hold until the renewal window opens','Send a personal intro'],
+      'Outreach':         ['Follow up on outreach','Try another contact at the company','Call the decision maker'],
+      'Engaged':          ['Send booking link','Confirm best time to talk','Book the discovery call'],
+      'Discovery':        ['Run the group fact-find','Send recap and next steps','Request the employee census'],
+      'Census Requested': ['Nudge for the census','Check the HIPAA agreement is signed','Offer to build it together on a call'],
+      'Census Received':  ['Review the census for gaps','Confirm the effective date','Decide which carriers to market'],
+      'Marketing':        ['Send census to carriers','Chase outstanding carrier quotes','Log carrier responses'],
+      'Proposal':         ['Present the proposal','Answer benefit questions','Request a decision date'],
+      'Enrolled':         ['Confirm the effective date','Set the renewal reminder','Ask for referrals']
     },
     'individual-family': {
       'New Lead':   ['Schedule Needs Analysis','Send Plan Overview','Verify Coverage Needs'],
@@ -8023,20 +8079,22 @@ function openAddContact() {
     }
 
     // Auto-create deal only for sources with demonstrated intent (not cold outreach)
+    let _newDealStage = null;
     if (sourceCfg && !sourceCfg.noPipeline) {
       const contactType = document.getElementById('con-type').value || 'Individual/Family';
       const pipelineKey = contactType === 'Group/Employer' ? 'group-employer'
         : contactType.includes('Kannon') ? 'agent-kannon'
         : contactType.includes('Insured') ? 'agent-insured'
         : 'individual-family';
+      _newDealStage = entryStage_(pipelineKey, sourceCfg.entry);
       await supabaseClient.from('deals').insert({
-        contact_id: data.id, pipeline: pipelineKey, stage: sourceCfg.stage,
+        contact_id: data.id, pipeline: pipelineKey, stage: _newDealStage,
         user_id: currentUser.id, agent_id: assignedAgentId
       });
     }
 
     contacts.unshift(data);
-    showToast(`Contact added!${(sourceCfg && !sourceCfg.noPipeline) ? ' → Pipeline: ' + sourceCfg.stage : ' (no pipeline deal — run intake when ready)'}`);
+    showToast(`Contact added!${_newDealStage ? ' → Pipeline: ' + _newDealStage : ' (no pipeline deal — run intake when ready)'}`);
     renderContacts();
     if (window._addContactStartIntake) {
       window._addContactStartIntake = false;
