@@ -209,6 +209,7 @@
       </div>
       <input type="file" id="file-input" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleFile(this.files[0])" />
       <div id="map-report" class="summary" style="display:none;"></div>
+      <div id="class-note" class="summary" style="display:none;border-left-color:#0d6b3f;background:#f2f9f5;"></div>
 
       <div id="grid-wrap" style="display:none;">
         <div class="table-wrap">
@@ -416,13 +417,23 @@ function normGender(v) {
   if (s[0] === 'f') return 'F';
   return '';
 }
+/* The old version anchored on exact matches and fell back to 'child'. Anything
+   it did not recognise — "Employee Only", "EE Only", "Full Time" — turned EVERY
+   row into a dependent, so the census had zero employees and died at Send with
+   a message about adding an employee, which is not remotely what went wrong.
+   Now: match on the words rather than the whole cell, and when it is genuinely
+   unreadable default to EMPLOYEE. A census is mostly employees; an employee
+   misfiled as a dependent breaks the submission, while a dependent misfiled as
+   an employee is plainly visible in the review grid and one click to fix. */
 function normRel(v) {
   const s = String(v || '').trim().toLowerCase();
   if (!s) return 'employee';
-  if (/^(ee|emp|self|employee|subscriber|primary|e)$/.test(s)) return 'employee';
-  if (/^(sp|spouse|wife|husband|partner|s)$/.test(s)) return 'spouse';
-  if (/^(ch|child|son|daughter|dep|dependent|c|d)$/.test(s)) return 'child';
-  return 'child';
+  if (/\b(sp|spouse|wife|husband|partner|domestic)\b/.test(s)) return 'spouse';
+  if (/\b(ch|child|children|son|daughter|dep|dependent|dependant|step)\b/.test(s)) return 'child';
+  if (/\b(ee|emp|employee|self|subscriber|primary|member|worker)\b/.test(s)) return 'employee';
+  if (/^(s|sp)$/.test(s)) return 'spouse';
+  if (/^(c|d|ch)$/.test(s)) return 'child';
+  return 'employee';
 }
 
 function handleFile(file) {
@@ -455,7 +466,25 @@ function ingestRows(rows, filename) {
     alert('We could not recognize the columns in that file. Try our template, or enter the census manually.');
     return;
   }
-  clearRows();
+  /* Emptied silently. This used to call clearRows(), which now confirms with the
+     user and hides the grid — so an import asked "are you sure?" halfway through
+     and then dropped the rows into a hidden table. An import is not a decision
+     the user needs to reconfirm; they already chose the file. */
+  emptyRows_();
+
+  /* Learn the employer's OWN class names from their own spreadsheet. Every
+     employer names these differently, so offering them our vocabulary is
+     useless — offering them theirs, already spelled the way they spell it, is
+     the whole trick. */
+  if (map.employee_class !== undefined) {
+    const seen = [];
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const v = String((rows[i] || [])[map.employee_class] || '').trim();
+      if (v && seen.indexOf(v) === -1) seen.push(v);
+    }
+    if (seen.length) setClassOptions_(seen);
+  }
+
   let imported = 0, lastEmployeeName = '';
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
@@ -521,7 +550,8 @@ function addRow(rowType, data) {
       + '<option value="spouse"' + (rel === 'spouse' ? ' selected' : '') + '>Spouse</option>'
       + '<option value="child"' + (rel === 'child' ? ' selected' : '') + '>Child</option>'
     + '</select></td>'
-    + '<td style="max-width:100px;"><input type="text" class="f-class" value="' + esc(data.employee_class || '') + '"/></td>'
+    + '<td style="max-width:110px;"><input type="text" class="f-class" list="class-options" '
+      + 'placeholder="optional" value="' + esc(data.employee_class || '') + '"/></td>'
     + '<td style="max-width:70px;"><input type="text" class="f-hrs" value="' + esc(data.hours_per_week || '') + '"/></td>'
     + '<td><button class="del" title="Remove row" onclick="this.closest(\'tr\').remove(); tally();">&#10005;</button></td>';
   tr.querySelector('.f-rel').addEventListener('change', function() {
@@ -541,7 +571,46 @@ function addRow(rowType, data) {
    three upload choices stayed hidden, so after clearing a bad import they could
    not upload the right file — only retype it by hand. Which is precisely when
    somebody reaches for Clear. */
+/* Empty the table and nothing else. Used by the importer, which must not ask
+   the user to reconfirm a choice they already made by picking a file. */
+function emptyRows_() { document.getElementById('rows').innerHTML = ''; tally(); }
+
 function clearRows() { startCensusOver(); }
+
+/* The employer's own class names, gathered from whatever they uploaded and
+   offered as suggestions. A datalist rather than a select on purpose: they can
+   pick one OR type a new one, and the field stays optional either way. */
+window.CLASS_OPTIONS = [];
+function setClassOptions_(list) {
+  const merged = window.CLASS_OPTIONS.slice();
+  (list || []).forEach(v => { if (v && merged.indexOf(v) === -1) merged.push(v); });
+  window.CLASS_OPTIONS = merged;
+  let dl = document.getElementById('class-options');
+  if (!dl) {
+    dl = document.createElement('datalist');
+    dl.id = 'class-options';
+    document.body.appendChild(dl);
+  }
+  dl.innerHTML = merged.map(v => '<option value="' + esc(v) + '"></option>').join('');
+  const note = document.getElementById('class-note');
+  if (note && merged.length) {
+    note.style.display = 'block';
+    note.innerHTML = '<strong>Your employee classes:</strong> ' + esc(merged.join(', '))
+      + '. These came from your own file and are offered in the Class column &mdash; '
+      + 'pick one or type a new one. Leaving it blank is fine.';
+  }
+}
+
+/* Distinct classes actually used on the grid, so the list reflects what they
+   ended up with rather than what they first uploaded. */
+function classesInUse_() {
+  const out = [];
+  document.querySelectorAll('#rows .f-class').forEach(i => {
+    const v = (i.value || '').trim();
+    if (v && out.indexOf(v) === -1) out.push(v);
+  });
+  return out;
+}
 function tally() {
   const trs = [...document.querySelectorAll('#rows tr')];
   const emp = trs.filter(t => t.dataset.rowType === 'employee').length;
@@ -844,7 +913,21 @@ async function submitCensus() {
   tally();
   const trs = [...document.querySelectorAll('#rows tr')];
   const emps = trs.filter(t => t.dataset.rowType === 'employee');
-  if (!emps.length) { err.textContent = 'Please add at least one employee to the census (Step ' + (document.getElementById('baa-step').style.display !== 'none' ? '3' : '2') + ').'; err.style.display = 'block'; return; }
+  if (!emps.length) {
+    /* Two very different situations. An empty grid means they have not added
+       anyone. A grid full of people who are all dependants means we misread a
+       column — and telling THAT person to "add an employee" sends them looking
+       for a problem they do not have. */
+    err.textContent = trs.length
+      ? 'Every row is marked as a dependant, so there is no employee to attach them to — '
+        + 'we probably misread your Relationship column. Set the employees to "Employee" in '
+        + 'the Relationship column below and send again.'
+      : 'Please add at least one employee to the census — upload a spreadsheet, use our '
+        + 'template, or type them in above.';
+    err.style.display = 'block';
+    if (trs.length) trs[0].querySelector('.f-rel').scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
+  }
   /* A NAME IS NOT REQUIRED TO QUOTE. Carriers rate on date of birth, gender,
      ZIP and who is related to whom — not on who somebody is. So an employer who
      would rather not hand over staff names before they have even seen a price
@@ -909,9 +992,16 @@ async function submitCensus() {
      losing an eligibility answer is annoying, losing a roster is not
      recoverable, and the two should not share a fate. */
   try {
+    /* Their own class names, as actually used on the grid, so the employer's
+       vocabulary is recorded rather than ours. Sent alongside the eligibility
+       rules — the agent maps them to plans and contributions later. */
     await supa('/rest/v1/rpc/census_save_eligibility', {
       method: 'POST',
-      body: JSON.stringify({ p_request: reqId, p_classes: collectEligibility_() })
+      body: JSON.stringify({
+        p_request: reqId,
+        p_classes: collectEligibility_(),
+        p_observed_classes: classesInUse_()
+      })
     });
   } catch (e) { console.error('eligibility save failed', e); }
 
