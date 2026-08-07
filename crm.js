@@ -6648,7 +6648,7 @@ async function addContactNote(contactId) {
 // ============================================================
 // NOTIFICATION BELL (Phase 3D)
 // ============================================================
-const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested','quote_refresh_requested','intake_products_added','workspace_message'];
+const _NOTIF_PRIORITY_TYPES = ['email_replied','email_complained','meeting_no_show','meeting_canceled','census_received','quote_interested','quote_refresh_requested','intake_products_added','workspace_message','census_updated'];
 
 async function loadNotificationBell() {
   if (!currentAgent || !currentAgent.id) return;
@@ -6726,6 +6726,7 @@ function _renderNotificationDropdown() {
     meeting_canceled: { icon: '❌', label: 'Meeting canceled',    color: '#fbbf24' },
     census_received:  { icon: '📋', label: 'Census received',     color: '#0d9488' },
     workspace_message:{ icon: '💬', label: 'Workspace message',   color: '#1d3557' },
+    census_updated:   { icon: '📝', label: 'Census updated',      color: '#b45309' },
     quote_interested: { icon: '⭐', label: 'Quote interest — HOT', color: '#c8a84b' },
     quote_refresh_requested: { icon: '✨', label: 'Fresh quotes requested', color: '#d97706' },
     intake_products_added:   { icon: '🛒', label: 'Asked about another product', color: '#7c3aed' },
@@ -10680,7 +10681,7 @@ async function loadNeedsAttention() {
     const { data: acts } = await supabaseClient
       .from('activities')
       .select('id,contact_id,activity_type,subject,body_snippet,metadata,created_at,contacts(name,company)')
-      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested', 'quote_refresh_requested', 'intake_products_added', 'workspace_message'])
+      .in('activity_type', ['email_replied', 'email_complained', 'meeting_no_show', 'meeting_canceled', 'intake_completed', 'census_received', 'quote_interested', 'quote_refresh_requested', 'intake_products_added', 'workspace_message', 'census_updated'])
       .is('read_at', null)
       .eq('agent_id', currentAgent.id)
       .gte('created_at', thirtyDaysAgo)

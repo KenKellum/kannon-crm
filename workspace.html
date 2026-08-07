@@ -216,6 +216,19 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 .foot{max-width:940px;margin:0 auto;padding:26px 28px 40px;color:var(--muted);
       font-size:12px;line-height:1.75;text-align:center}
 .foot .sep{color:var(--line);margin:0 8px}
+/* The mark survives at footer size because the colours carry it, not the size. */
+.foot-mark{font-family:var(--serif);font-weight:700;font-size:14px;letter-spacing:-.3px}
+.foot-mark .n{color:var(--ia)}
+.foot-mark .c{color:var(--crimson)}
+.foot-mark .tm{font-family:var(--sans);font-size:7px;vertical-align:super;
+      margin-left:1px;color:var(--muted)}
+.offices{display:flex;gap:44px;justify-content:center;flex-wrap:wrap;
+      margin-top:16px;padding-top:16px;border-top:1px solid var(--line);
+      text-align:left;font-size:11.5px;line-height:1.7}
+.offices strong{color:var(--ink);font-size:10px;letter-spacing:.14em;
+      text-transform:uppercase;display:block;margin-bottom:3px}
+.offices a{color:var(--ia);text-decoration:none;font-weight:600}
+.offices a:hover{text-decoration:underline}
 
 .gate{max-width:520px;margin:12vh auto;padding:44px 40px;background:var(--paper);
       border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lift);
@@ -325,8 +338,15 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
   </aside>
 
   <div class="foot">
-    The Insured America Agency <span class="sep">•</span> a brand of Kannon Financial Group<br>
-    161 West Haley Springs Rd, Unit 104, Suite 203, Bozeman MT 59718
+    <span class="foot-mark"><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span><span class="tm">&#8482;</span></span>
+    <span class="sep">•</span> The Insured America Agency
+    <span class="sep">•</span> a brand of Kannon Financial Group
+    <div class="offices">
+      <div><strong>Montana</strong><br>161 West Haley Springs Rd, Unit 104, Suite 203<br>
+        Bozeman, MT 59718<br><a href="tel:+14064047602">(406) 404-7602</a></div>
+      <div><strong>Arizona</strong><br>15655 Roosevelt Street, Suite 141<br>
+        Goodyear, AZ 85338<br><a href="tel:+14806703148">(480) 670-3148</a></div>
+    </div>
   </div>
 </div>
 
@@ -389,7 +409,8 @@ function taskRow(t) {
   const href = taskHref(t);
   const note = done
     ? (t.kind === 'baa' ? 'Signed and on file. You can view it any time.'
-                        : 'Received. Nothing further needed from you here.')
+                        : 'Received, thank you. If anyone joins or leaves you can update it — '
+                        + 'we keep the version already sent to carriers.')
     : (t.kind === 'baa' ? 'The one HIPAA document this needs. It legally binds us to protect '
                         + 'your employees’ health information. About two minutes.'
                         : 'The employee list carriers need before they will quote your group.');

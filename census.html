@@ -170,8 +170,15 @@
     </div>
     <div id="already">
       <div style="font-size:46px;">&#128203;</div>
-      <h1>Census already submitted</h1>
+      <h1>Census received</h1>
       <p id="already-sub"></p>
+      <p style="font-size:13px;color:#64748b;max-width:520px;margin:0 auto 16px;">
+        Staff change. If someone has joined or left, or a date of birth needs fixing,
+        you can update this at any time &mdash; your advisor is told what changed, and the
+        version already sent to carriers is kept on file.
+      </p>
+      <button class="btn" style="max-width:300px;margin:0 auto;" onclick="reopenCensus()">
+        &#9998; Update this census</button>
     </div>
     <div id="error-screen">
       <div style="font-size:46px;">&#9888;&#65039;</div>
@@ -436,6 +443,19 @@ function tally() {
   const emp = trs.filter(t => t.dataset.rowType === 'employee').length;
   document.getElementById('tally').textContent = emp + ' employee' + (emp === 1 ? '' : 's') + ', '
     + (trs.length - emp) + ' dependent' + (trs.length - emp === 1 ? '' : 's');
+}
+
+/* Reopening archives the submitted version first, so an employer correcting a
+   date of birth can never be the step that loses what we sent carriers. */
+async function reopenCensus() {
+  const ok = await supa('/rest/v1/rpc/census_reopen', {
+    method: 'POST', body: JSON.stringify({ p_request: reqId })
+  });
+  if (ok === false || ok === null) {
+    alert('We could not reopen this census. Please contact your advisor and they will sort it out.');
+    return;
+  }
+  location.reload();
 }
 
 function downloadTemplate() {
