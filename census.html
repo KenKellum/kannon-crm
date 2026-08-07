@@ -137,11 +137,23 @@
               <option value="none">Nothing</option>
             </select>
           </div></div>
+        <div><label>&hellip; measured against</label>
+          <select id="el-benchmark">
+            <option value="chosen_plan">Whichever plan the employee picks</option>
+            <option value="base_plan">One specific plan, whatever they pick</option>
+          </select>
+          <div class="note" style="margin-top:4px;" id="el-benchmark-note"></div></div>
         <div><label>You pay toward dependents (spouse / children)</label>
           <div style="display:flex;gap:8px;">
             <input type="number" id="el-dep" value="0" min="0" step="1" style="flex:1;" />
-            <span class="note" style="align-self:center;flex:2;" id="el-dep-unit">% of dependent cost</span>
-          </div></div>
+            <select id="el-dep-basis" style="flex:2;">
+              <option value="percent_of_increment">% of the dependent portion only</option>
+              <option value="percent_of_tier_total">% of the whole family rate</option>
+              <option value="flat_dollar">$ per month, flat</option>
+              <option value="none">Nothing</option>
+            </select>
+          </div>
+          <div class="note" style="margin-top:4px;" id="el-dep-note"></div></div>
       </div>
       <label style="display:flex;align-items:center;gap:9px;margin-top:12px;text-transform:none;
                     font-size:13px;letter-spacing:0;font-weight:400;cursor:pointer;">
@@ -558,6 +570,32 @@ function toggleSecondClass() {
     document.getElementById('el-multi').checked ? 'block' : 'none';
 }
 
+/* Say back what the answer MEANS in money. These two questions decide more
+   about what everyone pays than the percentage itself does, and an employer
+   picking "one specific plan" without realising their staff absorb the whole
+   difference is the commonest misunderstanding in benefits. */
+function explainContribution_() {
+  const bm  = (document.getElementById('el-benchmark') || {}).value;
+  const dep = (document.getElementById('el-dep-basis') || {}).value;
+  const bn = document.getElementById('el-benchmark-note');
+  const dn = document.getElementById('el-dep-note');
+  if (bn) bn.textContent = bm === 'base_plan'
+    ? 'Your cost stays the same whichever plan they pick — an employee choosing a richer plan pays the whole difference. You will choose which plan once quotes are in.'
+    : 'Your cost rises with the richer plan, since you pay a share of whatever they choose.';
+  if (dn) dn.textContent =
+      dep === 'percent_of_increment'  ? 'A share of the added cost of the dependants — the family rate minus the employee-only rate.'
+    : dep === 'percent_of_tier_total' ? 'A share of the whole family rate, including the employee portion.'
+    : dep === 'flat_dollar'           ? 'A fixed monthly amount toward dependants, whatever the plan costs.'
+    : 'Dependants are available, funded entirely by the employee.';
+}
+document.addEventListener('DOMContentLoaded', () => {
+  ['el-benchmark','el-dep-basis'].forEach(id => {
+    const e = document.getElementById(id);
+    if (e) e.addEventListener('change', explainContribution_);
+  });
+  explainContribution_();
+});
+
 /* Collected as classes from the start even though most employers fill in one,
    because a group with a part-time tier is not an edge case and re-shaping this
    later would mean re-asking every employer we had already onboarded. */
@@ -574,8 +612,14 @@ function collectEligibility_() {
       basis: basis,
       employee_pct: basis.indexOf('percent') === 0 ? v('el-emp') : null,
       employee_amt: basis === 'flat_dollar' ? v('el-emp') : null,
-      dependent_pct: basis.indexOf('percent') === 0 ? v('el-dep') : null,
-      dependent_amt: basis === 'flat_dollar' ? v('el-dep') : null,
+      // Which plan's rate the percentage multiplies. The plan ITSELF is bound in
+      // the sandbox — no plans exist yet at census time — but the structure is
+      // something an employer knows about themselves today.
+      pct_basis_plan: v('el-benchmark') || 'chosen_plan',
+      dependent_basis: v('el-dep-basis') || 'none',
+      dependent_pct: (v('el-dep-basis') || '').indexOf('percent') === 0 ? v('el-dep') : null,
+      dependent_amt: v('el-dep-basis') === 'flat_dollar' ? v('el-dep') : null,
+      dependent_pct_basis_plan: v('el-benchmark') || 'chosen_plan',
     }]
   }];
   if (document.getElementById('el-multi').checked) {
