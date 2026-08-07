@@ -583,6 +583,24 @@ function ingestRows(rows, filename) {
     });
     imported++;
   }
+  /* Carriers rate on where a person lives, and plenty of censuses arrive with no
+     ZIP at all. The company ZIP is the right assumption for a first quote — most
+     staff live near the worksite — but it IS an assumption, and one that moves
+     the price, so it is filled visibly rather than silently. Confirmed against
+     the real addresses before anything is bound. */
+  let zipFilled = 0;
+  const coZip = (document.getElementById('c-zip').value || '').trim();
+  if (coZip) {
+    document.querySelectorAll('#rows .f-zip').forEach(f => {
+      if (!(f.value || '').trim()) {
+        f.value = coZip;
+        f.style.background = '#fdf6e6';        // visibly an assumption, not data
+        f.title = 'Assumed from the company address — correct it if this person lives elsewhere';
+        zipFilled++;
+      }
+    });
+  }
+
   const mapped = Object.keys(map).map(k => k.replace(/_/g, ' ')).join(', ');
   const rpt = document.getElementById('map-report');
   rpt.style.display = 'block';
@@ -594,6 +612,12 @@ function ingestRows(rows, filename) {
         : '')
     + (dayFirst
         ? '<br>Dates read as <strong>day/month/year</strong> — that is how this file is written.'
+        : '')
+    + (zipFilled
+        ? '<br><span style="background:#fdf6e6;padding:1px 4px;border-radius:3px;">'
+          + zipFilled + ' row' + (zipFilled === 1 ? '' : 's') + ' had no ZIP, so we used your '
+          + 'company ZIP (' + esc(coZip) + ') for now</span> — highlighted below. Rates depend on '
+          + 'where someone lives, so please correct anyone who lives elsewhere.'
         : '')
     + '<br>Please review below — fix anything we got wrong, add what\'s missing, then send.'
     + (refused.length
