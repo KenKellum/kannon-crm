@@ -198,6 +198,26 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
       background:linear-gradient(90deg,var(--ok) 0%,#22a35f 100%);transition:width .5s ease}
 .prog-text{font-size:12.5px;color:var(--muted);margin-bottom:22px}
 
+/* The road ahead. Gold marks the step that is live right now — crimson is
+   reserved for work that is on the employer, and none of this is. */
+.next-eyebrow::before{background:var(--gold)}
+.next-card{padding:6px 4px}
+.roadmap{list-style:none;margin:0;padding:0}
+.roadmap li{display:flex;gap:14px;padding:15px 20px;position:relative}
+.roadmap li + li{border-top:1px solid var(--line)}
+.roadmap .pip{width:26px;height:26px;border-radius:50%;flex-shrink:0;
+      display:flex;align-items:center;justify-content:center;font-size:11.5px;
+      font-weight:700;background:var(--wash);color:var(--muted);
+      border:1px solid var(--line)}
+.roadmap li.now{background:linear-gradient(90deg,rgba(200,168,75,.10),transparent 62%)}
+.roadmap li.now .pip{background:var(--gold);color:#332600;border-color:var(--gold)}
+.roadmap .rt{font-weight:700;color:var(--ink);font-size:14px}
+.roadmap li.now .rt::after{content:'happening now';margin-left:9px;font-size:9.5px;
+      font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#8a6100;
+      background:var(--warn-bg);border:1px solid #efdfb4;border-radius:99px;
+      padding:2px 8px;vertical-align:middle}
+.roadmap .rd{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.6}
+
 /* Finished steps: quiet, green, and still clickable. */
 .done-eyebrow::before{background:var(--ok)}
 .done-list{display:flex;flex-direction:column;gap:8px}
@@ -305,6 +325,16 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
       <div id="progress" style="display:none;"></div>
       <div class="eyebrow" id="open-eyebrow">What we need from you</div>
       <div class="card" id="tasks"></div>
+
+      <!-- Shown only once nothing is outstanding. An empty page after finishing
+           reads as "did that work?" — this says what is happening, who is doing
+           it, and how they will hear. -->
+      <div id="whats-next" style="display:none;">
+        <div class="eyebrow next-eyebrow">What happens next</div>
+        <div class="card next-card">
+          <ol class="roadmap" id="roadmap"></ol>
+        </div>
+      </div>
 
       <div id="done-wrap" style="display:none;">
         <div class="eyebrow done-eyebrow" style="margin-top:26px;">Completed</div>
@@ -440,8 +470,11 @@ function paint() {
     el('done-list').innerHTML = done.map(doneRow).join('');
 
     if (!open.length) {
-      el('w-sub').textContent = 'Everything we asked for is in. We are working on your options and '
-        + 'will be in touch here as soon as we have something to show you.';
+      el('w-sub').textContent = 'Everything we asked for is in — nothing is waiting on you. '
+        + 'Here is what happens from here.';
+      paintRoadmap();
+    } else {
+      el('whats-next').style.display = 'none';
     }
     el('progress').style.display = all.length ? 'block' : 'none';
     el('progress').innerHTML =
@@ -463,6 +496,34 @@ function paint() {
   paintThread();
   el('gate').style.display = 'none';
   el('app').style.display  = 'block';
+}
+
+/* Silence after handing over your employees' details is unnerving. This says
+   who has it, what they are doing, how you will hear, and what you will be able
+   to do when you do — so the wait is a stage in a process rather than a void. */
+function paintRoadmap() {
+  const agent = ((WS.agent || {}).name) || 'Your advisor';
+  const steps = [
+    { t: agent + ' is reviewing your census',
+      d: 'Checking it reads cleanly and deciding which carriers are the right fit for a business your size.',
+      now: true },
+    { t: 'We take it to carriers',
+      d: 'Your details go out for formal proposals. This is the part that takes real time — usually a week or two, '
+       + 'depending on how quickly each carrier responds.' },
+    { t: 'Your options land here',
+      d: 'We will email you the moment they do. Everything arrives in this workspace — nothing to dig out of an inbox.' },
+    { t: 'You explore them properly',
+      d: 'Compare plans side by side, see what each one costs you and what it costs your employees, and try different '
+       + 'contribution splits before you commit to anything.' },
+    { t: 'You choose, and we schedule it',
+      d: 'We line the start date up with your renewal — or sooner, if you are replacing cover mid-year.' },
+  ];
+  el('whats-next').style.display = 'block';
+  el('roadmap').innerHTML = steps.map((s, i) =>
+    '<li class="' + (s.now ? 'now' : '') + '">'
+    + '<span class="pip">' + (i + 1) + '</span>'
+    + '<span><span class="rt">' + esc(s.t) + '</span>'
+    + '<div class="rd">' + esc(s.d) + '</div></span></li>').join('');
 }
 
 function paintThread() {
