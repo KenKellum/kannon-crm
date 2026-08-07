@@ -12,6 +12,10 @@
 :root{
   --ia:#1d3557; --ia-deep:#152741; --ia-soft:#2a4a73;
   --gold:#c8a84b; --gold-soft:#e2cd8f;
+  /* The real IA crimson, lifted from the logo's own palette — a rich dark
+     crimson, never a bright red. It is used for MEANING, not decoration:
+     anything crimson on this page is something the employer still has to do. */
+  --crimson:#6e3335; --crimson-dark:#63242a; --crimson-pale:#f5e8ea;
   --ink:#16202e; --body:#41506414; --text:#33415a; --muted:#6b7a90;
   --line:#e4e9f0; --paper:#ffffff; --wash:#f6f8fb;
   --ok:#177245; --ok-bg:#eaf4ee; --warn:#8a6100; --warn-bg:#fdf6e6;
@@ -27,8 +31,11 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
 /* ── masthead ─────────────────────────────────────────────────────────── */
 .masthead{background:linear-gradient(160deg,var(--ia) 0%,var(--ia-deep) 100%);
           color:#fff;padding:0;position:relative}
+/* Crimson leading into gold: the red announces itself for about a fifth of the
+   width and then hands over. Present, not loud. */
 .masthead::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;
-          background:linear-gradient(90deg,var(--gold) 0%,var(--gold-soft) 45%,transparent 100%)}
+          background:linear-gradient(90deg,var(--crimson) 0%,var(--crimson) 14%,
+                     var(--gold) 30%,var(--gold-soft) 62%,transparent 100%)}
 .mast-inner{max-width:940px;margin:0 auto;padding:22px 28px;
           display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 /* The real IA mark, on the white tile the email header uses so the logo keeps
@@ -44,7 +51,22 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
           letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.55)}
 
 /* ── page ─────────────────────────────────────────────────────────────── */
-.wrap{max-width:940px;margin:0 auto;padding:38px 28px 80px}
+.wrap{max-width:1180px;margin:0 auto;padding:38px 28px 80px}
+
+/* Two columns: the work on the left, the Message Centre pinned on the right so
+   it is in reach wherever they are on the page. Sticky rather than fixed, so it
+   never covers content and never fights the scroll. */
+.shell{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:30px;align-items:start}
+.rail{position:sticky;top:26px}
+.rail .card{display:flex;flex-direction:column;max-height:calc(100vh - 60px)}
+.rail .thread{flex:1;min-height:120px}
+.rail-head{display:flex;align-items:center;gap:9px;padding:15px 20px 13px;
+           border-bottom:1px solid var(--line);background:var(--paper);
+           border-radius:12px 12px 0 0}
+.rail-title{font-family:var(--serif);font-size:15px;font-weight:700;color:var(--ink)}
+.badge{margin-left:auto;background:var(--crimson);color:#fff;font-size:11px;font-weight:700;
+       border-radius:999px;padding:2px 9px;letter-spacing:.02em}
+.rail-sub{padding:0 20px;font-size:12.5px;color:var(--muted);margin-top:10px}
 .greeting{font-family:var(--serif);font-size:30px;line-height:1.25;color:var(--ink);
           font-weight:400;letter-spacing:-.2px}
 .greeting strong{font-weight:700}
@@ -52,7 +74,9 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
 .rule{height:1px;background:var(--line);margin:30px 0}
 
 .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
-         color:var(--muted);margin-bottom:14px}
+         color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:9px}
+.eyebrow::before{content:'';width:16px;height:2px;background:var(--crimson);
+         border-radius:2px;flex-shrink:0}
 
 .card{background:var(--paper);border:1px solid var(--line);border-radius:12px;
       box-shadow:var(--shadow);overflow:hidden}
@@ -65,7 +89,8 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
 .task:hover{background:#fbfcfe}
 .dot{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;
      align-items:center;justify-content:center;font-size:15px;font-weight:700}
-.dot.todo{background:var(--warn-bg);color:var(--warn);border:1px solid #efdfb4}
+/* Crimson means "still on you". The only outstanding-work colour on the page. */
+.dot.todo{background:var(--crimson-pale);color:var(--crimson-dark);border:1px solid #e6cfd2}
 .dot.done{background:var(--ok-bg);color:var(--ok);border:1px solid #cfe6d8}
 .task-body{flex:1;min-width:0}
 .task-title{font-weight:600;color:var(--ink);font-size:15px}
@@ -100,8 +125,12 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
 .msg.mine .bubble{background:linear-gradient(165deg,var(--ia-soft),var(--ia));color:#fff;
                   border-bottom-right-radius:4px}
 .meta{font-size:11.5px;color:var(--muted);letter-spacing:.02em}
-.composer{border-top:1px solid var(--line);padding:16px 24px;display:flex;gap:12px;
-          align-items:flex-end;background:#fcfdfe}
+/* Stacked, not side by side: in a 350px rail a button beside a textarea leaves
+   room to type about four words. */
+.composer{border-top:1px solid var(--line);padding:14px 18px;display:flex;
+          flex-direction:column;gap:10px;background:#fcfdfe;
+          border-radius:0 0 12px 12px}
+.composer .btn{width:100%}
 textarea{flex:1;border:1px solid var(--line);border-radius:9px;padding:11px 14px;
          font-family:inherit;font-size:14.5px;color:var(--text);resize:vertical;
          min-height:46px;background:#fff;transition:border-color .15s,box-shadow .15s}
@@ -120,6 +149,14 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 .spin{width:26px;height:26px;border:2.5px solid var(--line);border-top-color:var(--ia);
       border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 18px}
 @keyframes sp{to{transform:rotate(360deg)}}
+/* Below the two-column breakpoint the rail stops being sticky and simply
+   follows the content, so it is never a floating panel covering a small screen. */
+@media(max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:26px}
+  .rail{position:static}
+  .rail .card{max-height:none}
+  .rail .thread{max-height:320px}
+}
 @media(max-width:640px){
   .wrap{padding:26px 18px 60px}.mast-inner{padding:18px}
   .greeting{font-size:24px}.bubble{max-width:88%}
@@ -154,34 +191,45 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 
     <div class="rule"></div>
 
-    <div id="tasks-wrap" style="display:none;">
-      <div class="eyebrow">What we need from you</div>
-      <div class="card" id="tasks"></div>
-      <div style="height:30px;"></div>
-    </div>
-
-    <div class="eyebrow">Your agent</div>
-    <div class="card"><div class="agent">
-      <div class="avatar" id="a-initials">—</div>
+    <div class="shell">
+      <!-- the work -->
       <div>
-        <div style="font-weight:700;color:var(--ink);font-size:15.5px;" id="a-name">—</div>
-        <div style="font-size:13.5px;margin-top:3px;">
-          <a id="a-email" href="#">—</a>
-          <span id="a-phone-wrap" style="display:none;"><span style="color:var(--line);margin:0 8px;">|</span>
-          <a id="a-phone" href="#">—</a></span>
+        <div id="tasks-wrap" style="display:none;">
+          <div class="eyebrow">What we need from you</div>
+          <div class="card" id="tasks"></div>
+          <div style="height:30px;"></div>
         </div>
-      </div>
-    </div></div>
 
-    <div style="height:30px;"></div>
-
-    <div class="eyebrow">Messages</div>
-    <div class="card">
-      <div class="thread" id="thread"></div>
-      <div class="composer">
-        <textarea id="msg" rows="1" placeholder="Ask your agent anything…"></textarea>
-        <button class="btn btn-primary" id="send-btn" onclick="sendMsg()">Send</button>
+        <div class="eyebrow">Your agent</div>
+        <div class="card"><div class="agent">
+          <div class="avatar" id="a-initials">—</div>
+          <div>
+            <div style="font-weight:700;color:var(--ink);font-size:15.5px;" id="a-name">—</div>
+            <div style="font-size:13.5px;margin-top:3px;">
+              <a id="a-email" href="#">—</a>
+              <span id="a-phone-wrap" style="display:none;"><span style="color:var(--line);margin:0 8px;">|</span>
+              <a id="a-phone" href="#">—</a></span>
+            </div>
+          </div>
+        </div></div>
       </div>
+
+      <!-- the Message Centre, pinned so it is in reach from anywhere -->
+      <aside class="rail">
+        <div class="card">
+          <div class="rail-head">
+            <span style="color:var(--crimson);font-size:15px;">&#9679;</span>
+            <span class="rail-title">Message Centre</span>
+            <span class="badge" id="msg-badge" style="display:none;">0</span>
+          </div>
+          <div class="rail-sub" id="rail-sub">Straight to your agent — no inbox, no waiting on hold.</div>
+          <div class="thread" id="thread"></div>
+          <div class="composer">
+            <textarea id="msg" rows="1" placeholder="Ask your agent anything…"></textarea>
+            <button class="btn btn-primary" id="send-btn" onclick="sendMsg()">Send</button>
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
 
@@ -234,7 +282,8 @@ function taskRow(t) {
   const note = done
     ? (t.kind === 'baa' ? 'Signed and on file. You can view it any time.'
                         : 'Received. Nothing further needed from you here.')
-    : (t.kind === 'baa' ? 'A short agreement that lets us handle your employees’ information properly.'
+    : (t.kind === 'baa' ? 'The one HIPAA document this needs. It legally binds us to protect '
+                        + 'your employees’ health information. About two minutes.'
                         : 'The employee list carriers need before they will quote your group.');
   return '<div class="task">'
     + '<div class="dot ' + (done ? 'done' : 'todo') + '">' + (done ? '✓' : '!') + '</div>'
@@ -275,6 +324,26 @@ function paint() {
 function paintThread() {
   const t = el('thread');
   const msgs = WS.messages || [];
+
+  /* Count what the AGENT has said since the employer last wrote. Crimson on
+     this page always means "something wants you", and a badge that counts your
+     own messages back at you would mean nothing. */
+  const badge = el('msg-badge');
+  if (badge) {
+    let fromAgent = 0;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].mine) break;
+      fromAgent++;
+    }
+    badge.style.display = fromAgent ? 'inline-block' : 'none';
+    badge.textContent = fromAgent;
+  }
+  const sub = el('rail-sub');
+  if (sub) {
+    sub.textContent = msgs.length
+      ? 'Straight to ' + ((WS.agent || {}).name || 'your agent') + ' — everything you have said is kept here.'
+      : 'Straight to your agent — no inbox, no waiting on hold.';
+  }
   if (!msgs.length) {
     t.innerHTML = '<div class="empty">No messages yet. Anything you send here goes straight to '
       + esc((WS.agent || {}).name || 'your agent') + '.</div>';
@@ -352,7 +421,7 @@ function gateRequest(title, msg) {
     + 'style="width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:9px;'
     + 'font-family:inherit;font-size:15px;margin-bottom:12px;text-align:center;" />'
     + '<button class="btn btn-primary" style="width:100%;" id="req-btn" onclick="requestLink()">'
-    + 'Email me a link</button>'
+    + 'Email me a New Link</button>'
     + '<p id="req-note" style="margin-top:14px;font-size:13px;"></p>';
   el('gate').style.display = 'block';
   el('app').style.display  = 'none';
