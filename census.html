@@ -263,7 +263,7 @@
 const SUPA_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
-let reqId = null, req = null, EXISTING = [], SHEETS_READ = [];
+let reqId = null, req = null, EXISTING = [], SHEETS_READ = [], autoEmpSeq_ = 0;
 
 /* A read-only look at what is on file. Names are optional on a census, so this
    falls back to the employee number rather than showing a blank line. */
@@ -601,6 +601,32 @@ function ingestRows(rows, filename) {
     });
   }
 
+  /* Give everyone a reference where the spreadsheet had none. Employees get a
+     sequential number; their dependants inherit it, which is what actually ties
+     a family together once the rows are separated from their original order.
+     Blanks only — a real payroll number is never overwritten. */
+  let numFilled = 0, currentEmpNo = '';
+  document.querySelectorAll('#rows tr').forEach(tr => {
+    const f = tr.querySelector('.f-num');
+    if (!f) return;
+    if (tr.dataset.rowType === 'employee') {
+      if (!(f.value || '').trim()) {
+        currentEmpNo = 'E' + String(++autoEmpSeq_).padStart(3, '0');
+        f.value = currentEmpNo;
+        f.style.background = '#fdf6e6';
+        f.title = 'Assigned by us — this census had no employee numbers';
+        numFilled++;
+      } else {
+        currentEmpNo = f.value.trim();
+      }
+    } else if (!(f.value || '').trim() && currentEmpNo) {
+      f.value = currentEmpNo;                 // a dependant belongs to the employee above
+      f.style.background = '#fdf6e6';
+      f.title = 'Matched to the employee above';
+      numFilled++;
+    }
+  });
+
   const mapped = Object.keys(map).map(k => k.replace(/_/g, ' ')).join(', ');
   const rpt = document.getElementById('map-report');
   rpt.style.display = 'block';
@@ -618,6 +644,12 @@ function ingestRows(rows, filename) {
           + zipFilled + ' row' + (zipFilled === 1 ? '' : 's') + ' had no ZIP, so we used your '
           + 'company ZIP (' + esc(coZip) + ') for now</span> — highlighted below. Rates depend on '
           + 'where someone lives, so please correct anyone who lives elsewhere.'
+        : '')
+    + (numFilled
+        ? '<br><span style="background:#fdf6e6;padding:1px 4px;border-radius:3px;">'
+          + 'Numbered ' + numFilled + ' row' + (numFilled === 1 ? '' : 's') + ' for you</span> — '
+          + 'this file had no employee numbers, so each employee was given one and their '
+          + 'dependants share it. Replace them with your own payroll numbers if you prefer.'
         : '')
     + '<br>Please review below — fix anything we got wrong, add what\'s missing, then send.'
     + (refused.length
@@ -641,7 +673,7 @@ function addRow(rowType, data) {
   const rel = data.relationship || (rowType === 'dependent' ? 'spouse' : 'employee');
   tr.innerHTML =
     '<td><input type="text" class="f-name" placeholder="' + (rowType === 'dependent' ? '↳ dependent name' : 'Full name') + '" value="' + esc(data.full_name || '') + '"/></td>'
-    + '<td style="max-width:80px;"><input type="text" class="f-num" value="' + esc(data.employee_number || '') + '"/></td>'
+    + '<td style="min-width:105px;"><input type="text" class="f-num" value="' + esc(data.employee_number || '') + '"/></td>'
     + '<td><input type="date" class="f-dob" value="' + esc(data.date_of_birth || '') + '"/></td>'
     + '<td style="max-width:70px;"><select class="f-gen"><option value=""></option><option value="M"' + (data.gender === 'M' ? ' selected' : '') + '>M</option><option value="F"' + (data.gender === 'F' ? ' selected' : '') + '>F</option></select></td>'
     + '<td style="max-width:85px;"><input type="text" class="f-zip" value="' + esc(data.zip || '') + '"/></td>'
