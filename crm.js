@@ -7244,6 +7244,11 @@ function openDealPanel(dealId) {
   }
 
   if (deal.pipeline === 'group-employer') {
+    healthHTML += '<div class="panel-section"><div class="panel-label">Employer</div>'
+      + '<div id="employer-line-' + deal.id + '" style="font-size:12px;color:var(--text-primary);">Loading&hellip;</div>'
+      + '</div>';
+    setTimeout(function() { loadEmployerLine_(deal); }, 60);
+
     healthHTML += '<div class="panel-section"><div class="panel-label">Employee Census</div>'
       + '<div id="census-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking census&hellip;</div>'
       + '<button class="btn btn-outline btn-sm" onclick="openCensusRequest(\'' + deal.id + '\')">&#128203; Request Census</button>'
@@ -7399,6 +7404,13 @@ async function drop(e, stage) {
   deal.stage = stage;
   await supabaseClient.from('deals').update({ stage }).eq('id', draggedDeal);
   draggedDeal = null; renderPipelines(); showToast('Deal moved to ' + stage);
+  // Qualified is where the employer record starts existing: it is the first
+  // point we have company facts worth keeping, and they are worth keeping even
+  // if this deal dies — a group that says no in March is one to work again in
+  // January. Offered, never forced, so a drag is still just a drag.
+  if (deal.pipeline === 'group-employer' && stage === 'Qualified' && !deal.employer_id) {
+    setTimeout(function() { openEmployerPicker(deal.id); }, 250);
+  }
 }
 
 // ── Contact search dropdown helpers ─────────────────────────────────────────
@@ -19788,6 +19800,384 @@ async function resendBaa_(baaId, a) {
   try { fetch(APPS_SCRIPT_URL + '?action=send_baa&baa_id=' + baaId, { mode: 'no-cors' }); } catch (e) {}
   showToast('Agreement email re-sent.');
   if (a) a.textContent = 'sent again ✓';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EMPLOYERS
+//
+// The employer is a fact about the world, not a pipeline artifact: a business
+// has 62 employees and renews in March whether or not they ever buy from us.
+// So the record is created at QUALIFIED, when research first produces company
+// facts worth keeping, and it survives a dead deal — because a group that says
+// no in March is a group to work again the following January, and that only
+// works if the research outlived the opportunity.
+//
+// Nothing is created before Qualified. A New Lead is only a contact.
+//
+// Clutter is handled by visibility, not by delaying creation: unverified
+// records stay out of the way until something is happening on them.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const EMPLOYER_ROLES = [
+  ['decision_maker', 'Decision maker',      'Owner or CFO — signs'],
+  ['benefits_admin', 'Benefits administrator', 'HR — does the work, and holds the workspace login'],
+  ['billing',        'Billing contact',     'Invoices and payment'],
+  ['employee',       'Employee',            'Covered member'],
+  ['other',          'Other',               ''],
+];
+const ENTITY_TYPES = ['LLC','S-Corp','C-Corp','Partnership','Sole Proprietor','Non-profit','Government','Other'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// What the panel shows for the employer behind a group deal.
+async function loadEmployerLine_(deal) {
+  const el = document.getElementById('employer-line-' + deal.id);
+  if (!el) return;
+  const contact = contacts.find(c => c.id === deal.contact_id);
+
+  if (!deal.employer_id) {
+    el.innerHTML = '<span style="color:var(--text-muted);">No employer record yet — created at Qualified, '
+      + 'and it keeps the renewal month that drives outreach timing.</span>'
+      + '<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" onclick="openEmployerPicker(\'' + deal.id + '\')">'
+      + '&#127970; Create or link the employer</button></div>';
+    return;
+  }
+
+  const { data: emp, error } = await supabaseClient.from('employers')
+    .select('*').eq('id', deal.employer_id).maybeSingle();
+  if (error || !emp) {
+    el.innerHTML = '<span style="color:var(--danger);">Employer record could not be loaded.</span>';
+    return;
+  }
+  const { data: people } = await supabaseClient.from('employer_contacts')
+    .select('role,is_primary,contact_id').eq('employer_id', emp.id);
+
+  const roleLabel = r => (EMPLOYER_ROLES.find(x => x[0] === r) || [null, r])[1];
+  const peopleLine = (people || []).length
+    ? (people || []).map(p => {
+        const c = contacts.find(x => x.id === p.contact_id);
+        return escWeb(c ? c.name : 'Someone') + ' <span style="color:var(--text-muted);">('
+             + escWeb(roleLabel(p.role)) + (p.is_primary ? ', main' : '') + ')</span>';
+      }).join(' &middot; ')
+    : '<span style="color:var(--warning);">Nobody attached yet — who decides, and who does the paperwork?</span>';
+
+  const size = emp.size_class === 'large'
+    ? '<span style="color:var(--warning);font-weight:700;">50+ (large)</span> &mdash; employer mandate applies, level-funded and self-funded in scope'
+    : emp.size_class === 'small'
+      ? 'Under 50 (small group)'
+      : '<span style="color:var(--text-muted);">size unknown — this decides the whole product menu</span>';
+
+  const renewal = emp.renewal_date
+    ? fmtDate(emp.renewal_date)
+    : (emp.renewal_month ? MONTHS[emp.renewal_month - 1] : null);
+
+  el.innerHTML =
+      '<div style="font-weight:700;font-size:13px;">' + escWeb(emp.legal_name)
+    + (emp.dba ? ' <span style="font-weight:400;color:var(--text-muted);">dba ' + escWeb(emp.dba) + '</span>' : '')
+    + (emp.verified_at
+        ? ' <span title="Confirmed by the employer" style="color:var(--success);">&#10003; verified</span>'
+        : ' <span title="Our research — the employer has not confirmed it" style="color:var(--text-muted);font-weight:400;">unverified</span>')
+    + '</div>'
+    + '<div style="margin-top:4px;">' + size + '</div>'
+    + '<div>' + (renewal
+        ? 'Renews <strong>' + escWeb(renewal) + '</strong>'
+          + (emp.current_carrier ? ' &middot; with ' + escWeb(emp.current_carrier) : '')
+          + renewalWindowNote_(emp)
+        : '<span style="color:var(--warning);">No renewal month yet — outreach cannot be timed without it.</span>')
+    + '</div>'
+    + '<div style="margin-top:4px;">' + peopleLine + '</div>'
+    + '<div style="margin-top:8px;">'
+    + '<button class="btn btn-outline btn-sm" onclick="openEmployerEditor(\'' + emp.id + '\',\'' + deal.id + '\')">&#9998; Employer details</button> '
+    + '<button class="btn btn-outline btn-sm" onclick="openEmployerPeople(\'' + emp.id + '\',\'' + deal.id + '\')">&#128101; People &amp; roles</button>'
+    + '</div>';
+}
+
+// Group business is won 90-120 days before renewal. Saying so on the panel is
+// the cheapest possible version of the renewal clock, and it works today.
+function renewalWindowNote_(emp) {
+  const m = emp.renewal_month || (emp.renewal_date ? new Date(emp.renewal_date + 'T00:00:00').getMonth() + 1 : null);
+  if (!m) return '';
+  const now = new Date();
+  let months = (m - 1) - now.getMonth();
+  if (months < 0) months += 12;
+  const days = months * 30;
+  if (days >= 90 && days <= 135) return ' &middot; <span style="color:var(--success);font-weight:700;">in the window now</span>';
+  if (days < 90) return ' &middot; <span style="color:var(--text-muted);">window has passed for this year</span>';
+  return ' &middot; <span style="color:var(--text-muted);">window opens in about ' + (months - 4) + ' months</span>';
+}
+
+// Create or link. The duplicate check runs BEFORE the insert, because 318 group
+// contacts carry a free-text company name and every one is a chance to make a
+// second copy of a business we already know.
+function openEmployerPicker(dealId) {
+  const deal = deals.find(d => d.id === dealId); if (!deal) return;
+  const contact = contacts.find(c => c.id === deal.contact_id);
+  const guessName = (contact && contact.company) || deal.title || '';
+  // The "use this one" links in the duplicate warning fire outside this
+  // closure, so the deal they apply to has to be reachable from there.
+  window._employerPickerDeal = dealId;
+
+  showModal('Employer for this deal', `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+      The employer record holds what stays true about the business — headcount, renewal month,
+      who they are with now. It outlives this deal, so if they say no this year the research is
+      still here when their renewal comes round again.
+    </p>
+    <label>Legal company name *</label>
+    <input type="text" id="emp-name" value="${escWeb(guessName)}" oninput="employerDupCheck_()" />
+    <div id="emp-dupes" style="font-size:12px;margin:6px 0;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label>City</label><input type="text" id="emp-city" value="${escWeb((contact && contact.city) || '')}" /></div>
+      <div><label>State</label><input type="text" id="emp-state" maxlength="2" value="${escWeb((contact && contact.state) || '')}" /></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label>ZIP</label><input type="text" id="emp-zip" value="${escWeb((contact && contact.zip) || '')}" oninput="employerDupCheck_()" /></div>
+      <div><label>Renewal month</label>
+        <select id="emp-renewal-month">
+          <option value="">Not known yet</option>
+          ${MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('')}
+        </select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label>Full-time equivalents</label><input type="number" id="emp-fte" step="0.5" placeholder="decides small vs large" /></div>
+      <div><label>Current carrier</label><input type="text" id="emp-carrier" placeholder="or leave blank if none" /></div>
+    </div>
+    ${contact ? `<label style="margin-top:10px;">Attach ${escWeb(contact.name)} as</label>
+    <select id="emp-role">
+      ${EMPLOYER_ROLES.filter(r => r[0] !== 'employee').map(r => `<option value="${r[0]}">${r[1]}${r[2] ? ' — ' + r[2] : ''}</option>`).join('')}
+    </select>` : ''}
+  `, async () => {
+    const name = document.getElementById('emp-name').value.trim();
+    if (!name) { showToast('The legal company name is required.'); return false; }
+    const fte = parseFloat(document.getElementById('emp-fte').value);
+    const rm  = parseInt(document.getElementById('emp-renewal-month').value, 10);
+
+    const { data: emp, error } = await supabaseClient.from('employers').insert({
+      legal_name:       name,
+      city:             document.getElementById('emp-city').value.trim() || null,
+      state:            document.getElementById('emp-state').value.trim().toUpperCase() || null,
+      zip:              document.getElementById('emp-zip').value.trim() || null,
+      fte_count:        isNaN(fte) ? null : fte,
+      renewal_month:    isNaN(rm) ? null : rm,
+      current_carrier:  document.getElementById('emp-carrier').value.trim() || null,
+      primary_agent_id: deal.agent_id || currentAgent.id,
+      agency_id:        currentAgent.agency_id || null,
+      created_by_agent_id: currentAgent.id,
+    }).select().single();
+    if (error) { showToast('Error: ' + error.message); return false; }
+
+    await linkEmployerToDeal_(deal, emp.id);
+    if (contact) {
+      await supabaseClient.from('employer_contacts').insert({
+        employer_id: emp.id, contact_id: contact.id,
+        role: document.getElementById('emp-role').value,
+        is_primary: true, created_by_agent_id: currentAgent.id,
+      });
+    }
+    showToast('Employer created — its workspace exists but stays dark until the census ask.');
+  }, { confirmLabel: 'Create employer' });
+
+  setTimeout(employerDupCheck_, 100);
+}
+
+// A warning the agent resolves, never a wall: two franchise locations can
+// legitimately share a name and a ZIP.
+async function employerDupCheck_() {
+  const box = document.getElementById('emp-dupes'); if (!box) return;
+  const name = (document.getElementById('emp-name') || {}).value || '';
+  const zip  = (document.getElementById('emp-zip')  || {}).value || '';
+  if (name.trim().length < 3) { box.innerHTML = ''; return; }
+  const { data, error } = await supabaseClient.rpc('find_employer_duplicates',
+    { p_name: name.trim(), p_zip: zip.trim() || null });
+  if (error || !data || !data.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div style="background:var(--surface-2);border:0.5px solid var(--warning);border-radius:6px;padding:8px;">'
+    + '<strong>We may already know this business.</strong><br>'
+    + data.map(d => escWeb(d.legal_name) + (d.city ? ' — ' + escWeb(d.city) + ', ' + escWeb(d.state || '') : '')
+        + ' <span style="color:var(--text-muted);">(' + escWeb(d.match_reason) + ')</span>'
+        + ' <a href="#" onclick="useExistingEmployer_(\'' + d.id + '\'); return false;">use this one</a>').join('<br>')
+    + '</div>';
+}
+
+async function useExistingEmployer_(employerId) {
+  const deal = deals.find(d => d.id === window._employerPickerDeal);
+  if (!deal) { closeModal(); return; }
+  await linkEmployerToDeal_(deal, employerId);
+  closeModal();
+  showToast('Linked to the employer we already had.');
+}
+
+async function linkEmployerToDeal_(deal, employerId) {
+  const { error } = await supabaseClient.from('deals')
+    .update({ employer_id: employerId }).eq('id', deal.id);
+  if (error) { showToast('Error linking employer: ' + error.message); return; }
+  deal.employer_id = employerId;
+  loadEmployerLine_(deal);
+}
+
+async function openEmployerEditor(employerId, dealId) {
+  const { data: emp, error } = await supabaseClient.from('employers')
+    .select('*').eq('id', employerId).maybeSingle();
+  if (error || !emp) { showToast('Could not load that employer.'); return; }
+  const { data: locs } = await supabaseClient.from('employer_locations')
+    .select('*').eq('employer_id', employerId).order('is_primary', { ascending: false });
+
+  const sel = (v, o) => o.map(x => `<option value="${x}" ${x === v ? 'selected' : ''}>${x}</option>`).join('');
+
+  showModal('Employer &mdash; ' + escWeb(emp.legal_name), `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+      ${emp.verified_at
+        ? '&#10003; Confirmed by the employer ' + escWeb(fmtDate(emp.verified_at) || '')
+        : 'Unverified — this is our research. The employer confirms it when they return their census.'}
+    </div>
+    <label>Legal name *</label><input type="text" id="ee-legal" value="${escWeb(emp.legal_name)}" />
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label>DBA</label><input type="text" id="ee-dba" value="${escWeb(emp.dba || '')}" /></div>
+      <div><label>Entity type</label><select id="ee-entity"><option value="">—</option>${sel(emp.entity_type, ENTITY_TYPES)}</select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label>EIN <span style="color:var(--text-muted);font-weight:400;">— carriers need it to quote and bind</span></label>
+           <input type="text" id="ee-ein" value="${escWeb(emp.ein || '')}" placeholder="00-0000000" /></div>
+      <div><label>SIC code</label><input type="text" id="ee-sic" value="${escWeb(emp.sic_code || '')}" /></div>
+    </div>
+    <label>Industry</label><input type="text" id="ee-industry" value="${escWeb(emp.industry || '')}" />
+
+    <div class="panel-label" style="margin-top:14px;">Size</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+      <div><label>Total employees</label><input type="number" id="ee-emp" value="${emp.employee_count ?? ''}" /></div>
+      <div><label>Benefit eligible</label><input type="number" id="ee-elig" value="${emp.eligible_count ?? ''}" /></div>
+      <div><label>Full-time equivalents</label><input type="number" step="0.5" id="ee-fte" value="${emp.fte_count ?? ''}" /></div>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+      50+ FTE makes them a large employer: the mandate applies, and level-funded and self-funded come into scope.
+      Currently <strong>${emp.size_class ? escWeb(emp.size_class) : 'unknown'}</strong>.
+    </div>
+
+    <div class="panel-label" style="margin-top:14px;">Renewal &mdash; this drives when we work them</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><label>Renewal date (if known)</label><input type="date" id="ee-rdate" value="${emp.renewal_date || ''}" /></div>
+      <div><label>Renewal month</label><select id="ee-rmonth"><option value="">—</option>
+        ${MONTHS.map((m, i) => `<option value="${i + 1}" ${emp.renewal_month === i + 1 ? 'selected' : ''}>${m}</option>`).join('')}
+      </select></div>
+    </div>
+    <label>Current carrier</label><input type="text" id="ee-carrier" value="${escWeb(emp.current_carrier || '')}" />
+
+    <div class="panel-label" style="margin-top:14px;">Legal / mailing address</div>
+    <label>Street</label><input type="text" id="ee-street" value="${escWeb(emp.street || '')}" />
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;">
+      <div><label>City</label><input type="text" id="ee-city" value="${escWeb(emp.city || '')}" /></div>
+      <div><label>State</label><input type="text" id="ee-state" maxlength="2" value="${escWeb(emp.state || '')}" /></div>
+      <div><label>ZIP</label><input type="text" id="ee-zip" value="${escWeb(emp.zip || '')}" /></div>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+      ${(locs || []).length
+        ? escWeb(String(locs.length)) + ' worksite(s) recorded. Employees in several states mean several rate areas.'
+        : 'No separate worksites recorded. Add them when employees work somewhere other than this address — it changes the rating.'}
+    </div>
+
+    <label style="margin-top:14px;">Notes <span style="color:var(--text-muted);font-weight:400;">— internal, never shown to the employer</span></label>
+    <textarea id="ee-notes" rows="3">${escWeb(emp.notes || '')}</textarea>
+  `, async () => {
+    const legal = document.getElementById('ee-legal').value.trim();
+    if (!legal) { showToast('Legal name is required.'); return false; }
+    const num = id => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? null : v; };
+    const { error: e2 } = await supabaseClient.from('employers').update({
+      legal_name:      legal,
+      dba:             document.getElementById('ee-dba').value.trim() || null,
+      entity_type:     document.getElementById('ee-entity').value || null,
+      ein:             document.getElementById('ee-ein').value.trim() || null,
+      sic_code:        document.getElementById('ee-sic').value.trim() || null,
+      industry:        document.getElementById('ee-industry').value.trim() || null,
+      employee_count:  num('ee-emp'),
+      eligible_count:  num('ee-elig'),
+      fte_count:       num('ee-fte'),
+      renewal_date:    document.getElementById('ee-rdate').value || null,
+      renewal_month:   parseInt(document.getElementById('ee-rmonth').value, 10) || null,
+      current_carrier: document.getElementById('ee-carrier').value.trim() || null,
+      street:          document.getElementById('ee-street').value.trim() || null,
+      city:            document.getElementById('ee-city').value.trim() || null,
+      state:           document.getElementById('ee-state').value.trim().toUpperCase() || null,
+      zip:             document.getElementById('ee-zip').value.trim() || null,
+      notes:           document.getElementById('ee-notes').value.trim() || null,
+    }).eq('id', employerId);
+    if (e2) { showToast('Error: ' + e2.message); return false; }
+    showToast('Employer saved.');
+    const deal = deals.find(d => d.id === dealId);
+    if (deal) loadEmployerLine_(deal);
+  }, { confirmLabel: 'Save employer' });
+}
+
+// People are ATTACHED with a role, never converted into one. The person we have
+// talked to for six weeks routinely turns out not to be the decision maker, and
+// both of them matter.
+async function openEmployerPeople(employerId, dealId) {
+  const { data: rows } = await supabaseClient.from('employer_contacts')
+    .select('*').eq('employer_id', employerId);
+  const attached = rows || [];
+
+  const attachedHtml = attached.length ? attached.map(r => {
+    const c = contacts.find(x => x.id === r.contact_id);
+    const role = (EMPLOYER_ROLES.find(x => x[0] === r.role) || [null, r.role])[1];
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border);">'
+      + '<div style="flex:1;"><strong>' + escWeb(c ? c.name : 'Unknown contact') + '</strong>'
+      + (r.is_primary ? ' <span style="color:var(--success);font-size:11px;">MAIN</span>' : '')
+      + '<br><span style="font-size:12px;color:var(--text-muted);">' + escWeb(role)
+      + (c && c.email ? ' &middot; ' + escWeb(c.email) : '') + '</span></div>'
+      + '<button class="btn btn-outline btn-sm" onclick="detachEmployerPerson_(\'' + r.id + '\',\'' + employerId + '\',\'' + dealId + '\')">Remove</button>'
+      + '</div>';
+  }).join('') : '<div style="color:var(--text-muted);font-size:12px;padding:6px 0;">Nobody attached yet.</div>';
+
+  const candidates = contacts
+    .filter(c => c.type === 'Group/Employer' && !attached.some(a => a.contact_id === c.id))
+    .slice(0, 300);
+
+  showModal('People at this employer', `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+      One person can hold more than one role. Keep everybody — the person you have been
+      talking to often turns out not to be the one who signs, and you need both.
+    </p>
+    ${attachedHtml}
+    <div class="panel-label" style="margin-top:14px;">Attach someone</div>
+    <label>Contact</label>
+    <select id="ep-contact"><option value="">Choose a contact…</option>
+      ${candidates.map(c => `<option value="${c.id}">${escWeb(c.name)}${c.company ? ' — ' + escWeb(c.company) : ''}</option>`).join('')}
+    </select>
+    <label>Role</label>
+    <select id="ep-role">${EMPLOYER_ROLES.map(r => `<option value="${r[0]}">${r[1]}${r[2] ? ' — ' + r[2] : ''}</option>`).join('')}</select>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+      <input type="checkbox" id="ep-primary" style="width:auto;" /> Make this the main contact
+    </label>
+  `, async () => {
+    const cid = document.getElementById('ep-contact').value;
+    if (!cid) { showToast('Choose a contact to attach.'); return false; }
+    const makePrimary = document.getElementById('ep-primary').checked;
+    // Only one main contact per employer — the database enforces it, so stand
+    // the old one down first rather than letting the insert fail.
+    if (makePrimary) {
+      await supabaseClient.from('employer_contacts')
+        .update({ is_primary: false }).eq('employer_id', employerId).eq('is_primary', true);
+    }
+    const { error } = await supabaseClient.from('employer_contacts').insert({
+      employer_id: employerId, contact_id: cid,
+      role: document.getElementById('ep-role').value,
+      is_primary: makePrimary, created_by_agent_id: currentAgent.id,
+    });
+    if (error) {
+      showToast(/duplicate|unique/i.test(error.message)
+        ? 'That person already holds that role here.' : 'Error: ' + error.message);
+      return false;
+    }
+    showToast('Attached.');
+    const deal = deals.find(d => d.id === dealId);
+    if (deal) loadEmployerLine_(deal);
+  }, { confirmLabel: 'Attach' });
+}
+
+async function detachEmployerPerson_(rowId, employerId, dealId) {
+  if (!confirm('Remove this person from the employer? The contact itself is not deleted.')) return;
+  const { error } = await supabaseClient.from('employer_contacts').delete().eq('id', rowId);
+  if (error) { showToast('Error: ' + error.message); return; }
+  const deal = deals.find(d => d.id === dealId);
+  if (deal) loadEmployerLine_(deal);
+  openEmployerPeople(employerId, dealId);
 }
 
 async function loadCensusStatus_(deal) {
