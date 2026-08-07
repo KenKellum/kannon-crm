@@ -665,6 +665,18 @@
 .mia-conv{display:flex;flex-direction:column;gap:3px;padding:12px 16px;cursor:pointer;
   border-bottom:0.5px solid var(--border)}
 .mia-conv:hover{background:var(--surface-2)}
+/* Unread should be findable at a glance, not by reading every row. A crimson
+   edge and a heavier title — crimson in this drawer always means "something
+   wants you", which is the same rule the employer workspace follows.
+   --mia-crimson is the theme-aware pair, so the edge stays visible on the dark
+   surface and on the light one; a hardcoded crimson would vanish into one of
+   them. The 3px border eats 3px of the 16px padding, hence 13px, so titles stay
+   on the same left edge as the rows that are read. */
+.mia-conv.unread{background:var(--surface-2);
+  border-left:3px solid var(--mia-crimson);padding-left:13px}
+.mia-conv.unread:hover{background:var(--surface-3)}
+.mia-conv.unread .mia-conv-title{font-weight:700}
+.mia-conv.unread .mia-conv-last{color:var(--text-primary)}
 .mia-conv-top{display:flex;align-items:center;gap:8px}
 .mia-conv-title{font-weight:600;font-size:13.5px;color:var(--text-primary);flex:1;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -729,6 +741,6 @@
     }
   });
 </script>
-<script src="./crm.js?v=20260807-309"></script>
+<script src="./crm.js?v=20260807-310"></script>
 </body>
 </html>

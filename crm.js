@@ -1227,7 +1227,8 @@ async function miaShowList() {
     return;
   }
   body.innerHTML = head + data.map(c =>
-    '<div class="mia-conv" onclick="miaOpen(\'' + c.kind + '\',\'' + c.thread_id + '\',\''
+    '<div class="mia-conv' + (c.unread ? ' unread' : '')
+      + '" onclick="miaOpen(\'' + c.kind + '\',\'' + c.thread_id + '\',\''
       + escWeb(String(c.title || '')).replace(/'/g, '&#39;') + '\')">'
     + '<div class="mia-conv-top"><span class="mia-conv-title">' + escWeb(c.title || 'Conversation') + '</span>'
     + (c.unread ? '<span class="mia-badge">' + c.unread + '</span>' : '')
