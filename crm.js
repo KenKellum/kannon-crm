@@ -1000,16 +1000,15 @@ function speakIA_() {
       u.pitch = pitch; u.rate = rate; u.volume = 0.95;
       ss.speak(u);
     };
-    /* EXACTLY what Ken auditioned and approved as number 7. Do not "improve" it.
-       I flattened both notes to 1.05 afterwards, reasoning that the bell already
-       carried the tune so the voice need not sing it — and that broke it. Two
-       identical flat syllables with the queue's gap between them read as a
-       stumble. The FALLING pitch is what binds them into one phrase; it papers
-       over the gap that sits between any two queued utterances.
-       "A." keeps the full stop: it forces the letter to stand alone, which makes
-       an engine name it rather than read it as the article "uh". */
-    sing('I',  1.45, 0.9);
-    sing('A.', 1.0,  0.8);
+    /* ONE utterance. Chosen by ear, and do not "improve" it.
+       Two queued utterances always have a gap between them and the API gives no
+       way to close it — that gap was the pause, not the bell and not the pitch.
+       Said in a single breath there is nothing to close. The engine chooses its
+       own prosody inside a phrase, so it will not fall like a doorbell; the bell
+       in front of it already did that job.
+       "I A." keeps the full stop, which makes the engine name the letter rather
+       than read it as the article "uh". */
+    sing('I A.', 1.2, 0.85);
     return true;
   } catch (e) { return false; }
 }
@@ -1031,7 +1030,7 @@ function chime_(force) {
   const mode = chimeMode_();
   if (mode === 'off' && !force) return;
   bell_();
-  if (mode !== 'bell') setTimeout(speakIA_, 900);     // after the dong stops ringing
+  if (mode !== 'bell') setTimeout(speakIA_, 900);     // over the dong's tail, on purpose
 }
 
 function bell_() {
