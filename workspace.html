@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Your Benefits Workspace — The Insured America Agency</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+/* The Insured America theme: navy authority, gold restraint, Kannon underneath.
+   Client-facing, so light and calm — a benefits workspace should feel like a
+   private office, not a dashboard. */
+:root{
+  --ia:#1d3557; --ia-deep:#152741; --ia-soft:#2a4a73;
+  --gold:#c8a84b; --gold-soft:#e2cd8f;
+  --ink:#16202e; --body:#41506414; --text:#33415a; --muted:#6b7a90;
+  --line:#e4e9f0; --paper:#ffffff; --wash:#f6f8fb;
+  --ok:#177245; --ok-bg:#eaf4ee; --warn:#8a6100; --warn-bg:#fdf6e6;
+  --shadow:0 1px 2px rgba(21,39,65,.04),0 8px 28px rgba(21,39,65,.07);
+  --shadow-lift:0 2px 4px rgba(21,39,65,.06),0 18px 44px rgba(21,39,65,.12);
+  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--wash);color:var(--text);font-family:var(--sans);
+     font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+
+/* ── masthead ─────────────────────────────────────────────────────────── */
+.masthead{background:linear-gradient(160deg,var(--ia) 0%,var(--ia-deep) 100%);
+          color:#fff;padding:0;position:relative}
+.masthead::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;
+          background:linear-gradient(90deg,var(--gold) 0%,var(--gold-soft) 45%,transparent 100%)}
+.mast-inner{max-width:940px;margin:0 auto;padding:22px 28px;
+          display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.mark{width:46px;height:46px;border-radius:3px;background:#fff;color:var(--ia);
+      display:flex;align-items:center;justify-content:center;flex-shrink:0;
+      font-family:var(--serif);font-weight:700;font-size:19px;letter-spacing:-.5px}
+.mast-name{font-family:var(--serif);font-size:17px;font-weight:700;
+          letter-spacing:.06em;line-height:1.2}
+.mast-tag{font-size:10.5px;color:var(--gold);letter-spacing:.16em;
+          font-style:italic;margin-top:3px}
+.mast-parent{margin-left:auto;text-align:right;font-size:9.5px;line-height:1.5;
+          letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+
+/* ── page ─────────────────────────────────────────────────────────────── */
+.wrap{max-width:940px;margin:0 auto;padding:38px 28px 80px}
+.greeting{font-family:var(--serif);font-size:30px;line-height:1.25;color:var(--ink);
+          font-weight:400;letter-spacing:-.2px}
+.greeting strong{font-weight:700}
+.sub{color:var(--muted);margin-top:8px;font-size:15px;max-width:60ch}
+.rule{height:1px;background:var(--line);margin:30px 0}
+
+.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+         color:var(--muted);margin-bottom:14px}
+
+.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;
+      box-shadow:var(--shadow);overflow:hidden}
+.card + .card{margin-top:16px}
+
+/* tasks */
+.task{display:flex;align-items:center;gap:16px;padding:20px 24px;
+      border-bottom:1px solid var(--line);transition:background .15s}
+.task:last-child{border-bottom:0}
+.task:hover{background:#fbfcfe}
+.dot{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;
+     align-items:center;justify-content:center;font-size:15px;font-weight:700}
+.dot.todo{background:var(--warn-bg);color:var(--warn);border:1px solid #efdfb4}
+.dot.done{background:var(--ok-bg);color:var(--ok);border:1px solid #cfe6d8}
+.task-body{flex:1;min-width:0}
+.task-title{font-weight:600;color:var(--ink);font-size:15px}
+.task-note{font-size:13px;color:var(--muted);margin-top:2px}
+
+.btn{display:inline-block;border:0;border-radius:8px;padding:11px 20px;font-size:14px;
+     font-weight:600;cursor:pointer;text-decoration:none;font-family:inherit;
+     transition:transform .12s,box-shadow .15s,background .15s}
+.btn-primary{background:linear-gradient(165deg,var(--ia-soft),var(--ia));color:#fff;
+     box-shadow:0 1px 2px rgba(21,39,65,.2),0 6px 18px rgba(21,39,65,.22)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:var(--shadow-lift)}
+.btn-quiet{background:var(--paper);color:var(--ia);border:1px solid var(--line)}
+.btn-quiet:hover{border-color:var(--ia-soft);background:#fbfcfe}
+
+/* agent */
+.agent{display:flex;align-items:center;gap:16px;padding:22px 24px}
+.avatar{width:52px;height:52px;border-radius:50%;flex-shrink:0;
+        background:linear-gradient(160deg,var(--ia-soft),var(--ia));color:#fff;
+        display:flex;align-items:center;justify-content:center;
+        font-family:var(--serif);font-size:19px;font-weight:700;
+        box-shadow:0 4px 12px rgba(21,39,65,.24)}
+.agent a{color:var(--ia);text-decoration:none;font-weight:600}
+.agent a:hover{text-decoration:underline}
+
+/* messages */
+.thread{padding:8px 24px 4px;max-height:420px;overflow-y:auto}
+.msg{padding:12px 0;display:flex;flex-direction:column;gap:4px}
+.bubble{padding:12px 16px;border-radius:12px;max-width:78%;font-size:14.5px}
+.msg.them .bubble{background:var(--wash);border:1px solid var(--line);
+                  border-bottom-left-radius:4px;align-self:flex-start}
+.msg.mine{align-items:flex-end}
+.msg.mine .bubble{background:linear-gradient(165deg,var(--ia-soft),var(--ia));color:#fff;
+                  border-bottom-right-radius:4px}
+.meta{font-size:11.5px;color:var(--muted);letter-spacing:.02em}
+.composer{border-top:1px solid var(--line);padding:16px 24px;display:flex;gap:12px;
+          align-items:flex-end;background:#fcfdfe}
+textarea{flex:1;border:1px solid var(--line);border-radius:9px;padding:11px 14px;
+         font-family:inherit;font-size:14.5px;color:var(--text);resize:vertical;
+         min-height:46px;background:#fff;transition:border-color .15s,box-shadow .15s}
+textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(42,74,115,.1)}
+
+.empty{padding:26px 24px;color:var(--muted);font-size:14px}
+.foot{max-width:940px;margin:0 auto;padding:26px 28px 40px;color:var(--muted);
+      font-size:12px;line-height:1.75;text-align:center}
+.foot .sep{color:var(--line);margin:0 8px}
+
+.gate{max-width:520px;margin:12vh auto;padding:44px 40px;background:var(--paper);
+      border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lift);
+      text-align:center}
+.gate h1{font-family:var(--serif);font-size:24px;color:var(--ink);font-weight:700;margin-bottom:12px}
+.gate p{color:var(--muted);font-size:14.5px}
+.spin{width:26px;height:26px;border:2.5px solid var(--line);border-top-color:var(--ia);
+      border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 18px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:640px){
+  .wrap{padding:26px 18px 60px}.mast-inner{padding:18px}
+  .greeting{font-size:24px}.bubble{max-width:88%}
+  .task{flex-wrap:wrap}.mast-parent{margin-left:0;text-align:left;width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="mast-inner">
+    <div class="mark">IA</div>
+    <div>
+      <div class="mast-name">THE INSURED AMERICA AGENCY</div>
+      <div class="mast-tag">&ldquo;Protect &amp; Build Your Potential&rdquo;</div>
+    </div>
+    <div class="mast-parent">A Kannon Financial<br>Group Brand</div>
+  </div>
+</div>
+
+<div id="gate" class="gate">
+  <div class="spin"></div>
+  <h1>Opening your workspace</h1>
+  <p>One moment.</p>
+</div>
+
+<div id="app" style="display:none;">
+  <div class="wrap">
+    <div class="greeting">Welcome, <strong id="w-company">—</strong></div>
+    <p class="sub" id="w-sub">This is your private benefits workspace. Everything we need from
+       you, and everything we send back, lives here — you will not need to hunt through email.</p>
+
+    <div class="rule"></div>
+
+    <div id="tasks-wrap" style="display:none;">
+      <div class="eyebrow">What we need from you</div>
+      <div class="card" id="tasks"></div>
+      <div style="height:30px;"></div>
+    </div>
+
+    <div class="eyebrow">Your agent</div>
+    <div class="card"><div class="agent">
+      <div class="avatar" id="a-initials">—</div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);font-size:15.5px;" id="a-name">—</div>
+        <div style="font-size:13.5px;margin-top:3px;">
+          <a id="a-email" href="#">—</a>
+          <span id="a-phone-wrap" style="display:none;"><span style="color:var(--line);margin:0 8px;">|</span>
+          <a id="a-phone" href="#">—</a></span>
+        </div>
+      </div>
+    </div></div>
+
+    <div style="height:30px;"></div>
+
+    <div class="eyebrow">Messages</div>
+    <div class="card">
+      <div class="thread" id="thread"></div>
+      <div class="composer">
+        <textarea id="msg" rows="1" placeholder="Ask your agent anything…"></textarea>
+        <button class="btn btn-primary" id="send-btn" onclick="sendMsg()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    The Insured America Agency <span class="sep">•</span> a brand of Kannon Financial Group<br>
+    161 West Haley Springs Rd, Unit 104, Suite 203, Bozeman MT 59718
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+
+/* The magic link lands here with its tokens in the URL fragment; supabase-js
+   turns that into a session. Nothing on this page reads an employer table — it
+   asks get_my_workspace(), which decides from the session alone what this
+   person may see. A link forwarded to somebody else grants them nothing. */
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { detectSessionInUrl: true, persistSession: true, storageKey: 'kfg-workspace' }
+});
+
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const el  = id => document.getElementById(id);
+let WS = null;
+
+function gate(title, msg) {
+  el('gate').innerHTML = '<h1>' + esc(title) + '</h1><p>' + msg + '</p>';
+  el('gate').style.display = 'block';
+  el('app').style.display  = 'none';
+}
+
+function initials(name) {
+  return String(name || '?').trim().split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+}
+
+function when(iso) {
+  const d = new Date(iso), now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })
+    : d.toLocaleDateString([], { month:'short', day:'numeric' })
+      + ' · ' + d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+}
+
+function taskRow(t) {
+  const done = t.status === 'signed' || t.status === 'submitted';
+  const href = t.kind === 'baa' ? 'baa.html?b=' + encodeURIComponent(t.id)
+                                : 'census.html?c=' + encodeURIComponent(t.id);
+  const note = done
+    ? (t.kind === 'baa' ? 'Signed and on file. You can view it any time.'
+                        : 'Received. Nothing further needed from you here.')
+    : (t.kind === 'baa' ? 'A short agreement that lets us handle your employees’ information properly.'
+                        : 'The employee list carriers need before they will quote your group.');
+  return '<div class="task">'
+    + '<div class="dot ' + (done ? 'done' : 'todo') + '">' + (done ? '✓' : '!') + '</div>'
+    + '<div class="task-body"><div class="task-title">' + esc(t.label) + '</div>'
+    + '<div class="task-note">' + note + '</div></div>'
+    + '<a class="btn ' + (done ? 'btn-quiet' : 'btn-primary') + '" href="' + href + '">'
+    + (done ? 'View' : 'Continue') + '</a></div>';
+}
+
+function paint() {
+  el('w-company').textContent = WS.employer.dba || WS.employer.name;
+
+  const open = (WS.tasks || []).filter(t => t.status !== 'signed' && t.status !== 'submitted');
+  if ((WS.tasks || []).length) {
+    el('tasks-wrap').style.display = 'block';
+    el('tasks').innerHTML = WS.tasks.map(taskRow).join('');
+    if (!open.length) {
+      el('w-sub').textContent = 'Everything we asked for is in. We are working on your options and '
+        + 'will be in touch here as soon as we have something to show you.';
+    }
+  }
+
+  const a = WS.agent || {};
+  el('a-initials').textContent = initials(a.name);
+  el('a-name').textContent = a.name || 'Your agent';
+  if (a.email) { el('a-email').textContent = a.email; el('a-email').href = 'mailto:' + a.email; }
+  if (a.phone) {
+    el('a-phone-wrap').style.display = 'inline';
+    el('a-phone').textContent = a.phone;
+    el('a-phone').href = 'tel:' + String(a.phone).replace(/[^0-9+]/g,'');
+  }
+
+  paintThread();
+  el('gate').style.display = 'none';
+  el('app').style.display  = 'block';
+}
+
+function paintThread() {
+  const t = el('thread');
+  const msgs = WS.messages || [];
+  if (!msgs.length) {
+    t.innerHTML = '<div class="empty">No messages yet. Anything you send here goes straight to '
+      + esc((WS.agent || {}).name || 'your agent') + '.</div>';
+    return;
+  }
+  t.innerHTML = msgs.map(m =>
+    '<div class="msg ' + (m.mine ? 'mine' : 'them') + '">'
+    + '<div class="bubble">' + esc(m.body).replace(/\n/g,'<br>') + '</div>'
+    + '<div class="meta">' + esc(m.mine ? 'You' : (m.who || 'Your agent'))
+    + ' · ' + when(m.created_at) + '</div></div>').join('');
+  t.scrollTop = t.scrollHeight;
+}
+
+async function sendMsg() {
+  const box = el('msg'), btn = el('send-btn');
+  const body = box.value.trim();
+  if (!body) return;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  const { data, error } = await sb.rpc('workspace_send_message', { p_body: body });
+  btn.disabled = false; btn.textContent = 'Send';
+  if (error || data === false) {
+    alert('That did not send. Please try again, or email your agent directly.');
+    return;
+  }
+  box.value = '';
+  WS.messages = (WS.messages || []).concat([{
+    mine: true, who: 'You', body: body, created_at: new Date().toISOString()
+  }]);
+  paintThread();
+}
+
+el('msg') && el('msg').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendMsg();
+});
+
+async function init() {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      gate('This link has expired',
+        'Workspace links are single use and time limited, which is what keeps your '
+        + 'employees’ information safe. Ask your agent to send a fresh one and it will '
+        + 'open straight away.');
+      return;
+    }
+    const { data, error } = await sb.rpc('get_my_workspace');
+    if (error) throw error;
+    if (!data) {
+      gate('We cannot open a workspace for this sign-in',
+        'The address you signed in with is not set up for a workspace, or access has been '
+        + 'withdrawn. Your agent can sort this out in a moment.');
+      return;
+    }
+    WS = data;
+    paint();
+  } catch (err) {
+    console.error(err);
+    gate('Something went wrong',
+      'Please try your link again. If it keeps happening, reply to the email that brought '
+      + 'you here and we will look into it.');
+  }
+}
+init();
+</script>
+</body>
+</html>
