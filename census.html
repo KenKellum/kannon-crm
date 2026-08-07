@@ -267,7 +267,7 @@
 const SUPA_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
-let reqId = null, req = null, EXISTING = [];
+let reqId = null, req = null, EXISTING = [], SHEETS_READ = [];
 
 /* A read-only look at what is on file. Names are optional on a census, so this
    falls back to the employee number rather than showing a blank line. */
@@ -343,11 +343,19 @@ const SYN = {
   last_name:   ['last name','lastname','last','lname','surname','family name'],
   full_name:   ['name','full name','employee name','member name','fullname','employee'],
   ssn:             ['ssn','social security','social security number','social security #','ss#','ss #','soc sec','socsec'],
-  employee_number: ['emp #','emp#','employee #','employee number','employee id','emp id','id','payroll id','member id'],
+  employee_number: ['emp #','emp#','employee #','employee number','employee id','emp id','id',
+                    'payroll id','member id','member #','member#','member number','subscriber id'],
   date_of_birth: ['dob','date of birth','birth date','birthdate','birthday','born','d.o.b.','d.o.b'],
   gender:      ['gender','sex','m/f','male/female'],
   zip:         ['zip','zip code','zipcode','postal','postal code','home zip'],
-  relationship:['relationship','rel','relation','dependent type','member type','type','role','ee/dep','status'],
+  /* 'status' was in this list and it is simply wrong — a Status column means
+     Active / Terminated / COBRA, never a relationship. On a real Allstate export
+     it claimed the column before "Relation Type" could, so every row read
+     "Active", matched nothing, and the whole census came in as one kind of
+     person. Plain 'type' is gone for the same reason: it is as likely to be
+     "Plan Type" as anything to do with relationships. */
+  relationship:['relationship','relationship type','rel','relation','relation type',
+                'dependent type','dependant type','member type','ee/dep','ee dep','role'],
   employee_class: ['class','employee class','division','job class','tier class'],
   hours_per_week: ['hours','hours per week','hrs/wk','hrs per week','avg hours','weekly hours','hours/week'],
 };
@@ -392,23 +400,52 @@ function mapHeaders(headers) {
   });
   return map;
 }
-function parseDOB(v) {
+/* Decide day-first or month-first ONCE for the whole column, not per value.
+   A real Allstate export arrived as 24/12/1981 — day first — and parsing each
+   value on its own produced "1981-24-12", a month of 24, which then sailed
+   through as a valid-looking string. Wrong dates are worse than missing ones:
+   nobody checks a date that looks plausible, and every rate is priced on age.
+   Any value with a first component above 12 settles it for the whole file. */
+function detectDayFirst_(values) {
+  let dayFirst = false, monthFirst = false;
+  (values || []).forEach(v => {
+    const m = String(v == null ? '' : v).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-]\d{2,4}/);
+    if (!m) return;
+    const a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+    if (a > 12 && b <= 12) dayFirst = true;
+    if (b > 12 && a <= 12) monthFirst = true;
+  });
+  // Genuinely contradictory: fall back to US convention rather than guess.
+  return dayFirst && !monthFirst;
+}
+
+function parseDOB(v, dayFirst) {
   if (v == null || v === '') return '';
-  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
-  if (typeof v === 'number') { // Excel serial date
-    const d = new Date(Math.round((v - 25569) * 86400000));
-    return isNaN(d) ? '' : d.toISOString().slice(0, 10);
-  }
+  const ok = d => (d && !isNaN(d.getTime())) ? d.toISOString().slice(0, 10) : '';
+  if (v instanceof Date) return ok(v);
+  if (typeof v === 'number') return ok(new Date(Math.round((v - 25569) * 86400000)));
+
   const s = String(v).trim();
   let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-  if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+  if (m) return build_(m[1], m[2], m[3]);
+
   m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
   if (m) {
-    let y = m[3].length === 2 ? (parseInt(m[3]) > new Date().getFullYear() % 100 ? '19' + m[3] : '20' + m[3]) : m[3];
-    return y + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
+    let y = m[3];
+    if (y.length === 2) y = (parseInt(y, 10) > (new Date().getFullYear() % 100)) ? '19' + y : '20' + y;
+    return dayFirst ? build_(y, m[2], m[1]) : build_(y, m[1], m[2]);
   }
-  const d = new Date(s);
-  return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+  return ok(new Date(s));
+
+  /* Reject an impossible date rather than emit it. The old version happily
+     returned 1981-24-12. */
+  function build_(y, mo, d) {
+    const Y = parseInt(y, 10), M = parseInt(mo, 10), D = parseInt(d, 10);
+    if (!(M >= 1 && M <= 12) || !(D >= 1 && D <= 31) || !(Y >= 1900 && Y <= 2100)) return '';
+    const dt = new Date(Date.UTC(Y, M - 1, D));
+    if (dt.getUTCMonth() !== M - 1 || dt.getUTCDate() !== D) return '';  // e.g. 31 February
+    return dt.toISOString().slice(0, 10);
+  }
 }
 function normGender(v) {
   const s = String(v || '').trim().toLowerCase();
@@ -443,8 +480,27 @@ function handleFile(file) {
     let rows;
     try {
       const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      /* Every sheet, not just the first. Employers do send employees on one tab
+         and dependants on another — Ken has run into it — and silently reading
+         only sheet one would drop every dependant without a word. Sheets whose
+         columns we cannot recognise are skipped, so a Notes or Instructions tab
+         costs nothing. */
+      rows = [];
+      SHEETS_READ = [];
+      wb.SheetNames.forEach(nm => {
+        const r = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, defval: '' });
+        if (!r || !r.length) return;
+        let ok = false;
+        for (let i = 0; i < Math.min(r.length, 10); i++) {
+          if (Object.keys(mapHeaders(r[i])).length >= 2) { ok = true; break; }
+        }
+        if (!ok) return;
+        SHEETS_READ.push(nm);
+        // A blank row between blocks makes each sheet's header findable again.
+        if (rows.length) rows.push([]);
+        r.forEach(x => rows.push(x));
+      });
+      if (!rows.length) rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
     } catch (err) {
       alert('We could not read that file. Please upload an Excel (.xlsx) or CSV file, or use the manual entry option.');
       return;
@@ -456,9 +512,12 @@ function handleFile(file) {
 }
 
 function ingestRows(rows, filename) {
-  // Find the header row: first row where at least 2 known columns match
+  /* Walk the whole file looking for headers as we go, rather than finding one
+     header at the top and assuming it holds. That is what lets a workbook with
+     employees on one sheet and dependants on another work: each sheet's header
+     simply re-arms the mapping when we reach it. */
   let headerIdx = -1, map = null;
-  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+  for (let i = 0; i < rows.length; i++) {
     const m = mapHeaders(rows[i]);
     if (Object.keys(m).length >= 2) { headerIdx = i; map = m; break; }
   }
@@ -466,6 +525,19 @@ function ingestRows(rows, filename) {
     alert('We could not recognize the columns in that file. Try our template, or enter the census manually.');
     return;
   }
+
+  /* Settle the date format across the WHOLE file before parsing a single row.
+     24/12/1981 is day-first; deciding per value produced a month of 24. */
+  const dateSamples = [];
+  {
+    let m2 = map;
+    for (let i = 0; i < rows.length; i++) {
+      const mm = mapHeaders(rows[i]);
+      if (Object.keys(mm).length >= 2) { m2 = mm; continue; }
+      if (m2 && m2.date_of_birth !== undefined && rows[i]) dateSamples.push(rows[i][m2.date_of_birth]);
+    }
+  }
+  const dayFirst = detectDayFirst_(dateSamples);
   /* Emptied silently. This used to call clearRows(), which now confirms with the
      user and hides the grid — so an import asked "are you sure?" halfway through
      and then dropped the rows into a hidden table. An import is not a decision
@@ -489,12 +561,15 @@ function ingestRows(rows, filename) {
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || r.every(c => String(c || '').trim() === '')) continue;
+    // A later sheet's header row: re-arm the mapping and move on.
+    const maybeHeader = mapHeaders(r);
+    if (Object.keys(maybeHeader).length >= 2) { map = maybeHeader; continue; }
     const get = f => map[f] !== undefined ? r[map[f]] : '';
     let name = '';
     if (map.full_name !== undefined) name = String(get('full_name') || '').trim();
     else if (map.first_name !== undefined || map.last_name !== undefined)
       name = (String(get('first_name') || '').trim() + ' ' + String(get('last_name') || '').trim()).trim();
-    const dob = parseDOB(get('date_of_birth'));
+    const dob = parseDOB(get('date_of_birth'), dayFirst);
     if (!name && !dob) continue;
     const rel = normRel(get('relationship'));
     const rowType = rel === 'employee' ? 'employee' : 'dependent';
@@ -517,7 +592,14 @@ function ingestRows(rows, filename) {
   rpt.style.display = 'block';
   const refused = window._censusRefused || [];
   rpt.innerHTML = '<strong>&#10003; Read ' + imported + ' row' + (imported === 1 ? '' : 's') + ' from ' + esc(filename) + '.</strong> '
-    + 'Columns recognized: ' + esc(mapped) + '.<br>Please review below — fix anything we got wrong, add what\'s missing, then send.'
+    + 'Columns recognized: ' + esc(mapped) + '.'
+    + (SHEETS_READ.length > 1
+        ? '<br>Read from ' + SHEETS_READ.length + ' sheets: ' + esc(SHEETS_READ.join(', ')) + '.'
+        : '')
+    + (dayFirst
+        ? '<br>Dates read as <strong>day/month/year</strong> — that is how this file is written.'
+        : '')
+    + '<br>Please review below — fix anything we got wrong, add what\'s missing, then send.'
     + (refused.length
         ? '<div style="margin-top:10px;padding:10px 12px;background:#fff7ed;border-left:4px solid #c2410c;border-radius:0 6px 6px 0;">'
           + '<strong>We deliberately ignored: ' + esc(refused.join(', ')) + '.</strong><br>'
