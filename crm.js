@@ -345,6 +345,7 @@ function showAuthError(msg) {
 async function showApp() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+  miaBoot();   // message centre handle appears once there is a signed-in agent
 
   const roleLabels = { system_owner: 'System Owner', broker_owner: 'Broker Owner', agency_owner: 'Broker Owner', agent: 'Agent' };
   const roleLabel = roleLabels[currentAgent.role] || currentAgent.role;
@@ -830,6 +831,166 @@ async function officePlan_(productId, carrierId, on) {
 }
 
 let _currentPage = 'dashboard';
+// ============================================================
+// MyIApro MESSAGE CENTRE (agent side)
+//
+// Reads agent_conversations / agent_thread rather than any one portal's table,
+// so employee and individual workspaces become a branch in the database and
+// nothing here changes. Lives outside the page container so navigating does not
+// discard a half-written reply.
+// ============================================================
+let miaThread = null;      // { kind, id, title } when a conversation is open
+let miaTimer  = null;
+
+function miaBoot() {
+  const tab = document.getElementById('mia-tab');
+  if (!tab || !currentAgent) return;
+  tab.style.display = 'flex';
+  miaRefreshBadge();
+  // Cheap count, and only while the tab is actually in front — a background tab
+  // polling for ever is how a laptop battery disappears.
+  if (miaTimer) clearInterval(miaTimer);
+  miaTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') miaRefreshBadge();
+  }, 60000);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('mia-drawer').classList.contains('open')) miaToggle(false);
+  });
+}
+
+async function miaRefreshBadge() {
+  try {
+    const { data, error } = await supabaseClient.rpc('agent_unread_messages');
+    if (error) return;
+    const n = data || 0;
+    const badge = document.getElementById('mia-badge');
+    const tab = document.getElementById('mia-tab');
+    if (!badge || !tab) return;
+    badge.textContent = n;
+    badge.style.display = n ? 'inline-block' : 'none';
+    tab.classList.toggle('has-unread', !!n);   // the dot pulses when something waits
+  } catch (e) {}
+}
+
+function miaToggle(force) {
+  const d = document.getElementById('mia-drawer'), s = document.getElementById('mia-scrim');
+  const tab = document.getElementById('mia-tab');
+  const open = (force === undefined) ? !d.classList.contains('open') : !!force;
+  d.classList.toggle('open', open);
+  s.classList.toggle('open', open);
+  d.setAttribute('aria-hidden', open ? 'false' : 'true');
+  tab.style.opacity = open ? '0' : '1';
+  tab.style.pointerEvents = open ? 'none' : 'auto';
+  if (open) miaShowList();
+}
+
+/* Owners can look across their office; agents cannot, and are not shown a
+   control that would do nothing for them. Defaults to MINE either way — an owner
+   opening this should see their own work first, not everyone's. */
+let miaScope = 'mine';
+function miaCanSeeOthers_() {
+  const r = (currentAgent && currentAgent.role) || '';
+  return r === 'system_owner' || r === 'broker_owner' || r === 'agency_owner';
+}
+async function miaSetScope(s) { miaScope = s; await miaShowList(); }
+
+async function miaShowList() {
+  miaThread = null;
+  document.getElementById('mia-back').style.display = 'none';
+  document.getElementById('mia-composer').style.display = 'none';
+  document.getElementById('mia-sub').textContent = '— Messages';
+  const body = document.getElementById('mia-body');
+  body.innerHTML = '<div class="mia-empty">Loading…</div>';
+
+  const { data, error } = await supabaseClient.rpc('agent_conversations', { p_scope: miaScope });
+  if (error) { body.innerHTML = '<div class="mia-empty">Could not load messages.</div>'; return; }
+
+  let head = '';
+  if (miaCanSeeOthers_()) {
+    let allN = 0;
+    try {
+      const { data: n } = await supabaseClient.rpc('agent_unread_messages_all');
+      allN = n || 0;
+    } catch (e) {}
+    const btn = (val, label) =>
+      '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;'
+      + (miaScope === val ? 'background:var(--surface-3);color:var(--text-primary);' : '')
+      + '" onclick="miaSetScope(\'' + val + '\')">' + label + '</button>';
+    head = '<div style="display:flex;gap:6px;align-items:center;padding:10px 16px;'
+      + 'border-bottom:0.5px solid var(--border);">'
+      + btn('mine', 'Mine') + btn('all', 'Whole office' + (allN ? ' (' + allN + ')' : ''))
+      + '</div>';
+  }
+
+  if (!data || !data.length) {
+    body.innerHTML = head + '<div class="mia-empty">'
+      + (miaScope === 'mine' ? 'No conversations assigned to you yet.' : 'No conversations yet.')
+      + '<br><br>Messages from employers in their workspace land here, and you can reply '
+      + 'without leaving the CRM.</div>';
+    return;
+  }
+  body.innerHTML = head + data.map(c =>
+    '<div class="mia-conv" onclick="miaOpen(\'' + c.kind + '\',\'' + c.thread_id + '\',\''
+      + escWeb(String(c.title || '')).replace(/'/g, '&#39;') + '\')">'
+    + '<div class="mia-conv-top"><span class="mia-conv-title">' + escWeb(c.title || 'Conversation') + '</span>'
+    + (c.unread ? '<span class="mia-badge">' + c.unread + '</span>' : '')
+    + '<span class="mia-conv-when">' + miaWhen(c.last_at) + '</span></div>'
+    + '<div class="mia-conv-who">' + escWeb(c.subtitle || '')
+    // Whose client this is only matters when looking beyond your own.
+    + (!c.is_mine && c.owner_agent ? ' &middot; <span style="color:var(--text-accent);">'
+        + escWeb(c.owner_agent) + '</span>' : '')
+    + '</div>'
+    + '<div class="mia-conv-last">' + (c.last_from === 'agent' ? 'You: ' : '')
+    + escWeb(String(c.last_body || '').slice(0, 90)) + '</div>'
+    + '</div>').join('');
+}
+
+async function miaOpen(kind, id, title) {
+  miaThread = { kind: kind, id: id, title: title };
+  document.getElementById('mia-back').style.display = '';
+  document.getElementById('mia-composer').style.display = 'flex';
+  document.getElementById('mia-sub').textContent = '— ' + title;
+  const body = document.getElementById('mia-body');
+  body.innerHTML = '<div class="mia-empty">Loading…</div>';
+
+  const { data, error } = await supabaseClient.rpc('agent_thread', { p_kind: kind, p_thread: id });
+  if (error) { body.innerHTML = '<div class="mia-empty">Could not open that conversation.</div>'; return; }
+  body.innerHTML = (data || []).map(m =>
+    '<div class="mia-msg ' + (m.mine ? 'mine' : 'them') + '">'
+    + '<div class="mia-bubble">' + escWeb(m.body).replace(/\n/g, '<br>') + '</div>'
+    + '<div class="mia-meta">' + escWeb(m.mine ? 'You' : (m.who || 'Them')) + ' · '
+    + new Date(m.created_at).toLocaleString() + '</div></div>').join('')
+    || '<div class="mia-empty">No messages yet — say hello.</div>';
+  body.scrollTop = body.scrollHeight;
+  // Opening counts as reading, so the badge and the Needs Attention card clear.
+  miaRefreshBadge();
+  if (typeof loadNeedsAttention === 'function') { try { loadNeedsAttention(); } catch (e) {} }
+}
+
+async function miaSend() {
+  if (!miaThread) return;
+  const box = document.getElementById('mia-text'), btn = document.getElementById('mia-send');
+  const text = (box.value || '').trim();
+  if (!text) return;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  const { data, error } = await supabaseClient.rpc('agent_reply', {
+    p_kind: miaThread.kind, p_thread: miaThread.id, p_body: text });
+  btn.disabled = false; btn.textContent = 'Send reply';
+  if (error || data !== true) { showToast('Could not send: ' + (error ? error.message : 'try again')); return; }
+  box.value = '';
+  miaOpen(miaThread.kind, miaThread.id, miaThread.title);
+}
+
+function miaWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), now = new Date();
+  const days = Math.floor((now - d) / 86400000);
+  if (d.toDateString() === now.toDateString())
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 function showPage(page) {
   _currentPage = page;
   ['dashboard','pipelines','contacts','clients','opens','campaigns','compliance','admin','recruiting','system','office','dialer','settings','appointments','oversight','scripts','website'].forEach(p => {

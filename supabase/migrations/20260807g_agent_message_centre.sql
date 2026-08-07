@@ -1,0 +1,30 @@
+-- MyIApro message centre, agent side. 2026-08-07.
+-- Applied live as agent_conversations and agent_conversations_scope.
+--
+-- Shaped as CONVERSATIONS, not as employer messages. Employee and individual
+-- portals are coming and will carry exactly the same traffic — adding one means
+-- adding a branch to agent_thread/agent_reply, not rebuilding the drawer, the
+-- badge, or anything an agent has already learned. A UI written straight against
+-- employer_workspace_messages would have to be redone with each new portal.
+--
+-- SCOPE, per Ken: agents see their own, broker owners traverse their agents, the
+-- system owner traverses everything. The visibility half was already correct —
+-- can_see_agent_work() is the same seat scoping the rest of the CRM uses. What
+-- was wrong was that an owner saw every conversation in the office as one
+-- undifferentiated list, burying their own.
+--
+-- So scope is a parameter defaulting to 'mine'. Owners get a toggle; agents
+-- never see one because both scopes return the same rows for them. That is the
+-- monitoring view Ken was going to ask for later, as a filter rather than a
+-- second screen that would drift out of step.
+--
+-- The scope parameter cannot escalate: can_see_agent_work() still gates every
+-- row. VERIFIED — a plain agent asking for 'all' gets exactly what they get for
+-- 'mine', and a stranger with an account gets nothing at all.
+--
+-- The badge counts MINE only. An owner carrying a permanent red number for
+-- somebody else's work is how a badge stops meaning anything.
+--
+-- Opening a thread marks its messages read AND clears the matching Needs
+-- Attention card, so an agent does not have to dismiss the same fact twice.
+select 'agent message centre: documented, applied via agent_conversations*' as note;
