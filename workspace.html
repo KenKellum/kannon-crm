@@ -95,6 +95,16 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
 .scrim{position:fixed;inset:0;background:rgba(10,25,48,.34);z-index:60;opacity:0;
        pointer-events:none;transition:opacity .3s}
 .scrim.open{opacity:1;pointer-events:auto}
+/* The MyIApro wordmark. Navy / crimson / navy / crimson across My-I-A-pro, so
+   the two brand colours alternate and the "IA" inside the name reads on its own.
+   Tight tracking and a serif keep it a mark rather than a heading. */
+.wordmark{font-family:var(--serif);font-size:23px;font-weight:700;letter-spacing:-.6px;
+      line-height:1;margin-bottom:14px;display:inline-block}
+.wordmark .n{color:var(--ia)}
+.wordmark .c{color:var(--crimson)}
+.wordmark .tm{font-family:var(--sans);font-size:9px;font-weight:700;letter-spacing:.06em;
+      vertical-align:super;margin-left:2px;color:var(--muted)}
+
 /* Greeting on the left, the person you deal with on the right, one row. The
    agent is not a footnote — they are the reason any of this gets answered. */
 .topline{display:flex;align-items:flex-start;gap:28px;justify-content:space-between}
@@ -257,6 +267,7 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
   <div class="wrap">
     <div class="topline">
       <div class="topline-left">
+        <div class="wordmark"><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span><span class="tm">&#8482;</span></div>
         <div class="greeting">Welcome, <strong id="w-company">—</strong></div>
         <p class="sub" id="w-sub">This is your private benefits workspace. Everything we need from
            you, and everything we send back, lives here — you will not need to hunt through email.</p>
@@ -293,15 +304,16 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
   <div class="scrim" id="scrim" onclick="toggleDrawer(false)"></div>
 
   <button class="msg-tab" id="msg-tab" onclick="toggleDrawer()"
-          aria-controls="drawer" aria-expanded="false" title="Message Centre">
+          aria-controls="drawer" aria-expanded="false" title="Ask MyIApro — Message Centre">
     <span class="dotmark"></span>
-    <span class="msg-tab-label">Messages</span>
+    <span class="msg-tab-label">Ask MyIApro</span>
     <span class="badge" id="msg-badge" style="display:none;">0</span>
   </button>
 
-  <aside class="drawer" id="drawer" role="dialog" aria-label="Message Centre" aria-hidden="true">
+  <aside class="drawer" id="drawer" role="dialog" aria-label="MyIApro Message Centre" aria-hidden="true">
     <div class="drawer-head">
-      <span class="rail-title">Message Centre</span>
+      <span class="rail-title"><span style="color:#fff;">My</span><span style="color:var(--gold);">I</span><span style="color:#fff;">A</span><span style="color:var(--gold);">pro</span>
+        <span style="font-weight:400;opacity:.72;">&mdash; Message Centre</span></span>
       <button class="drawer-close" onclick="toggleDrawer(false)" aria-label="Close messages">&times;</button>
     </div>
     <div class="rail-sub" id="rail-sub">Straight to your agent — no inbox, no waiting on hold.</div>
