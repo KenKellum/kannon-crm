@@ -461,7 +461,14 @@ function addRow(rowType, data) {
   document.getElementById('grid-wrap').style.display = 'block';
   tally();
 }
-function clearRows() { document.getElementById('rows').innerHTML = ''; tally(); }
+/* One way to start the list again, used by both the "Clear all" button and the
+   reopen path. The old clearRows emptied the table and nothing else: no
+   confirmation, so one click destroyed everything they had typed; the
+   device-saved draft survived, so a reload silently brought it back; and the
+   three upload choices stayed hidden, so after clearing a bad import they could
+   not upload the right file — only retype it by hand. Which is precisely when
+   somebody reaches for Clear. */
+function clearRows() { startCensusOver(); }
 function tally() {
   const trs = [...document.querySelectorAll('#rows tr')];
   const emp = trs.filter(t => t.dataset.rowType === 'employee').length;
@@ -486,9 +493,16 @@ async function reopenCensus() {
    nothing is deleted on our side until they actually send, and the version
    already with carriers is archived regardless. */
 function startCensusOver() {
-  if (!confirm('Clear the employee list shown here and start again?\n\n'
-             + 'Nothing is deleted until you send, and the census already with your '
-             + 'carriers is kept either way.')) return;
+  const n = document.querySelectorAll('#rows tr').length;
+  if (n === 0) { document.getElementById('paths').style.display = ''; return; }
+  /* Say what is actually true. Reassuring somebody about "the census already
+     with your carriers" when they are filling one in for the first time is
+     just noise, and noise in a confirmation is how people stop reading them. */
+  const resubmitting = EXISTING.length > 0;
+  if (!confirm('Clear all ' + n + ' row' + (n === 1 ? '' : 's') + ' and start the list again?\n\n'
+             + (resubmitting
+                 ? 'Nothing is deleted until you send, and the census already with your carriers is kept either way.'
+                 : 'Nothing has been sent yet, so this only clears what is on this screen.'))) return;
   document.getElementById('rows').innerHTML = '';
   document.getElementById('paths').style.display = '';
   document.getElementById('grid-wrap').style.display = 'none';
