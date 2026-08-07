@@ -79,6 +79,15 @@
     <div id="main" style="display:none;">
       <h1>Employee Census</h1>
       <p id="intro">To prepare accurate group quotes, your advisor needs some basic company information and a simple list of employees (and their dependents). This takes about 10 minutes &mdash; and you can upload a spreadsheet you already have.</p>
+      <div class="summary" style="border-left-color:#0d6b3f;background:#f2f9f5;">
+        <strong>You do not have to send us employee names.</strong> Carriers price on date of birth,
+        gender, ZIP and who is related to whom &mdash; not on who someone is. An <strong>employee number
+        is enough</strong> at this stage; names are only needed later, if you decide to enrol.
+        <br><br>
+        Please <strong>don't</strong> include Social Security numbers, bank details or pay. We do not need
+        them to quote, and if your payroll export contains them we will ignore those columns and tell you
+        we did.
+      </div>
 
       <div class="step-badge">STEP 1 — COMPANY INFORMATION</div>
       <div class="grid2">
@@ -235,10 +244,25 @@ const SYN = {
 };
 function normHeader(h) { return String(h || '').toLowerCase().replace(/[_\.\-]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function mapHeaders(headers) {
+  /* Columns we refuse on sight. A quote needs age, gender, ZIP and who is
+     related to whom — never a Social Security number, and never a bank detail.
+     Payroll exports are full of both, so an employer pasting one in is normal
+     and not their mistake. These columns are never mapped, never uploaded and
+     never stored; we say so plainly rather than quietly dropping them, because
+     somebody who believes they sent us an SSN deserves to know we did not keep
+     it. The safest place for data like this is not in our database at all. */
+  window._censusRefused = [];
+  const REFUSE = /ssn|social ?sec|\bsin\b|tax ?id\b|\bitin\b|national ?id|passport|driver'?s? ?licen|licen[cs]e ?(no|num|#)|bank|routing|account ?(no|num|#)|iban|salary|wage|compensation/;
+  headers.forEach((h, idx) => {
+    const n = normHeader(h);
+    if (n && REFUSE.test(n)) window._censusRefused.push(String(h).trim());
+  });
+
   const map = {};
   headers.forEach((h, idx) => {
     const n = normHeader(h);
     if (!n) return;
+    if (REFUSE.test(n)) return;              // never mapped, so never read
     for (const field in SYN) {
       if (map[field] === undefined && (SYN[field].includes(n) || SYN[field].some(s => n === s))) { map[field] = idx; return; }
     }
@@ -349,8 +373,17 @@ function ingestRows(rows, filename) {
   const mapped = Object.keys(map).map(k => k.replace(/_/g, ' ')).join(', ');
   const rpt = document.getElementById('map-report');
   rpt.style.display = 'block';
+  const refused = window._censusRefused || [];
   rpt.innerHTML = '<strong>&#10003; Read ' + imported + ' row' + (imported === 1 ? '' : 's') + ' from ' + esc(filename) + '.</strong> '
-    + 'Columns recognized: ' + esc(mapped) + '.<br>Please review below — fix anything we got wrong, add what\'s missing, then send.';
+    + 'Columns recognized: ' + esc(mapped) + '.<br>Please review below — fix anything we got wrong, add what\'s missing, then send.'
+    + (refused.length
+        ? '<div style="margin-top:10px;padding:10px 12px;background:#fff7ed;border-left:4px solid #c2410c;border-radius:0 6px 6px 0;">'
+          + '<strong>We deliberately ignored: ' + esc(refused.join(', ')) + '.</strong><br>'
+          + 'Quotes are priced on age, gender, ZIP and who is related to whom &mdash; never on Social Security '
+          + 'numbers, bank details or pay. Those columns were not read, were not uploaded, and are not stored '
+          + 'anywhere on our side. Nothing for you to do &mdash; payroll exports usually include them.'
+          + '</div>'
+        : '');
   document.getElementById('grid-wrap').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -395,9 +428,16 @@ function tally() {
 }
 
 function downloadTemplate() {
-  const csv = 'Name,Employee #,Date of Birth,Gender,Zip,Relationship (Employee/Spouse/Child),Class,Hours per Week\n'
+  /* Name first because most people have one to hand, but the sample rows show
+     an employee-number-only household on purpose, so it is obvious that names
+     are optional before anyone has seen a price. */
+  const csv = 'Name (or leave blank and use Employee # only),Employee #,Date of Birth,Gender,Zip,Relationship (Employee/Spouse/Child),Class,Hours per Week\n'
     + 'John Sample,101,06/15/1985,M,59718,Employee,Full-Time,40\n'
     + 'Jane Sample,101,09/02/1987,F,59718,Spouse,,\n'
+    + ',102,03/22/1979,F,59715,Employee,Full-Time,40\n'
+    + ',102,11/04/2011,M,59715,Child,,\n'
+    + '# Names are optional. An employee number on its own is fine for quoting.\n'
+    + '# Please do NOT include Social Security numbers or pay - we do not need them to quote.\n'
     + 'Sam Sample,101,03/20/2015,M,59718,Child,,\n';
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -538,11 +578,31 @@ async function submitCensus() {
   const trs = [...document.querySelectorAll('#rows tr')];
   const emps = trs.filter(t => t.dataset.rowType === 'employee');
   if (!emps.length) { err.textContent = 'Please add at least one employee to the census (Step ' + (document.getElementById('baa-step').style.display !== 'none' ? '3' : '2') + ').'; err.style.display = 'block'; return; }
+  /* A NAME IS NOT REQUIRED TO QUOTE. Carriers rate on date of birth, gender,
+     ZIP and who is related to whom — not on who somebody is. So an employer who
+     would rather not hand over staff names before they have even seen a price
+     can use an employee number instead, and many prefer to. Names become
+     necessary at enrolment, not here.
+     What IS required: a date of birth, and SOME identifier to tie dependents to
+     the right employee. */
   for (const t of trs) {
-    if (!t.querySelector('.f-name').value.trim() || !t.querySelector('.f-dob').value) {
-      err.textContent = 'One census row is missing a name or date of birth — carriers require both. It\'s highlighted below.';
+    const nm  = t.querySelector('.f-name').value.trim();
+    const num = (t.querySelector('.f-num') ? t.querySelector('.f-num').value.trim() : '');
+    const dob = t.querySelector('.f-dob').value;
+    if (!nm && !num) {
+      err.textContent = 'One row has neither a name nor an employee number — we need one of the two so '
+        + 'dependents can be matched to the right employee. Either is fine.';
       err.style.display = 'block';
-      const miss = !t.querySelector('.f-name').value.trim() ? t.querySelector('.f-name') : t.querySelector('.f-dob');
+      const miss = t.querySelector('.f-name');
+      miss.style.borderColor = '#dc2626';
+      miss.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      miss.focus();
+      return;
+    }
+    if (!dob) {
+      err.textContent = 'One row is missing a date of birth — carriers rate on age, so this one is unavoidable.';
+      err.style.display = 'block';
+      const miss = t.querySelector('.f-dob');
       miss.style.borderColor = '#dc2626';
       miss.scrollIntoView({ behavior: 'smooth', block: 'center' });
       miss.focus();

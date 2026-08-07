@@ -20668,8 +20668,15 @@ async function openCensusEditor(reqId) {
   `, async () => {
     const trs = [...document.querySelectorAll('#ce-rows tr')];
     for (const t of trs) {
-      if (!t.querySelector('.f-name').value.trim() || !t.querySelector('.f-dob').value) {
-        showToast('Every row needs a name and date of birth.'); return false;
+      // Employers may census by employee number alone — carriers rate on age,
+      // gender and ZIP, not on who somebody is, and many would rather not hand
+      // over staff names before they have seen a price. Match the public page:
+      // a date of birth, plus SOME identifier to tie dependents to an employee.
+      const nm  = t.querySelector('.f-name').value.trim();
+      const num = t.querySelector('.f-num') ? t.querySelector('.f-num').value.trim() : '';
+      if ((!nm && !num) || !t.querySelector('.f-dob').value) {
+        showToast('Every row needs a date of birth, and either a name or an employee number.');
+        return false;
       }
     }
     const g = id => document.getElementById(id).value.trim() || null;
