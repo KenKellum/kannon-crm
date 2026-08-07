@@ -1232,7 +1232,11 @@ async function miaShowList() {
       + escWeb(String(c.title || '')).replace(/'/g, '&#39;') + '\')">'
     + '<div class="mia-conv-top"><span class="mia-conv-title">' + escWeb(c.title || 'Conversation') + '</span>'
     + (c.unread ? '<span class="mia-badge">' + c.unread + '</span>' : '')
-    + '<span class="mia-conv-when">' + miaWhen(c.last_at) + '</span></div>'
+    /* An unread row shows when they FIRST wrote, not when they last did — that
+       is the wait the list is now sorted on, and showing last_at instead would
+       make a correct order look scrambled. Read rows keep plain recency. */
+    + '<span class="mia-conv-when"' + (c.unread ? ' title="Waiting since ' + escWeb(new Date(c.oldest_unread_at || c.last_at).toLocaleString()) + '"' : '')
+      + '>' + miaWhen(c.unread ? (c.oldest_unread_at || c.last_at) : c.last_at) + '</span></div>'
     + '<div class="mia-conv-who">' + escWeb(c.subtitle || '')
     // Whose client this is only matters when looking beyond your own.
     + (!c.is_mine && c.owner_agent ? ' &middot; <span style="color:var(--text-accent);">'
