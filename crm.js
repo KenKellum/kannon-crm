@@ -1000,14 +1000,16 @@ function speakIA_() {
       u.pitch = pitch; u.rate = rate; u.volume = 0.95;
       ss.speak(u);
     };
-    /* "A." — the full stop, chosen by ear on the test page. It forces the letter
-       to stand alone, which is what makes engines name it rather than read it as
-       the article "uh". A bare A was ambiguous and "Ay" was mangled outright.
-       Natural pitch and rate now: the bell already carried the tune, so the voice
-       does not have to sing it, and a voice that is not pitch-shifted simply
-       sounds like a person. */
-    sing('I',  1.05, 0.95);
-    sing('A.', 1.05, 0.95);
+    /* EXACTLY what Ken auditioned and approved as number 7. Do not "improve" it.
+       I flattened both notes to 1.05 afterwards, reasoning that the bell already
+       carried the tune so the voice need not sing it — and that broke it. Two
+       identical flat syllables with the queue's gap between them read as a
+       stumble. The FALLING pitch is what binds them into one phrase; it papers
+       over the gap that sits between any two queued utterances.
+       "A." keeps the full stop: it forces the letter to stand alone, which makes
+       an engine name it rather than read it as the article "uh". */
+    sing('I',  1.45, 0.9);
+    sing('A.', 1.0,  0.8);
     return true;
   } catch (e) { return false; }
 }
