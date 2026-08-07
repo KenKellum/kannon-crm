@@ -1,0 +1,79 @@
+-- Census: optional encrypted SSNs, employer-editable rosters, 2026-08-07.
+--
+-- Applied to the live project as a sequence of migrations; recorded here as one
+-- file because they are one change and reading them apart is misleading:
+--   census_ssn_encrypted_optional        accept SSNs, encrypted, audited
+--   actually_restrict_ssn_column         a column REVOKE does nothing on its own
+--   qualify_pgcrypto_schema              pgcrypto lives in `extensions`
+--   census_revisions_and_reopen          employers may correct a sent census
+--   census_load_returns_employees_and_guard   show the roster; refuse an empty one
+--   preserve_ssn_across_census_updates   an edit must not wipe what it never saw
+--
+-- ── SSNs ────────────────────────────────────────────────────────────────────
+-- Accepted because level-funded carriers underwrite on prescription history and
+-- an SSN materially improves the match. OPTIONAL, never required — a census
+-- quotes perfectly well without one.
+--
+-- An SSN is the single highest-risk identifier there is: in nearly every state
+-- it is the specific field that turns an incident into a mandatory
+-- breach-notification event. Three protections, in the database rather than in
+-- good intentions:
+--
+--   ENCRYPTED  census_submit encrypts on arrival with a key in Vault. Digits
+--              only, and only when there are nine — anything shorter is a typo
+--              and is dropped rather than kept as half an identifier.
+--   UNREADABLE No role holds SELECT on ssn_enc. NOTE: a column REVOKE is
+--              SILENTLY IGNORED while the role holds SELECT on the table, so the
+--              table grant is withdrawn and the other columns handed back
+--              explicitly. This is why crm.js selects a named column list and
+--              not '*', which PostgREST would expand to include ssn_enc.
+--   AUDITED    census_ssn_for_carrier demands a written reason and records who
+--              asked and how many rows were revealed. census_ssn_mask returns
+--              ***-**-1234 for every other purpose.
+--
+-- pgcrypto is installed in the `extensions` schema. These functions pin
+-- search_path to 'public' — correct, and it stays, because an unpinned
+-- search_path on a SECURITY DEFINER function is a privilege-escalation route —
+-- so the crypto calls are schema-qualified.
+--
+-- ── Editing a sent census ───────────────────────────────────────────────────
+-- People join, people leave, and dates of birth get typed wrong. The only route
+-- was emailing the agent to hand-edit it, which is how a census and reality
+-- drift apart. But a submitted census is ALSO the thing we sent carriers, and
+-- overwriting it destroys the answer to "what did we actually quote on?".
+--
+-- So census_reopen archives the roster into census_revisions BEFORE reopening.
+-- Correcting one date of birth can never be the step that loses what went out.
+-- The archive drops ssn_enc: a version history has no business holding copies of
+-- encrypted identifiers when the live row already has them.
+--
+-- Two failures this closes, both found by testing rather than by reading:
+--
+--   census_load returned the request and the BAA but NEVER the employees, so
+--   reopening presented an empty grid — an employer fixing one field would have
+--   had to retype every member of staff, and sending that grid would have
+--   deleted the roster. It now returns them (minus ssn_enc).
+--
+--   Because SSNs are deliberately never sent to the browser, they come back
+--   blank on a resubmit and would have been wiped by an unrelated correction.
+--   census_submit now snapshots them before the delete and re-applies them to
+--   the same person — matched on employee number, else name + date of birth.
+--   An unmatched or ambiguous row keeps NO SSN rather than guessing: an SSN
+--   attached to the wrong employee is far worse than a missing one.
+--
+-- census_submit also REFUSES a submission with no employees. The page already
+-- checked; the database should not depend on the page being right.
+--
+-- VERIFIED against the live functions:
+--   real SSN encrypts on arrival; ciphertext contains no plaintext
+--   agent_can_read_ciphertext = false; anon = false
+--   masked view returns ***-**-6789; reveal returns the full number and writes
+--     an audit row; a signed-in stranger is refused
+--   a malformed "55-BAD-99" is dropped, not stored
+--   an empty submit returns false and leaves the roster and its SSN intact
+--   a resubmit with blank SSN fields corrects the ZIP and KEEPS ***-**-6789
+--   census_load returns 2 employees and leaks no ciphertext
+--
+-- This file documents state already applied; re-running the individual
+-- migrations is unnecessary. See the project's migration history for exact DDL.
+select 'census SSN + revisions: documented, applied via named migrations' as note;
