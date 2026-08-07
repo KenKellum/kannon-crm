@@ -1,0 +1,37 @@
+-- Per-class eligibility hours, and a derived group minimum. 2026-08-07.
+-- Applied live as per_class_hours_and_derived_minimum.
+--
+-- Ken asked to capture minimum hours as the employer defines each class, "as
+-- long as it is at or above the MINIMUM as a group". Right instinct, and
+-- per-class is the better place to ask — with one correction to the direction
+-- of the constraint, because it changes the model:
+--
+--   The group-wide minimum is NOT a floor the classes must clear. It is the
+--   LOWEST class threshold, derived. If an employer covers part-timers at 20
+--   hours then 20 hours IS the plan's eligibility rule, and that is what the
+--   plan document carries. Asking for a group minimum separately only creates
+--   an answer that can contradict the classes, leaving somebody to decide which
+--   is true.
+--
+--   The floor that binds from outside is the CARRIER's, and it varies — so it
+--   is a flag for a human to check against a specific carrier, never a limit we
+--   invent and enforce.
+--
+-- employer_eligibility_summary() derives the plan rule. employer_design_flags()
+-- gains three reads:
+--   hours_below_carrier_floor   under 20 — commonly declined, fails at
+--                               UNDERWRITING rather than at proposal, which is
+--                               the expensive place to find out
+--   hours_below_aca_full_time   20-29 — allowed and often deliberate, but those
+--                               staff are not full-time for employer-mandate
+--                               purposes
+--   derived_group_minimum       states the plan rule and which class sets it,
+--                               because "your eligibility rule is 15 hours" is
+--                               a surprise to most employers
+--
+-- VERIFIED with Office 30 / Shop 24 / Weekend 15:
+--   derived rule = 15 hours, named as set by "Weekend help"
+--   Shop crew flagged as below ACA full-time
+--   Weekend help flagged as below the usual carrier floor
+-- Fixtures deleted.
+select 'per-class hours: documented, applied via per_class_hours_and_derived_minimum' as note;
