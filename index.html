@@ -601,14 +601,19 @@
     <button class="mia-back" id="mia-back" onclick="miaShowList()" style="display:none;" title="All conversations">&#8592;</button>
     <span class="mia-title"><span style="color:#fff;">My</span><span style="color:var(--accent);">I</span><span style="color:#fff;">A</span><span style="color:var(--accent);">pro</span>
       <span style="font-weight:400;opacity:.75;" id="mia-sub">&mdash; Messages</span></span>
-    <button class="btn btn-outline btn-sm" id="mia-archive" style="display:none;font-size:11px;padding:3px 9px;margin-left:auto;"></button>
-    <button class="mia-close" id="mia-mute" onclick="chimeToggle_()" title="Chime on — click to mute" style="font-size:13px;">&#128276;</button>
+    <button class="mia-close" id="mia-mute" onclick="chimeToggle_()" title="Chime on — click to mute" style="margin-left:auto;font-size:13px;">&#128276;</button>
     <button class="mia-close" onclick="miaToggle(false)" aria-label="Close">&times;</button>
   </div>
   <div class="mia-body" id="mia-body"></div>
   <div class="mia-composer" id="mia-composer" style="display:none;">
     <textarea id="mia-text" rows="2" placeholder="Reply&hellip;"></textarea>
     <button class="btn btn-primary btn-sm" id="mia-send" onclick="miaSend()">Send reply</button>
+    <!-- Under Send and hard left: filing a conversation away is a deliberate,
+         occasional act, so it sits apart from the thing done every time. -->
+    <div style="display:flex;">
+      <button class="btn btn-outline btn-sm" id="mia-archive"
+              style="display:none;font-size:11px;padding:4px 10px;"></button>
+    </div>
   </div>
 </aside>
 
@@ -708,6 +713,6 @@
     }
   });
 </script>
-<script src="./crm.js?v=20260807-297"></script>
+<script src="./crm.js?v=20260807-298"></script>
 </body>
 </html>
