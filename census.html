@@ -137,10 +137,10 @@
               <option value="none">Nothing</option>
             </select>
           </div></div>
-        <div><label>&hellip; measured against</label>
+        <div id="el-benchmark-wrap"><label>That percentage is based on</label>
           <select id="el-benchmark">
-            <option value="chosen_plan">Whichever plan the employee picks</option>
-            <option value="base_plan">One specific plan, whatever they pick</option>
+            <option value="chosen_plan">Whichever plan each employee enrols in</option>
+            <option value="base_plan">One plan you nominate, the same for everyone</option>
           </select>
           <div class="note" style="margin-top:4px;" id="el-benchmark-note"></div></div>
         <div><label>You pay toward dependents (spouse / children)</label>
@@ -730,9 +730,20 @@ function explainContribution_() {
   const dep = (document.getElementById('el-dep-basis') || {}).value;
   const bn = document.getElementById('el-benchmark-note');
   const dn = document.getElementById('el-dep-note');
+
+  /* "Based on which plan" only means something for a percentage. A flat dollar
+     amount is the same money whatever they enrol in, so the question is noise —
+     and a question that cannot change the answer teaches people to skim. */
+  const empBasis = (document.getElementById('el-basis') || {}).value;
+  const wrap = document.getElementById('el-benchmark-wrap');
+  if (wrap) wrap.style.display = (empBasis && empBasis.indexOf('percent') === 0) ? '' : 'none';
   if (bn) bn.textContent = bm === 'base_plan'
-    ? 'Your cost stays the same whichever plan they pick — an employee choosing a richer plan pays the whole difference. You will choose which plan once quotes are in.'
-    : 'Your cost rises with the richer plan, since you pay a share of whatever they choose.';
+    ? 'You nominate one plan — often the lowest-cost one — and pay that share of ITS rate for '
+      + 'everyone. Your cost per employee is then the same whichever plan they enrol in, and an '
+      + 'employee choosing a richer one pays the whole difference on top. You will nominate which '
+      + 'plan once the quotes are in.'
+    : 'You pay that share of whatever each employee enrols in, so your cost per employee rises '
+      + 'when they choose a richer plan.';
   if (dn) dn.textContent =
       dep === 'percent_of_increment'  ? 'A share of the added cost of the dependants — the family rate minus the employee-only rate.'
     : dep === 'percent_of_tier_total' ? 'A share of the whole family rate, including the employee portion.'
@@ -740,7 +751,7 @@ function explainContribution_() {
     : 'Dependants are available, funded entirely by the employee.';
 }
 document.addEventListener('DOMContentLoaded', () => {
-  ['el-benchmark','el-dep-basis'].forEach(id => {
+  ['el-benchmark','el-dep-basis','el-basis'].forEach(id => {
     const e = document.getElementById(id);
     if (e) e.addEventListener('change', explainContribution_);
   });
