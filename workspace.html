@@ -79,7 +79,9 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
         box-shadow:-14px 0 46px rgba(21,39,65,.20);
         display:flex;flex-direction:column;
         transform:translateX(101%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
-.drawer.open{transform:none}
+/* translateX(0) rather than `none`: an explicit end state for the transition,
+   and it cannot be second-guessed by another rule that also touches transform. */
+.drawer.open{transform:translateX(0)}
 .drawer-head{display:flex;align-items:center;gap:10px;padding:17px 18px 15px;
         border-bottom:1px solid var(--line);flex-shrink:0;
         background:linear-gradient(160deg,var(--ia) 0%,var(--ia-deep) 100%);color:#fff}
@@ -93,10 +95,28 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
 .scrim{position:fixed;inset:0;background:rgba(10,25,48,.34);z-index:60;opacity:0;
        pointer-events:none;transition:opacity .3s}
 .scrim.open{opacity:1;pointer-events:auto}
+/* Greeting on the left, the person you deal with on the right, one row. The
+   agent is not a footnote — they are the reason any of this gets answered. */
+.topline{display:flex;align-items:flex-start;gap:28px;justify-content:space-between}
+.topline-left{min-width:0;flex:1}
 .greeting{font-family:var(--serif);font-size:30px;line-height:1.25;color:var(--ink);
           font-weight:400;letter-spacing:-.2px}
 .greeting strong{font-weight:700}
-.sub{color:var(--muted);margin-top:8px;font-size:15px;max-width:60ch}
+.sub{color:var(--muted);margin-top:8px;font-size:15px;max-width:58ch}
+
+.agent-chip{display:flex;align-items:center;gap:13px;flex-shrink:0;
+      background:var(--paper);border:1px solid var(--line);border-radius:12px;
+      padding:13px 17px 13px 14px;box-shadow:var(--shadow);max-width:330px}
+.agent-chip .who{font-size:9.5px;font-weight:700;letter-spacing:.15em;
+      text-transform:uppercase;color:var(--crimson);margin-bottom:3px}
+.agent-chip .nm{font-weight:700;color:var(--ink);font-size:14.5px;line-height:1.3}
+.agent-chip .lines{font-size:12.5px;margin-top:3px;line-height:1.6}
+.agent-chip a{color:var(--ia);text-decoration:none;font-weight:600}
+.agent-chip a:hover{text-decoration:underline}
+@media(max-width:760px){
+  .topline{flex-direction:column;gap:18px}
+  .agent-chip{max-width:none;width:100%}
+}
 .rule{height:1px;background:var(--line);margin:30px 0}
 
 .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
@@ -215,30 +235,32 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 
 <div id="app" style="display:none;">
   <div class="wrap">
-    <div class="greeting">Welcome, <strong id="w-company">—</strong></div>
-    <p class="sub" id="w-sub">This is your private benefits workspace. Everything we need from
-       you, and everything we send back, lives here — you will not need to hunt through email.</p>
+    <div class="topline">
+      <div class="topline-left">
+        <div class="greeting">Welcome, <strong id="w-company">—</strong></div>
+        <p class="sub" id="w-sub">This is your private benefits workspace. Everything we need from
+           you, and everything we send back, lives here — you will not need to hunt through email.</p>
+      </div>
+
+      <div class="agent-chip">
+        <div class="avatar" id="a-initials">—</div>
+        <div style="min-width:0;">
+          <div class="who">Your agent</div>
+          <div class="nm" id="a-name">—</div>
+          <div class="lines">
+            <a id="a-email" href="#">—</a>
+            <span id="a-phone-wrap" style="display:none;"><br><a id="a-phone" href="#">—</a></span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="rule"></div>
 
     <div id="tasks-wrap" style="display:none;">
       <div class="eyebrow">What we need from you</div>
       <div class="card" id="tasks"></div>
-      <div style="height:30px;"></div>
     </div>
-
-    <div class="eyebrow">Your agent</div>
-    <div class="card"><div class="agent">
-      <div class="avatar" id="a-initials">—</div>
-      <div>
-        <div style="font-weight:700;color:var(--ink);font-size:15.5px;" id="a-name">—</div>
-        <div style="font-size:13.5px;margin-top:3px;">
-          <a id="a-email" href="#">—</a>
-          <span id="a-phone-wrap" style="display:none;"><span style="color:var(--line);margin:0 8px;">|</span>
-          <a id="a-phone" href="#">—</a></span>
-        </div>
-      </div>
-    </div></div>
   </div>
 
   <!-- Message Centre: a handle that is always there, and a drawer that is not -->
