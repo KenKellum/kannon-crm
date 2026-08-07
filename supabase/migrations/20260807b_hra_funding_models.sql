@@ -1,0 +1,39 @@
+-- HRA funding models on benefit classes, 2026-08-07.
+-- Applied live as migration hra_ichra_funding_models; recorded here.
+--
+-- An ICHRA is a class rule plus a contribution rule, so the model built earlier
+-- today already carried most of it. What was missing is HOW a class is funded:
+-- the same "60%" means something entirely different when the money reimburses an
+-- individual policy instead of buying into a group plan.
+--
+-- THE RULE THAT SHAPES EVERYTHING, and the one most often got wrong: a single
+-- class may NOT be offered both a traditional group plan and an ICHRA. One or
+-- the other, per class. Group for one class and ICHRA for another is legal and
+-- is the genuinely interesting design space.
+--
+-- A trigger makes the contradiction unstorable rather than merely discouraged,
+-- and the error text says how to fix it. Verified live, both directions:
+--   group class + ichra money  -> "A class cannot be offered both a group plan
+--                                  and an ICHRA — ... put the ICHRA employees in
+--                                  their own class."
+--   ichra class + a percentage -> "An ICHRA class is funded with a monthly
+--                                  allowance, not a percentage..."
+--   ichra class + ichra_flat   -> accepted.
+--
+-- employer_benefit_classes gains:
+--   funding_model     group | ichra | qsehra | ebhra | none
+--   ichra_varies_by   age | family_size | age_and_family | null
+--                     (those are the only lawful variations; age is capped at
+--                      the same 3:1 ratio the individual market uses)
+--   compliance_notes
+--
+-- employer_contributions.basis gains ichra_flat, ichra_age_banded,
+-- ichra_family_tiered — separate values rather than reusing flat_dollar,
+-- because a percentage is meaningless for an ICHRA and the distinction should
+-- not depend on context.
+--
+-- Compliance points the sandbox must eventually enforce or surface — permitted
+-- class definitions, minimum class size, affordability vs APTC, annual opt-out,
+-- 90-day notice, substantiation of individual coverage — are written up in
+-- Docs/GROUP-BENEFITS-ROADMAP.md rather than here.
+select 'HRA funding models: documented, applied via hra_ichra_funding_models' as note;
