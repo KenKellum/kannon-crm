@@ -310,8 +310,75 @@ el('msg') && el('msg').addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendMsg();
 });
 
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+
+/* The way in. We verify the token only when somebody presses this button —
+   never on page load. Mail scanners (Outlook and Defender both do it) pre-fetch
+   links, and a single-use token is spent by whatever opens it first, so
+   verifying on load would let a scanner burn the link before the human ever
+   clicked it. Scanners do not press buttons. */
+async function useToken(tok) {
+  const btn = document.getElementById('tok-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing you in…'; }
+  const { error } = await sb.auth.verifyOtp({ token_hash: tok, type: 'magiclink' });
+  if (error) {
+    gateRequest('That link has already been used',
+      'Links open your workspace once, which is what stops anyone else who sees the '
+      + 'email getting in. Pop your email address in below and a fresh one is on its way.');
+    return;
+  }
+  history.replaceState(null, '', window.location.pathname);
+  init();
+}
+
+/* Nobody should ever have to ask us for another link. Enumeration-safe: the
+   confirmation is identical whether or not that address has a workspace. */
+function gateRequest(title, msg) {
+  el('gate').innerHTML =
+      '<h1>' + esc(title) + '</h1><p style="margin-bottom:20px;">' + msg + '</p>'
+    + '<input id="req-email" type="email" placeholder="you@company.com" autocomplete="email" '
+    + 'style="width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:9px;'
+    + 'font-family:inherit;font-size:15px;margin-bottom:12px;text-align:center;" />'
+    + '<button class="btn btn-primary" style="width:100%;" id="req-btn" onclick="requestLink()">'
+    + 'Email me a link</button>'
+    + '<p id="req-note" style="margin-top:14px;font-size:13px;"></p>';
+  el('gate').style.display = 'block';
+  el('app').style.display  = 'none';
+  const box = el('req-email');
+  if (box) box.addEventListener('keydown', e => { if (e.key === 'Enter') requestLink(); });
+}
+
+async function requestLink() {
+  const box = el('req-email'), btn = el('req-btn'), note = el('req-note');
+  const addr = (box.value || '').trim();
+  if (!addr || addr.indexOf('@') < 0) { note.textContent = 'Please enter your email address.'; return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await fetch(APPS_SCRIPT_URL + '?action=workspace_request_link&email=' + encodeURIComponent(addr),
+                { mode: 'no-cors' });
+  } catch (e) {}
+  /* Always the same answer, whether or not that address has a workspace. */
+  note.style.color = 'var(--ok)';
+  note.textContent = 'If that address has a workspace, a link is on its way — check your email.';
+  btn.textContent = 'Sent';
+}
+
 async function init() {
   try {
+    const tok = new URLSearchParams(window.location.search).get('t');
+    const { data: { session: existing } } = await sb.auth.getSession();
+    if (tok && !existing) {
+      el('gate').innerHTML =
+          '<h1>Your workspace is ready</h1>'
+        + '<p style="margin-bottom:22px;">Press the button to sign in. There is no password '
+        + 'to remember — and once you are in, you will stay signed in on this device.</p>'
+        + '<button class="btn btn-primary" style="width:100%;" id="tok-btn" '
+        + 'onclick="useToken(' + JSON.stringify(tok) + ')">Open my workspace</button>';
+      el('gate').style.display = 'block';
+      el('app').style.display = 'none';
+      return;
+    }
+
     const { data: { session } } = await sb.auth.getSession();
     if (!session) {
       /* Two different situations that look identical if you conflate them:
@@ -320,17 +387,14 @@ async function init() {
          they never clicked one sends them chasing the wrong problem. */
       const cameFromALink = /access_token|error|type=magiclink|code=/.test(
         window.location.hash + window.location.search);
-      if (cameFromALink) {
-        gate('This link has expired',
-          'Workspace links are single use and time limited, which is what keeps your '
-          + 'employees’ information safe. Ask your agent to send a fresh one and it will '
-          + 'open straight away.');
-      } else {
-        gate('This page opens from your email',
-          'Your workspace is private to your company, so it opens from the secure link '
-          + 'your agent sent you — there is no password to remember. Find that email and '
-          + 'follow the link, or reply to your agent and they will send another.');
-      }
+      gateRequest(
+        cameFromALink ? 'That link has already been used' : 'Welcome back',
+        cameFromALink
+          ? 'Links open your workspace once, which is what stops anyone else who sees the '
+            + 'email getting in. Put your email address in below and a fresh one is on its way.'
+          : 'Your workspace is private to your company, so we send a link rather than asking '
+            + 'you to invent another password. Enter the address your agent has for you and '
+            + 'we will send one straight over.');
       return;
     }
     const { data, error } = await sb.rpc('get_my_workspace');
