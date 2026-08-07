@@ -881,13 +881,30 @@ function miaToggle(force) {
   d.setAttribute('aria-hidden', open ? 'false' : 'true');
   tab.style.opacity = open ? '0' : '1';
   tab.style.pointerEvents = open ? 'none' : 'auto';
-  if (open) miaShowList();
+  if (open) { miaShowList(); miaWatch(); }
+  else if (miaWatchTimer) { clearInterval(miaWatchTimer); miaWatchTimer = null; }
 }
 
 /* Owners can look across their office; agents cannot, and are not shown a
    control that would do nothing for them. Defaults to MINE either way — an owner
    opening this should see their own work first, not everyone's. */
 let miaScope = 'mine';
+/* Archived, not deleted. These messages carry PHI under a signed BAA, and Ken
+   wants to audit a client's history later — anything deleted cannot be
+   audited, so archiving IS the audit trail. */
+let miaShow = 'active';
+async function miaSetShow(v) { miaShow = v; await miaShowList(); }
+async function miaArchive(archived) {
+  if (!miaThread) return;
+  const { error } = await supabaseClient.rpc('agent_archive_thread',
+    { p_kind: miaThread.kind, p_thread: miaThread.id, p_archived: archived });
+  if (error) { showToast('Error: ' + error.message); return; }
+  showToast(archived
+    ? 'Filed away. It comes straight back if they write again.'
+    : 'Back on your active list.');
+  miaRefreshBadge();
+  miaShowList();
+}
 function miaCanSeeOthers_() {
   const r = (currentAgent && currentAgent.role) || '';
   return r === 'system_owner' || r === 'broker_owner' || r === 'agency_owner';
@@ -899,10 +916,13 @@ async function miaShowList() {
   document.getElementById('mia-back').style.display = 'none';
   document.getElementById('mia-composer').style.display = 'none';
   document.getElementById('mia-sub').textContent = '— Messages';
+  const arcBtn = document.getElementById('mia-archive');
+  if (arcBtn) arcBtn.style.display = 'none';   // only meaningful inside a thread
   const body = document.getElementById('mia-body');
   body.innerHTML = '<div class="mia-empty">Loading…</div>';
 
-  const { data, error } = await supabaseClient.rpc('agent_conversations', { p_scope: miaScope });
+  const { data, error } = await supabaseClient.rpc('agent_conversations',
+    { p_scope: miaScope, p_show: miaShow });
   if (error) { body.innerHTML = '<div class="mia-empty">Could not load messages.</div>'; return; }
 
   let head = '';
@@ -921,6 +941,14 @@ async function miaShowList() {
       + btn('mine', 'Mine') + btn('all', 'Whole office' + (allN ? ' (' + allN + ')' : ''))
       + '</div>';
   }
+  // Active vs filed away, for everyone.
+  const sbtn = (val, label) =>
+    '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;'
+    + (miaShow === val ? 'background:var(--surface-3);color:var(--text-primary);' : '')
+    + '" onclick="miaSetShow(\'' + val + '\')">' + label + '</button>';
+  head += '<div style="display:flex;gap:6px;align-items:center;padding:8px 16px;'
+    + 'border-bottom:0.5px solid var(--border);">'
+    + sbtn('active', 'Open') + sbtn('archived', 'Filed away') + '</div>';
 
   if (!data || !data.length) {
     body.innerHTML = head + '<div class="mia-empty">'
@@ -950,6 +978,13 @@ async function miaOpen(kind, id, title) {
   document.getElementById('mia-back').style.display = '';
   document.getElementById('mia-composer').style.display = 'flex';
   document.getElementById('mia-sub').textContent = '— ' + title;
+  const arc = document.getElementById('mia-archive');
+  if (arc) {
+    arc.style.display = '';
+    const filed = miaShow === 'archived';
+    arc.textContent = filed ? '↩ Reopen' : '✓ File away';
+    arc.onclick = () => miaArchive(!filed);
+  }
   const body = document.getElementById('mia-body');
   body.innerHTML = '<div class="mia-empty">Loading…</div>';
 
@@ -962,10 +997,38 @@ async function miaOpen(kind, id, title) {
     + new Date(m.created_at).toLocaleString() + '</div></div>').join('')
     || '<div class="mia-empty">No messages yet — say hello.</div>';
   body.scrollTop = body.scrollHeight;
+  miaStamp = (data || []).length + '|' + ((data || []).length ? data[data.length - 1].created_at : '');
   // Opening counts as reading, so the badge and the Needs Attention card clear.
   miaRefreshBadge();
   if (typeof loadNeedsAttention === 'function') { try { loadNeedsAttention(); } catch (e) {} }
+  miaWatch();
 }
+
+/* Keep an open panel current without making the agent close and reopen it.
+   Polls a tiny stamp — a count and the latest timestamp — and only refetches
+   the messages when that actually moves, so an idle conversation costs almost
+   nothing. Stops when the drawer closes or the tab goes to the background. */
+let miaStamp = null, miaWatchTimer = null;
+function miaWatch() {
+  if (miaWatchTimer) clearInterval(miaWatchTimer);
+  miaWatchTimer = setInterval(async () => {
+    const open = document.getElementById('mia-drawer').classList.contains('open');
+    if (!open || document.visibilityState !== 'visible') return;
+    try {
+      if (miaThread) {
+        const { data } = await supabaseClient.rpc('agent_thread_stamp',
+          { p_kind: miaThread.kind, p_thread: miaThread.id });
+        const s = (data ? data.n : 0) + '|' + ((data && data.last_at) || '');
+        if (s !== miaStamp) miaOpen(miaThread.kind, miaThread.id, miaThread.title);
+      } else {
+        // On the list, a changed unread count is enough to justify redrawing.
+        const { data } = await supabaseClient.rpc('agent_unread_messages');
+        if ((data || 0) !== miaListUnread) { miaListUnread = data || 0; miaShowList(); }
+      }
+    } catch (e) {}
+  }, 6000);
+}
+let miaListUnread = 0;
 
 async function miaSend() {
   if (!miaThread) return;

@@ -590,6 +590,40 @@ document.addEventListener('keydown', e => {
   }
 });
 
+/* An open Message Centre should show the agent's reply without being refreshed.
+   Polls a tiny stamp — a count and the latest timestamp — and only reloads the
+   workspace when that moves, so sitting with the drawer open costs almost
+   nothing. Runs whether the drawer is open or shut, because the unread badge on
+   the handle is the whole point of the handle; it just stops while the tab is in
+   the background. */
+let wsStamp = null;
+setInterval(async () => {
+  if (document.visibilityState !== 'visible' || !WS) return;
+  try {
+    const { data, error } = await sb.rpc('workspace_message_stamp');
+    if (error || !data) return;
+    const s = (data.n || 0) + '|' + (data.last_at || '');
+    if (wsStamp === null) { wsStamp = s; return; }
+    if (s === wsStamp) return;
+    wsStamp = s;
+    const { data: fresh } = await sb.rpc('get_my_workspace');
+    if (!fresh) return;
+    WS.messages = fresh.messages || [];
+    paintThread();
+    /* If they are not looking at the drawer, make the handle say so rather than
+       quietly updating a panel nobody has open. */
+    if (!el('drawer').classList.contains('open')) {
+      const tab = el('msg-tab');
+      if (tab) {
+        tab.animate(
+          [{ transform: 'translateY(-50%) scale(1)' }, { transform: 'translateY(-50%) scale(1.08)' },
+           { transform: 'translateY(-50%) scale(1)' }],
+          { duration: 620, iterations: 2 });
+      }
+    }
+  } catch (e) {}
+}, 6000);
+
 async function sendMsg() {
   const box = el('msg'), btn = el('send-btn');
   const body = box.value.trim();
