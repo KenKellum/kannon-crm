@@ -84,9 +84,12 @@
         gender, ZIP and who is related to whom &mdash; not on who someone is. An <strong>employee number
         is enough</strong> at this stage; names are only needed later, if you decide to enrol.
         <br><br>
-        Please <strong>don't</strong> include Social Security numbers, bank details or pay. We do not need
-        them to quote, and if your payroll export contains them we will ignore those columns and tell you
-        we did.
+        <strong>Social Security numbers are optional.</strong> Some level-funded carriers price more
+        accurately with them, so include them if you are comfortable doing so &mdash; but a quote can be
+        prepared without. They are encrypted the moment they arrive and are never shown in full on screen.
+        <br><br>
+        Please <strong>don't</strong> include bank details or pay. Those play no part in a quote, and if
+        your payroll export contains them we will ignore those columns and tell you we did.
       </div>
 
       <div class="step-badge">STEP 1 — COMPANY INFORMATION</div>
@@ -139,7 +142,7 @@
         <table id="grid">
           <thead><tr>
             <th style="min-width:150px;">Name</th><th>Emp #</th><th style="min-width:130px;">Date of birth</th>
-            <th>Gender</th><th>Zip</th><th>Relationship</th><th>Class (optional)</th><th>Hrs/wk</th><th></th>
+            <th>Gender</th><th>Zip</th><th style="min-width:110px;">SSN <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></th><th>Relationship</th><th>Class (optional)</th><th>Hrs/wk</th><th></th>
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
@@ -155,7 +158,7 @@
       <div style="margin-top:24px;">
         <button class="btn gold" id="submit-btn" onclick="submitCensus()">Send census to my advisor</button>
         <p class="err" id="err"></p>
-        <p class="note" style="margin-top:10px;">Your information goes directly and only to your advisor at Kannon Financial Group for quoting purposes.</p>
+        <p class="note" style="margin-top:10px;">Your information goes directly and only to your MyIApro advisor at The Insured America Agency, for quoting purposes.</p>
       </div>
       <p class="fine">Quotes prepared from this census are estimates; final group rates are set by each carrier after their own review. No coverage is bound by submitting this form.</p>
     </div>
@@ -234,6 +237,7 @@ const SYN = {
   first_name:  ['first name','firstname','first','fname','given name'],
   last_name:   ['last name','lastname','last','lname','surname','family name'],
   full_name:   ['name','full name','employee name','member name','fullname','employee'],
+  ssn:             ['ssn','social security','social security number','social security #','ss#','ss #','soc sec','socsec'],
   employee_number: ['emp #','emp#','employee #','employee number','employee id','emp id','id','payroll id','member id'],
   date_of_birth: ['dob','date of birth','birth date','birthdate','birthday','born','d.o.b.','d.o.b'],
   gender:      ['gender','sex','m/f','male/female'],
@@ -361,6 +365,7 @@ function ingestRows(rows, filename) {
     addRow(rowType, {
       full_name: name,
       employee_number: String(get('employee_number') || '').trim(),
+      ssn: String(get('ssn') || '').trim(),
       date_of_birth: dob,
       gender: normGender(get('gender')),
       zip: String(get('zip') || '').trim(),
@@ -401,6 +406,8 @@ function addRow(rowType, data) {
     + '<td><input type="date" class="f-dob" value="' + esc(data.date_of_birth || '') + '"/></td>'
     + '<td style="max-width:70px;"><select class="f-gen"><option value=""></option><option value="M"' + (data.gender === 'M' ? ' selected' : '') + '>M</option><option value="F"' + (data.gender === 'F' ? ' selected' : '') + '>F</option></select></td>'
     + '<td style="max-width:85px;"><input type="text" class="f-zip" value="' + esc(data.zip || '') + '"/></td>'
+    + '<td style="max-width:115px;"><input type="text" class="f-ssn" inputmode="numeric" autocomplete="off" '
+      + 'placeholder="optional" value="' + esc(data.ssn || '') + '"/></td>'
     + '<td><select class="f-rel">'
       + '<option value="employee"' + (rel === 'employee' ? ' selected' : '') + '>Employee</option>'
       + '<option value="spouse"' + (rel === 'spouse' ? ' selected' : '') + '>Spouse</option>'
@@ -622,6 +629,9 @@ async function submitCensus() {
       employee_ref: lastEmp,
       full_name: name,
       employee_number: t.querySelector('.f-num').value.trim() || null,
+      // Optional. Encrypted by census_submit the moment it lands; never
+      // stored or returned in the clear.
+      ssn: (t.querySelector('.f-ssn') ? t.querySelector('.f-ssn').value.trim() : '') || null,
       date_of_birth: t.querySelector('.f-dob').value || null,
       gender: t.querySelector('.f-gen').value || null,
       zip: t.querySelector('.f-zip').value.trim() || null,

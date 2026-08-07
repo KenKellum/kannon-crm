@@ -19870,6 +19870,11 @@ function fmtDate_(d) {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Every census column except ssn_enc, which no role may select. Kept in one
+// place so a future column is added once rather than in three query strings.
+const CENSUS_COLS = 'id,request_id,row_type,employee_ref,full_name,employee_number,'
+  + 'date_of_birth,gender,zip,relationship,employee_class,hours_per_week,extra,sort_order';
+
 const EMPLOYER_ROLES = [
   ['decision_maker', 'Decision maker',      'Owner or CFO — signs'],
   ['benefits_admin', 'Benefits administrator', 'HR — does the work, and holds the workspace login'],
@@ -20561,8 +20566,10 @@ async function resendCensus_(reqId, a) {
 }
 
 async function downloadCensusCsv_(reqId, company) {
+  // Named columns, not '*': the encrypted SSN column is deliberately not
+  // granted to anyone, and '*' would ask PostgREST for it and be refused.
   const { data: emps } = await supabaseClient.from('census_employees')
-    .select('*').eq('request_id', reqId).order('sort_order');
+    .select(CENSUS_COLS).eq('request_id', reqId).order('sort_order');
   if (!emps || !emps.length) { showToast('No census rows found.'); return; }
   const head = 'Name,Employee #,Date of Birth,Gender,Zip,Relationship,Class,Hours per Week\n';
   const csv = head + emps.map(e => [e.full_name, e.employee_number, e.date_of_birth, e.gender, e.zip, e.relationship, e.employee_class, e.hours_per_week]
@@ -20625,8 +20632,10 @@ function ceTally_() {
 async function openCensusEditor(reqId) {
   const { data: r } = await supabaseClient.from('census_requests').select('*').eq('id', reqId).single();
   if (!r) { showToast('Census not found.'); return; }
+  // Named columns, not '*': the encrypted SSN column is deliberately not
+  // granted to anyone, and '*' would ask PostgREST for it and be refused.
   const { data: emps } = await supabaseClient.from('census_employees')
-    .select('*').eq('request_id', reqId).order('sort_order');
+    .select(CENSUS_COLS).eq('request_id', reqId).order('sort_order');
 
   const cf = (label, id, val, ph) =>
     `<div><label style="display:block;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 3px;">${label}</label>
