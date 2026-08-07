@@ -906,9 +906,9 @@ function chimeMode_() {
 function chimeMuted_() { return chimeMode_() === 'off'; }
 
 const CHIME_FACE_ = {
-  voice: ['🗣️', 'Sings "I—A" — click for the doorbell'],
-  bell:  ['🔔', 'Doorbell — click for silence'],
-  off:   ['🔇', 'Silent — click to hear "I—A"']
+  voice: ['🗣️', 'Doorbell, then "I A" — click for the doorbell alone'],
+  bell:  ['🔔', 'Doorbell only — click for silence'],
+  off:   ['🔇', 'Silent — click for the doorbell and the voice']
 };
 function paintChimeBtn_() {
   const face = CHIME_FACE_[chimeMode_()];
@@ -954,6 +954,11 @@ function chimeUnlock_() {
    the choice is made by scoring those names against the ones the major platforms
    actually ship. Falls back to the bell when nothing is installed, because
    silence would look exactly like the suspended-context bug above. */
+/* Zira is the one Ken chose off the test page, so she is preferred outright
+   where she exists. She is not REQUIRED, though — this same code runs on
+   machines that have never heard of her, so the general scoring still has to
+   find a decent voice on its own. */
+const PREFERRED_VOICE_ = /zira/i;
 const FEMALE_VOICE_ = new RegExp([
   'female', 'zira', 'hazel', 'susan', 'linda', 'heera', 'catherine', 'eva',
   'michelle', 'samantha', 'victoria', 'karen', 'moira', 'tessa', 'fiona',
@@ -967,9 +972,10 @@ function pickVoice_() {
   if (!all.length) return null;
   const en = all.filter(v => /^en/i.test(v.lang));
   const pool = (en.length ? en : all).slice();
-  /* Female first, then LOCAL — a local voice speaks offline and starts instantly,
-     where a cloud voice can lag past the moment it was meant to mark. */
-  const score = v => (FEMALE_VOICE_.test(v.name) ? 4 : 0)
+  /* Zira first, then female, then LOCAL — a local voice speaks offline and starts
+     instantly, where a cloud voice can lag past the moment it was meant to mark. */
+  const score = v => (PREFERRED_VOICE_.test(v.name) ? 8 : 0)
+                   + (FEMALE_VOICE_.test(v.name) ? 4 : 0)
                    + (v.localService ? 2 : 0)
                    + (/^en[-_]US/i.test(v.lang) ? 1 : 0);
   pool.sort((a, b) => score(b) - score(a));
@@ -994,38 +1000,17 @@ function speakIA_() {
       u.pitch = pitch; u.rate = rate; u.volume = 0.95;
       ss.speak(u);
     };
-    /* The letter, not the word. "Ay" is a rare word and engines mangle it —
-       standalone capital letters get explicit letter-name handling, which is the
-       long A we actually want. And rate 0.6 was a drawl: slowing a voice that far
-       stretches the vowel until it stops sounding like the letter at all. */
-    sing('I', 1.45, 0.9);       // ding — the higher note
-    sing(IA_SECOND_, 1.0, 0.8); // dong — lower, a touch longer
+    /* "A." — the full stop, chosen by ear on the test page. It forces the letter
+       to stand alone, which is what makes engines name it rather than read it as
+       the article "uh". A bare A was ambiguous and "Ay" was mangled outright.
+       Natural pitch and rate now: the bell already carried the tune, so the voice
+       does not have to sing it, and a voice that is not pitch-shifted simply
+       sounds like a person. */
+    sing('I',  1.05, 0.95);
+    sing('A.', 1.05, 0.95);
     return true;
   } catch (e) { return false; }
 }
-
-/* Which spelling produces a clean long A depends on the engine, and there is no
-   way to ask it — you have to listen. iaAudition() plays the candidates in order
-   so the winner can be chosen by ear rather than guessed at; iaVoices() lists
-   what is actually installed. Set the winner in IA_SECOND_ and this goes away. */
-let IA_SECOND_ = 'A';
-window.iaAudition = function () {
-  const tries = ['A', 'Ay', 'Aye', 'ay', 'Ai', 'eigh'];
-  console.log('%cAuditioning the second note — listen, then tell Claude the number.',
-              'font-weight:bold');
-  tries.forEach((t, i) => setTimeout(() => {
-    console.log((i + 1) + ')  I — ' + JSON.stringify(t));
-    IA_SECOND_ = t;
-    speakIA_();
-  }, i * 2200));
-  setTimeout(() => { IA_SECOND_ = 'A'; }, tries.length * 2200 + 500);
-};
-window.iaVoices = function () {
-  const v = window.speechSynthesis.getVoices() || [];
-  console.table(v.map(x => ({ name: x.name, lang: x.lang, local: x.localService })));
-  const p = pickVoice_();
-  console.log('Currently using:', p ? p.name + '  (' + p.lang + ')' : 'none');
-};
 /* Chrome fills the voice list asynchronously; without this nudge the very first
    chime after a cold load finds it empty and quietly falls back to the bell. */
 try { if ('speechSynthesis' in window) window.speechSynthesis.getVoices(); } catch (e) {}
@@ -1035,10 +1020,19 @@ try { if ('speechSynthesis' in window) window.speechSynthesis.getVoices(); } cat
    descending major third nearly every two-note chime uses. A quiet octave above
    each fundamental and a long decay make it a bell rather than a beep, and the
    second note is left to ring about twice as long. */
+/* Ken's pick, heard side by side on the test page: the doorbell FIRST, then the
+   voice. The chime is what catches you across the room; the voice only confirms
+   what it was. That order also means the voice is no longer load-bearing — if a
+   machine has no voices installed, or the browser refuses to speak, the bell has
+   already done the job rather than leaving silence. */
 function chime_(force) {
   const mode = chimeMode_();
   if (mode === 'off' && !force) return;
-  if (mode !== 'bell' && speakIA_()) return;          // bell is the fallback
+  bell_();
+  if (mode !== 'bell') setTimeout(speakIA_, 900);     // after the dong stops ringing
+}
+
+function bell_() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
