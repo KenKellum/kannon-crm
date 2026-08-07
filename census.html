@@ -158,28 +158,18 @@
       <label style="display:flex;align-items:center;gap:9px;margin-top:12px;text-transform:none;
                     font-size:13px;letter-spacing:0;font-weight:400;cursor:pointer;">
         <input type="checkbox" id="el-multi" style="width:auto;margin:0;" onchange="toggleSecondClass()" />
-        Some employees are on different terms &mdash; part-time, management, or another location
+        Some employees are on different terms &mdash; part-time, management, another location, and so on
       </label>
-      <div id="el-class2" style="display:none;margin-top:12px;padding:14px;background:#f8fafc;
-           border-left:4px solid #c8a84b;border-radius:0 8px 8px 0;">
-        <div class="grid2">
-          <div><label>What do you call this group?</label>
-            <input type="text" id="el2-name" placeholder="e.g. Part-time, Management" /></div>
-          <div><label>Minimum hours per week</label>
-            <input type="number" id="el2-hours" value="20" min="1" max="60" /></div>
-          <div><label>You pay toward their own premium</label>
-            <div style="display:flex;gap:8px;">
-              <input type="number" id="el2-emp" value="25" min="0" style="flex:1;" />
-              <select id="el2-basis" style="flex:2;">
-                <option value="percent_employee_only">% of employee-only cost</option>
-                <option value="percent_total">% of their total cost</option>
-                <option value="flat_dollar">$ per month, flat</option>
-                <option value="none">Nothing</option>
-              </select>
-            </div></div>
-          <div><label>You pay toward their dependents</label>
-            <input type="number" id="el2-dep" value="0" min="0" /></div>
-        </div>
+
+      <!-- As many groups as they actually have. One fixed extra slot was a
+           guess; employers routinely run three or four. Whatever they name here
+           becomes the choices in the Class column of the census below. -->
+      <div id="el-classes" style="display:none;margin-top:12px;">
+        <div id="el-class-list"></div>
+        <button type="button" class="btn ghost btn-sm" onclick="addClassRow_()">+ Add another group</button>
+        <div class="note" style="margin-top:8px;">These names become the choices in the
+          <strong>Class</strong> column of your census below, so you can tag each person without
+          typing it out every time.</div>
       </div>
 
       <div id="baa-step" style="display:none;">
@@ -225,6 +215,12 @@
           <button class="btn ghost btn-sm" onclick="addRow('employee')">+ Add employee</button>
           <button class="btn ghost btn-sm" onclick="addRow('dependent')">+ Add dependent (under employee above)</button>
           <button class="btn ghost btn-sm" onclick="clearRows()">Clear all</button>
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#334155;">
+            <button class="btn ghost btn-sm" onclick="fillHours_()">Set hours to</button>
+            <input type="number" id="bulk-hours" value="40" min="1" max="80"
+                   style="width:62px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;font-size:12.5px;" />
+            <span>for employees with none listed</span>
+          </span>
         </div>
         <div id="tally" class="note" style="margin-top:8px;"></div>
       </div>
@@ -657,6 +653,33 @@ function addRow(rowType, data) {
    the user to reconfirm a choice they already made by picking a file. */
 function emptyRows_() { document.getElementById('rows').innerHTML = ''; tally(); }
 
+/* Most uploads have no hours column, and typing 40 forty times is the kind of
+   chore that makes someone abandon a form. Fills BLANKS ONLY — an employer who
+   did send real hours should never have them quietly overwritten — and only for
+   employees, since dependants do not work here. */
+function fillHours_() {
+  const n = (document.getElementById('bulk-hours') || {}).value;
+  if (!n) return;
+  let filled = 0, skipped = 0;
+  document.querySelectorAll('#rows tr').forEach(t => {
+    if (t.dataset.rowType !== 'employee') return;
+    const f = t.querySelector('.f-hrs');
+    if (!f) return;
+    if ((f.value || '').trim()) { skipped++; return; }
+    f.value = n; filled++;
+  });
+  const rpt = document.getElementById('map-report');
+  rpt.style.display = 'block';
+  rpt.innerHTML = filled
+    ? '<strong>&#10003; Set ' + filled + ' employee' + (filled === 1 ? '' : 's') + ' to ' + esc(n)
+      + ' hours a week.</strong>'
+      + (skipped ? ' ' + skipped + ' already had hours and were left alone.' : '')
+      + ' Change any of them individually below.'
+    : '<strong>Nothing to fill.</strong> Every employee already has hours listed &mdash; '
+      + 'they were left exactly as they are.';
+  saveDraft();
+}
+
 function clearRows() { startCensusOver(); }
 
 /* The employer's own class names, gathered from whatever they uploaded and
@@ -717,8 +740,57 @@ async function reopenCensus() {
    nothing is deleted on our side until they actually send, and the version
    already with carriers is archived regardless. */
 function toggleSecondClass() {
-  document.getElementById('el-class2').style.display =
-    document.getElementById('el-multi').checked ? 'block' : 'none';
+  const on = document.getElementById('el-multi').checked;
+  document.getElementById('el-classes').style.display = on ? 'block' : 'none';
+  if (on && !document.querySelectorAll('#el-class-list .el-class').length) addClassRow_();
+  if (!on) syncClassOptionsFromRules_();
+}
+
+/* One extra group was a guess — employers routinely run three or four (Shop,
+   Office, Drivers, Management). Each row carries its own hours and its own
+   contribution, because "different terms" usually means both. */
+function addClassRow_(preset) {
+  preset = preset || {};
+  const list = document.getElementById('el-class-list');
+  const row = document.createElement('div');
+  row.className = 'el-class';
+  row.style.cssText = 'margin-bottom:10px;padding:14px;background:#f8fafc;'
+    + 'border-left:4px solid #c8a84b;border-radius:0 8px 8px 0;position:relative;';
+  row.innerHTML =
+      '<button type="button" class="del" style="position:absolute;top:8px;right:10px;" '
+    + 'title="Remove this group" onclick="this.closest(\'.el-class\').remove(); syncClassOptionsFromRules_();">&#10005;</button>'
+    + '<div class="grid2">'
+    + '<div><label>What do you call this group?</label>'
+    + '<input type="text" class="ec-name" placeholder="e.g. Part-time, Shop, Management" value="'
+    + esc(preset.name || '') + '" oninput="syncClassOptionsFromRules_()" /></div>'
+    + '<div><label>Minimum hours per week</label>'
+    + '<input type="number" class="ec-hours" min="1" max="60" value="' + esc(preset.hours || '20') + '" /></div>'
+    + '<div><label>You pay toward their own premium</label>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<input type="number" class="ec-emp" min="0" value="' + esc(preset.emp || '25') + '" style="flex:1;" />'
+    + '<select class="ec-basis" style="flex:2;">'
+    + '<option value="percent_employee_only">% of employee-only cost</option>'
+    + '<option value="percent_total">% of their total cost</option>'
+    + '<option value="flat_dollar">$ per month, flat</option>'
+    + '<option value="none">Nothing</option>'
+    + '</select></div></div>'
+    + '<div><label>You pay toward their dependants</label>'
+    + '<input type="number" class="ec-dep" min="0" value="' + esc(preset.dep || '0') + '" /></div>'
+    + '</div>';
+  list.appendChild(row);
+  syncClassOptionsFromRules_();
+}
+
+/* The groups they name here are the ones offered in the census Class column.
+   Merged with anything found in their upload rather than replacing it, because
+   both are their own words and neither should quietly win. */
+function syncClassOptionsFromRules_() {
+  const names = [];
+  document.querySelectorAll('#el-class-list .ec-name').forEach(i => {
+    const v = (i.value || '').trim();
+    if (v && names.indexOf(v) === -1) names.push(v);
+  });
+  if (names.length) setClassOptions_(names);
 }
 
 /* Say back what the answer MEANS in money. These two questions decide more
@@ -785,20 +857,31 @@ function collectEligibility_() {
     }]
   }];
   if (document.getElementById('el-multi').checked) {
-    const b2 = v('el2-basis');
-    classes.push({
-      name: v('el2-name') || 'Part-time',
-      min_hours: v('el2-hours') || null,
-      waiting_period: v('el-wait') || null,
-      is_default: false,
-      contributions: [{
-        line: 'medical',
-        basis: b2,
-        employee_pct: b2.indexOf('percent') === 0 ? v('el2-emp') : null,
-        employee_amt: b2 === 'flat_dollar' ? v('el2-emp') : null,
-        dependent_pct: b2.indexOf('percent') === 0 ? v('el2-dep') : null,
-        dependent_amt: b2 === 'flat_dollar' ? v('el2-dep') : null,
-      }]
+    document.querySelectorAll('#el-class-list .el-class').forEach((row, i) => {
+      const g = sel => (row.querySelector(sel) || {}).value || '';
+      const nm = g('.ec-name').trim();
+      if (!nm) return;                       // an empty row is not a group
+      const b2 = g('.ec-basis');
+      classes.push({
+        name: nm,
+        min_hours: g('.ec-hours') || null,
+        waiting_period: v('el-wait') || null,
+        is_default: false,
+        contributions: [{
+          line: 'medical',
+          basis: b2,
+          employee_pct: b2.indexOf('percent') === 0 ? g('.ec-emp') : null,
+          employee_amt: b2 === 'flat_dollar' ? g('.ec-emp') : null,
+          // The measurement questions are plan-wide — an employer does not
+          // usually measure one group against a benchmark and another against
+          // whatever they pick — so both groups inherit them.
+          pct_basis_plan: v('el-benchmark') || 'chosen_plan',
+          dependent_basis: v('el-dep-basis') || 'none',
+          dependent_pct: (v('el-dep-basis') || '').indexOf('percent') === 0 ? g('.ec-dep') : null,
+          dependent_amt: v('el-dep-basis') === 'flat_dollar' ? g('.ec-dep') : null,
+          dependent_pct_basis_plan: v('el-benchmark') || 'chosen_plan',
+        }]
+      });
     });
   }
   return classes;
