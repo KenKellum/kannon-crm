@@ -51,22 +51,48 @@ body{background:var(--wash);color:var(--text);font-family:var(--sans);
           letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.55)}
 
 /* ── page ─────────────────────────────────────────────────────────────── */
-.wrap{max-width:1180px;margin:0 auto;padding:38px 28px 80px}
+/* Back to a single readable column now the messages have their own drawer —
+   1180px was only ever there to make room for the rail, and prose set that wide
+   is tiring to read. */
+.wrap{max-width:940px;margin:0 auto;padding:38px 28px 80px}
 
-/* Two columns: the work on the left, the Message Centre pinned on the right so
-   it is in reach wherever they are on the page. Sticky rather than fixed, so it
-   never covers content and never fights the scroll. */
-.shell{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:30px;align-items:start}
-.rail{position:sticky;top:26px}
-.rail .card{display:flex;flex-direction:column;max-height:calc(100vh - 60px)}
-.rail .thread{flex:1;min-height:120px}
-.rail-head{display:flex;align-items:center;gap:9px;padding:15px 20px 13px;
-           border-bottom:1px solid var(--line);background:var(--paper);
-           border-radius:12px 12px 0 0}
-.rail-title{font-family:var(--serif);font-size:15px;font-weight:700;color:var(--ink)}
-.badge{margin-left:auto;background:var(--crimson);color:#fff;font-size:11px;font-weight:700;
-       border-radius:999px;padding:2px 9px;letter-spacing:.02em}
-.rail-sub{padding:0 20px;font-size:12.5px;color:var(--muted);margin-top:10px}
+/* ── the Message Centre, as a drawer ──────────────────────────────────────
+   Always reachable from the right edge, but it costs no room until it is
+   wanted. The handle stays put; the panel slides over the page rather than
+   reflowing it, so nothing the employer was reading jumps around. */
+.msg-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:61;
+         display:flex;flex-direction:column;align-items:center;gap:10px;
+         background:linear-gradient(160deg,var(--ia-soft),var(--ia));color:#fff;
+         border:0;border-right:0;border-radius:12px 0 0 12px;cursor:pointer;
+         padding:18px 11px;box-shadow:-3px 0 16px rgba(21,39,65,.22);
+         font-family:inherit;transition:padding .15s,box-shadow .15s}
+.msg-tab:hover{padding-right:15px;box-shadow:-4px 0 22px rgba(21,39,65,.3)}
+.msg-tab-label{writing-mode:vertical-rl;text-orientation:mixed;font-size:12.5px;
+         font-weight:600;letter-spacing:.11em;text-transform:uppercase}
+.msg-tab .dotmark{width:7px;height:7px;border-radius:50%;background:var(--crimson);
+         box-shadow:0 0 0 3px rgba(110,51,53,.28)}
+.badge{background:var(--crimson);color:#fff;font-size:11px;font-weight:700;
+       border-radius:999px;padding:2px 8px;letter-spacing:.02em;line-height:1.5}
+
+.drawer{position:fixed;top:0;right:0;height:100dvh;width:min(410px,94vw);z-index:62;
+        background:var(--paper);border-left:1px solid var(--line);
+        box-shadow:-14px 0 46px rgba(21,39,65,.20);
+        display:flex;flex-direction:column;
+        transform:translateX(101%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.drawer.open{transform:none}
+.drawer-head{display:flex;align-items:center;gap:10px;padding:17px 18px 15px;
+        border-bottom:1px solid var(--line);flex-shrink:0;
+        background:linear-gradient(160deg,var(--ia) 0%,var(--ia-deep) 100%);color:#fff}
+.rail-title{font-family:var(--serif);font-size:15.5px;font-weight:700;letter-spacing:.01em}
+.drawer-close{margin-left:auto;background:rgba(255,255,255,.12);border:0;color:#fff;
+        width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:19px;line-height:1;
+        transition:background .15s}
+.drawer-close:hover{background:rgba(255,255,255,.24)}
+.drawer .thread{flex:1;min-height:0;max-height:none}
+.rail-sub{padding:12px 18px 0;font-size:12.5px;color:var(--muted);flex-shrink:0}
+.scrim{position:fixed;inset:0;background:rgba(10,25,48,.34);z-index:60;opacity:0;
+       pointer-events:none;transition:opacity .3s}
+.scrim.open{opacity:1;pointer-events:auto}
 .greeting{font-family:var(--serif);font-size:30px;line-height:1.25;color:var(--ink);
           font-weight:400;letter-spacing:-.2px}
 .greeting strong{font-weight:700}
@@ -152,10 +178,11 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 /* Below the two-column breakpoint the rail stops being sticky and simply
    follows the content, so it is never a floating panel covering a small screen. */
 @media(max-width:900px){
-  .shell{grid-template-columns:minmax(0,1fr);gap:26px}
-  .rail{position:static}
-  .rail .card{max-height:none}
-  .rail .thread{max-height:320px}
+  /* On a narrow screen the drawer takes the full width and the handle shrinks
+     to the dot and the count — a vertical word is wasted space on a phone. */
+  .drawer{width:100vw}
+  .msg-tab{padding:14px 9px;top:auto;bottom:22px;transform:none;border-radius:12px 0 0 12px}
+  .msg-tab-label{display:none}
 }
 @media(max-width:640px){
   .wrap{padding:26px 18px 60px}.mast-inner{padding:18px}
@@ -191,47 +218,48 @@ textarea:focus{outline:0;border-color:var(--ia-soft);box-shadow:0 0 0 3px rgba(4
 
     <div class="rule"></div>
 
-    <div class="shell">
-      <!-- the work -->
-      <div>
-        <div id="tasks-wrap" style="display:none;">
-          <div class="eyebrow">What we need from you</div>
-          <div class="card" id="tasks"></div>
-          <div style="height:30px;"></div>
-        </div>
-
-        <div class="eyebrow">Your agent</div>
-        <div class="card"><div class="agent">
-          <div class="avatar" id="a-initials">—</div>
-          <div>
-            <div style="font-weight:700;color:var(--ink);font-size:15.5px;" id="a-name">—</div>
-            <div style="font-size:13.5px;margin-top:3px;">
-              <a id="a-email" href="#">—</a>
-              <span id="a-phone-wrap" style="display:none;"><span style="color:var(--line);margin:0 8px;">|</span>
-              <a id="a-phone" href="#">—</a></span>
-            </div>
-          </div>
-        </div></div>
-      </div>
-
-      <!-- the Message Centre, pinned so it is in reach from anywhere -->
-      <aside class="rail">
-        <div class="card">
-          <div class="rail-head">
-            <span style="color:var(--crimson);font-size:15px;">&#9679;</span>
-            <span class="rail-title">Message Centre</span>
-            <span class="badge" id="msg-badge" style="display:none;">0</span>
-          </div>
-          <div class="rail-sub" id="rail-sub">Straight to your agent — no inbox, no waiting on hold.</div>
-          <div class="thread" id="thread"></div>
-          <div class="composer">
-            <textarea id="msg" rows="1" placeholder="Ask your agent anything…"></textarea>
-            <button class="btn btn-primary" id="send-btn" onclick="sendMsg()">Send</button>
-          </div>
-        </div>
-      </aside>
+    <div id="tasks-wrap" style="display:none;">
+      <div class="eyebrow">What we need from you</div>
+      <div class="card" id="tasks"></div>
+      <div style="height:30px;"></div>
     </div>
+
+    <div class="eyebrow">Your agent</div>
+    <div class="card"><div class="agent">
+      <div class="avatar" id="a-initials">—</div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);font-size:15.5px;" id="a-name">—</div>
+        <div style="font-size:13.5px;margin-top:3px;">
+          <a id="a-email" href="#">—</a>
+          <span id="a-phone-wrap" style="display:none;"><span style="color:var(--line);margin:0 8px;">|</span>
+          <a id="a-phone" href="#">—</a></span>
+        </div>
+      </div>
+    </div></div>
   </div>
+
+  <!-- Message Centre: a handle that is always there, and a drawer that is not -->
+  <div class="scrim" id="scrim" onclick="toggleDrawer(false)"></div>
+
+  <button class="msg-tab" id="msg-tab" onclick="toggleDrawer()"
+          aria-controls="drawer" aria-expanded="false" title="Message Centre">
+    <span class="dotmark"></span>
+    <span class="msg-tab-label">Messages</span>
+    <span class="badge" id="msg-badge" style="display:none;">0</span>
+  </button>
+
+  <aside class="drawer" id="drawer" role="dialog" aria-label="Message Centre" aria-hidden="true">
+    <div class="drawer-head">
+      <span class="rail-title">Message Centre</span>
+      <button class="drawer-close" onclick="toggleDrawer(false)" aria-label="Close messages">&times;</button>
+    </div>
+    <div class="rail-sub" id="rail-sub">Straight to your agent — no inbox, no waiting on hold.</div>
+    <div class="thread" id="thread"></div>
+    <div class="composer">
+      <textarea id="msg" rows="1" placeholder="Ask your agent anything…"></textarea>
+      <button class="btn btn-primary" id="send-btn" onclick="sendMsg()">Send</button>
+    </div>
+  </aside>
 
   <div class="foot">
     The Insured America Agency <span class="sep">•</span> a brand of Kannon Financial Group<br>
@@ -329,13 +357,15 @@ function paintThread() {
      this page always means "something wants you", and a badge that counts your
      own messages back at you would mean nothing. */
   const badge = el('msg-badge');
+  const drawerOpen = el('drawer') && el('drawer').classList.contains('open');
   if (badge) {
     let fromAgent = 0;
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].mine) break;
       fromAgent++;
     }
-    badge.style.display = fromAgent ? 'inline-block' : 'none';
+    /* If they are looking at the drawer they have read it — no badge. */
+    badge.style.display = (fromAgent && !drawerOpen) ? 'inline-block' : 'none';
     badge.textContent = fromAgent;
   }
   const sub = el('rail-sub');
@@ -356,6 +386,32 @@ function paintThread() {
     + ' · ' + when(m.created_at) + '</div></div>').join('');
   t.scrollTop = t.scrollHeight;
 }
+
+/* The drawer. Opening it counts as reading, so the badge clears and the thread
+   lands at the newest message rather than the oldest. */
+function toggleDrawer(force) {
+  const d = el('drawer'), s = el('scrim'), tab = el('msg-tab');
+  const open = (force === undefined) ? !d.classList.contains('open') : !!force;
+  d.classList.toggle('open', open);
+  s.classList.toggle('open', open);
+  d.setAttribute('aria-hidden', open ? 'false' : 'true');
+  tab.setAttribute('aria-expanded', open ? 'true' : 'false');
+  /* The handle would sit on top of the open panel, so it steps aside. */
+  tab.style.opacity = open ? '0' : '1';
+  tab.style.pointerEvents = open ? 'none' : 'auto';
+  if (open) {
+    const t = el('thread');
+    if (t) t.scrollTop = t.scrollHeight;
+    const badge = el('msg-badge');
+    if (badge) badge.style.display = 'none';
+    setTimeout(() => { const m = el('msg'); if (m) m.focus(); }, 320);
+  }
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && el('drawer') && el('drawer').classList.contains('open')) {
+    toggleDrawer(false);
+  }
+});
 
 async function sendMsg() {
   const box = el('msg'), btn = el('send-btn');
