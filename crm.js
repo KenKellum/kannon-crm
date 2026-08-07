@@ -20630,6 +20630,88 @@ function ceTally_() {
   el.textContent = ee + ' employees, ' + (trs.length - ee) + ' dependents';
 }
 
+const WAIT_LABEL = {
+  none: 'No waiting period',
+  date_of_hire: 'From date of hire',
+  first_of_month_after_30: '1st of the month after 30 days',
+  first_of_month_after_60: '1st of the month after 60 days',
+  first_of_month_after_90: '1st of the month after 90 days',
+  other: 'Something else — ask them',
+};
+
+/* The employer's own answers, read-only here. Structural changes belong on the
+   employer record, so this links there rather than growing a second editor that
+   could disagree with the first. */
+function renderEligibilitySummary_(classes, win, employerId, dealId) {
+  if (!classes.length) {
+    return '<div class="panel-label" style="margin-top:16px;">Eligibility &amp; contributions</div>'
+      + '<div style="font-size:12px;color:var(--text-muted);">Nothing recorded yet — the employer '
+      + 'answers these on the census page, or you can set them on the employer record.</div>';
+  }
+  const money = c => {
+    const t = c.__contrib;
+    if (!t || t.basis === 'none') return 'pays nothing';
+    if (t.basis === 'flat_dollar') return '$' + (t.employee_amt ?? 0) + '/mo per employee';
+    const who = t.pct_basis_plan === 'base_plan' ? 'of a nominated base plan' : 'of the plan chosen';
+    const dep = t.dependent_basis === 'percent_of_increment'
+        ? (t.dependent_pct ?? 0) + '% of the dependant increment'
+      : t.dependent_basis === 'percent_of_tier_total'
+        ? (t.dependent_pct ?? 0) + '% of the full tier'
+      : t.dependent_basis === 'flat_dollar' ? '$' + (t.dependent_amt ?? 0) + '/mo toward dependants'
+      : 'nothing toward dependants';
+    return (t.employee_pct ?? 0) + '% ' + who + ' &middot; ' + dep;
+  };
+  const rows = classes.map(c =>
+    '<tr>'
+    + '<td style="padding:5px 8px;"><strong>' + escWeb(c.name) + '</strong>'
+    + (c.is_default ? ' <span style="font-size:10px;color:var(--text-muted);">DEFAULT</span>' : '') + '</td>'
+    + '<td style="padding:5px 8px;">' + (c.min_hours != null ? c.min_hours + ' hrs/wk' : '—') + '</td>'
+    + '<td style="padding:5px 8px;">' + escWeb(WAIT_LABEL[c.waiting_period] || c.waiting_period || '—') + '</td>'
+    + '<td style="padding:5px 8px;">' + escWeb(c.funding_model || 'group') + '</td>'
+    + '<td style="padding:5px 8px;">' + money(c) + '</td>'
+    + '</tr>').join('');
+
+  return '<div class="panel-label" style="margin-top:16px;">Eligibility &amp; contributions '
+    + '<span style="font-weight:400;color:var(--text-muted);font-size:11px;">— the employer\'s answers</span></div>'
+    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
+    + '<thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;">'
+    + '<th style="padding:4px 8px;">Group</th><th style="padding:4px 8px;">Eligible at</th>'
+    + '<th style="padding:4px 8px;">Waiting period</th><th style="padding:4px 8px;">Funding</th>'
+    + '<th style="padding:4px 8px;">Employer pays</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + (win && win.group_min_hours != null
+        ? '<div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">'
+          + 'Plan eligibility rule is the <strong>lowest</strong> of these — '
+          + escWeb(String(win.group_min_hours)) + ' hrs/wk'
+          + (win.lowest_class ? ', set by "' + escWeb(win.lowest_class) + '"' : '') + '.</div>'
+        : '')
+    + '<div style="margin-top:8px;">'
+    + '<button class="btn btn-outline btn-sm" onclick="closeModal(); openEmployerEditor(\''
+    + employerId + '\',\'' + dealId + '\')">&#9998; Edit on the employer record</button>'
+    + ' <button class="btn btn-outline btn-sm" onclick="showDesignFlags_(\'' + employerId + '\')">'
+    + '&#9888; Compliance check</button></div>';
+}
+
+/* Runs the same read the sandbox will run, so an agent can see the problems
+   before an employer ever does. */
+async function showDesignFlags_(employerId) {
+  const { data, error } = await supabaseClient.rpc('employer_design_flags', { p_employer: employerId });
+  if (error) { showToast('Error: ' + error.message); return; }
+  const icon = { stop: '&#9940;', review: '&#9888;', note: '&#8505;' };
+  const body = (data || []).length
+    ? (data || []).map(f =>
+        '<div style="padding:9px 12px;margin-bottom:8px;border-radius:8px;background:var(--surface-2);'
+        + 'border-left:4px solid ' + (f.severity === 'stop' ? 'var(--danger)'
+            : f.severity === 'review' ? 'var(--warning)' : 'var(--border)') + ';">'
+        + '<strong>' + (icon[f.severity] || '') + ' ' + escWeb(f.severity.toUpperCase()) + '</strong> '
+        + escWeb(f.message) + '</div>').join('')
+    : '<div style="color:var(--success);">&#10003; Nothing flagged on this design.</div>';
+  showModal('Compliance check', body
+    + '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
+    + 'These are shapes worth a second look, not legal advice. Anything marked STOP will '
+    + 'usually fail at underwriting rather than at proposal.</div>',
+    null, { hideConfirm: true, cancelLabel: 'Close' });
+}
+
 async function openCensusEditor(reqId) {
   const { data: r } = await supabaseClient.from('census_requests').select('*').eq('id', reqId).single();
   if (!r) { showToast('Census not found.'); return; }
@@ -20637,6 +20719,36 @@ async function openCensusEditor(reqId) {
   // granted to anyone, and '*' would ask PostgREST for it and be refused.
   const { data: emps } = await supabaseClient.from('census_employees')
     .select(CENSUS_COLS).eq('request_id', reqId).order('sort_order');
+
+  // What the employer told us about eligibility and what they pay. It lives on
+  // the EMPLOYER, not the census, so it has to be fetched separately — but this
+  // is where an agent is looking when they open a census, and a census without
+  // it only answers half the question.
+  let eligHTML = '';
+  try {
+    const { data: dl } = await supabaseClient.from('deals')
+      .select('employer_id').eq('id', r.deal_id).maybeSingle();
+    if (dl && dl.employer_id) {
+      const [{ data: cls }, { data: win }] = await Promise.all([
+        supabaseClient.from('employer_benefit_classes')
+          .select('id,name,min_hours,waiting_period,is_default,funding_model,sort_order')
+          .eq('employer_id', dl.employer_id).order('sort_order'),
+        supabaseClient.rpc('employer_eligibility_summary', { p_employer: dl.employer_id }),
+      ]);
+      const list = cls || [];
+      if (list.length) {
+        const { data: contribs } = await supabaseClient.from('employer_contributions')
+          .select('*').in('class_id', list.map(c => c.id));
+        // The medical line is what the census asks about; other lines arrive later.
+        list.forEach(c => {
+          c.__contrib = (contribs || []).find(t => t.class_id === c.id && t.line === 'medical')
+                     || (contribs || []).find(t => t.class_id === c.id) || null;
+        });
+      }
+      eligHTML = renderEligibilitySummary_(list, (win && win[0]) || null,
+                                           dl.employer_id, r.deal_id);
+    }
+  } catch (e) { console.error('eligibility load:', e); }
 
   const cf = (label, id, val, ph) =>
     `<div><label style="display:block;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 3px;">${label}</label>
@@ -20673,6 +20785,7 @@ async function openCensusEditor(reqId) {
           <tbody id="ce-rows"></tbody>
         </table>
       </div>
+      ${eligHTML}
       <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Edits are saved to the CRM record only — the employer's page stays locked to what they submitted. Use "download CSV" on the deal for the carrier-ready file after saving.</div>
     </div>
   `, async () => {
