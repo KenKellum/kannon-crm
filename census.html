@@ -248,15 +248,19 @@ const SYN = {
 };
 function normHeader(h) { return String(h || '').toLowerCase().replace(/[_\.\-]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function mapHeaders(headers) {
-  /* Columns we refuse on sight. A quote needs age, gender, ZIP and who is
-     related to whom — never a Social Security number, and never a bank detail.
-     Payroll exports are full of both, so an employer pasting one in is normal
-     and not their mistake. These columns are never mapped, never uploaded and
-     never stored; we say so plainly rather than quietly dropping them, because
-     somebody who believes they sent us an SSN deserves to know we did not keep
-     it. The safest place for data like this is not in our database at all. */
+  /* Columns we refuse on sight. Pay, bank details, passports and licences play
+     no part in pricing a benefits quote, and a payroll export is full of them —
+     so an employer pasting one in is normal, not their mistake. These columns
+     are never mapped, never read and never uploaded, and we say so plainly on
+     screen rather than dropping them quietly.
+
+     SSNs are NOT on this list, deliberately: level-funded carriers underwrite on
+     prescription history and an SSN materially improves the match. They are
+     optional, encrypted on arrival with a key held in Vault, never readable from
+     the table by any role, and every decryption is logged against a stated
+     reason. See migration census_ssn_encrypted_optional. */
   window._censusRefused = [];
-  const REFUSE = /ssn|social ?sec|\bsin\b|tax ?id\b|\bitin\b|national ?id|passport|driver'?s? ?licen|licen[cs]e ?(no|num|#)|bank|routing|account ?(no|num|#)|iban|salary|wage|compensation/;
+  const REFUSE = /passport|driver'?s? ?licen|licen[cs]e ?(no|num|#)|bank|routing|account ?(no|num|#)|iban|salary|wage|compensation|national ?id/;
   headers.forEach((h, idx) => {
     const n = normHeader(h);
     if (n && REFUSE.test(n)) window._censusRefused.push(String(h).trim());
