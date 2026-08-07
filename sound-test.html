@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MyIApro — sound test</title>
+<style>
+/* A workbench, not a product. Deliberately plain: the only thing that matters
+   here is that each option is unmistakably numbered, so it can be chosen by ear
+   and reported back as "number 4" without any ambiguity about which was which. */
+:root{
+  --ia:#1d3557; --ia-deep:#152741; --crimson:#6e3335;
+  --line:#e4e9f0; --wash:#f6f8fb; --paper:#fff;
+  --text:#33415a; --muted:#6b7a90; --ink:#16202e;
+  --serif:Georgia,'Times New Roman',serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--wash);color:var(--text);font-family:var(--sans);
+     font-size:15px;line-height:1.6}
+header{background:linear-gradient(160deg,var(--ia),var(--ia-deep));color:#fff;
+       padding:22px 26px}
+header h1{font-family:var(--serif);font-size:21px;font-weight:700;letter-spacing:-.2px}
+header p{font-size:13px;opacity:.8;margin-top:4px}
+.wrap{max-width:760px;margin:0 auto;padding:26px 22px 70px}
+section{background:var(--paper);border:1px solid var(--line);border-radius:12px;
+        padding:20px 22px;margin-bottom:18px}
+h2{font-family:var(--serif);font-size:17px;color:var(--ink);margin-bottom:4px}
+.hint{font-size:13px;color:var(--muted);margin-bottom:16px}
+.row{display:flex;align-items:center;gap:12px;padding:9px 0;
+     border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.num{flex-shrink:0;width:30px;height:30px;border-radius:50%;background:var(--ia);
+     color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;
+     justify-content:center}
+.what{flex:1;min-width:0}
+.what b{color:var(--ink);font-size:14.5px}
+.what span{display:block;font-size:12.5px;color:var(--muted)}
+button.play{background:var(--ia);color:#fff;border:0;border-radius:8px;
+     padding:9px 18px;font-family:inherit;font-size:14px;font-weight:600;
+     cursor:pointer;flex-shrink:0;transition:background .15s}
+button.play:hover{background:var(--crimson)}
+select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+     font-family:inherit;font-size:14px;color:var(--text);background:#fff}
+.note{background:#fdf6e6;border:1px solid #ecd9a4;border-radius:10px;
+     padding:13px 16px;font-size:13.5px;color:#6b5410;margin-bottom:18px}
+.tell{background:var(--ia);color:#fff;border-radius:12px;padding:18px 22px;
+     font-size:14.5px;line-height:1.6}
+.tell b{color:#ffd98a}
+code{background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>MyIApro — sound test</h1>
+  <p>Click things. Tell Claude the numbers you like.</p>
+</header>
+
+<div class="wrap">
+
+  <div class="note">
+    <b>Click any button below before expecting sound.</b> Browsers stay silent
+    until you have clicked somewhere on the page — that is a rule of the browser,
+    not a setting. It is also why the console commands did nothing.
+  </div>
+
+  <section>
+    <h2>1 &nbsp;Which voice</h2>
+    <p class="hint">Everything installed on this machine. The one chosen
+       automatically is marked. If you prefer a different one, note its name.</p>
+    <select id="voices"></select>
+    <div class="row" style="margin-top:14px;border-top:0;">
+      <div class="what"><b>Hear this voice</b><span>Says a full sentence, so you can judge it properly</span></div>
+      <button class="play" onclick="sample()">Play</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 &nbsp;The second note — which spelling gives a long A</h2>
+    <p class="hint">Each plays “I” then the spelling shown. Engines disagree about
+       how to say a lone letter, so the only way to find out is to listen.</p>
+    <div id="spellings"></div>
+  </section>
+
+  <section>
+    <h2>3 &nbsp;The whole sound</h2>
+    <p class="hint">Four different ideas for what plays when a message arrives.</p>
+    <div id="whole"></div>
+  </section>
+
+  <div class="tell">
+    Tell Claude: <b>the voice name</b> from section 1, <b>the spelling number</b>
+    from section 2, and <b>the number from section 3</b> you want as the arrival
+    sound. That gets locked in and this page is deleted.
+  </div>
+
+</div>
+
+<script>
+const ss = window.speechSynthesis;
+let VOICES = [];
+
+/* Same scoring the CRM uses, so the default here is genuinely what you would get
+   in the CRM — otherwise this page would be testing something else. */
+const FEMALE = new RegExp([
+  'female','zira','hazel','susan','linda','heera','catherine','eva','michelle',
+  'samantha','victoria','karen','moira','tessa','fiona','allison','ava','serena',
+  'nicky','kathy','aria','jenny','ana','emma','sonia','libby','natasha','clara',
+  'amber','nova'].join('|'), 'i');
+function autoPick(list) {
+  const en = list.filter(v => /^en/i.test(v.lang));
+  const pool = (en.length ? en : list).slice();
+  const score = v => (FEMALE.test(v.name) ? 4 : 0)
+                   + (v.localService ? 2 : 0)
+                   + (/^en[-_]US/i.test(v.lang) ? 1 : 0);
+  pool.sort((a, b) => score(b) - score(a));
+  return pool[0] || null;
+}
+function fillVoices() {
+  VOICES = ss.getVoices() || [];
+  if (!VOICES.length) return;
+  const best = autoPick(VOICES);
+  const sel = document.getElementById('voices');
+  sel.innerHTML = '';
+  VOICES.forEach((v, i) => {
+    const o = document.createElement('option');
+    o.value = i;
+    o.textContent = v.name + '  —  ' + v.lang
+                  + (v.localService ? '  (on this machine)' : '  (from the internet)')
+                  + (best && v.name === best.name ? '   ← chosen automatically' : '');
+    if (best && v.name === best.name) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+fillVoices();
+ss.addEventListener('voiceschanged', fillVoices);
+
+function voice() { return VOICES[document.getElementById('voices').value] || null; }
+
+function say(text, pitch, rate) {
+  const u = new SpeechSynthesisUtterance(text);
+  const v = voice();
+  if (v) { u.voice = v; u.lang = v.lang; }
+  u.pitch = pitch; u.rate = rate; u.volume = .95;
+  ss.speak(u);
+}
+function sample() {
+  ss.cancel();
+  say('Hello — you have a new message from an employer.', 1, 1);
+}
+
+/* ── section 2: the spellings ─────────────────────────────────────────────── */
+const SPELLINGS = [
+  ['A',    'a lone capital letter — engines usually name it'],
+  ['Ay',   'the dictionary spelling of the letter’s name'],
+  ['Aye',  'a real word, so more likely to be handled'],
+  ['ay',   'lower case — some engines treat it differently'],
+  ['Ai',   'reads as a diphthong in most engines'],
+  ['eigh', 'as in eight, without the consonants'],
+  ['A.',   'a full stop forces it to stand alone']
+];
+const holder = document.getElementById('spellings');
+SPELLINGS.forEach(([txt, why], i) => {
+  const d = document.createElement('div');
+  d.className = 'row';
+  d.innerHTML = '<div class="num">' + (i + 1) + '</div>'
+    + '<div class="what"><b>I &nbsp;+&nbsp; ' + txt.replace(/</g,'&lt;') + '</b>'
+    + '<span>' + why + '</span></div>';
+  const b = document.createElement('button');
+  b.className = 'play'; b.textContent = 'Play';
+  b.onclick = () => { ss.cancel(); say('I', 1.45, .9); say(txt, 1.0, .8); };
+  d.appendChild(b);
+  holder.appendChild(d);
+});
+
+/* ── section 3: whole-sound candidates ────────────────────────────────────── */
+let _ac = null;
+function bell() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  if (!_ac) _ac = new Ctx();
+  if (_ac.state === 'suspended') _ac.resume();
+  const ctx = _ac;
+  const note = (hz, at, dur, level) => {
+    [[hz, level], [hz * 2, level * .22]].forEach(([f, amp]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + at;
+      g.gain.setValueAtTime(.0001, t);
+      g.gain.exponentialRampToValueAtTime(amp, t + .012);
+      g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+      o.start(t); o.stop(t + dur + .02);
+    });
+  };
+  note(659.25, 0,   .55, .22);
+  note(523.25, .28, 1.05, .24);
+}
+const WHOLE = [
+  ['Sung, falling',        'The voice pitched high then low, like a doorbell. What is live now.',
+   () => { ss.cancel(); say('I', 1.45, .9); say('A', 1.0, .8); }],
+  ['Spoken naturally',     'No pitch tricks at all. Sounds like a person, not a robot singing.',
+   () => { ss.cancel(); say('I A', 1.0, .9); }],
+  ['Doorbell only',        'No voice. Two chimed notes, falling.',
+   () => bell()],
+  ['Doorbell, then voice', 'The chime gets your attention, the voice tells you what it was.',
+   () => { ss.cancel(); bell(); setTimeout(() => say('I A', 1.05, .95), 900); }]
+];
+const wh = document.getElementById('whole');
+WHOLE.forEach(([name, why, fn], i) => {
+  const d = document.createElement('div');
+  d.className = 'row';
+  d.innerHTML = '<div class="num">' + (i + 1) + '</div>'
+    + '<div class="what"><b>' + name + '</b><span>' + why + '</span></div>';
+  const b = document.createElement('button');
+  b.className = 'play'; b.textContent = 'Play';
+  b.onclick = fn;
+  d.appendChild(b);
+  wh.appendChild(d);
+});
+</script>
+</body>
+</html>
