@@ -1,0 +1,41 @@
+-- Carve-out classes + per-class plan menus, 2026-08-07.
+-- Applied live as carve_out_classes_and_plan_menus; recorded here.
+--
+-- LEVEL-FUNDED IS SELF-FUNDED, and self-funded plans are subject to IRC 105(h)
+-- nondiscrimination testing. So "fully-insured for the staff, level-funded for
+-- the owners" is not a pricing preference — it is the exact shape 105(h) exists
+-- to catch. That single fact is why carve-outs are sticky, and everything else
+-- here follows from it.
+--
+-- Two gaps this closes:
+--   nothing recorded WHY a class existed, so nothing downstream could reason
+--   about whether it was defensible; and the plan menu was per employer rather
+--   than per class, so "different plans for different classes" — the thing Ken
+--   actually runs into — could not be expressed at all.
+--
+-- Adds:
+--   employer_benefit_classes.class_basis   bona fide business classification,
+--                                          from a fixed list. owner / officer /
+--                                          manager / contractor_1099 are the
+--                                          ones that draw scrutiny.
+--   employer_benefit_classes.is_carve_out  the flag a discrimination review keys on
+--   employer_class_plans                   which plans a class is offered, with
+--                                          funding_type and is_base_plan
+--   employer_design_flags(employer)        a first compliance read: stop/review/note
+--
+-- The function surfaces questions; it does not decide. The database can see the
+-- SHAPE of a design — only a person knows whether a classification is genuinely
+-- bona fide, and that distinction is the whole reason it returns prose rather
+-- than a boolean.
+--
+-- VERIFIED against Ken's exact scenario (owners, regular employees, 1099s):
+--   owners carve-out on level_funded -> review, IRC 105(h)
+--   1099 class on a group plan       -> STOP: contractors are not employees,
+--                                       carriers require W-2 staff, and an
+--                                       ICHRA is normally the honest route
+--   class with no stated basis       -> review
+-- Fixtures deleted afterwards.
+--
+-- Full compliance reasoning, and what the sandbox assistant must do with these
+-- flags, is in Docs/GROUP-BENEFITS-ROADMAP.md.
+select 'carve-out classes: documented, applied via carve_out_classes_and_plan_menus' as note;
