@@ -320,8 +320,20 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnN
 async function useToken(tok) {
   const btn = document.getElementById('tok-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Signing you in…'; }
-  const { error } = await sb.auth.verifyOtp({ token_hash: tok, type: 'magiclink' });
+  let error = null;
+  try {
+    /* Older links carry a recovery-type token, so accept either rather than
+       stranding somebody on a link that was fine when it was sent. */
+    let res = await sb.auth.verifyOtp({ token_hash: tok, type: 'magiclink' });
+    if (res.error) res = await sb.auth.verifyOtp({ token_hash: tok, type: 'email' });
+    error = res.error;
+  } catch (e) {
+    error = e;
+  }
   if (error) {
+    console.error('verifyOtp failed:', error);
+    /* Never leave a dead button. Whatever went wrong, the way forward is the
+       same: ask for a fresh link. */
     gateRequest('That link has already been used',
       'Links open your workspace once, which is what stops anyone else who sees the '
       + 'email getting in. Pop your email address in below and a fresh one is on its way.');
@@ -372,10 +384,15 @@ async function init() {
           '<h1>Your workspace is ready</h1>'
         + '<p style="margin-bottom:22px;">Press the button to sign in. There is no password '
         + 'to remember — and once you are in, you will stay signed in on this device.</p>'
-        + '<button class="btn btn-primary" style="width:100%;" id="tok-btn" '
-        + 'onclick="useToken(' + JSON.stringify(tok) + ')">Open my workspace</button>';
+        + '<button class="btn btn-primary" style="width:100%;" id="tok-btn">Open my workspace</button>';
       el('gate').style.display = 'block';
       el('app').style.display = 'none';
+      /* The handler is attached here rather than written into an onclick
+         attribute. A token goes through JSON.stringify with double quotes
+         around it, which closes the attribute early and leaves a button that
+         silently does nothing when pressed — which is exactly what happened.
+         Nothing about a token belongs in markup. */
+      el('tok-btn').addEventListener('click', () => useToken(tok));
       return;
     }
 
