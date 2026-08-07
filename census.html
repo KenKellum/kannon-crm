@@ -191,7 +191,7 @@
           <div class="t">Download our template</div>
           <div class="d">A simple CSV to fill in and upload back &mdash; or hand to your payroll person.</div>
         </div>
-        <div class="path" onclick="addRow('employee'); document.getElementById('grid-wrap').scrollIntoView();">
+        <div class="path" onclick="startManualEntry_()">
           <div class="ico">&#9997;&#65039;</div>
           <div class="t">Type it in manually</div>
           <div class="d">Add employees and dependents one row at a time right here.</div>
@@ -202,10 +202,23 @@
       <div id="class-note" class="summary" style="display:none;border-left-color:#0d6b3f;background:#f2f9f5;"></div>
 
       <div id="grid-wrap" style="display:none;">
+        <!-- Name and employee number both identify a person, and almost nobody
+             uses both. Showing one keeps the row readable and gives the other
+             columns the width they were fighting over. Whichever is hidden keeps
+             its data — nothing is discarded by switching. -->
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;
+                    font-size:12.5px;color:#334155;">
+          <span>Identify people by:</span>
+          <button type="button" class="btn ghost btn-sm" id="id-mode-name"
+                  onclick="setIdentityMode_('name')">Name</button>
+          <button type="button" class="btn ghost btn-sm" id="id-mode-num"
+                  onclick="setIdentityMode_('number')">Employee number</button>
+          <span class="note" id="id-mode-note"></span>
+        </div>
         <div class="table-wrap">
         <table id="grid">
           <thead><tr>
-            <th style="min-width:150px;">Name</th><th>Emp #</th><th style="min-width:130px;">Date of birth</th>
+            <th class="col-name" style="min-width:150px;">Name</th><th class="col-num">Emp #</th><th style="min-width:130px;">Date of birth</th>
             <th>Gender</th><th>Zip</th><th style="min-width:110px;">SSN <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></th><th>Relationship</th><th>Class (optional)</th><th>Hrs/wk</th><th></th>
           </tr></thead>
           <tbody id="rows"></tbody>
@@ -627,6 +640,16 @@ function ingestRows(rows, filename) {
     }
   });
 
+  /* Pick the identity column from what they actually sent. A file full of names
+     does not need an employee-number column taking up room, and a file with no
+     names needs it badly. */
+  let named = 0, total = 0;
+  document.querySelectorAll('#rows tr').forEach(tr => {
+    total++;
+    if ((tr.querySelector('.f-name').value || '').trim()) named++;
+  });
+  setIdentityMode_(total && named / total >= 0.6 ? 'name' : 'number');
+
   const mapped = Object.keys(map).map(k => k.replace(/_/g, ' ')).join(', ');
   const rpt = document.getElementById('map-report');
   rpt.style.display = 'block';
@@ -672,8 +695,8 @@ function addRow(rowType, data) {
   tr.dataset.rowType = rowType;
   const rel = data.relationship || (rowType === 'dependent' ? 'spouse' : 'employee');
   tr.innerHTML =
-    '<td><input type="text" class="f-name" placeholder="' + (rowType === 'dependent' ? '↳ dependent name' : 'Full name') + '" value="' + esc(data.full_name || '') + '"/></td>'
-    + '<td style="min-width:105px;"><input type="text" class="f-num" value="' + esc(data.employee_number || '') + '"/></td>'
+    '<td class="col-name"><input type="text" class="f-name" placeholder="' + (rowType === 'dependent' ? '↳ dependent name' : 'Full name') + '" value="' + esc(data.full_name || '') + '"/></td>'
+    + '<td class="col-num" style="min-width:105px;"><input type="text" class="f-num" value="' + esc(data.employee_number || '') + '"/></td>'
     + '<td><input type="date" class="f-dob" value="' + esc(data.date_of_birth || '') + '"/></td>'
     + '<td style="max-width:70px;"><select class="f-gen"><option value=""></option><option value="M"' + (data.gender === 'M' ? ' selected' : '') + '>M</option><option value="F"' + (data.gender === 'F' ? ' selected' : '') + '>F</option></select></td>'
     + '<td style="max-width:85px;"><input type="text" class="f-zip" value="' + esc(data.zip || '') + '"/></td>'
@@ -711,6 +734,42 @@ function addRow(rowType, data) {
    the user to reconfirm a choice they already made by picking a file. */
 function emptyRows_() { document.getElementById('rows').innerHTML = ''; tally(); }
 
+/* Typing it in by hand: let them pick how they want to identify people BEFORE
+   they start, rather than discovering the choice after forty rows. The control
+   is already there, so draw the eye to it instead of adding a dialog. */
+function startManualEntry_() {
+  addRow('employee');
+  document.getElementById('grid-wrap').scrollIntoView({ behavior: 'smooth' });
+  const bar = document.getElementById('id-mode-note');
+  if (!bar) return;
+  const holder = bar.parentElement;
+  holder.style.transition = 'background .3s';
+  holder.style.background = '#fdf6e6';
+  setTimeout(() => { holder.style.background = ''; }, 1800);
+}
+
+/* Show one identity column, not both. The hidden one keeps every value it had —
+   this is a view, not a delete — so switching back and forth costs nothing and
+   the employee numbers still tie families together underneath.
+   Applied to rows added later as well, via applyRowKind_. */
+window.ID_MODE = 'name';
+function setIdentityMode_(mode) {
+  window.ID_MODE = (mode === 'number') ? 'number' : 'name';
+  const showNum = window.ID_MODE === 'number';
+  document.querySelectorAll('.col-num').forEach(el => { el.style.display = showNum ? '' : 'none'; });
+  document.querySelectorAll('.col-name').forEach(el => { el.style.display = showNum ? 'none' : ''; });
+
+  const bn = document.getElementById('id-mode-name'), bu = document.getElementById('id-mode-num');
+  if (bn && bu) {
+    bn.style.cssText = showNum ? '' : 'background:#1e293b;color:#fff;';
+    bu.style.cssText = showNum ? 'background:#1e293b;color:#fff;' : '';
+  }
+  const note = document.getElementById('id-mode-note');
+  if (note) note.textContent = showNum
+    ? 'Names are hidden but kept. Dependants share their employee’s number.'
+    : 'Employee numbers are hidden but kept, and still link dependants to their employee.';
+}
+
 /* A class belongs to an EMPLOYEE. A spouse or child inherits whatever their
    employee is in, so offering them their own is a question with no right answer
    — and any value typed there would be noise a carrier has to ignore. Same for
@@ -720,6 +779,11 @@ function emptyRows_() { document.getElementById('rows').innerHTML = ''; tally();
    a stale class behind. */
 function applyRowKind_(tr) {
   const isEmp = tr.dataset.rowType === 'employee';
+  // Keep a newly added row in whichever identity mode is currently showing.
+  const showNum = window.ID_MODE === 'number';
+  const cn = tr.querySelector('.col-name'), cu = tr.querySelector('.col-num');
+  if (cn) cn.style.display = showNum ? 'none' : '';
+  if (cu) cu.style.display = showNum ? '' : 'none';
   [['.f-class', 'Inherited'], ['.f-hrs', '—']].forEach(([sel, ph]) => {
     const f = tr.querySelector(sel);
     if (!f) return;
@@ -929,6 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e) e.addEventListener('change', explainContribution_);
   });
   explainContribution_();
+  setIdentityMode_(window.ID_MODE);   // so the buttons show which one is active
 });
 
 /* Collected as classes from the start even though most employers fill in one,
