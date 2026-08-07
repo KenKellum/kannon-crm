@@ -880,9 +880,41 @@ async function miaRefreshBadge(silent) {
     tab.classList.toggle('has-unread', !!n);   // the dot pulses when something waits
     // Only when it has genuinely gone UP, and never on the first read of a
     // session — otherwise every page load chimes for messages already seen.
-    if (!silent && miaLastUnread !== null && n > miaLastUnread) chime_();
+    if (!silent && miaLastUnread !== null && n > miaLastUnread) miaAnnounce_();
     miaLastUnread = n;
   } catch (e) {}
+}
+
+/* Who it is from, said out loud — a doorbell tells you someone is there, a name
+   tells you whether to get up. The count RPC returns a number and nothing else,
+   so the sender is looked up separately; that costs one extra call, but only on
+   the tick where the count actually rose, not on every poll.
+   The newest unread wins. If several arrive at once we name one rather than
+   reciting a list — the drawer is one click away for the rest. */
+async function miaAnnounce_() {
+  let who = '';
+  try {
+    const { data } = await supabaseClient.rpc('agent_conversations',
+      { p_scope: miaScope, p_show: 'active' });
+    const hot = (data || [])
+      .filter(c => c.unread > 0)
+      .sort((a, b) => new Date(b.last_at) - new Date(a.last_at))[0];
+    if (hot) who = String(hot.title || '');
+  } catch (e) {}
+  chime_(false, who);
+}
+
+/* Company names are written to be read, not spoken. An ampersand becomes a word,
+   the punctuation that would be recited aloud goes, and anything absurdly long is
+   cut — "Ironworks" is what identifies them, not their full registered name. */
+function sayableName_(s) {
+  let t = String(s || '')
+    .replace(/&/g, ' and ')
+    .replace(/[_/\\|*#@~<>"'`\[\]{}]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (t.length > 46) t = t.slice(0, 46).replace(/\s+\S*$/, '');   // never mid-word
+  return t;
 }
 
 /* ── the arrival sound ────────────────────────────────────────────────────
@@ -906,7 +938,7 @@ function chimeMode_() {
 function chimeMuted_() { return chimeMode_() === 'off'; }
 
 const CHIME_FACE_ = {
-  voice: ['🗣️', 'Doorbell, then "I A" — click for the doorbell alone'],
+  voice: ['🗣️', 'Doorbell, then who it is from — click for the doorbell alone'],
   bell:  ['🔔', 'Doorbell only — click for silence'],
   off:   ['🔇', 'Silent — click for the doorbell and the voice']
 };
@@ -987,7 +1019,7 @@ function pickVoice_() {
    list for the rest of the session. */
 try { window.speechSynthesis.addEventListener('voiceschanged', () => { _voice = null; }); } catch (e) {}
 
-function speakIA_() {
+function speakIA_(who) {
   try {
     if (!('speechSynthesis' in window)) return false;
     const v = pickVoice_();
@@ -1007,8 +1039,11 @@ function speakIA_() {
        own prosody inside a phrase, so it will not fall like a doorbell; the bell
        in front of it already did that job.
        "I A." keeps the full stop, which makes the engine name the letter rather
-       than read it as the article "uh". */
-    sing('I A.', 1.2, 0.85);
+       than read it as the article "uh".
+       A name replaces it when we know one — the same single breath, so the same
+       rule applies: never split it into two utterances to "add" the I A. */
+    const name = sayableName_(who);
+    sing(name ? name + '.' : 'I A.', 1.2, 0.85);
     return true;
   } catch (e) { return false; }
 }
@@ -1026,11 +1061,12 @@ try { if ('speechSynthesis' in window) window.speechSynthesis.getVoices(); } cat
    what it was. That order also means the voice is no longer load-bearing — if a
    machine has no voices installed, or the browser refuses to speak, the bell has
    already done the job rather than leaving silence. */
-function chime_(force) {
+function chime_(force, who) {
   const mode = chimeMode_();
   if (mode === 'off' && !force) return;
   bell_();
-  if (mode !== 'bell') setTimeout(speakIA_, 900);     // over the dong's tail, on purpose
+  // over the dong's tail, on purpose — the version Ken picked by ear
+  if (mode !== 'bell') setTimeout(() => speakIA_(who), 900);
 }
 
 function bell_() {
