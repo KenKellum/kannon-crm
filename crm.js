@@ -19858,6 +19858,18 @@ async function resendBaa_(baaId, a) {
 // records stay out of the way until something is happening on them.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// A date, the way this CRM writes dates. There is a fmtDate() nested inside the
+// deal-panel renderer, but it is local to that function — calling it from any
+// other top-level function is a ReferenceError, which is exactly what opening
+// an employer hit. Same behaviour, reachable from anywhere.
+// Noon avoids the timezone slip that turns a date-only value into the day before.
+function fmtDate_(d) {
+  if (!d) return null;
+  const dt = new Date(String(d).length <= 10 ? d + 'T12:00:00' : d);
+  if (isNaN(dt)) return null;
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 const EMPLOYER_ROLES = [
   ['decision_maker', 'Decision maker',      'Owner or CFO — signs'],
   ['benefits_admin', 'Benefits administrator', 'HR — does the work, and holds the workspace login'],
@@ -19948,7 +19960,7 @@ function renewalClockHTML_(win, emp) {
          + 'and timing is most of what wins group business.</span>';
   }
   const carrier = emp && emp.current_carrier ? ' &middot; with ' + escWeb(emp.current_carrier) : '';
-  const renews  = 'Renews <strong>' + escWeb(fmtDate(win.next_renewal) || win.next_renewal) + '</strong>' + carrier;
+  const renews  = 'Renews <strong>' + escWeb(fmtDate_(win.next_renewal) || win.next_renewal) + '</strong>' + carrier;
   const d       = win.days_to_renewal;
 
   switch (win.window_state) {
@@ -19957,13 +19969,13 @@ function renewalClockHTML_(win, emp) {
            + d + ' days out, inside the 90&ndash;120 day window.';
     case 'opens soon':
       return renews + '<br><span style="color:var(--warning);font-weight:700;">Window opens in '
-           + win.days_until_window + ' days</span> (' + escWeb(fmtDate(win.window_opens_on) || '') + ').';
+           + win.days_until_window + ' days</span> (' + escWeb(fmtDate_(win.window_opens_on) || '') + ').';
     case 'too late this year':
       return renews + '<br><span style="color:var(--text-muted);">Only ' + d + ' days out — too late to displace this year. '
            + 'Worth a call to be first in line for next.</span>';
     default:
       return renews + '<br><span style="color:var(--text-muted);">Window opens '
-           + escWeb(fmtDate(win.window_opens_on) || '') + ' — ' + win.days_until_window + ' days away. '
+           + escWeb(fmtDate_(win.window_opens_on) || '') + ' — ' + win.days_until_window + ' days away. '
            + 'Nothing to do until then.</span>';
   }
 }
@@ -20270,7 +20282,7 @@ async function openEmployerEditor(employerId, dealId) {
   showModal('Employer &mdash; ' + escWeb(emp.legal_name), `
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
       ${emp.verified_at
-        ? '&#10003; Confirmed by the employer ' + escWeb(fmtDate(emp.verified_at) || '')
+        ? '&#10003; Confirmed by the employer ' + escWeb(fmtDate_(emp.verified_at) || '')
         : 'Unverified — this is our research. The employer confirms it when they return their census.'}
     </div>
     <label>Legal name *</label><input type="text" id="ee-legal" value="${escWeb(emp.legal_name)}" />
