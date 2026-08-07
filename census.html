@@ -109,6 +109,67 @@
         <div><label>Contact email *</label><input type="email" id="c-cemail" /></div>
       </div>
 
+      <!-- Asked here because this is the one moment the employer is engaged.
+           Asking later means chasing them a second time, and without it we
+           cannot tell them what a plan costs THEM or costs their staff. -->
+      <h2 style="margin-top:26px;">Eligibility &amp; what you contribute</h2>
+      <p class="note" style="margin-bottom:10px;">Two quick questions that decide what everyone
+        actually pays. If you are not sure, put your best guess &mdash; your advisor will confirm.</p>
+      <div class="grid2">
+        <div><label>Minimum hours per week to qualify</label>
+          <input type="number" id="el-hours" value="30" min="1" max="60" step="1" /></div>
+        <div><label>New hire waiting period</label>
+          <select id="el-wait">
+            <option value="first_of_month_after_60">1st of the month after 60 days</option>
+            <option value="first_of_month_after_30">1st of the month after 30 days</option>
+            <option value="first_of_month_after_90">1st of the month after 90 days</option>
+            <option value="date_of_hire">Date of hire</option>
+            <option value="none">No waiting period</option>
+            <option value="other">Something else — I'll explain to my advisor</option>
+          </select></div>
+        <div><label>You pay toward the employee's own premium</label>
+          <div style="display:flex;gap:8px;">
+            <input type="number" id="el-emp" value="50" min="0" step="1" style="flex:1;" />
+            <select id="el-basis" style="flex:2;">
+              <option value="percent_employee_only">% of employee-only cost</option>
+              <option value="percent_total">% of their total cost</option>
+              <option value="flat_dollar">$ per month, flat</option>
+              <option value="none">Nothing</option>
+            </select>
+          </div></div>
+        <div><label>You pay toward dependents (spouse / children)</label>
+          <div style="display:flex;gap:8px;">
+            <input type="number" id="el-dep" value="0" min="0" step="1" style="flex:1;" />
+            <span class="note" style="align-self:center;flex:2;" id="el-dep-unit">% of dependent cost</span>
+          </div></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:9px;margin-top:12px;text-transform:none;
+                    font-size:13px;letter-spacing:0;font-weight:400;cursor:pointer;">
+        <input type="checkbox" id="el-multi" style="width:auto;margin:0;" onchange="toggleSecondClass()" />
+        Some employees are on different terms &mdash; part-time, management, or another location
+      </label>
+      <div id="el-class2" style="display:none;margin-top:12px;padding:14px;background:#f8fafc;
+           border-left:4px solid #c8a84b;border-radius:0 8px 8px 0;">
+        <div class="grid2">
+          <div><label>What do you call this group?</label>
+            <input type="text" id="el2-name" placeholder="e.g. Part-time, Management" /></div>
+          <div><label>Minimum hours per week</label>
+            <input type="number" id="el2-hours" value="20" min="1" max="60" /></div>
+          <div><label>You pay toward their own premium</label>
+            <div style="display:flex;gap:8px;">
+              <input type="number" id="el2-emp" value="25" min="0" style="flex:1;" />
+              <select id="el2-basis" style="flex:2;">
+                <option value="percent_employee_only">% of employee-only cost</option>
+                <option value="percent_total">% of their total cost</option>
+                <option value="flat_dollar">$ per month, flat</option>
+                <option value="none">Nothing</option>
+              </select>
+            </div></div>
+          <div><label>You pay toward their dependents</label>
+            <input type="number" id="el2-dep" value="0" min="0" /></div>
+        </div>
+      </div>
+
       <div id="baa-step" style="display:none;">
         <h2><span class="step-badge">STEP 2 — HIPAA AGREEMENT</span></h2>
         <p style="font-size:13px;">An employee census contains health-related information, so federal law (HIPAA) requires a signed agreement <strong>before we receive it</strong>. It legally binds <em>us</em> to protect your employees' information — review and sign below (about a minute).</p>
@@ -492,6 +553,51 @@ async function reopenCensus() {
 /* Start the employee list again from scratch. Only clears the grid on screen —
    nothing is deleted on our side until they actually send, and the version
    already with carriers is archived regardless. */
+function toggleSecondClass() {
+  document.getElementById('el-class2').style.display =
+    document.getElementById('el-multi').checked ? 'block' : 'none';
+}
+
+/* Collected as classes from the start even though most employers fill in one,
+   because a group with a part-time tier is not an edge case and re-shaping this
+   later would mean re-asking every employer we had already onboarded. */
+function collectEligibility_() {
+  const v = id => (document.getElementById(id) || {}).value;
+  const basis = v('el-basis');
+  const classes = [{
+    name: 'All eligible employees',
+    min_hours: v('el-hours') || null,
+    waiting_period: v('el-wait') || null,
+    is_default: true,
+    contributions: [{
+      line: 'medical',
+      basis: basis,
+      employee_pct: basis.indexOf('percent') === 0 ? v('el-emp') : null,
+      employee_amt: basis === 'flat_dollar' ? v('el-emp') : null,
+      dependent_pct: basis.indexOf('percent') === 0 ? v('el-dep') : null,
+      dependent_amt: basis === 'flat_dollar' ? v('el-dep') : null,
+    }]
+  }];
+  if (document.getElementById('el-multi').checked) {
+    const b2 = v('el2-basis');
+    classes.push({
+      name: v('el2-name') || 'Part-time',
+      min_hours: v('el2-hours') || null,
+      waiting_period: v('el-wait') || null,
+      is_default: false,
+      contributions: [{
+        line: 'medical',
+        basis: b2,
+        employee_pct: b2.indexOf('percent') === 0 ? v('el2-emp') : null,
+        employee_amt: b2 === 'flat_dollar' ? v('el2-emp') : null,
+        dependent_pct: b2.indexOf('percent') === 0 ? v('el2-dep') : null,
+        dependent_amt: b2 === 'flat_dollar' ? v('el2-dep') : null,
+      }]
+    });
+  }
+  return classes;
+}
+
 function startCensusOver() {
   const n = document.querySelectorAll('#rows tr').length;
   if (n === 0) { document.getElementById('paths').style.display = ''; return; }
@@ -755,6 +861,16 @@ async function submitCensus() {
   // Replacing the roster and marking the census sent now happen together. If
   // anything fails the whole thing rolls back, so a half-finished submit can no
   // longer leave the employee list wiped.
+  /* Saved before the census itself. If this call fails the census still goes —
+     losing an eligibility answer is annoying, losing a roster is not
+     recoverable, and the two should not share a fate. */
+  try {
+    await supa('/rest/v1/rpc/census_save_eligibility', {
+      method: 'POST',
+      body: JSON.stringify({ p_request: reqId, p_classes: collectEligibility_() })
+    });
+  } catch (e) { console.error('eligibility save failed', e); }
+
   const ok2 = await supa('/rest/v1/rpc/census_submit', {
     method: 'POST',
     body: JSON.stringify({
