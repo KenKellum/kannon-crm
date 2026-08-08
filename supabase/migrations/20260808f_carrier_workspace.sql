@@ -1,0 +1,36 @@
+-- THE CARRIER REP'S WORKSPACE — the door, the data and the messages.
+-- (Applied via the Supabase migration of the same name; the full body lives in
+-- the database. Recorded here so the repo shows what exists and why.)
+--
+-- ACCESS, per Ken's question about expiry. There is no expiry to manage, because
+-- the session is not what grants access. Every read re-derives the rep from the
+-- signed-in email against carrier_contacts WHERE is_active. Retire a rep and
+-- their next page load shows nothing, whatever token they hold. Revocation is
+-- immediate rather than eventual, and a rep who works our groups weekly never
+-- signs in twice.
+--
+-- WHAT A REP MAY SEE: their OWN carrier's submissions to groups they were
+-- invited to. Never another carrier's quote or rates. Enforced by construction —
+-- the query starts from s.contact_id in (select id from my_carrier_contacts()) —
+-- not by filtering a wider set afterwards.
+--
+-- Ken's clarification settles the rest: the current plan DESIGN is shared,
+-- because that is what a carrier needs in order to match or beat it, and it is
+-- what the benefit summary already is. Other carriers' RATES never are.
+--
+-- we_are_incumbent is true when the rep's own carrier is the current one. Ken's
+-- best point: on a renewal we already hold the plan and the enrolment, so nothing
+-- needs uploading or re-asking.
+--
+-- NO SSNs anywhere in this payload, even for an opted-in carrier. Those travel
+-- only in the generated file, through a signed URL, and are logged.
+--
+-- Reps hold NO table grant. Everything goes through definer functions, which is
+-- what keeps "their own carrier only" enforceable.
+--
+-- Tables:    carrier_workspace_messages — seat-scoped for agents, no anon grant.
+-- Functions: my_carrier_contacts, get_my_carrier_workspace, carrier_thread,
+--            carrier_send_message, carrier_set_status.
+--
+-- PROBED as anon with each function's OWN signature: all refused, 42501.
+-- See 20260808g — my_carrier_contacts was NOT shut on the first attempt.

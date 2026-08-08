@@ -1,0 +1,31 @@
+-- Caught by probing, again, and it is the same trap as 20260807i.
+--
+-- my_carrier_contacts() was created with `revoke all ... from public` plus a
+-- grant to authenticated, and anon could still call it. PUBLIC and anon are
+-- different grantees, and Supabase's default privileges on this schema hand
+-- EXECUTE to anon on every newly created function.
+--
+-- I wrote that rule down earlier the same day and then broke it on the next
+-- function I created, because I revoked anon by name on the ones I was thinking
+-- about and used the shorthand on the one that felt like a helper. The helper is
+-- the one that resolves WHO THE CALLER IS, so it was the last place to be casual.
+--
+-- Exposure was nil in practice: with no valid token there is no jwt email, so it
+-- returned an empty set. But "returns nothing useful" is not "cannot be called",
+-- and the four functions beside it in the same migration were correctly shut.
+--
+-- Two things that make this survivable next time:
+--
+--   * PGRST202 is a SIGNATURE MISMATCH, not a refusal. Probing five functions
+--     with one shared payload returned PGRST202 for all five and looked like
+--     five passes. Probe each with its own correct arguments.
+--
+--   * Sweep rather than spot-check:
+--       select p.proname from pg_proc p
+--         join pg_namespace n on n.oid = p.pronamespace
+--        where n.nspname = 'public' and p.prosecdef
+--          and has_function_privilege('anon', p.oid, 'EXECUTE');
+--     Run it after any migration that creates or replaces functions. It returned
+--     zero rows once this was fixed.
+
+revoke execute on function public.my_carrier_contacts() from anon;
