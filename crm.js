@@ -7888,6 +7888,12 @@ function openDealPanel(dealId) {
 // ============================================================
 // PIPELINES
 // ============================================================
+/* Only from Census Received onwards. send_to_market refuses without a SUBMITTED
+   census, so offering the button at Discovery would hand someone a dialog whose
+   only possible outcome is an error — and an employer record is needed too,
+   since that is what the round hangs off. */
+const MARKETABLE_STAGES = ['Census Received', 'Marketing', 'Proposal'];
+
 function renderPipelines() {
   const pipeline = PIPELINES[currentPipeline];
   // Closed deals stay in the data — quotes, SOAs and history hang off them —
@@ -7908,6 +7914,9 @@ function renderPipelines() {
         ${deal.next_step ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">&#10145; ${deal.next_step.substring(0,55)}${deal.next_step.length>55?'...':''}</div>` : ''}
         <div class="deal-actions" onclick="event.stopPropagation()">
           <button class="btn btn-outline btn-sm" onclick="editDeal('${deal.id}')">Edit</button>
+          ${MARKETABLE_STAGES.includes(deal.stage) && deal.employer_id
+            ? `<button class="btn btn-outline btn-sm" onclick="openSendToMarket('${deal.employer_id}')"
+                 title="Pick carriers and send them this group's census">&#128228; Carriers</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="openCloseDeal('${deal.id}')">Close Deal</button>
         </div>
       </div>`;
