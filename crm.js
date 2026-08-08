@@ -9257,6 +9257,7 @@ async function renderAdmin() {
               ${cr.is_active ? '' : '<span style="font-size:10px;color:var(--text-muted);"> · inactive</span>'}
             </div>
             <button class="btn btn-outline btn-sm" onclick="openCarrierProducts('${cr.id}')">Products (${(window._allCarrierProducts||[]).filter(p => p.carrier_id === cr.id).length})</button>
+            <button class="btn btn-outline btn-sm" onclick="openCarrierReps('${cr.id}')" title="The people who quote and service group business here">Reps</button>
             <button class="btn btn-outline btn-sm" onclick="openCarrierModal('${cr.id}')">Edit</button>
             <button class="btn btn-outline btn-sm" onclick="carrierSetActive_('${cr.id}', ${cr.is_active ? 'false' : 'true'})"
               title="${cr.is_active ? 'Stop offering this carrier, keeping its history' : 'Offer this carrier again'}">${cr.is_active ? 'Retire' : 'Restore'}</button>
@@ -14778,6 +14779,166 @@ async function productDelete_(crId, prodId) {
     showToast('Deleted ' + name + '.');
     openCarrierProducts(crId);
   }, { confirmLabel: 'Delete for good' });
+}
+
+// ============================================================
+// CARRIER REPS — the people, not the company
+//
+// A carrier is one company everywhere; its rep is not. So this shows two lists:
+// the SHARED reps the system owner keeps for everybody, and the ones belonging
+// to an office. A broker owner reads the shared list and maintains their own.
+//
+// The UI is not the control. RLS refuses a write to another office outright,
+// which is proven rather than assumed; hiding the buttons is only so nobody is
+// invited to try something that will fail.
+// ============================================================
+let _repsAgencies = null;
+
+function repRoleLabel_(r) {
+  return { quoting: 'Quoting', underwriting: 'Underwriting', service: 'Service',
+           sales: 'Sales', other: 'Other' }[r] || r;
+}
+
+async function openCarrierReps(crId) {
+  const cr = (window._allCarriers || []).find(x => x.id === crId);
+  if (!cr) return;
+
+  // Which offices this person may write for. The system owner also owns the
+  // shared list, which is what the null option represents.
+  if (!_repsAgencies) {
+    const { data } = await supabaseClient.rpc('my_agency_ids');
+    const ids = (data || []).map(r => (typeof r === 'string' ? r : r.my_agency_ids));
+    const { data: ags } = await supabaseClient.from('agencies')
+      .select('id,name').order('name');
+    _repsAgencies = (ags || []).filter(a => isSystemOwner_() || ids.includes(a.id));
+  }
+
+  const { data: reps, error } = await supabaseClient.from('carrier_contacts')
+    .select('*').eq('carrier_id', crId).order('name');
+  if (error) { showToast('Could not load reps: ' + error.message); return; }
+
+  const canWrite = isOwnerRole_();
+  const shared = (reps || []).filter(r => !r.agency_id);
+  const mine   = (reps || []).filter(r => r.agency_id);
+  const agName = id => (_repsAgencies.find(a => a.id === id) || {}).name || 'Another office';
+
+  const row = (r, editable) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;
+                padding:7px 0;border-bottom:0.5px solid var(--border);${r.is_active ? '' : 'opacity:.5;'}">
+      <div style="flex:1;min-width:0;">
+        <span style="font-weight:600;font-size:13px;">${escWeb(r.name)}</span>
+        <span style="font-size:11px;color:var(--text-muted);"> · ${escWeb(repRoleLabel_(r.role))}</span>
+        ${r.is_active ? '' : '<span style="font-size:10px;color:var(--text-muted);"> · inactive</span>'}
+        <div style="font-size:11px;color:var(--text-secondary);">${escWeb(r.email)}${r.phone ? ' · ' + escWeb(r.phone) : ''}${r.title ? ' · ' + escWeb(r.title) : ''}</div>
+      </div>
+      ${editable ? `
+        <button class="btn btn-outline btn-sm" onclick="openCarrierRepModal('${crId}','${r.id}')">Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="repSetActive_('${crId}','${r.id}',${r.is_active ? 'false' : 'true'})"
+          title="${r.is_active ? 'Stop sending to this person, keeping the history' : 'Use this person again'}">${r.is_active ? 'Retire' : 'Restore'}</button>`
+        : '<span style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;">company-wide</span>'}
+    </div>`;
+
+  showModal('Reps — ' + escWeb(cr.name), `
+    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
+      Who quotes and services group business at this carrier. A rep is a
+      <strong>person</strong>, so when one moves firms you retire them here and
+      nobody else is disturbed.
+    </p>
+
+    <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+                color:var(--text-muted);margin-bottom:4px;">Company-wide</div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;">
+      Kept by the system owner and used by every office.</div>
+    ${shared.length ? shared.map(r => row(r, isSystemOwner_())).join('')
+      : '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic;padding:4px 0 10px;">None — every office keeps its own.</div>'}
+
+    <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+                color:var(--text-muted);margin:18px 0 4px;">Your office</div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;">
+      ${canWrite ? 'Yours to maintain. Other offices cannot see these.'
+                 : 'Kept by your broker owner. Other offices cannot see these.'}</div>
+    ${mine.length ? mine.map(r => row(r, canWrite)).join('')
+      : '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic;padding:4px 0 10px;">No rep yet for this carrier.</div>'}
+
+    ${canWrite ? `<button class="btn btn-outline btn-sm" style="margin-top:14px;"
+      onclick="openCarrierRepModal('${crId}', null)">+ Add a rep</button>`
+      : `<div style="font-size:11.5px;color:var(--text-muted);margin-top:14px;">
+           Adding or changing a rep is your broker owner's to do.</div>`}
+  `, null, { hideConfirm: true, cancelLabel: 'Close' });
+}
+
+function isSystemOwner_() { return activeRole() === 'system_owner'; }
+/* One place that knows the owner roles. 'agency_owner' is the pre-rename name
+   and still sits on older records, so both have to count — see the rename
+   residue note. Listed here once rather than repeated at every call site. */
+function isOwnerRole_() {
+  const r = activeRole();
+  return r === 'system_owner' || r === 'broker_owner' || r === 'agency_owner';
+}
+
+function openCarrierRepModal(crId, repId) {
+  supabaseClient.from('carrier_contacts').select('*').eq('carrier_id', crId)
+    .then(({ data }) => {
+      const r = repId ? (data || []).find(x => x.id === repId) : null;
+      /* A broker owner gets no "company-wide" option: RLS refuses it, and an
+         option that always fails is worse than one that is not offered. */
+      const opts = (isSystemOwner_()
+          ? '<option value="">Company-wide — every office</option>' : '')
+        + (_repsAgencies || []).map(a =>
+            `<option value="${a.id}" ${r && r.agency_id === a.id ? 'selected' : ''}>${escWeb(a.name)}</option>`).join('');
+
+      showModal(r ? 'Edit rep — ' + escWeb(r.name) : 'Add a rep', `
+        <label>Name *</label><input type="text" id="rp-name" value="${r ? escWeb(r.name) : ''}" placeholder="e.g. Marie Delgado" />
+        <label>Email *</label><input type="text" id="rp-email" value="${r ? escWeb(r.email) : ''}" placeholder="marie.delgado@carrier.com" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
+          This is the address the RFP request goes to, and the sign-in for their carrier workspace.</div>
+        <label>Phone</label><input type="text" id="rp-phone" value="${r ? escWeb(r.phone || '') : ''}" />
+        <label>Title</label><input type="text" id="rp-title" value="${r ? escWeb(r.title || '') : ''}" placeholder="Group Sales Representative" />
+        <label>What they handle</label>
+        <select id="rp-role">
+          ${['quoting','underwriting','service','sales','other'].map(v =>
+            `<option value="${v}" ${(r ? r.role : 'quoting') === v ? 'selected' : ''}>${repRoleLabel_(v)}</option>`).join('')}
+        </select>
+        <label>Belongs to</label>
+        <select id="rp-agency">${opts}</select>
+        <label>Notes</label><textarea id="rp-notes" rows="2">${r ? escWeb(r.notes || '') : ''}</textarea>
+      `, async () => {
+        const name = document.getElementById('rp-name').value.trim();
+        const email = document.getElementById('rp-email').value.trim();
+        if (!name)  { showToast('The rep needs a name.'); return false; }
+        if (!email || email.indexOf('@') < 1) { showToast('A valid email is required — it is how the request reaches them.'); return false; }
+        const payload = {
+          carrier_id: crId, name, email,
+          phone: document.getElementById('rp-phone').value.trim() || null,
+          title: document.getElementById('rp-title').value.trim() || null,
+          role:  document.getElementById('rp-role').value,
+          agency_id: document.getElementById('rp-agency').value || null,
+          notes: document.getElementById('rp-notes').value.trim() || null,
+        };
+        const q = r
+          ? supabaseClient.from('carrier_contacts').update(payload).eq('id', r.id)
+          : supabaseClient.from('carrier_contacts').insert(payload);
+        const { error } = await q;
+        if (error) {
+          /* 42501 here means the office boundary did its job. Say what actually
+             happened rather than showing a raw Postgres code. */
+          showToast(error.code === '42501'
+            ? 'That rep belongs to another office, so it cannot be changed here.'
+            : 'Could not save: ' + error.message);
+          return false;
+        }
+        showToast(r ? 'Rep updated.' : 'Rep added.');
+        openCarrierReps(crId);
+      });
+    });
+}
+
+async function repSetActive_(crId, repId, active) {
+  const { error } = await supabaseClient.from('carrier_contacts')
+    .update({ is_active: active }).eq('id', repId);
+  if (error) { showToast('Could not update: ' + error.message); return; }
+  showToast(active ? 'Rep restored.' : 'Rep retired — history kept.');
+  openCarrierReps(crId);
 }
 
 async function openCarrierProducts(crId) {
