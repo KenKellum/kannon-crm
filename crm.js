@@ -14573,6 +14573,48 @@ function openCarrierModal(id) {
       </select>
       <label>Carrier SOA form URL (if proprietary)</label><input type="text" id="cr-soa-url" value="${cr ? escWeb(cr.soa_form_url || '') : ''}" placeholder="https://..." />
     </div>
+    <div id="cr-group-wrap" style="display:${lines.has('Health — Group') ? 'block' : 'none'};">
+      <div style="border-top:0.5px solid var(--border);margin-top:16px;padding-top:12px;">
+        <div style="font-weight:700;font-size:13px;">Group business</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+          Who quotes a group here, and how they want the census. This is what the
+          &ldquo;send to market&rdquo; picker reads &mdash; there is nowhere else to set it up.
+        </div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:400;">
+        <input type="checkbox" id="cr-is-ga" style="width:auto;" ${cr && cr.is_general_agent ? 'checked' : ''}/>
+        This is a General Agent, not the carrier itself
+      </label>
+      <label>How they want it sent</label>
+      <select id="cr-grp-method">
+        <option value="workspace" ${!cr || !cr.group_submission || cr.group_submission==='workspace' ? 'selected' : ''}>Our carrier workspace (they log in and download)</option>
+        <option value="portal" ${cr && cr.group_submission==='portal' ? 'selected' : ''}>Their own broker portal</option>
+        <option value="email" ${cr && cr.group_submission==='email' ? 'selected' : ''}>Email &mdash; they will not use a portal</option>
+        <option value="ga"     ${cr && cr.group_submission==='ga' ? 'selected' : ''}>Through a General Agent</option>
+      </select>
+      <label>Group quoting email</label>
+      <input type="text" id="cr-grp-email" value="${cr ? escWeb(cr.group_quoting_email || '') : ''}" placeholder="newbusiness@carrier.com" />
+      <label>Group quoting portal URL</label>
+      <input type="text" id="cr-grp-url" value="${cr ? escWeb(cr.group_quoting_url || '') : ''}" placeholder="https://..." />
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;"><label>Smallest group they write</label>
+          <input type="number" id="cr-grp-min" min="1" value="${cr && cr.group_size_min != null ? cr.group_size_min : ''}" placeholder="e.g. 2" /></div>
+        <div style="flex:1;"><label>Largest</label>
+          <input type="number" id="cr-grp-max" min="1" value="${cr && cr.group_size_max != null ? cr.group_size_max : ''}" placeholder="blank = no limit" /></div>
+      </div>
+      <label>States they write group in</label>
+      <input type="text" id="cr-grp-states" value="${cr ? escWeb((cr.group_states || []).join(', ')) : ''}" placeholder="MT, AZ — blank means everywhere they are appointed" />
+      <!-- The sharpest setting in this dialog, so it says what it costs. -->
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-weight:400;">
+        <input type="checkbox" id="cr-grp-ssn" style="width:auto;margin-top:3px;" ${cr && cr.group_wants_ssn ? 'checked' : ''}/>
+        <span>This carrier requires Social Security numbers on the census
+          <span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">
+            Off unless they genuinely need them &mdash; usually only level-funded. Even with this
+            ticked you confirm again at send time, and every disclosure is recorded.</span></span>
+      </label>
+      <label>Group notes</label>
+      <textarea id="cr-grp-notes" rows="2" placeholder="Quirks worth remembering — deadlines, what they always ask for…">${cr ? escWeb(cr.group_notes || '') : ''}</textarea>
+    </div>
     <label>Notes</label><textarea id="cr-notes" rows="2">${cr ? escWeb(cr.notes || '') : ''}</textarea>
     <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:400;"><input type="checkbox" id="cr-active" style="width:auto;" ${!cr || cr.is_active ? 'checked' : ''}/> Active</label>
   `, async () => {
@@ -14592,6 +14634,30 @@ function openCarrierModal(id) {
       notes: document.getElementById('cr-notes').value.trim() || null,
       is_active: document.getElementById('cr-active').checked,
     };
+    /* Group settings are only written when the group line is actually ticked.
+       Untick it and they are cleared rather than left behind, or the send-to-
+       market picker would keep offering a carrier who no longer writes group. */
+    const grpOn = document.getElementById('cr-group-wrap').style.display !== 'none';
+    const num = id => {
+      const v = (document.getElementById(id).value || '').trim();
+      return v === '' ? null : (parseInt(v, 10) || null);
+    };
+    Object.assign(payload, grpOn ? {
+      is_general_agent:    document.getElementById('cr-is-ga').checked,
+      group_submission:    document.getElementById('cr-grp-method').value,
+      group_quoting_email: document.getElementById('cr-grp-email').value.trim() || null,
+      group_quoting_url:   document.getElementById('cr-grp-url').value.trim() || null,
+      group_size_min:      num('cr-grp-min'),
+      group_size_max:      num('cr-grp-max'),
+      group_states: (document.getElementById('cr-grp-states').value || '')
+                      .split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+      group_wants_ssn:     document.getElementById('cr-grp-ssn').checked,
+      group_notes:         document.getElementById('cr-grp-notes').value.trim() || null,
+    } : {
+      is_general_agent: false, group_submission: null, group_quoting_email: null,
+      group_quoting_url: null, group_size_min: null, group_size_max: null,
+      group_states: [], group_wants_ssn: false, group_notes: null,
+    });
     const q = cr
       ? supabaseClient.from('carriers').update(payload).eq('id', cr.id)
       : supabaseClient.from('carriers').insert(payload);
@@ -14614,6 +14680,16 @@ function toggleCarrierSoaFields_() {
   w.style.display = on ? 'block' : 'none';
   // First reveal: default "Requires SOA" to checked, since CMS mandates it
   if (on && wasHidden) document.getElementById('cr-soa-req').checked = true;
+
+  /* Group settings appear on exactly the same principle: tick the group line
+     and the questions that only matter for groups appear, in this dialog. Ken's
+     rule — no second place to set any of this up. */
+  const g = document.getElementById('cr-group-wrap');
+  if (g) {
+    const gi = CARRIER_LINES.indexOf('Health — Group');
+    g.style.display = (gi >= 0 && document.getElementById('cr-line-' + gi)?.checked)
+      ? 'block' : 'none';
+  }
 }
 
 // ============================================================
