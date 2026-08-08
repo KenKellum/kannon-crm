@@ -1320,28 +1320,12 @@ async function miaSend() {
   }
   box.value = '';
   miaOpen(miaThread.kind, miaThread.id, miaThread.title);
-  if (data.notify) miaNotifyClient_(miaThread.kind, miaThread.id);
-}
-
-/* The reply went to somebody who stopped watching, so tell them it is there.
-   The DATABASE decided that — it is the only thing that saw the timings before
-   the message existed. This just delivers the verdict.
-   Deliberately not awaited and deliberately quiet: the reply is already saved,
-   and a mail failure must not make a successful send look broken. It is logged
-   for anyone looking, and the client still sees the message when they next open
-   the workspace. */
-async function miaNotifyClient_(kind, id) {
-  if (kind !== 'employer') return;
-  try {
-    const { data: s } = await supabaseClient.auth.getSession();
-    const tok = s && s.session && s.session.access_token;
-    if (!tok) return;
-    const r = await fetch(APPS_SCRIPT_URL + '?action=workspace_reply_notice'
-      + '&employer_id=' + encodeURIComponent(id) + '&tok=' + encodeURIComponent(tok));
-    const out = await r.json().catch(() => null);
-    if (out && out.status === 'ok' && out.sent) showToast('They have been emailed that you replied.');
-    else if (out && out.status !== 'ok') console.info('[reply notice]', out);
-  } catch (e) { console.info('[reply notice] could not send:', e && e.message); }
+  /* The email is NOT sent from here. It was, and that was the bug: delivery then
+     depended on this tab being open, online and running the current build, and
+     when it was not, nothing recorded that a notice was owed. agent_reply now
+     marks the message 'due' in the database and the five-minute job delivers it.
+     Say what will happen, and let something durable do it. */
+  if (data.notify) showToast('Sent. They will be emailed that you replied.');
 }
 
 function miaWhen(iso) {
