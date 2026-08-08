@@ -178,6 +178,17 @@ tr:last-child td{border-bottom:0}
 .agree-badge .tick{color:var(--ok);font-weight:700}
 .agree-badge .who{color:var(--ink);font-weight:600}
 .agree-badge .line + .line{margin-top:5px;padding-top:5px;border-top:1px solid var(--line)}
+
+/* Who this message is going to. Grouped by AGENT, listing the groups quoted for
+   each — Ken wanted to choose the agent, and a message still has to arrive
+   attached to something the agent can act on. "Quick question" with no group on
+   it just makes them go hunting. */
+.drawer-pick{padding:10px 18px 0;flex-shrink:0}
+.drawer-pick select{width:100%;padding:8px 10px;border:1px solid var(--line);
+       border-radius:8px;font-family:inherit;font-size:13px;color:var(--text);
+       background:var(--paper)}
+.drawer-pick .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+       color:var(--muted);margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -216,6 +227,10 @@ tr:last-child td{border-bottom:0}
   <div class="drawer-head">
     <span class="rail-title" id="drawer-title">Messages</span>
     <button class="drawer-close" onclick="closeDrawer()" aria-label="Close">&times;</button>
+  </div>
+  <div class="drawer-pick">
+    <div class="lbl">Message about</div>
+    <select id="drawer-pick" onchange="pickThread(this.value)"></select>
   </div>
   <div class="rail-sub" id="drawer-sub"></div>
   <div class="thread" id="drawer-thread"></div>
@@ -576,13 +591,54 @@ async function uploadRfp(id, input) {
    there is only ever one composer on the page to get wrong. */
 let OPEN_SUB = null;
 
+/* Every request the rep has with us, grouped by the agent who sent it. Past ones
+   stay in the list on purpose — Ken asked for current AND past, and a rep chasing
+   something they quoted in March needs to reach the same person. */
+const STATUS_WORD = { sent:'awaiting your quote', viewed:'awaiting your quote',
+  downloaded:'census taken', acknowledged:'in progress', quoted:'quote sent',
+  declined:'declined' };
+
+function buildThreadPicker() {
+  const sel = el('drawer-pick');
+  const reqs = (WS && WS.requests) || [];
+  const byAgent = {};
+  reqs.forEach(r => {
+    const who = (r.agent || {}).name || 'Insured America';
+    (byAgent[who] = byAgent[who] || []).push(r);
+  });
+  sel.innerHTML = Object.keys(byAgent).sort().map(who =>
+    '<optgroup label="' + esc(who) + '">'
+    + byAgent[who].map(r =>
+        '<option value="' + r.submission_id + '"' + (r.submission_id === OPEN_SUB ? ' selected' : '') + '>'
+        + esc(r.employer) + ' \u2014 ' + esc(STATUS_WORD[r.status] || r.status)
+        + (r.unread ? ' (' + r.unread + ' new)' : '')
+        + '</option>').join('')
+    + '</optgroup>').join('');
+  /* One request needs no choosing, and a dropdown with a single entry is just
+     something else to look at. */
+  el('drawer-pick').parentNode.style.display = reqs.length > 1 ? 'block' : 'none';
+}
+
+function pickThread(subId) {
+  OPEN_SUB = subId;
+  paintDrawerHead();
+  loadThread();
+}
+
+function paintDrawerHead() {
+  const r = ((WS && WS.requests) || []).find(x => x.submission_id === OPEN_SUB) || {};
+  const who = (r.agent || {}).name || 'your agent';
+  el('drawer-title').textContent = r.employer || 'Messages';
+  el('drawer-sub').innerHTML = 'Goes to <strong>' + esc(who) + '</strong>'
+    + ((r.agent || {}).email ? ' at Insured America' : '') + '.';
+}
+
 function openDrawer(subId) {
   if (subId) OPEN_SUB = subId;
   if (!OPEN_SUB && WS && (WS.requests || []).length) OPEN_SUB = WS.requests[0].submission_id;
   if (!OPEN_SUB) return;
-  const r = ((WS && WS.requests) || []).find(x => x.submission_id === OPEN_SUB) || {};
-  el('drawer-title').textContent = r.employer || 'Messages';
-  el('drawer-sub').textContent = 'Straight to ' + ((r.agent || {}).name || 'your agent') + '.';
+  buildThreadPicker();
+  paintDrawerHead();
   el('drawer').classList.add('open');
   el('drawer').setAttribute('aria-hidden', 'false');
   el('scrim').classList.add('open');
