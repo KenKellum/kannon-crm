@@ -21066,8 +21066,26 @@ async function openSendToMarket(employerId) {
     if (err) { showToast('Could not send: ' + err.message); return false; }
 
     const sent = (out && out.sent) || [];
+    /* The record is written; now tell the reps. Deliberately after, and one at a
+       time keyed on the submission id — Apps Script reads the recipient back
+       from the database rather than being handed an address. A mail failure
+       leaves the round intact and visible, which is the right way round: the
+       agent can resend, whereas a lost round would have to be rebuilt. */
+    let mailed = 0;
+    for (const s of sent) {
+      try {
+        const r = await fetch(APPS_SCRIPT_URL + '?action=send_carrier_invite'
+          + '&submission_id=' + encodeURIComponent(s.submission_id));   // token added for us
+        const j = await r.json().catch(() => null);
+        if (j && j.status === 'ok') mailed++;
+        else console.info('[carrier invite]', s.carrier, j);
+      } catch (e) { console.info('[carrier invite] failed for', s.carrier, e && e.message); }
+    }
+
     showToast('Round ' + out.round_no + ' recorded — ' + sent.length + ' carrier'
-      + (sent.length === 1 ? '' : 's') + ' from census revision ' + out.census_revision + '.');
+      + (sent.length === 1 ? '' : 's') + ' from census revision ' + out.census_revision
+      + (mailed === sent.length ? '. All invited.' : '. ' + mailed + ' of ' + sent.length
+         + ' emailed — the rest are recorded and can be resent.'));
     renderPipelines();
   }, { confirmLabel: 'Send to market' });
 }

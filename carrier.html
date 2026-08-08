@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Proposal Requests — The Insured America Agency</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+/* The Insured America theme, same as the employer workspace — a carrier rep and
+   an employer should recognise this as one agency. Light and calm: this is a
+   working queue, not a dashboard. */
+:root{
+  --ia:#1d3557; --ia-deep:#152741; --ia-soft:#2a4a73;
+  --gold:#c8a84b; --gold-soft:#e2cd8f;
+  --crimson:#6e3335; --crimson-dark:#63242a; --crimson-pale:#f5e8ea;
+  --mia-navy-on-dark:#a8c8f0; --mia-crimson-on-dark:#ebb0b5;
+  --ink:#16202e; --text:#33415a; --muted:#6b7a90;
+  --line:#e4e9f0; --paper:#ffffff; --wash:#f6f8fb;
+  --ok:#177245; --ok-bg:#eaf4ee; --warn:#8a6100; --warn-bg:#fdf6e6;
+  --shadow:0 1px 2px rgba(21,39,65,.04),0 8px 28px rgba(21,39,65,.07);
+  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--wash);color:var(--text);font-family:var(--sans);
+     font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+
+.masthead{background:linear-gradient(160deg,var(--ia) 0%,var(--ia-deep) 100%);
+          color:#fff;position:relative}
+.masthead::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;
+          background:linear-gradient(90deg,var(--crimson) 0%,var(--crimson) 14%,
+                     var(--gold) 30%,var(--gold-soft) 62%,transparent 100%)}
+.mast-inner{max-width:980px;margin:0 auto;padding:22px 28px;
+          display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.mark{background:#fff;padding:5px;border-radius:3px;flex-shrink:0;line-height:0;
+      box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.mark img{display:block;width:46px;height:46px;object-fit:contain}
+.mast-name{font-family:var(--serif);font-size:17px;font-weight:700;
+          letter-spacing:.06em;line-height:1.2}
+.mast-tag{font-size:10.5px;color:var(--gold);letter-spacing:.16em;
+          font-style:italic;margin-top:3px}
+.mast-parent{margin-left:auto;text-align:right;font-size:9.5px;line-height:1.5;
+          letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+
+.wrap{max-width:980px;margin:0 auto;padding:34px 24px 80px}
+.greeting{font-family:var(--serif);font-size:27px;line-height:1.25;color:var(--ink);
+          font-weight:400;letter-spacing:-.2px}
+.sub{font-size:13.5px;color:var(--muted);margin-top:5px}
+
+.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;
+      box-shadow:var(--shadow);margin-top:18px;overflow:hidden}
+.card-head{display:flex;align-items:flex-start;gap:14px;padding:16px 20px;
+      border-bottom:1px solid var(--line);flex-wrap:wrap}
+.emp{font-family:var(--serif);font-size:19px;color:var(--ink);font-weight:700}
+.emp-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+.pill{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+      padding:3px 9px;border-radius:999px;white-space:nowrap}
+.pill-new{background:var(--crimson-pale);color:var(--crimson-dark)}
+.pill-ack{background:var(--warn-bg);color:var(--warn)}
+.pill-done{background:var(--ok-bg);color:var(--ok)}
+.pill-inc{background:#e8eef8;color:var(--ia)}
+.card-body{padding:16px 20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 18px}
+.f-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.f-val{font-size:14px;color:var(--ink);font-weight:600}
+.brief{background:var(--wash);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;
+       padding:11px 14px;margin-top:14px;font-size:14px;line-height:1.6;white-space:pre-wrap}
+.brief-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+       color:var(--muted);margin-bottom:3px}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;
+       border-top:1px solid var(--line);padding-top:14px}
+.btn{border:0;border-radius:9px;padding:10px 18px;font-family:inherit;font-size:14px;
+     font-weight:600;cursor:pointer;transition:background .15s,opacity .15s}
+.btn-primary{background:var(--ia);color:#fff}
+.btn-primary:hover{background:var(--ia-soft)}
+.btn-outline{background:#fff;color:var(--ia);border:1px solid var(--line)}
+.btn-outline:hover{border-color:var(--ia)}
+.btn-quiet{background:none;color:var(--muted);padding:10px 6px}
+.btn-quiet:hover{color:var(--crimson)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn-sm{font-size:12.5px;padding:7px 13px}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+   color:var(--muted);padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto;margin-top:12px;border:1px solid var(--line);border-radius:9px}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.warnbox{background:var(--warn-bg);border:1px solid #ecd9a4;border-radius:9px;
+     padding:11px 14px;font-size:13px;color:var(--warn);margin-top:12px}
+.okbox{background:var(--ok-bg);border:1px solid #bcd9c6;border-radius:9px;
+     padding:11px 14px;font-size:13px;color:var(--ok);margin-top:12px}
+
+.thread{max-height:280px;overflow-y:auto;padding:4px 0;margin-top:10px}
+.msg{margin-bottom:9px;display:flex;flex-direction:column}
+.msg.mine{align-items:flex-end}
+.bubble{max-width:78%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.55}
+.msg.them .bubble{background:var(--wash);border:1px solid var(--line)}
+.msg.mine .bubble{background:var(--ia);color:#fff}
+.meta{font-size:10.5px;color:var(--muted);margin-top:2px}
+.composer{display:flex;gap:8px;margin-top:10px}
+.composer textarea{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:9px;
+     font-family:inherit;font-size:14px;resize:vertical;min-height:40px}
+
+#gate{max-width:460px;margin:80px auto;background:var(--paper);border:1px solid var(--line);
+      border-radius:14px;padding:34px 32px;text-align:center;box-shadow:var(--shadow);display:none}
+#gate h1{font-family:var(--serif);font-size:22px;color:var(--ink);margin-bottom:10px}
+#gate p{font-size:14px;color:var(--muted);line-height:1.6}
+.foot{max-width:980px;margin:0 auto;padding:26px 24px 40px;font-size:12px;color:var(--muted);
+      border-top:1px solid var(--line);margin-top:30px}
+.foot-mark{font-family:var(--serif);font-weight:700;font-size:14px;letter-spacing:-.3px}
+.foot-mark .n{color:var(--ia)} .foot-mark .c{color:var(--crimson)}
+.sep{margin:0 7px;color:var(--line)}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="mast-inner">
+    <div class="mark"><img src="ia_logo_email.png" alt="Insured America" /></div>
+    <div>
+      <div class="mast-name">THE INSURED AMERICA AGENCY</div>
+      <div class="mast-tag">&ldquo;Protect &amp; Build Your Potential&rdquo;</div>
+    </div>
+    <div class="mast-parent">A Kannon Financial<br>Group Brand</div>
+  </div>
+</div>
+
+<div id="gate"></div>
+
+<div class="wrap" id="app" style="display:none;">
+  <div class="greeting" id="hello">Proposal requests</div>
+  <div class="sub" id="hello-sub"></div>
+  <div id="requests"></div>
+</div>
+
+<div class="foot">
+  <span class="foot-mark"><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span></span>
+  <span class="sep">&bull;</span> The Insured America Agency
+  <span class="sep">&bull;</span> Bozeman, MT (406) 404-7602
+  <span class="sep">&bull;</span> Goodyear, AZ (480) 670-3148
+  <div style="margin-top:6px;">Everything here is confidential and covered by our agreement with you.
+    Please do not forward these files.</div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://ilrylhseqnllmejebozq.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlscnlsaHNlcW5sbG1lamVib3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDk1MTIsImV4cCI6MjA5ODMyNTUxMn0.ga1b6-xCpXYa-p6axyLMoXj6oHVHEKTFoDEtmVIc3Uw';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4XGkFjwmillnNNEBKKI008Slwy-xd_ZDouIf0pVpkzmL1Olun-Lbda7FY3XA_uDm0ww/exec';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const el = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmtDate = d => d ? new Date(d + (String(d).length === 10 ? 'T12:00:00' : '')).toLocaleDateString(
+  undefined, { month:'short', day:'numeric', year:'numeric' }) : '—';
+
+let WS = null;
+
+/* The way in. The token is verified only when the button is PRESSED, never on
+   load: Outlook and Defender pre-fetch links, and a single-use token is spent by
+   whatever opens it first. A scanner would burn the link before the rep saw it.
+   Scanners do not press buttons. */
+async function useToken(tok) {
+  const btn = el('tok-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing you in…'; }
+  let error = null;
+  try {
+    let res = await sb.auth.verifyOtp({ token_hash: tok, type: 'magiclink' });
+    if (res.error) res = await sb.auth.verifyOtp({ token_hash: tok, type: 'email' });
+    error = res.error;
+  } catch (e) { error = e; }
+  if (error) {
+    gateRequest('That link has already been used',
+      'Links open once, which is what keeps these files out of the wrong inbox. '
+      + 'Put your email address in below and a fresh one is on its way.');
+    return;
+  }
+  history.replaceState(null, '', window.location.pathname);
+  init();
+}
+
+/* Enumeration-safe: the answer is identical whether or not that address belongs
+   to one of our reps. Nobody gets to probe which carriers we work with. */
+function gateRequest(title, msg) {
+  el('gate').innerHTML =
+      '<h1>' + esc(title) + '</h1><p style="margin-bottom:20px;">' + msg + '</p>'
+    + '<input id="req-email" type="email" placeholder="you@carrier.com" autocomplete="email" '
+    + 'style="width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:9px;'
+    + 'font-family:inherit;font-size:15px;margin-bottom:12px;text-align:center;" />'
+    + '<button class="btn btn-primary" style="width:100%;" id="req-btn" onclick="requestLink()">'
+    + 'Email me a New Link</button>'
+    + '<p id="req-note" style="margin-top:14px;font-size:13px;"></p>';
+  el('gate').style.display = 'block';
+  el('app').style.display  = 'none';
+  const box = el('req-email');
+  if (box) box.addEventListener('keydown', e => { if (e.key === 'Enter') requestLink(); });
+}
+
+async function requestLink() {
+  const box = el('req-email'), btn = el('req-btn'), note = el('req-note');
+  const addr = (box.value || '').trim();
+  if (!addr || addr.indexOf('@') < 0) { note.textContent = 'Please enter your email address.'; return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await fetch(APPS_SCRIPT_URL + '?action=carrier_request_link&email=' + encodeURIComponent(addr),
+                { mode: 'no-cors' });
+  } catch (e) {}
+  note.style.color = 'var(--ok)';
+  note.textContent = 'If that address is set up with us, a link is on its way — check your email.';
+  btn.textContent = 'Sent';
+}
+
+const FUNDING = { fully_insured:'Fully insured', level_funded:'Level funded',
+  self_funded:'Self funded', ichra:'ICHRA', none:'Nothing in place', unknown:'Not stated' };
+
+function statusPill(r) {
+  if (r.status === 'quoted')       return '<span class="pill pill-done">Quote sent</span>';
+  if (r.status === 'declined')     return '<span class="pill pill-done">Declined</span>';
+  if (r.status === 'acknowledged') return '<span class="pill pill-ack">Working on it</span>';
+  if (r.status === 'downloaded')   return '<span class="pill pill-ack">Census taken</span>';
+  return '<span class="pill pill-new">New request</span>';
+}
+
+function requestCard(r) {
+  const done = r.status === 'quoted' || r.status === 'declined';
+  return `
+  <div class="card" id="req-${r.submission_id}">
+    <div class="card-head">
+      <div style="flex:1;min-width:0;">
+        <div class="emp">${esc(r.employer)}</div>
+        <div class="emp-sub">
+          ${esc([r.employer_city, r.employer_state].filter(Boolean).join(', '))}
+          ${r.industry ? ' &middot; ' + esc(r.industry) : ''}
+          ${r.sic ? ' &middot; SIC ' + esc(r.sic) : ''}
+          &middot; requested by ${esc(r.carrier)}${r.round_no > 1 ? ' &middot; round ' + r.round_no : ''}
+        </div>
+      </div>
+      ${statusPill(r)}
+      ${r.we_are_incumbent ? '<span class="pill pill-inc">You are the current carrier</span>' : ''}
+    </div>
+
+    <div class="card-body">
+      <div class="grid">
+        <div><div class="f-lbl">Eligible lives</div><div class="f-val">${r.lives == null ? '—' : r.lives}</div></div>
+        <div><div class="f-lbl">Census rows</div><div class="f-val">${r.census_rows}</div></div>
+        <div><div class="f-lbl">Effective date</div><div class="f-val">${fmtDate(r.effective_date)}</div></div>
+        <div><div class="f-lbl">Wanted</div><div class="f-val">${esc((r.products || []).join(', ') || '—')}</div></div>
+      </div>
+
+      ${r.we_are_incumbent ? `
+        <div class="okbox">You already hold this group, so there is nothing to upload
+          &mdash; the current plan and the enrolment are on your side.</div>` : `
+        <div class="grid" style="margin-top:14px;">
+          <div><div class="f-lbl">Current carrier</div><div class="f-val">${esc(r.current_carrier || 'Not stated')}</div></div>
+          <div><div class="f-lbl">Funding</div><div class="f-val">${esc(FUNDING[r.current_funding] || 'Not stated')}</div></div>
+        </div>
+        ${r.current_plan ? `<div class="brief" style="border-left-color:var(--ia-soft);">
+          <div class="brief-lbl">Plan they have today</div>${esc(r.current_plan)}</div>` : ''}`}
+
+      ${r.brief ? `<div class="brief"><div class="brief-lbl">What we are looking for</div>${esc(r.brief)}</div>` : ''}
+
+      ${(r.documents || []).length ? `
+        <div style="margin-top:14px;">
+          <div class="f-lbl" style="margin-bottom:5px;">Attached</div>
+          ${r.documents.map(d => `<button class="btn btn-outline btn-sm" style="margin:0 6px 6px 0;"
+              onclick="getDoc('${d.id}', this)">&#128206; ${esc(d.filename)}</button>`).join('')}
+        </div>` : ''}
+
+      ${r.with_ssn ? `<div class="warnbox">This census includes Social Security numbers because
+        your underwriting asks for them. They are in the download only &mdash; never on screen &mdash;
+        and every download is recorded.</div>` : ''}
+
+      <div class="actions">
+        <button class="btn btn-primary" onclick="downloadCensus('${r.submission_id}', this)">&#11015; Download the census</button>
+        <button class="btn btn-outline" onclick="toggleRoster('${r.submission_id}', this)">View roster</button>
+        ${done ? '' : `
+          <button class="btn btn-outline" onclick="setStatus('${r.submission_id}','acknowledged',this)">Got it &mdash; working on it</button>
+          <label class="btn btn-outline" style="display:inline-flex;align-items:center;gap:7px;">
+            &#11014; Send your quote
+            <input type="file" style="display:none;" onchange="uploadRfp('${r.submission_id}', this)" />
+          </label>
+          <button class="btn btn-quiet" onclick="declineRequest('${r.submission_id}')">Cannot quote this</button>`}
+        <button class="btn btn-outline" onclick="toggleThread('${r.submission_id}', this)">
+          &#128172; Message ${esc((r.agent || {}).name || 'the agent')}${r.unread ? ' (' + r.unread + ')' : ''}</button>
+      </div>
+
+      <div id="roster-${r.submission_id}" style="display:none;"></div>
+      <div id="thread-${r.submission_id}" style="display:none;"></div>
+
+      <div class="note">Your contact for this group is
+        <strong>${esc((r.agent || {}).name || 'your agent')}</strong>${(r.agent || {}).email
+          ? ' &middot; <a href="mailto:' + esc(r.agent.email) + '">' + esc(r.agent.email) + '</a>' : ''}${(r.agent || {}).phone
+          ? ' &middot; ' + esc(r.agent.phone) : ''}. Messages here reach them directly.</div>
+    </div>
+  </div>`;
+}
+
+async function init() {
+  const { data: sess } = await sb.auth.getSession();
+  if (!sess || !sess.session) {
+    gateRequest('Your proposal requests',
+      'Enter the email address we have on file for you and we will send a link straight in.');
+    return;
+  }
+  const { data, error } = await sb.rpc('get_my_carrier_workspace');
+  if (error || !data || !data.ok) {
+    /* Same wording whether the session lapsed or they are no longer a rep for
+       us. Access is re-derived on every read, so a retired rep lands here. */
+    gateRequest('We could not open your requests',
+      'Your access may have changed, or the sign-in has expired. Put your email '
+      + 'address in below and we will send a fresh link if you are set up with us.');
+    return;
+  }
+  WS = data;
+  el('gate').style.display = 'none';
+  el('app').style.display  = 'block';
+
+  const reps = (WS.rep || {}).name || 'there';
+  el('hello').textContent = 'Hello ' + reps.split(' ')[0] + ',';
+  const open = (WS.requests || []).filter(r => r.status !== 'quoted' && r.status !== 'declined').length;
+  el('hello-sub').innerHTML = (WS.carriers || []).map(esc).join(' &middot; ')
+    + (open ? ' &mdash; <strong>' + open + '</strong> waiting on you' : ' — nothing outstanding, thank you');
+
+  el('requests').innerHTML = (WS.requests || []).length
+    ? WS.requests.map(requestCard).join('')
+    : '<div class="card"><div class="card-body" style="color:var(--muted);">'
+      + 'No proposal requests just now. We will email you when one arrives.</div></div>';
+}
+
+/* ── the census ─────────────────────────────────────────────────────────── */
+async function toggleRoster(id, btn) {
+  const box = el('roster-' + id);
+  if (box.style.display !== 'none') { box.style.display = 'none'; btn.textContent = 'View roster'; return; }
+  btn.disabled = true;
+  const { data, error } = await sb.rpc('carrier_census_rows', { p_submission: id });
+  btn.disabled = false;
+  if (error) { alert('Could not load the roster: ' + error.message); return; }
+  const rows = data || [];
+  box.innerHTML = '<div class="scroll"><table><thead><tr>'
+    + '<th>Emp #</th><th>Name</th><th>Relationship</th><th>DOB</th><th>Gender</th><th>ZIP</th><th>Hrs/wk</th>'
+    + '</tr></thead><tbody>'
+    + rows.map(r => '<tr><td>' + esc(r.employee_number) + '</td><td>' + esc(r.full_name) + '</td><td>'
+        + esc(r.relationship) + '</td><td>' + esc(r.date_of_birth) + '</td><td>' + esc(r.gender)
+        + '</td><td>' + esc(r.zip) + '</td><td>' + esc(r.hours_per_week) + '</td></tr>').join('')
+    + '</tbody></table></div>'
+    + '<div class="note">On-screen view. Social Security numbers are never shown here, '
+    + 'even where your underwriting uses them &mdash; take the download for those.</div>';
+  box.style.display = 'block';
+  btn.textContent = 'Hide roster';
+}
+
+/* Built here from the carrier's own column mapping rather than a fixed layout,
+   so a carrier that supplied a template gets their headings in their order. */
+function toCsv(cols, rows, employer) {
+  const q = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const head = ['# ' + (employer.dba || employer.legal_name || ''),
+                '# EIN ' + (employer.ein || 'not supplied')
+                  + ' | SIC ' + (employer.sic || '-')
+                  + ' | ' + [employer.city, employer.state, employer.zip].filter(Boolean).join(' '),
+                '# Effective ' + (employer.effective_date || 'not stated'),
+                ''];
+  const headers = cols.map(c => c.header);
+  const body = rows.map(r => cols.map(c => q(r[c.field])).join(','));
+  return head.join('\n') + headers.map(q).join(',') + '\n' + body.join('\n') + '\n';
+}
+
+async function downloadCensus(id, btn) {
+  const was = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  const { data, error } = await sb.rpc('carrier_census_file', { p_submission: id });
+  btn.disabled = false; btn.textContent = was;
+  if (error) { alert('Could not build the file: ' + error.message); return; }
+
+  const cols = (data.columns || []).slice();
+  // The SSN column is appended only when this submission carries them, so the
+  // stored layout can never leak one by being reused for another carrier.
+  if (data.with_ssn) cols.push({ header: 'SSN', field: 'ssn' });
+
+  const csv = toCsv(cols, data.rows || [], data.employer || {});
+  const name = ((data.employer || {}).dba || (data.employer || {}).legal_name || 'census')
+    .replace(/[^A-Za-z0-9 ]/g, '').trim().replace(/\s+/g, '-');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = name + '-census.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  init();   // status moves to "Census taken"
+}
+
+/* The path comes from the server, the signed URL is minted from it here — so the
+   link lives for a minute rather than sitting in the page as a permanent
+   address. Both steps re-check that this rep may read this document. */
+async function getDoc(docId, btn) {
+  const was = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Opening…';
+  const { data: path, error } = await sb.rpc('carrier_document_path', { p_document: docId });
+  if (error || !path) { btn.disabled = false; btn.textContent = was; alert('That file is not available to you.'); return; }
+  const { data: signed, error: sErr } = await sb.storage.from('group-docs')
+    .createSignedUrl(path, 60);
+  btn.disabled = false; btn.textContent = was;
+  if (sErr || !signed) { alert('That file could not be opened.'); return; }
+  window.open(signed.signedUrl, '_blank');
+}
+
+/* ── answering ──────────────────────────────────────────────────────────── */
+async function setStatus(id, status, btn, reason) {
+  btn.disabled = true;
+  const { error } = await sb.rpc('carrier_set_status',
+    { p_submission: id, p_status: status, p_reason: reason || null });
+  if (error) { btn.disabled = false; alert('Could not update: ' + error.message); return; }
+  init();
+}
+
+function declineRequest(id) {
+  const why = prompt('So the agent knows what to do next — why can you not quote this one?\n'
+    + '(group size, industry, state, participation, timing…)');
+  if (why === null) return;
+  const btn = document.createElement('button');
+  setStatus(id, 'declined', btn, why.trim() || 'No reason given');
+}
+
+async function uploadRfp(id, input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const path = id + '/' + Date.now() + '-' + f.name.replace(/[^A-Za-z0-9._-]/g, '_');
+  const { error: upErr } = await sb.storage.from('rfp-docs')
+    .upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false });
+  if (upErr) { alert('Upload failed: ' + upErr.message); return; }
+  const { error } = await sb.rpc('carrier_upload_rfp',
+    { p_submission: id, p_path: path, p_filename: f.name, p_bytes: f.size });
+  if (error) { alert('Uploaded, but we could not record it: ' + error.message); return; }
+  init();
+}
+
+/* ── messages ───────────────────────────────────────────────────────────── */
+async function toggleThread(id, btn) {
+  const box = el('thread-' + id);
+  if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+  const { data, error } = await sb.rpc('carrier_thread', { p_submission: id });
+  if (error) { alert('Could not open the conversation: ' + error.message); return; }
+  const msgs = data || [];
+  box.innerHTML = '<div class="thread">'
+    + (msgs.length ? msgs.map(m =>
+        '<div class="msg ' + (m.mine ? 'mine' : 'them') + '"><div class="bubble">'
+        + esc(m.body).replace(/\n/g, '<br>') + '</div><div class="meta">'
+        + esc(m.mine ? 'You' : (m.who || 'Insured America')) + ' &middot; '
+        + new Date(m.at).toLocaleString() + '</div></div>').join('')
+      : '<div style="color:var(--muted);font-size:13.5px;">Nothing yet — ask anything about this group.</div>')
+    + '</div>'
+    + '<div class="composer"><textarea id="msg-' + id + '" rows="1" '
+    + 'placeholder="Ask about the group, participation, anything…"></textarea>'
+    + '<button class="btn btn-primary" onclick="sendMsg(\'' + id + '\', this)">Send</button></div>';
+  box.style.display = 'block';
+}
+
+async function sendMsg(id, btn) {
+  const box = el('msg-' + id);
+  const body = (box.value || '').trim();
+  if (!body) return;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  const { error } = await sb.rpc('carrier_send_message', { p_submission: id, p_body: body });
+  btn.disabled = false; btn.textContent = 'Send';
+  if (error) { alert('Could not send: ' + error.message); return; }
+  box.value = '';
+  const b = el('thread-' + id); b.style.display = 'none';
+  toggleThread(id, null);
+}
+
+/* Boot. A token in the URL gets a button, never an automatic verification. */
+(function () {
+  const tok = new URLSearchParams(window.location.search).get('t');
+  if (tok) {
+    el('gate').innerHTML =
+        '<h1>Your proposal requests are ready</h1>'
+      + '<p style="margin-bottom:22px;">Press the button to open them. This link works once.</p>'
+      + '<button class="btn btn-primary" style="width:100%;" id="tok-btn">Open my requests</button>';
+    el('gate').style.display = 'block';
+    el('tok-btn').addEventListener('click', () => useToken(tok));
+    return;
+  }
+  init();
+})();
+</script>
+</body>
+</html>
