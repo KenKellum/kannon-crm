@@ -164,6 +164,20 @@ tr:last-child td{border-bottom:0}
        color:var(--muted);margin:12px 0 4px}
 .agree input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--line);
        border-radius:9px;font-family:inherit;font-size:15px}
+
+/* Greeting left, agreement right, one row — the same arrangement the employer
+   workspace uses for "your agent", so the two pages read alike. It is a
+   reassurance, not a warning: quiet, but findable when a rep wants to know what
+   they signed and when. */
+.topline{display:flex;align-items:flex-start;gap:28px;justify-content:space-between;
+         flex-wrap:wrap}
+.topline-left{min-width:0;flex:1}
+.agree-badge{text-align:right;font-size:12px;color:var(--muted);line-height:1.55;
+         border:1px solid var(--line);border-radius:10px;padding:10px 14px;
+         background:var(--paper);flex-shrink:0}
+.agree-badge .tick{color:var(--ok);font-weight:700}
+.agree-badge .who{color:var(--ink);font-weight:600}
+.agree-badge .line + .line{margin-top:5px;padding-top:5px;border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -182,8 +196,13 @@ tr:last-child td{border-bottom:0}
 <div id="gate"></div>
 
 <div class="wrap" id="app" style="display:none;">
-  <div class="greeting" id="hello">Proposal requests</div>
-  <div class="sub" id="hello-sub"></div>
+  <div class="topline">
+    <div class="topline-left">
+      <div class="greeting" id="hello">Proposal requests</div>
+      <div class="sub" id="hello-sub"></div>
+    </div>
+    <div class="agree-badge" id="agree-badge" style="display:none;"></div>
+  </div>
   <div id="requests"></div>
 </div>
 
@@ -406,6 +425,8 @@ async function init() {
     return;
   }
 
+  paintAgreementBadge();
+
   el('requests').innerHTML = (WS.requests || []).length
     ? WS.requests.map(requestCard).join('')
     : '<div class="card"><div class="card-body" style="color:var(--muted);">'
@@ -415,6 +436,29 @@ async function init() {
   el('msg-tab').style.display = (WS.requests || []).length ? 'flex' : 'none';
   el('msg-badge').style.display = unread ? 'inline-block' : 'none';
   el('msg-badge').textContent = unread;
+}
+
+/* What they signed, and when. A rep who is about to hand over underwriting data
+   should be able to see the terms they are working under without asking us, and
+   an agreement nobody can find is one they will query by email instead.
+   One line per carrier, because a rep may represent more than one. */
+async function paintAgreementBadge() {
+  const box = el('agree-badge');
+  if (!box) return;
+  const { data, error } = await sb.rpc('carrier_agreement_state');
+  if (error || !data || !(data.carriers || []).length) { box.style.display = 'none'; return; }
+
+  const signed = (data.carriers || []).filter(c => c.signed);
+  if (!signed.length) { box.style.display = 'none'; return; }
+
+  box.innerHTML = signed.map(c =>
+    '<div class="line"><span class="tick">&#10003;</span> '
+    + esc(c.kind === 'baa' ? 'Business Associate Agreement' : 'Confidentiality Agreement')
+    + ' <span style="opacity:.8;">v' + esc(c.version) + '</span>'
+    + '<br><span class="who">' + esc(c.carrier) + '</span>'
+    + ' &middot; signed ' + fmtDate(c.signed_at)
+    + '</div>').join('');
+  box.style.display = 'block';
 }
 
 /* ── the census ─────────────────────────────────────────────────────────── */
