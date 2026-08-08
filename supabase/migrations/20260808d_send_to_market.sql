@@ -1,0 +1,30 @@
+-- SEND TO MARKET. Ken's picture: "a dialog list of carriers to send to that I
+-- can pick from a list and their spaces would get created and email sent out".
+--
+-- Two functions. One answers WHO CAN QUOTE THIS GROUP, one records the send.
+-- Both run under the agent's own identity so the seat rules already in place do
+-- the work; neither takes a carrier list on trust.
+--
+-- marketable_carriers computes eligibility rather than asking anyone to
+-- remember it, and returns a BLOCKED carrier with the reason in words instead
+-- of omitting it. An agent who cannot see why Nationwide is missing concludes
+-- the CRM is broken.
+--
+-- send_to_market derives everything that matters here rather than accepting it:
+-- the census revision, the sending agent, the recipient's address. The browser
+-- says WHICH carriers; it does not say what goes to them. A pick naming another
+-- office's rep finds nothing and is skipped rather than emailing them.
+--
+-- SSNs need BOTH the carrier's standing opt-in AND the agent's confirmation on
+-- this send. Either alone is not enough — that was the entire point of the rule.
+--
+-- The disclosure is written in the same function that decides it, so no later
+-- code path can send without accounting for it.
+--
+-- VERIFIED end to end as Ken, rolled back: round 1 opened against census
+-- revision 10, Nationwide/Matt recorded, with_ssn true, and the matching
+-- census_disclosures row reading "Matt <kenkellum@live.com> · workspace · ssn".
+-- Probed as anon: both refused, 42501.
+
+-- (Applied via the Supabase migration of the same name; the full body is in the
+-- database. Recorded here so the repo shows what exists and why.)

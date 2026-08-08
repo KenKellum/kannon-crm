@@ -20839,8 +20839,131 @@ async function loadWorkspaceLine_(deal, employerId) {
     + '<div style="margin-top:8px;">'
     + '<button class="btn btn-outline btn-sm" onclick="openWorkspaceInvite(\'' + employerId + '\',\'' + deal.id + '\')">&#128231; Invite someone</button> '
     + '<button class="btn btn-outline btn-sm" onclick="openWorkspaceThread(\'' + employerId + '\',\'' + deal.id + '\')">&#128172; Messages'
-    + (unread ? ' (' + unread + ')' : '') + '</button>'
+    + (unread ? ' (' + unread + ')' : '') + '</button> '
+    + '<button class="btn btn-primary btn-sm" onclick="openSendToMarket(\'' + employerId + '\')">&#128228; Send to carriers</button>'
     + '</div>';
+}
+
+// ============================================================
+// SEND TO MARKET
+//
+// The list is computed, not typed. Half the friction in marketing a group is
+// remembering who writes what size where, so a carrier that cannot take this
+// group is shown WITH THE REASON rather than quietly left out — an agent who
+// cannot see why Nationwide is missing assumes the CRM is broken.
+//
+// Nothing here is trusted on the way back. send_to_market re-reads the census,
+// the rep and the carrier under the agent's own visibility; this dialog says
+// WHICH carriers, never what goes to them.
+// ============================================================
+async function openSendToMarket(employerId) {
+  const { data, error } = await supabaseClient.rpc('marketable_carriers', { p_employer: employerId });
+  if (error) { showToast('Could not work out who can quote: ' + error.message); return; }
+
+  const list = (data && data.carriers) || [];
+  const lives = data && data.eligible_lives;
+  const ready = list.filter(c => !(c.blockers || []).length);
+  const blocked = list.filter(c => (c.blockers || []).length);
+
+  if (!list.length) {
+    showModal('Send to carriers', `
+      <p style="font-size:13.5px;line-height:1.6;">No carrier in the system writes group health yet.</p>
+      <p style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-top:8px;">
+        Tick <strong>Health — Group</strong> on a carrier in System setup and it will appear here.</p>`,
+      null, { hideConfirm: true, cancelLabel: 'Close' });
+    return;
+  }
+
+  const card = (c, i) => {
+    const reps = c.reps || [];
+    return `
+    <div style="border:1px solid var(--border);border-radius:9px;padding:11px 13px;margin-bottom:9px;">
+      <label style="display:flex;gap:9px;align-items:flex-start;font-weight:400;margin:0;">
+        <input type="checkbox" id="m-pick-${i}" style="width:auto;margin-top:3px;" onchange="marketSsnToggle_(${i})" />
+        <span style="flex:1;min-width:0;">
+          <span style="font-weight:700;font-size:13.5px;">${escWeb(c.name)}</span>
+          ${c.is_ga ? '<span style="font-size:10px;color:var(--text-muted);"> · General Agent</span>' : ''}
+          <span style="display:block;font-size:11.5px;color:var(--text-muted);margin-top:2px;">
+            ${c.submission === 'workspace' ? 'Carrier workspace' : c.submission === 'portal' ? 'Their own portal'
+              : c.submission === 'email' ? 'Email — will not use a portal' : 'Through a General Agent'}
+          </span>
+        </span>
+      </label>
+      <div style="margin-left:27px;margin-top:7px;">
+        <label style="font-size:11px;color:var(--text-muted);margin:0;">Send to</label>
+        <select id="m-rep-${i}" style="margin-top:3px;">
+          ${reps.map(r => `<option value="${r.id}">${escWeb(r.name)} — ${escWeb(r.email)}${r.shared ? ' (company-wide)' : ''}</option>`).join('')}
+        </select>
+        ${c.wants_ssn ? `
+        <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;font-weight:400;">
+          <input type="checkbox" id="m-ssn-${i}" style="width:auto;margin-top:3px;" disabled />
+          <span style="font-size:12px;">Include Social Security numbers
+            <span style="display:block;font-size:11px;color:var(--text-warning);margin-top:1px;">
+              ${escWeb(c.name)} is marked as requiring them. Confirm it here or they are left out.</span></span>
+        </label>` : ''}
+      </div>
+      <input type="hidden" id="m-id-${i}" value="${c.carrier_id}" />
+    </div>`;
+  };
+
+  showModal('Send to carriers', `
+    <p style="font-size:12.5px;color:var(--text-muted);line-height:1.6;margin-bottom:12px;">
+      ${lives ? lives + ' eligible lives' : 'Headcount not recorded'}${data.state ? ' · ' + escWeb(data.state) : ''}.
+      The census goes out exactly as it was submitted &mdash; the roster and the
+      employer's details, never your contributions or eligibility classes.
+    </p>
+
+    <label>Effective date</label>
+    <input type="date" id="m-eff" />
+    <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
+      Carriers quote <em>to</em> a date. Without one they will ask.</div>
+
+    <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+                color:var(--text-muted);margin:16px 0 7px;">Ready to receive it</div>
+    ${ready.length ? ready.map((c, i) => card(c, i)).join('')
+      : '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic;">None yet — see below for why.</div>'}
+
+    ${blocked.length ? `
+      <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+                  color:var(--text-muted);margin:16px 0 7px;">Cannot take this group</div>
+      ${blocked.map(c => `
+        <div style="border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin-bottom:7px;opacity:.72;">
+          <div style="font-weight:600;font-size:13px;">${escWeb(c.name)}</div>
+          ${(c.blockers || []).map(b => `<div style="font-size:11.5px;color:var(--text-warning);">· ${escWeb(b)}</div>`).join('')}
+        </div>`).join('')}` : ''}
+  `, async () => {
+    const picks = [];
+    ready.forEach((c, i) => {
+      if (!document.getElementById('m-pick-' + i).checked) return;
+      const rep = document.getElementById('m-rep-' + i);
+      if (!rep || !rep.value) return;
+      const ssnBox = document.getElementById('m-ssn-' + i);
+      picks.push({ carrier_id: c.carrier_id, contact_id: rep.value,
+                   with_ssn: !!(ssnBox && ssnBox.checked) });
+    });
+    if (!picks.length) { showToast('Pick at least one carrier.'); return false; }
+
+    const eff = document.getElementById('m-eff').value || null;
+    const { data: out, error: err } = await supabaseClient.rpc('send_to_market', {
+      p_employer: employerId, p_effective: eff, p_products: null, p_picks: picks });
+    if (err) { showToast('Could not send: ' + err.message); return false; }
+
+    const sent = (out && out.sent) || [];
+    showToast('Round ' + out.round_no + ' recorded — ' + sent.length + ' carrier'
+      + (sent.length === 1 ? '' : 's') + ' from census revision ' + out.census_revision + '.');
+    renderPipelines();
+  }, { confirmLabel: 'Send to market' });
+}
+
+/* The SSN box only becomes live once the carrier itself is picked, so nobody
+   ticks it on a carrier they then decide not to use. Unticking the carrier
+   clears it too — a stale tick is how an SSN goes somewhere nobody intended. */
+function marketSsnToggle_(i) {
+  const on = document.getElementById('m-pick-' + i).checked;
+  const box = document.getElementById('m-ssn-' + i);
+  if (!box) return;
+  box.disabled = !on;
+  if (!on) box.checked = false;
 }
 
 function openWorkspaceInvite(employerId, dealId) {
