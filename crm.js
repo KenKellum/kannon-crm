@@ -20634,7 +20634,11 @@ async function requestBaaResign_(dealId) {
   if (error) { showToast('Error: ' + error.message); return; }
   try { fetch(APPS_SCRIPT_URL + '?action=send_baa&baa_id=' + b.id, { mode: 'no-cors' }); } catch (e) {}
   showToast('Updated agreement sent to ' + contact.email + ' for signature.');
-  loadCensusStatus_(deal);
+  /* Refresh the BAA line itself. It used to hang off the census section, so this
+     redrew that — after the move that would have left the old wording sitting
+     there claiming no re-signature had been asked for. */
+  const baaEl = document.getElementById('baa-line-' + deal.id);
+  if (baaEl) loadBaaLine_(deal).then(html => { baaEl.innerHTML = html || ''; });
 }
 
 async function resendBaa_(baaId, a) {
@@ -20857,7 +20861,18 @@ async function loadWorkspaceLine_(deal, employerId) {
     /* Send to carriers used to sit here. It belongs beside Request Census —
        ask for the census, then send it out — and this panel is about the
        employer's own workspace, which is a different conversation. */
-    + '</div>';
+    + '</div>'
+    /* The HIPAA BAA sits under these buttons, per Ken, and it reads in the right
+       order there: invite them in, get the agreement signed, then the census can
+       move. It is a fact about the RELATIONSHIP, not about the roster, which is
+       why it looked out of place hanging off the census. Loaded after the
+       buttons are drawn so a slow lookup never delays them. */
+    + '<div id="baa-line-' + deal.id + '"></div>';
+
+  loadBaaLine_(deal).then(html => {
+    const b = document.getElementById('baa-line-' + deal.id);
+    if (b) b.innerHTML = html || '';
+  });
 }
 
 // ============================================================
@@ -21374,8 +21389,10 @@ async function loadCensusStatus_(deal) {
   const { data: reqs } = await supabaseClient.from('census_requests')
     .select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).limit(1);
   const r = reqs && reqs[0];
-  const baaLine = await loadBaaLine_(deal);
-  if (!r) { el.innerHTML = 'No census requested yet — group quotes need one first.' + baaLine; return; }
+  /* The HIPAA BAA line has moved to the Workspace section. It is a fact about
+     the RELATIONSHIP with the employer, not about the roster — and it is signed
+     before a census can go anywhere, so it reads in the right order there. */
+  if (!r) { el.innerHTML = 'No census requested yet — group quotes need one first.'; return; }
   const link = 'https://crm.thekannongroup.com/census.html?c=' + r.id;
   if (r.status === 'submitted') {
     const { data: emps } = await supabaseClient.from('census_employees')
@@ -21394,8 +21411,7 @@ async function loadCensusStatus_(deal) {
       + (avg !== null ? ' &middot; avg employee age ' + avg : '')
       + '<br>Contact: ' + escWeb(r.contact_name || '') + (r.contact_phone ? ' &middot; ' + escWeb(r.contact_phone) : '')
       + ' &middot; <a href="#" onclick="openCensusEditor(\'' + r.id + '\'); return false;">view / edit census</a>'
-      + ' &middot; <a href="#" onclick="downloadCensusCsv_(\'' + r.id + '\', \'' + escWeb((r.company_legal_name || 'census').replace(/[^a-z0-9 ]/gi, '')) + '\'); return false;">download CSV</a>'
-      + baaLine;
+      + ' &middot; <a href="#" onclick="downloadCensusCsv_(\'' + r.id + '\', \'' + escWeb((r.company_legal_name || 'census').replace(/[^a-z0-9 ]/gi, '')) + '\'); return false;">download CSV</a>';
     /* There is a census AND somewhere to hang the round off. Both are needed —
        send_to_market refuses without either, and a button that can only fail is
        worse than one that is not there. */
@@ -21406,8 +21422,7 @@ async function loadCensusStatus_(deal) {
       + ' &mdash; waiting on the employer.'
       + '<br><a href="' + link + '" target="_blank">open form &#8599;</a>'
       + ' &middot; <a href="#" onclick="resendCensus_(\'' + r.id + '\', this); return false;">resend email</a>'
-      + ' &middot; <a href="#" onclick="navigator.clipboard.writeText(\'' + link + '\').then(()=>showToast(\'Link copied.\')); return false;">copy link</a>'
-      + baaLine;
+      + ' &middot; <a href="#" onclick="navigator.clipboard.writeText(\'' + link + '\').then(()=>showToast(\'Link copied.\')); return false;">copy link</a>';
   }
 }
 
