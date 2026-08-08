@@ -7787,7 +7787,12 @@ function openDealPanel(dealId) {
 
     healthHTML += '<div class="panel-section"><div class="panel-label">Employee Census</div>'
       + '<div id="census-status-' + deal.id + '" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Checking census&hellip;</div>'
-      + '<button class="btn btn-outline btn-sm" onclick="openCensusRequest(\'' + deal.id + '\')">&#128203; Request Census</button>'
+      + '<button class="btn btn-outline btn-sm" onclick="openCensusRequest(\'' + deal.id + '\')">&#128203; Request Census</button> '
+      /* Beside Request Census, because that is the sequence: ask for it, then
+         send it out. Hidden until there is actually a submitted census to send —
+         loadCensusStatus_ reveals it, since that is what knows. */
+      + '<button class="btn btn-primary btn-sm" id="send-market-' + deal.id + '" style="display:none;"'
+      + ' onclick="openSendToMarket(\'' + (deal.employer_id || '') + '\')">&#128228; Send to carriers</button>'
       + '</div>';
     setTimeout(function() { loadCensusStatus_(deal); }, 70);
   }
@@ -20848,8 +20853,10 @@ async function loadWorkspaceLine_(deal, employerId) {
     + '<div style="margin-top:8px;">'
     + '<button class="btn btn-outline btn-sm" onclick="openWorkspaceInvite(\'' + employerId + '\',\'' + deal.id + '\')">&#128231; Invite someone</button> '
     + '<button class="btn btn-outline btn-sm" onclick="openWorkspaceThread(\'' + employerId + '\',\'' + deal.id + '\')">&#128172; Messages'
-    + (unread ? ' (' + unread + ')' : '') + '</button> '
-    + '<button class="btn btn-primary btn-sm" onclick="openSendToMarket(\'' + employerId + '\')">&#128228; Send to carriers</button>'
+    + (unread ? ' (' + unread + ')' : '') + '</button>'
+    /* Send to carriers used to sit here. It belongs beside Request Census —
+       ask for the census, then send it out — and this panel is about the
+       employer's own workspace, which is a different conversation. */
     + '</div>';
 }
 
@@ -21389,6 +21396,11 @@ async function loadCensusStatus_(deal) {
       + ' &middot; <a href="#" onclick="openCensusEditor(\'' + r.id + '\'); return false;">view / edit census</a>'
       + ' &middot; <a href="#" onclick="downloadCensusCsv_(\'' + r.id + '\', \'' + escWeb((r.company_legal_name || 'census').replace(/[^a-z0-9 ]/gi, '')) + '\'); return false;">download CSV</a>'
       + baaLine;
+    /* There is a census AND somewhere to hang the round off. Both are needed —
+       send_to_market refuses without either, and a button that can only fail is
+       worse than one that is not there. */
+    const mk = document.getElementById('send-market-' + deal.id);
+    if (mk && deal.employer_id) mk.style.display = '';
   } else {
     el.innerHTML = 'Requested ' + new Date(r.created_at).toLocaleDateString()
       + ' &mdash; waiting on the employer.'
