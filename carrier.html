@@ -189,6 +189,45 @@ tr:last-child td{border-bottom:0}
        background:var(--paper)}
 .drawer-pick .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
        color:var(--muted);margin-bottom:4px}
+
+/* The RFP index, sliding from the LEFT — messages come from the right, so a rep
+   never has to work out which panel they just opened.
+   It is an INDEX, not a second copy of the page: with three requests the cards
+   are fine, but with twenty, scrolling past finished work to reach the live one
+   is the actual problem. Click an entry and it takes you to that card. */
+.rfp-tab{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:61;
+         display:none;flex-direction:column;align-items:center;gap:10px;
+         background:linear-gradient(160deg,var(--ia-soft),var(--ia));color:#fff;
+         border:0;border-radius:0 12px 12px 0;cursor:pointer;
+         padding:18px 11px;box-shadow:3px 0 16px rgba(21,39,65,.22);
+         font-family:inherit;transition:padding .15s,box-shadow .15s}
+.rfp-tab:hover{padding-left:15px;box-shadow:4px 0 22px rgba(21,39,65,.3)}
+.rfp-tab-label{writing-mode:vertical-rl;text-orientation:mixed;font-size:13px;
+         font-weight:700;letter-spacing:.02em;transform:rotate(180deg)}
+.rfp-drawer{position:fixed;top:0;left:0;height:100dvh;width:min(400px,94vw);z-index:62;
+        background:var(--paper);border-right:1px solid var(--line);
+        box-shadow:14px 0 46px rgba(21,39,65,.20);
+        display:flex;flex-direction:column;
+        transform:translateX(-101%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.rfp-drawer.open{transform:translateX(0)}
+.rfp-head{display:flex;align-items:center;gap:10px;padding:17px 18px 15px;
+        border-bottom:1px solid var(--line);flex-shrink:0;
+        background:linear-gradient(160deg,var(--ia) 0%,var(--ia-deep) 100%);color:#fff}
+.rfp-body{flex:1;min-height:0;overflow-y:auto;padding:6px 0 20px}
+.rfp-sec{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+        padding:14px 18px 6px;font-weight:700}
+.rfp-item{display:block;width:100%;text-align:left;background:none;border:0;
+        border-bottom:1px solid var(--line);padding:11px 18px;cursor:pointer;
+        font-family:inherit;transition:background .12s}
+.rfp-item:hover{background:var(--wash)}
+.rfp-item .emp-n{font-weight:600;font-size:13.5px;color:var(--ink)}
+.rfp-item .meta-n{font-size:11.5px;color:var(--muted);margin-top:2px}
+.rfp-item .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
+.rfp-empty{padding:10px 18px;font-size:12.5px;color:var(--muted);font-style:italic}
+/* Where the index dropped you. Fades out on its own so it marks the arrival and
+   then stops shouting. */
+@keyframes cardFlash{0%{box-shadow:0 0 0 3px var(--gold)}100%{box-shadow:var(--shadow)}}
+.card.flash{animation:cardFlash 1.6s ease-out}
 </style>
 </head>
 <body>
@@ -217,7 +256,20 @@ tr:last-child td{border-bottom:0}
   <div id="requests"></div>
 </div>
 
-<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<button class="rfp-tab" id="rfp-tab" onclick="openRfpDrawer()" aria-label="My RFPs">
+  <span class="rfp-tab-label">My RFPs</span>
+  <span class="badge" id="rfp-badge" style="display:none;">0</span>
+</button>
+
+<aside class="rfp-drawer" id="rfp-drawer" role="dialog" aria-label="My RFPs" aria-hidden="true">
+  <div class="rfp-head">
+    <span class="rail-title">My RFPs</span>
+    <button class="drawer-close" onclick="closeRfpDrawer()" aria-label="Close">&times;</button>
+  </div>
+  <div class="rfp-body" id="rfp-body"></div>
+</aside>
+
+<div class="scrim" id="scrim" onclick="closeDrawer();closeRfpDrawer();"></div>
 <button class="msg-tab" id="msg-tab" onclick="openDrawer()" aria-label="Messages">
   <span class="msg-tab-label"><span style="font-weight:500;opacity:.8;">Ask </span><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span></span>
   <span class="badge" id="msg-badge" style="display:none;">0</span>
@@ -434,6 +486,7 @@ async function init() {
      page, which would look broken. */
   if (WS.needs_agreement) {
     el('msg-tab').style.display = 'none';
+    el('rfp-tab').style.display = 'none';
     const { data: st } = await sb.rpc('carrier_agreement_state');
     el('hello-sub').textContent = 'One agreement to sign before we can share anything.';
     agreementGate(st || { carriers: [] });
@@ -441,6 +494,13 @@ async function init() {
   }
 
   paintAgreementBadge();
+
+  /* Active first. The server orders by effective date, which is the right order
+     WITHIN a group but would otherwise scatter finished work through the live
+     work — and the live work is why the rep opened the page. */
+  WS.requests = (WS.requests || []).slice()
+    .sort((a, b) => (rfpIsDone(a) ? 1 : 0) - (rfpIsDone(b) ? 1 : 0));
+  paintRfpIndex();
 
   el('requests').innerHTML = (WS.requests || []).length
     ? WS.requests.map(requestCard).join('')
@@ -584,6 +644,72 @@ async function uploadRfp(id, input) {
   init();
 }
 
+/* ── the RFP index ─────────────────────────────────────────────────────────
+   Active above, completed below, because "what still needs me" and "what did I
+   quote for them last year" are different questions and only one of them is
+   urgent. Declined counts as completed: it is off the rep's desk either way. */
+const DONE_STATUSES = ['quoted', 'declined'];
+
+function rfpIsDone(r) { return DONE_STATUSES.includes(r.status); }
+
+function rfpIndexRow(r) {
+  const done = rfpIsDone(r);
+  const colour = done ? 'var(--ok)'
+    : (r.status === 'acknowledged' || r.status === 'downloaded') ? 'var(--warn)'
+    : 'var(--crimson)';
+  return '<button class="rfp-item" onclick="jumpToRequest(\'' + r.submission_id + '\')">'
+    + '<div class="emp-n"><span class="dot" style="background:' + colour + ';"></span>'
+    + esc(r.employer) + (r.unread ? ' <span class="badge">' + r.unread + '</span>' : '') + '</div>'
+    + '<div class="meta-n">' + esc(STATUS_WORD[r.status] || r.status)
+    + (r.effective_date ? ' &middot; effective ' + fmtDate(r.effective_date) : '')
+    + (r.round_no > 1 ? ' &middot; round ' + r.round_no : '')
+    + '</div></button>';
+}
+
+function paintRfpIndex() {
+  const reqs = (WS && WS.requests) || [];
+  const active = reqs.filter(r => !rfpIsDone(r));
+  const done   = reqs.filter(rfpIsDone);
+
+  el('rfp-body').innerHTML =
+      '<div class="rfp-sec">Active &mdash; ' + active.length + '</div>'
+    + (active.length ? active.map(rfpIndexRow).join('')
+        : '<div class="rfp-empty">Nothing waiting on you.</div>')
+    + '<div class="rfp-sec">Completed &mdash; ' + done.length + '</div>'
+    + (done.length ? done.map(rfpIndexRow).join('')
+        : '<div class="rfp-empty">Nothing finished yet.</div>');
+
+  el('rfp-tab').style.display = reqs.length ? 'flex' : 'none';
+  el('rfp-badge').style.display = active.length ? 'inline-block' : 'none';
+  el('rfp-badge').textContent = active.length;
+}
+
+function openRfpDrawer() {
+  closeDrawer(true);                       // one panel at a time
+  el('rfp-drawer').classList.add('open');
+  el('rfp-drawer').setAttribute('aria-hidden', 'false');
+  el('scrim').classList.add('open');
+  el('rfp-tab').style.opacity = '0';
+}
+
+function closeRfpDrawer() {
+  el('rfp-drawer').classList.remove('open');
+  el('rfp-drawer').setAttribute('aria-hidden', 'true');
+  el('scrim').classList.remove('open');
+  el('rfp-tab').style.opacity = '1';
+}
+
+/* The whole point of an index: get me to that one. */
+function jumpToRequest(subId) {
+  closeRfpDrawer();
+  const card = el('req-' + subId);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  card.classList.remove('flash');
+  void card.offsetWidth;                   // restart the animation
+  card.classList.add('flash');
+}
+
 /* ── messages, as a drawer ─────────────────────────────────────────────────
    The inline version failed on send and, more to the point, was not what Ken
    asked for: the employer workspace already slides a panel out from the right
@@ -634,6 +760,7 @@ function paintDrawerHead() {
 }
 
 function openDrawer(subId) {
+  closeRfpDrawer();                        // one panel at a time
   if (subId) OPEN_SUB = subId;
   if (!OPEN_SUB && WS && (WS.requests || []).length) OPEN_SUB = WS.requests[0].submission_id;
   if (!OPEN_SUB) return;
@@ -646,12 +773,14 @@ function openDrawer(subId) {
   loadThread();
 }
 
-function closeDrawer() {
+function closeDrawer(quiet) {
   el('drawer').classList.remove('open');
   el('drawer').setAttribute('aria-hidden', 'true');
-  el('scrim').classList.remove('open');
+  if (!quiet) el('scrim').classList.remove('open');
   el('msg-tab').style.opacity = '1';
-  init();                       // unread counts move once a thread is read
+  /* Reloading redraws the unread counts, which is right when the rep is done —
+     but not when we are only stepping aside for the other panel. */
+  if (!quiet) init();
 }
 
 async function loadThread() {
