@@ -112,6 +112,58 @@ tr:last-child td{border-bottom:0}
 .foot-mark{font-family:var(--serif);font-weight:700;font-size:14px;letter-spacing:-.3px}
 .foot-mark .n{color:var(--ia)} .foot-mark .c{color:var(--crimson)}
 .sep{margin:0 7px;color:var(--line)}
+
+/* The Message Centre, as a drawer — same as the employer workspace, because a
+   rep and an employer should not have to learn two different products. It costs
+   no room until it is wanted, and the panel slides OVER the page so nothing the
+   rep was reading jumps. */
+.msg-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:61;
+         display:flex;flex-direction:column;align-items:center;gap:10px;
+         background:linear-gradient(160deg,var(--ia-soft),var(--ia));color:#fff;
+         border:0;border-radius:12px 0 0 12px;cursor:pointer;
+         padding:18px 11px;box-shadow:-3px 0 16px rgba(21,39,65,.22);
+         font-family:inherit;transition:padding .15s,box-shadow .15s;display:none}
+.msg-tab:hover{padding-right:15px;box-shadow:-4px 0 22px rgba(21,39,65,.3)}
+.msg-tab-label{writing-mode:vertical-rl;text-orientation:mixed;font-size:13px;
+         font-weight:700;letter-spacing:.02em}
+.msg-tab-label .n{color:var(--mia-navy-on-dark)}
+.msg-tab-label .c{color:var(--mia-crimson-on-dark)}
+.badge{background:var(--crimson);color:#fff;font-size:11px;font-weight:700;
+       border-radius:999px;padding:2px 8px;letter-spacing:.02em;line-height:1.5}
+.drawer{position:fixed;top:0;right:0;height:100dvh;width:min(430px,94vw);z-index:62;
+        background:var(--paper);border-left:1px solid var(--line);
+        box-shadow:-14px 0 46px rgba(21,39,65,.20);
+        display:flex;flex-direction:column;
+        transform:translateX(101%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.drawer.open{transform:translateX(0)}
+.drawer-head{display:flex;align-items:center;gap:10px;padding:17px 18px 15px;
+        border-bottom:1px solid var(--line);flex-shrink:0;
+        background:linear-gradient(160deg,var(--ia) 0%,var(--ia-deep) 100%);color:#fff}
+.rail-title{font-family:var(--serif);font-size:15.5px;font-weight:700}
+.drawer-close{margin-left:auto;background:rgba(255,255,255,.12);border:0;color:#fff;
+        width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:19px;line-height:1}
+.drawer-close:hover{background:rgba(255,255,255,.24)}
+.rail-sub{padding:12px 18px 0;font-size:12.5px;color:var(--muted);flex-shrink:0}
+.drawer .thread{flex:1;min-height:0;max-height:none;overflow-y:auto;padding:10px 18px}
+.drawer .composer{padding:0 18px 6px}
+.composer-note{padding:0 18px 14px;font-size:11.5px;line-height:1.5;color:var(--muted);flex-shrink:0}
+.scrim{position:fixed;inset:0;background:rgba(10,25,48,.34);z-index:60;opacity:0;
+       pointer-events:none;transition:opacity .3s}
+.scrim.open{opacity:1;pointer-events:auto}
+
+/* The agreement gate. Deliberately the only thing on the page until it is done —
+   a rep should not see employee names while deciding whether to accept the terms
+   that cover them. */
+.agree{background:var(--paper);border:1px solid var(--line);border-radius:12px;
+       box-shadow:var(--shadow);margin-top:18px;padding:24px 26px}
+.agree h2{font-family:var(--serif);font-size:20px;color:var(--ink);margin-bottom:8px}
+.agree .terms{background:var(--wash);border:1px solid var(--line);border-radius:9px;
+       padding:14px 16px;margin:14px 0;font-size:13.5px;line-height:1.65;
+       max-height:260px;overflow-y:auto}
+.agree label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+       color:var(--muted);margin:12px 0 4px}
+.agree input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--line);
+       border-radius:9px;font-family:inherit;font-size:15px}
 </style>
 </head>
 <body>
@@ -134,6 +186,27 @@ tr:last-child td{border-bottom:0}
   <div class="sub" id="hello-sub"></div>
   <div id="requests"></div>
 </div>
+
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<button class="msg-tab" id="msg-tab" onclick="openDrawer()" aria-label="Messages">
+  <span class="msg-tab-label"><span style="font-weight:500;opacity:.8;">Ask </span><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span></span>
+  <span class="badge" id="msg-badge" style="display:none;">0</span>
+</button>
+
+<aside class="drawer" id="drawer" role="dialog" aria-label="Messages" aria-hidden="true">
+  <div class="drawer-head">
+    <span class="rail-title" id="drawer-title">Messages</span>
+    <button class="drawer-close" onclick="closeDrawer()" aria-label="Close">&times;</button>
+  </div>
+  <div class="rail-sub" id="drawer-sub"></div>
+  <div class="thread" id="drawer-thread"></div>
+  <div class="composer">
+    <textarea id="drawer-msg" rows="1" placeholder="Ask about this group…"></textarea>
+    <button class="btn btn-primary" id="drawer-send" onclick="sendMsg()">Send</button>
+  </div>
+  <p class="composer-note">Messages here reach the agent directly &mdash; it is not a live chat,
+    so they may not answer straight away. Everything is kept with the request.</p>
+</aside>
 
 <div class="foot">
   <span class="foot-mark"><span class="n">My</span><span class="c">I</span><span class="n">A</span><span class="c">pro</span></span>
@@ -282,12 +355,11 @@ function requestCard(r) {
             <input type="file" style="display:none;" onchange="uploadRfp('${r.submission_id}', this)" />
           </label>
           <button class="btn btn-quiet" onclick="declineRequest('${r.submission_id}')">Cannot quote this</button>`}
-        <button class="btn btn-outline" onclick="toggleThread('${r.submission_id}', this)">
+        <button class="btn btn-outline" onclick="openDrawer('${r.submission_id}')">
           &#128172; Message ${esc((r.agent || {}).name || 'the agent')}${r.unread ? ' (' + r.unread + ')' : ''}</button>
       </div>
 
       <div id="roster-${r.submission_id}" style="display:none;"></div>
-      <div id="thread-${r.submission_id}" style="display:none;"></div>
 
       <div class="note">Your contact for this group is
         <strong>${esc((r.agent || {}).name || 'your agent')}</strong>${(r.agent || {}).email
@@ -323,10 +395,26 @@ async function init() {
   el('hello-sub').innerHTML = (WS.carriers || []).map(esc).join(' &middot; ')
     + (open ? ' &mdash; <strong>' + open + '</strong> waiting on you' : ' — nothing outstanding, thank you');
 
+  /* The agreement decides what is on this page. The server already withholds the
+     requests until it is signed — this shows the reason rather than an empty
+     page, which would look broken. */
+  if (WS.needs_agreement) {
+    el('msg-tab').style.display = 'none';
+    const { data: st } = await sb.rpc('carrier_agreement_state');
+    el('hello-sub').textContent = 'One agreement to sign before we can share anything.';
+    agreementGate(st || { carriers: [] });
+    return;
+  }
+
   el('requests').innerHTML = (WS.requests || []).length
     ? WS.requests.map(requestCard).join('')
     : '<div class="card"><div class="card-body" style="color:var(--muted);">'
       + 'No proposal requests just now. We will email you when one arrives.</div></div>';
+
+  const unread = (WS.requests || []).reduce((n, r) => n + (r.unread || 0), 0);
+  el('msg-tab').style.display = (WS.requests || []).length ? 'flex' : 'none';
+  el('msg-badge').style.display = unread ? 'inline-block' : 'none';
+  el('msg-badge').textContent = unread;
 }
 
 /* ── the census ─────────────────────────────────────────────────────────── */
@@ -437,38 +525,124 @@ async function uploadRfp(id, input) {
   init();
 }
 
-/* ── messages ───────────────────────────────────────────────────────────── */
-async function toggleThread(id, btn) {
-  const box = el('thread-' + id);
-  if (box.style.display !== 'none') { box.style.display = 'none'; return; }
-  const { data, error } = await sb.rpc('carrier_thread', { p_submission: id });
-  if (error) { alert('Could not open the conversation: ' + error.message); return; }
-  const msgs = data || [];
-  box.innerHTML = '<div class="thread">'
-    + (msgs.length ? msgs.map(m =>
-        '<div class="msg ' + (m.mine ? 'mine' : 'them') + '"><div class="bubble">'
-        + esc(m.body).replace(/\n/g, '<br>') + '</div><div class="meta">'
-        + esc(m.mine ? 'You' : (m.who || 'Insured America')) + ' &middot; '
-        + new Date(m.at).toLocaleString() + '</div></div>').join('')
-      : '<div style="color:var(--muted);font-size:13.5px;">Nothing yet — ask anything about this group.</div>')
-    + '</div>'
-    + '<div class="composer"><textarea id="msg-' + id + '" rows="1" '
-    + 'placeholder="Ask about the group, participation, anything…"></textarea>'
-    + '<button class="btn btn-primary" onclick="sendMsg(\'' + id + '\', this)">Send</button></div>';
-  box.style.display = 'block';
+/* ── messages, as a drawer ─────────────────────────────────────────────────
+   The inline version failed on send and, more to the point, was not what Ken
+   asked for: the employer workspace already slides a panel out from the right
+   and a rep should not meet a second pattern. One drawer, one open thread, so
+   there is only ever one composer on the page to get wrong. */
+let OPEN_SUB = null;
+
+function openDrawer(subId) {
+  if (subId) OPEN_SUB = subId;
+  if (!OPEN_SUB && WS && (WS.requests || []).length) OPEN_SUB = WS.requests[0].submission_id;
+  if (!OPEN_SUB) return;
+  const r = ((WS && WS.requests) || []).find(x => x.submission_id === OPEN_SUB) || {};
+  el('drawer-title').textContent = r.employer || 'Messages';
+  el('drawer-sub').textContent = 'Straight to ' + ((r.agent || {}).name || 'your agent') + '.';
+  el('drawer').classList.add('open');
+  el('drawer').setAttribute('aria-hidden', 'false');
+  el('scrim').classList.add('open');
+  el('msg-tab').style.opacity = '0';
+  loadThread();
 }
 
-async function sendMsg(id, btn) {
-  const box = el('msg-' + id);
+function closeDrawer() {
+  el('drawer').classList.remove('open');
+  el('drawer').setAttribute('aria-hidden', 'true');
+  el('scrim').classList.remove('open');
+  el('msg-tab').style.opacity = '1';
+  init();                       // unread counts move once a thread is read
+}
+
+async function loadThread() {
+  const box = el('drawer-thread');
+  box.innerHTML = '<div style="color:var(--muted);font-size:13.5px;">Loading…</div>';
+  const { data, error } = await sb.rpc('carrier_thread', { p_submission: OPEN_SUB });
+  if (error) {
+    box.innerHTML = '<div style="color:var(--crimson);font-size:13.5px;">'
+      + 'That conversation could not be opened. ' + esc(error.message) + '</div>';
+    return;
+  }
+  const msgs = data || [];
+  box.innerHTML = msgs.length ? msgs.map(m =>
+      '<div class="msg ' + (m.mine ? 'mine' : 'them') + '"><div class="bubble">'
+      + esc(m.body).replace(/\n/g, '<br>') + '</div><div class="meta">'
+      + esc(m.mine ? 'You' : (m.who || 'Insured America')) + ' &middot; '
+      + new Date(m.at).toLocaleString() + '</div></div>').join('')
+    : '<div style="color:var(--muted);font-size:13.5px;">Nothing yet — ask anything about this group.</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendMsg() {
+  const box = el('drawer-msg'), btn = el('drawer-send');
   const body = (box.value || '').trim();
-  if (!body) return;
+  if (!body || !OPEN_SUB) return;
   btn.disabled = true; btn.textContent = 'Sending…';
-  const { error } = await sb.rpc('carrier_send_message', { p_submission: id, p_body: body });
+  const { error } = await sb.rpc('carrier_send_message',
+    { p_submission: OPEN_SUB, p_body: body });
   btn.disabled = false; btn.textContent = 'Send';
-  if (error) { alert('Could not send: ' + error.message); return; }
+  if (error) {
+    /* Say what actually went wrong rather than "failed". The first version threw
+       away the reason, which is why the cause took a database probe to find. */
+    alert('Could not send that message.\n\n' + (error.message || error)
+      + '\n\nYour text is still in the box — nothing was lost.');
+    return;
+  }
   box.value = '';
-  const b = el('thread-' + id); b.style.display = 'none';
-  toggleThread(id, null);
+  loadThread();
+}
+
+/* ── the agreement, before anything else ───────────────────────────────── */
+function agreementGate(state) {
+  const pending = (state.carriers || []).filter(c => !c.signed);
+  el('requests').innerHTML = pending.map(c => `
+    <div class="agree">
+      <h2>Before we share anything, one agreement</h2>
+      <p style="font-size:14px;color:var(--muted);line-height:1.6;">
+        The requests waiting for you contain employee names, dates of birth and ZIP codes,
+        and for some carriers Social Security numbers. We will not show you any of it
+        until this is signed for <strong>${esc(c.carrier)}</strong>.
+      </p>
+      <div class="terms">
+        <strong>${c.kind === 'baa' ? 'Business Associate Agreement' : 'Confidentiality and Data Use Agreement'}
+          &mdash; version ${esc(c.version)}</strong><br><br>
+        In consideration of receiving employee census information from The Insured America
+        Agency, a Kannon Financial Group brand, you agree that:<br><br>
+        1. The information will be used <strong>only</strong> to prepare and deliver a proposal
+        for the employer named in the request, and for no other purpose.<br><br>
+        2. It will not be sold, shared, or disclosed to any third party, except to your own
+        underwriting staff who need it for that proposal and who are bound by the same terms.<br><br>
+        3. It will be protected using at least the safeguards you apply to your own confidential
+        information, and no less than reasonable administrative, physical and technical safeguards.<br><br>
+        4. You will notify us without unreasonable delay if you become aware of any unauthorised
+        access to, use of, or disclosure of the information.<br><br>
+        5. When your proposal is complete or declined, the information will be retained only as
+        long as your own record-keeping obligations require, and destroyed or returned after that.<br><br>
+        6. Nothing here grants you any ownership of the information, and the employer remains its
+        source and subject.<br><br>
+        <em>This agreement is recorded with your name, email address and the date and time you
+        accept it.</em>
+      </div>
+      <label>Your full name</label>
+      <input type="text" id="sig-name-${c.carrier_id}" placeholder="${esc((WS.rep || {}).name || '')}" />
+      <label>Your title</label>
+      <input type="text" id="sig-title-${c.carrier_id}" placeholder="Group Underwriter" />
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary" onclick="signAgreement('${c.carrier_id}', this)">
+          I agree on behalf of ${esc(c.carrier)}</button>
+      </div>
+    </div>`).join('');
+}
+
+async function signAgreement(carrierId, btn) {
+  const name  = (el('sig-name-' + carrierId).value || '').trim();
+  const title = (el('sig-title-' + carrierId).value || '').trim();
+  if (!name) { alert('Please type your full name to sign.'); return; }
+  btn.disabled = true; btn.textContent = 'Recording…';
+  const { error } = await sb.rpc('carrier_sign_agreement',
+    { p_carrier: carrierId, p_name: name, p_title: title || null });
+  if (error) { btn.disabled = false; btn.textContent = 'I agree'; alert('Could not record that: ' + error.message); return; }
+  init();
 }
 
 /* Boot. A token in the URL gets a button, never an automatic verification. */

@@ -20901,10 +20901,29 @@ async function openSendToMarket(employerId) {
   // on file from qualification, and retyping it is how the two drift apart.
   _mktEmployer = emp || {};
 
+  /* Who is already on the open round. The server refuses to re-send to them, but
+     an agent should SEE that before they tick a box, not be told afterwards —
+     Ken's worry was exactly this: adding one carrier and accidentally pestering
+     the ones already asked. */
+  let already = {};
+  try {
+    const { data: rnd } = await supabaseClient.from('marketing_rounds')
+      .select('id,round_no').eq('employer_id', employerId)
+      .in('status', ['draft', 'sent', 'quoting'])
+      .order('round_no', { ascending: false }).limit(1).maybeSingle();
+    if (rnd) {
+      const { data: subs } = await supabaseClient.from('marketing_submissions')
+        .select('carrier_id,status,sent_at').eq('round_id', rnd.id);
+      (subs || []).forEach(s => { if (s.status !== 'withdrawn') already[s.carrier_id] = s; });
+    }
+  } catch (e) { /* worst case the server still refuses; this is only the warning */ }
+
   const list = (data && data.carriers) || [];
   const lives = data && data.eligible_lives;
-  const ready = list.filter(c => !(c.blockers || []).length);
-  const blocked = list.filter(c => (c.blockers || []).length);
+  // Three groups now, not two: free to send, already sent, and cannot take it.
+  const ready   = list.filter(c => !(c.blockers || []).length && !already[c.carrier_id]);
+  const onRound = list.filter(c => already[c.carrier_id]);
+  const blocked = list.filter(c => (c.blockers || []).length && !already[c.carrier_id]);
 
   if (!list.length) {
     showModal('Send to carriers', `
@@ -21008,7 +21027,30 @@ async function openSendToMarket(employerId) {
     <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
                 color:var(--text-muted);margin:16px 0 7px;">Ready to receive it</div>
     ${ready.length ? ready.map((c, i) => card(c, i)).join('')
-      : '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic;">None yet — see below for why.</div>'}
+      : '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic;">'
+        + (onRound.length ? 'Everyone eligible already has it.' : 'None yet — see below for why.') + '</div>'}
+
+    ${onRound.length ? `
+      <!-- Shown, not hidden. Ken's concern was pestering a rep who already has
+           it; seeing them listed as done is the reassurance, and hiding them
+           would just make him wonder whether they were sent at all. -->
+      <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+                  color:var(--text-muted);margin:16px 0 7px;">Already sent &mdash; left alone</div>
+      ${onRound.map(c => {
+        const s = already[c.carrier_id] || {};
+        const label = { sent:'Sent, no reply yet', viewed:'They have looked', downloaded:'Census taken',
+                        acknowledged:'Working on it', quoted:'Quote received',
+                        declined:'Declined' }[s.status] || s.status;
+        return `<div style="border:1px solid var(--border);border-radius:9px;padding:9px 12px;
+                     margin-bottom:7px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
+          <div><span style="font-weight:600;font-size:13px;">${escWeb(c.name)}</span>
+            <span style="font-size:11.5px;color:var(--text-muted);"> &middot; ${escWeb(label)}</span></div>
+          <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">
+            ${s.sent_at ? new Date(s.sent_at).toLocaleDateString() : ''}</span>
+        </div>`; }).join('')}
+      <div style="font-size:11.5px;color:var(--text-muted);margin:-2px 0 4px;">
+        These keep what they already have. Anything you add below &mdash; a fuller brief, another
+        document, a later effective date &mdash; reaches them too, without a second request.</div>` : ''}
 
     ${blocked.length ? `
       <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
@@ -21028,7 +21070,12 @@ async function openSendToMarket(employerId) {
       picks.push({ carrier_id: c.carrier_id, contact_id: rep.value,
                    with_ssn: !!(ssnBox && ssnBox.checked) });
     });
-    if (!picks.length) { showToast('Pick at least one carrier.'); return false; }
+    if (!picks.length) {
+      showToast(onRound.length
+        ? 'Nothing new to send — everyone picked already has it. Add a document or a note instead.'
+        : 'Pick at least one carrier.');
+      return false;
+    }
 
     const eff = document.getElementById('m-eff').value || null;
     const prods = MARKET_PRODUCTS.filter((p, i) => document.getElementById('m-prod-' + i).checked);
@@ -21096,7 +21143,9 @@ async function openSendToMarket(employerId) {
     showToast('Round ' + out.round_no + ' recorded — ' + sent.length + ' carrier'
       + (sent.length === 1 ? '' : 's') + ' from census revision ' + out.census_revision
       + (mailed === sent.length ? '. All invited.' : '. ' + mailed + ' of ' + sent.length
-         + ' emailed — the rest are recorded and can be resent.'));
+         + ' emailed — the rest are recorded and can be resent.')
+      + (((out.skipped || []).length)
+         ? ' ' + out.skipped.length + ' already had it and were left alone.' : ''));
 
     /* Redrawing the board is cosmetic. If it throws, the round still exists and
        the reps have still been emailed, so it is logged rather than surfaced —
