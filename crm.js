@@ -21065,6 +21065,17 @@ async function openSendToMarket(employerId) {
     });
     if (err) { showToast('Could not send: ' + err.message); return false; }
 
+    /* PAST THIS POINT THE ROUND IS COMMITTED. Everything below is mail and
+       redrawing, and none of it can be undone by failing — so none of it may be
+       reported as "Save failed", which is what happened the first time this ran:
+       the round, the submission, the documents and both disclosure rows were all
+       written correctly and Ken was told it had failed. A save that succeeded
+       must never say otherwise. */
+    if (!out || !out.round_no) {
+      showToast('Sent — but the CRM did not get a summary back. Open the employer to check the round.');
+      return;
+    }
+
     const sent = (out && out.sent) || [];
     /* The record is written; now tell the reps. Deliberately after, and one at a
        time keyed on the submission id — Apps Script reads the recipient back
@@ -21086,7 +21097,13 @@ async function openSendToMarket(employerId) {
       + (sent.length === 1 ? '' : 's') + ' from census revision ' + out.census_revision
       + (mailed === sent.length ? '. All invited.' : '. ' + mailed + ' of ' + sent.length
          + ' emailed — the rest are recorded and can be resent.'));
-    renderPipelines();
+
+    /* Redrawing the board is cosmetic. If it throws, the round still exists and
+       the reps have still been emailed, so it is logged rather than surfaced —
+       and logged loudly enough to find, because something in here threw once and
+       the only symptom was a misleading toast. */
+    try { renderPipelines(); }
+    catch (e) { console.error('[send to market] board redraw failed after a good save:', e); }
   }, { confirmLabel: 'Send to market' });
 }
 
