@@ -240,6 +240,28 @@ tr:last-child td{border-bottom:0}
        color:var(--muted);font-size:17px;line-height:1;padding:2px 4px;display:none}
 .rfp-clear:hover{color:var(--crimson)}
 .rfp-count{padding:4px 18px 0;font-size:11.5px;color:var(--muted)}
+
+/* Actions on two rows: what you DO with the request on top, who you talk to
+   underneath and out of the way. Ken kept the direct message button and wanted it
+   off the working row. */
+.actions-2{display:flex;gap:9px;flex-wrap:wrap;margin-top:9px;justify-content:flex-end}
+.act-status{display:flex;align-items:center;gap:7px}
+.act-status select{padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+     font-family:inherit;font-size:14px;font-weight:600;color:var(--ia);background:#fff;
+     cursor:pointer}
+.act-status select:disabled{opacity:.55;cursor:default}
+.files{margin-top:14px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.files-head{background:var(--wash);padding:7px 13px;font-size:10.5px;font-weight:700;
+     text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.file-row{display:flex;align-items:center;gap:10px;padding:9px 13px;
+     border-top:1px solid var(--line);font-size:13px}
+.file-row.gone{opacity:.5}
+.file-row .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row .fn b{color:var(--ink)}
+.file-row .when{font-size:11px;color:var(--muted);white-space:nowrap}
+.linkish{background:none;border:0;color:var(--crimson);cursor:pointer;font-family:inherit;
+     font-size:12px;padding:2px 4px}
+.linkish:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -394,6 +416,7 @@ const FUNDING = { fully_insured:'Fully insured', level_funded:'Level funded',
 
 function statusPill(r) {
   if (r.status === 'quoted')       return '<span class="pill pill-done">Quote sent</span>';
+  if (r.status === 'info_needed')  return '<span class="pill pill-ack">Waiting on us</span>';
   if (r.status === 'declined')     return '<span class="pill pill-done">Declined</span>';
   if (r.status === 'acknowledged') return '<span class="pill pill-ack">Working on it</span>';
   if (r.status === 'downloaded')   return '<span class="pill pill-ack">Census taken</span>';
@@ -433,8 +456,7 @@ function requestCard(r) {
           <div><div class="f-lbl">Current carrier</div><div class="f-val">${esc(r.current_carrier || 'Not stated')}</div></div>
           <div><div class="f-lbl">Funding</div><div class="f-val">${esc(FUNDING[r.current_funding] || 'Not stated')}</div></div>
         </div>
-        ${r.current_plan ? `<div class="brief" style="border-left-color:var(--ia-soft);">
-          <div class="brief-lbl">Plan they have today</div>${esc(r.current_plan)}</div>` : ''}`}
+        ${r.current_plan ? `<div class="brief" style="border-left-color:var(--ia-soft);"><div class="brief-lbl">Plan they have today</div>${esc(r.current_plan)}</div>` : ''}`}
 
       ${r.brief ? `<div class="brief"><div class="brief-lbl">What we are looking for</div>${esc(r.brief)}</div>` : ''}
 
@@ -452,17 +474,33 @@ function requestCard(r) {
       <div class="actions">
         <button class="btn btn-primary" onclick="downloadCensus('${r.submission_id}', this)">&#11015; Download the census</button>
         <button class="btn btn-outline" onclick="toggleRoster('${r.submission_id}', this)">View roster</button>
-        ${done ? '' : `
-          <button class="btn btn-outline" onclick="setStatus('${r.submission_id}','acknowledged',this)">Got it &mdash; working on it</button>
-          <label class="btn btn-outline" style="display:inline-flex;align-items:center;gap:7px;">
-            &#11014; Send your quote
-            <input type="file" style="display:none;" onchange="uploadRfp('${r.submission_id}', this)" />
-          </label>
-          <button class="btn btn-quiet" onclick="declineRequest('${r.submission_id}')">Cannot quote this</button>`}
+
+        <!-- A dropdown, not a button, because "got it" and "I need more from you"
+             are the same kind of act: telling the agent where this stands. As
+             separate buttons the second one never got built and reps went quiet
+             instead. -->
+        <div class="act-status">
+          <select id="st-${r.submission_id}" onchange="statusPicked('${r.submission_id}', this)">
+            <option value="">${done ? esc(statusWord(r.status)) : 'Tell us where this stands\u2026'}</option>
+            <option value="acknowledged">Got it &mdash; working on it</option>
+            <option value="info_needed">I need more information</option>
+            <option value="declined">I cannot quote this</option>
+            ${done ? '<option value="reopen">Reopen &mdash; I am working on it again</option>' : ''}
+          </select>
+        </div>
+
+        <label class="btn btn-outline" style="display:inline-flex;align-items:center;gap:7px;">
+          &#11014; ${done ? 'Send another file' : 'Send your quote'}
+          <input type="file" multiple style="display:none;" onchange="uploadRfp('${r.submission_id}', this)" />
+        </label>
+      </div>
+
+      <div class="actions-2">
         <button class="btn btn-outline" onclick="openDrawer('${r.submission_id}')">
           &#128172; Message ${esc((r.agent || {}).name || 'the agent')}${r.unread ? ' (' + r.unread + ')' : ''}</button>
       </div>
 
+      <div id="files-${r.submission_id}"></div>
       <div id="roster-${r.submission_id}" style="display:none;"></div>
 
       <div class="note">Your contact for this group is
@@ -524,6 +562,11 @@ async function init() {
     ? WS.requests.map(requestCard).join('')
     : '<div class="card"><div class="card-body" style="color:var(--muted);">'
       + 'No proposal requests just now. We will email you when one arrives.</div></div>';
+
+  /* After the cards exist. Each request asks for its own file list rather than
+     the workspace payload carrying them all — most requests have none, and the
+     ones that do are the ones being looked at. */
+  (WS.requests || []).forEach(r => paintFiles(r.submission_id));
 
   const unread = (WS.requests || []).reduce((n, r) => n + (r.unread || 0), 0);
   el('msg-tab').style.display = (WS.requests || []).length ? 'flex' : 'none';
@@ -633,138 +676,86 @@ async function getDoc(docId, btn) {
 }
 
 /* ── answering ──────────────────────────────────────────────────────────── */
-async function setStatus(id, status, btn, reason) {
-  btn.disabled = true;
+function statusWord(st) { return STATUS_WORD[st] || st; }
+
+/* Every one of these writes a line into the conversation as well as moving the
+   status. Ken pressed "Got it" and saw nothing happen anywhere, which is exactly
+   what a silent state change looks like from the outside. */
+async function statusPicked(id, sel) {
+  const choice = sel.value;
+  if (!choice) return;
+  let reason = null;
+
+  if (choice === 'declined') {
+    reason = prompt('So the agent knows what to do next — why can you not quote this one?\n'
+      + '(group size, industry, state, participation, timing…)');
+    if (reason === null) { sel.value = ''; return; }
+    if (!reason.trim()) { alert('Please give a short reason — it saves the agent a week.'); sel.value = ''; return; }
+  }
+  if (choice === 'info_needed') {
+    reason = prompt('What do you need? This goes straight to the agent.');
+    if (reason === null) { sel.value = ''; return; }
+  }
+
+  sel.disabled = true;
   const { error } = await sb.rpc('carrier_set_status',
-    { p_submission: id, p_status: status, p_reason: reason || null });
-  if (error) { btn.disabled = false; alert('Could not update: ' + error.message); return; }
+    { p_submission: id, p_status: choice, p_reason: reason && reason.trim() ? reason.trim() : null });
+  sel.disabled = false;
+  if (error) { alert('Could not update that: ' + error.message); sel.value = ''; return; }
   init();
 }
 
-function declineRequest(id) {
-  const why = prompt('So the agent knows what to do next — why can you not quote this one?\n'
-    + '(group size, industry, state, participation, timing…)');
-  if (why === null) return;
-  const btn = document.createElement('button');
-  setStatus(id, 'declined', btn, why.trim() || 'No reason given');
-}
-
+/* Several files at once, with one note covering them — a quote is rarely a
+   single PDF, and rarely worth sending without a word about it. */
 async function uploadRfp(id, input) {
-  const f = input.files && input.files[0];
-  if (!f) return;
-  const path = id + '/' + Date.now() + '-' + f.name.replace(/[^A-Za-z0-9._-]/g, '_');
-  const { error: upErr } = await sb.storage.from('rfp-docs')
-    .upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false });
-  if (upErr) { alert('Upload failed: ' + upErr.message); return; }
-  const { error } = await sb.rpc('carrier_upload_rfp',
-    { p_submission: id, p_path: path, p_filename: f.name, p_bytes: f.size });
-  if (error) { alert('Uploaded, but we could not record it: ' + error.message); return; }
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  const note = prompt('Anything to say about ' + (files.length === 1 ? 'this file' : 'these files')
+    + '? (optional)\n\ne.g. "Two options — the second is the buy-up."');
+  if (note === null) { input.value = ''; return; }
+
+  for (const f of files) {
+    const path = id + '/' + Date.now() + '-' + f.name.replace(/[^A-Za-z0-9._-]/g, '_');
+    const { error: upErr } = await sb.storage.from('rfp-docs')
+      .upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false });
+    if (upErr) { alert('Upload failed for ' + f.name + ': ' + upErr.message); input.value = ''; return; }
+    const { error } = await sb.rpc('carrier_upload_rfp',
+      { p_submission: id, p_path: path, p_filename: f.name, p_bytes: f.size,
+        p_note: note.trim() || null });
+    if (error) { alert('Uploaded ' + f.name + ', but we could not record it: ' + error.message); }
+  }
+  input.value = '';
   init();
 }
 
-/* ── the RFP index ─────────────────────────────────────────────────────────
-   Active above, completed below, because "what still needs me" and "what did I
-   quote for them last year" are different questions and only one of them is
-   urgent. Declined counts as completed: it is off the rep's desk either way. */
-const DONE_STATUSES = ['quoted', 'declined'];
-
-function rfpIsDone(r) { return DONE_STATUSES.includes(r.status); }
-
-function rfpIndexRow(r) {
-  const done = rfpIsDone(r);
-  const colour = done ? 'var(--ok)'
-    : (r.status === 'acknowledged' || r.status === 'downloaded') ? 'var(--warn)'
-    : 'var(--crimson)';
-  return '<button class="rfp-item" onclick="jumpToRequest(\'' + r.submission_id + '\')">'
-    + '<div class="emp-n"><span class="dot" style="background:' + colour + ';"></span>'
-    + esc(r.employer) + (r.unread ? ' <span class="badge">' + r.unread + '</span>' : '') + '</div>'
-    + '<div class="meta-n">' + esc(STATUS_WORD[r.status] || r.status)
-    + (r.effective_date ? ' &middot; effective ' + fmtDate(r.effective_date) : '')
-    + (r.round_no > 1 ? ' &middot; round ' + r.round_no : '')
-    + '</div></button>';
+/* What has actually been sent. Ken's point: the rep had no way to see it, so a
+   wrong attachment was invisible and unfixable — which is when people give up on
+   the workspace and email instead. */
+async function paintFiles(id) {
+  const box = el('files-' + id);
+  if (!box) return;
+  const { data, error } = await sb.rpc('carrier_rfp_files', { p_submission: id });
+  if (error || !data || !data.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="files"><div class="files-head">What you have sent</div>'
+    + data.map(f =>
+        '<div class="file-row' + (f.withdrawn ? ' gone' : '') + '">'
+        + '<div class="fn"><b>' + esc(f.filename) + '</b>'
+        + (f.note ? ' <span style="color:var(--muted);">&mdash; ' + esc(f.note) + '</span>' : '')
+        + (f.withdrawn ? ' <span style="color:var(--crimson);">(withdrawn)</span>' : '')
+        + '</div>'
+        + '<span class="when">' + fmtDate(f.at) + '</span>'
+        + (f.withdrawn ? ''
+           : '<button class="linkish" onclick="withdrawFile(\'' + f.id + '\')">Withdraw</button>')
+        + '</div>').join('')
+    + '</div>';
 }
 
-let RFP_Q = '';
-
-/* Everything worth searching by, in one string per request: the group, the agent,
-   the carrier, where they are, and the words the rep actually sees for the
-   status. Matching on the DISPLAYED status word matters — somebody typing
-   "declined" means the thing the screen calls declined, not a database enum. */
-function rfpHaystack(r) {
-  return [r.employer, (r.agent || {}).name, (r.agent || {}).email, r.carrier,
-          r.employer_city, r.employer_state, r.industry,
-          STATUS_WORD[r.status] || r.status,
-          r.round_no > 1 ? 'round ' + r.round_no : '']
-    .filter(Boolean).join(' ').toLowerCase();
-}
-
-function rfpSearch(q, fromClear) {
-  RFP_Q = String(q || '').trim().toLowerCase();
-  if (fromClear) { const b = el('rfp-q'); if (b) { b.value = ''; b.focus(); } }
-  paintRfpIndex();
-}
-
-function paintRfpIndex() {
-  const all = (WS && WS.requests) || [];
-  const reqs = RFP_Q ? all.filter(r => rfpHaystack(r).indexOf(RFP_Q) !== -1) : all;
-  const active = reqs.filter(r => !rfpIsDone(r));
-  const done   = reqs.filter(rfpIsDone);
-
-  const clear = el('rfp-clear');
-  if (clear) clear.style.display = RFP_Q ? 'block' : 'none';
-  const count = el('rfp-count');
-  if (count) count.textContent = RFP_Q
-    ? reqs.length + ' of ' + all.length + ' match \u201c' + RFP_Q + '\u201d'
-    : '';
-
-  el('rfp-body').innerHTML = (RFP_Q && !reqs.length)
-    ? '<div class="rfp-empty">Nothing matches that. Try the group name, the agent, '
-      + 'or the state.</div>'
-    : '<div class="rfp-sec">Active &mdash; ' + active.length + '</div>'
-      + (active.length ? active.map(rfpIndexRow).join('')
-          : '<div class="rfp-empty">' + (RFP_Q ? 'None active.' : 'Nothing waiting on you.') + '</div>')
-      + '<div class="rfp-sec">Completed &mdash; ' + done.length + '</div>'
-      + (done.length ? done.map(rfpIndexRow).join('')
-          : '<div class="rfp-empty">' + (RFP_Q ? 'None completed.' : 'Nothing finished yet.') + '</div>');
-
-  /* The handle always counts ALL active work, never the filtered view. A badge
-     that changes because somebody typed in a search box is lying about the
-     workload. */
-  const activeAll = all.filter(r => !rfpIsDone(r)).length;
-  el('rfp-tab').style.display = all.length ? 'flex' : 'none';
-  el('rfp-badge').style.display = activeAll ? 'inline-block' : 'none';
-  el('rfp-badge').textContent = activeAll;
-}
-
-function openRfpDrawer() {
-  closeDrawer(true);                       // one panel at a time
-  /* Opening it fresh shows everything. A search left over from last time reads
-     as "I have no RFPs", which is the worst thing this panel could say. */
-  RFP_Q = '';
-  const q = el('rfp-q'); if (q) q.value = '';
-  paintRfpIndex();
-  el('rfp-drawer').classList.add('open');
-  el('rfp-drawer').setAttribute('aria-hidden', 'false');
-  el('scrim').classList.add('open');
-  el('rfp-tab').style.opacity = '0';
-}
-
-function closeRfpDrawer() {
-  el('rfp-drawer').classList.remove('open');
-  el('rfp-drawer').setAttribute('aria-hidden', 'true');
-  el('scrim').classList.remove('open');
-  el('rfp-tab').style.opacity = '1';
-}
-
-/* The whole point of an index: get me to that one. */
-function jumpToRequest(subId) {
-  closeRfpDrawer();
-  const card = el('req-' + subId);
-  if (!card) return;
-  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  card.classList.remove('flash');
-  void card.offsetWidth;                   // restart the animation
-  card.classList.add('flash');
+async function withdrawFile(responseId) {
+  if (!confirm('Withdraw that file?\n\nIt stays on the record as withdrawn — the agent may '
+    + 'already have opened it — and you can send the right one straight after.')) return;
+  const { error } = await sb.rpc('carrier_withdraw_rfp', { p_response: responseId });
+  if (error) { alert('Could not withdraw that: ' + error.message); return; }
+  init();
 }
 
 /* ── messages, as a drawer ─────────────────────────────────────────────────
@@ -778,8 +769,8 @@ let OPEN_SUB = null;
    stay in the list on purpose — Ken asked for current AND past, and a rep chasing
    something they quoted in March needs to reach the same person. */
 const STATUS_WORD = { sent:'awaiting your quote', viewed:'awaiting your quote',
-  downloaded:'census taken', acknowledged:'in progress', quoted:'quote sent',
-  declined:'declined' };
+  downloaded:'census taken', acknowledged:'in progress', info_needed:'waiting on us',
+  quoted:'quote sent', declined:'declined' };
 
 function buildThreadPicker() {
   const sel = el('drawer-pick');
