@@ -228,6 +228,18 @@ tr:last-child td{border-bottom:0}
    then stops shouting. */
 @keyframes cardFlash{0%{box-shadow:0 0 0 3px var(--gold)}100%{box-shadow:var(--shadow)}}
 .card.flash{animation:cardFlash 1.6s ease-out}
+
+/* Search sits in the index, because the index is where you go to FIND something.
+   A second search box on the page itself would be a second place to look. */
+.rfp-search{padding:12px 18px 4px;flex-shrink:0;position:relative}
+.rfp-search input{width:100%;padding:9px 30px 9px 12px;border:1px solid var(--line);
+       border-radius:9px;font-family:inherit;font-size:13.5px;color:var(--text);
+       background:var(--paper)}
+.rfp-search input:focus{outline:none;border-color:var(--ia-soft)}
+.rfp-clear{position:absolute;right:26px;top:20px;background:none;border:0;cursor:pointer;
+       color:var(--muted);font-size:17px;line-height:1;padding:2px 4px;display:none}
+.rfp-clear:hover{color:var(--crimson)}
+.rfp-count{padding:4px 18px 0;font-size:11.5px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -266,6 +278,12 @@ tr:last-child td{border-bottom:0}
     <span class="rail-title">My RFPs</span>
     <button class="drawer-close" onclick="closeRfpDrawer()" aria-label="Close">&times;</button>
   </div>
+  <div class="rfp-search">
+    <input type="search" id="rfp-q" placeholder="Search a group, an agent, a carrier…"
+           autocomplete="off" oninput="rfpSearch(this.value)" />
+    <button class="rfp-clear" id="rfp-clear" onclick="rfpSearch('', true)" aria-label="Clear">&times;</button>
+  </div>
+  <div class="rfp-count" id="rfp-count"></div>
   <div class="rfp-body" id="rfp-body"></div>
 </aside>
 
@@ -666,26 +684,65 @@ function rfpIndexRow(r) {
     + '</div></button>';
 }
 
+let RFP_Q = '';
+
+/* Everything worth searching by, in one string per request: the group, the agent,
+   the carrier, where they are, and the words the rep actually sees for the
+   status. Matching on the DISPLAYED status word matters — somebody typing
+   "declined" means the thing the screen calls declined, not a database enum. */
+function rfpHaystack(r) {
+  return [r.employer, (r.agent || {}).name, (r.agent || {}).email, r.carrier,
+          r.employer_city, r.employer_state, r.industry,
+          STATUS_WORD[r.status] || r.status,
+          r.round_no > 1 ? 'round ' + r.round_no : '']
+    .filter(Boolean).join(' ').toLowerCase();
+}
+
+function rfpSearch(q, fromClear) {
+  RFP_Q = String(q || '').trim().toLowerCase();
+  if (fromClear) { const b = el('rfp-q'); if (b) { b.value = ''; b.focus(); } }
+  paintRfpIndex();
+}
+
 function paintRfpIndex() {
-  const reqs = (WS && WS.requests) || [];
+  const all = (WS && WS.requests) || [];
+  const reqs = RFP_Q ? all.filter(r => rfpHaystack(r).indexOf(RFP_Q) !== -1) : all;
   const active = reqs.filter(r => !rfpIsDone(r));
   const done   = reqs.filter(rfpIsDone);
 
-  el('rfp-body').innerHTML =
-      '<div class="rfp-sec">Active &mdash; ' + active.length + '</div>'
-    + (active.length ? active.map(rfpIndexRow).join('')
-        : '<div class="rfp-empty">Nothing waiting on you.</div>')
-    + '<div class="rfp-sec">Completed &mdash; ' + done.length + '</div>'
-    + (done.length ? done.map(rfpIndexRow).join('')
-        : '<div class="rfp-empty">Nothing finished yet.</div>');
+  const clear = el('rfp-clear');
+  if (clear) clear.style.display = RFP_Q ? 'block' : 'none';
+  const count = el('rfp-count');
+  if (count) count.textContent = RFP_Q
+    ? reqs.length + ' of ' + all.length + ' match \u201c' + RFP_Q + '\u201d'
+    : '';
 
-  el('rfp-tab').style.display = reqs.length ? 'flex' : 'none';
-  el('rfp-badge').style.display = active.length ? 'inline-block' : 'none';
-  el('rfp-badge').textContent = active.length;
+  el('rfp-body').innerHTML = (RFP_Q && !reqs.length)
+    ? '<div class="rfp-empty">Nothing matches that. Try the group name, the agent, '
+      + 'or the state.</div>'
+    : '<div class="rfp-sec">Active &mdash; ' + active.length + '</div>'
+      + (active.length ? active.map(rfpIndexRow).join('')
+          : '<div class="rfp-empty">' + (RFP_Q ? 'None active.' : 'Nothing waiting on you.') + '</div>')
+      + '<div class="rfp-sec">Completed &mdash; ' + done.length + '</div>'
+      + (done.length ? done.map(rfpIndexRow).join('')
+          : '<div class="rfp-empty">' + (RFP_Q ? 'None completed.' : 'Nothing finished yet.') + '</div>');
+
+  /* The handle always counts ALL active work, never the filtered view. A badge
+     that changes because somebody typed in a search box is lying about the
+     workload. */
+  const activeAll = all.filter(r => !rfpIsDone(r)).length;
+  el('rfp-tab').style.display = all.length ? 'flex' : 'none';
+  el('rfp-badge').style.display = activeAll ? 'inline-block' : 'none';
+  el('rfp-badge').textContent = activeAll;
 }
 
 function openRfpDrawer() {
   closeDrawer(true);                       // one panel at a time
+  /* Opening it fresh shows everything. A search left over from last time reads
+     as "I have no RFPs", which is the worst thing this panel could say. */
+  RFP_Q = '';
+  const q = el('rfp-q'); if (q) q.value = '';
+  paintRfpIndex();
   el('rfp-drawer').classList.add('open');
   el('rfp-drawer').setAttribute('aria-hidden', 'false');
   el('scrim').classList.add('open');
