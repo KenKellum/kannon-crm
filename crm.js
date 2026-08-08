@@ -847,6 +847,7 @@ function miaBoot() {
   if (!tab || !currentAgent) return;
   tab.style.display = 'flex';
   paintChimeBtn_();        // three states now; this was still painting the old two
+  ensureBackgroundJobs_(); // a job that was never scheduled fails silently
   miaRefreshBadge(true);   // first read sets the baseline, never chimes
   /* 15s, not 60s. The pulsing dot is only useful if it starts pulsing near when
      the message actually arrives — a minute late and the agent has already
@@ -885,6 +886,31 @@ async function miaRefreshBadge(silent) {
     if (!silent && miaLastUnread !== null && n > miaLastUnread) miaAnnounce_();
     miaLastUnread = n;
   } catch (e) {}
+}
+
+/* The reply-notice sweep runs on a scheduled job, and the first one never fired
+   because its trigger had never been installed — a scheduled job that was never
+   scheduled fails completely silently, which is how Ken's email to Dana sat
+   queued for twenty minutes with no error anywhere.
+   So the CRM asks once a day whether the job exists, and it installs itself if
+   not. Anything that depends on a one-off setup step somebody has to remember
+   will eventually be found broken by a client rather than by us.
+   Quiet by design: it is a health check, not a feature, and it never blocks or
+   reports anything unless something was actually repaired. */
+async function ensureBackgroundJobs_() {
+  try {
+    const k = 'jobs-checked';
+    const last = parseInt(localStorage.getItem(k) || '0', 10);
+    if (Date.now() - last < 24 * 60 * 60 * 1000) return;
+    const r = await fetch(APPS_SCRIPT_URL + '?action=ensure_triggers');   // token is added for us
+    const out = await r.json().catch(() => null);
+    if (!out || out.status !== 'ok') return;                 // try again tomorrow
+    localStorage.setItem(k, String(Date.now()));
+    if (out.created && out.created.length) {
+      console.info('[jobs] installed a missing scheduled job:', out.created.join(', '));
+    }
+    if (out.swept) console.info('[jobs] delivered ' + out.swept + ' queued notice(s)');
+  } catch (e) { /* offline, or Apps Script is having a moment. Tomorrow will do. */ }
 }
 
 /* Who it is from, said out loud — a doorbell tells you someone is there, a name
