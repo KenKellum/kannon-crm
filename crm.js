@@ -9242,9 +9242,12 @@ async function renderAdmin() {
   const carriersSection = `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:700;font-size:14px;">&#127970; Carriers <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— reference for appointments, SOA forms &amp; future per-carrier features</span></div>
+        <div style="font-weight:700;font-size:14px;">&#127970; Carriers <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— ${isSystemOwner_()
+          ? 'reference for appointments, SOA forms &amp; future per-carrier features'
+          : 'the shared list. Use <strong>Reps</strong> to keep your office’s people'}</span></div>
+        ${isSystemOwner_() ? `
         <button class="btn btn-outline btn-sm" onclick="openProductWizard_()">&#128196; Add products from a brochure</button>
-        <button class="btn btn-primary btn-sm" onclick="openCarrierModal(null)">+ Add Carrier</button>
+        <button class="btn btn-primary btn-sm" onclick="openCarrierModal(null)">+ Add Carrier</button>` : ''}
       </div>
       ${window._allCarriers.length === 0
         ? '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No carriers yet — add the companies you hold appointments with.</div>'
@@ -9256,13 +9259,17 @@ async function renderAdmin() {
               ${cr.soa_required ? '<span style="font-size:10px;font-weight:700;color:#f59e0b;"> · SOA: ' + (cr.soa_form_type === 'ours' ? 'our form OK' : escWeb(cr.soa_form_type)) + '</span>' : ''}
               ${cr.is_active ? '' : '<span style="font-size:10px;color:var(--text-muted);"> · inactive</span>'}
             </div>
-            <button class="btn btn-outline btn-sm" onclick="openCarrierProducts('${cr.id}')">Products (${(window._allCarrierProducts||[]).filter(p => p.carrier_id === cr.id).length})</button>
-            <button class="btn btn-outline btn-sm" onclick="openCarrierReps('${cr.id}')" title="The people who quote and service group business here">Reps</button>
+            ${isSystemOwner_() ? `<button class="btn btn-outline btn-sm" onclick="openCarrierProducts('${cr.id}')">Products (${(window._allCarrierProducts||[]).filter(p => p.carrier_id === cr.id).length})</button>` : ''}
+            <!-- The one button a broker owner needs, and the only one they get.
+                 Everything else here writes the shared catalogue. -->
+            <button class="btn ${isSystemOwner_() ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="openCarrierReps('${cr.id}')"
+              title="The people who quote and service group business here">Reps</button>
+            ${isSystemOwner_() ? `
             <button class="btn btn-outline btn-sm" onclick="openCarrierModal('${cr.id}')">Edit</button>
             <button class="btn btn-outline btn-sm" onclick="carrierSetActive_('${cr.id}', ${cr.is_active ? 'false' : 'true'})"
               title="${cr.is_active ? 'Stop offering this carrier, keeping its history' : 'Offer this carrier again'}">${cr.is_active ? 'Retire' : 'Restore'}</button>
             <button class="btn btn-outline btn-sm" style="color:var(--text-danger);border-color:var(--border-danger);"
-              onclick="carrierDelete_('${cr.id}')" title="Delete for good \u2014 only possible if nothing uses it">&#128465;</button>
+              onclick="carrierDelete_('${cr.id}')" title="Delete for good \u2014 only possible if nothing uses it">&#128465;</button>` : ''}
           </div>`).join('')}
     </div>`;
 
@@ -9709,18 +9716,24 @@ async function renderAdmin() {
       <h2 class="section-title" style="margin:0;">&#9881;&#65039; System</h2>
       <button class="btn btn-outline btn-sm" onclick="loadData().then(renderAdmin)">&#8635; Refresh</button>
     </div>
-    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:18px;">The shared catalogue and the yearly figures. Changes here reach every office.</div>
+    <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:18px;">${sysOnly
+      ? 'The shared catalogue and the yearly figures. Changes here reach every office.'
+      : 'The shared carrier list. The catalogue itself is the system owner’s — what is yours here are your office’s reps.'}</div>
+
+    <!-- Carriers sits OUTSIDE the system-owner block. It used to be inside it,
+         which meant a broker owner could not reach the screen at all — and the
+         Reps button they specifically need was on it. The catalogue stays
+         read-only for them; the reps are theirs. -->
+    <div class="card" style="margin-bottom:20px;">
+      <div style="font-weight:700;font-size:16px;margin-bottom:14px;">&#127970; Carriers${sysOnly ? ' &amp; Products' : ''}</div>
+      ${carriersSection}
+    </div>
 
     ${sysOnly ? `
     <div class="admin-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
       <div class="admin-stat" style="border-left-color:#10b981;"><div class="num">${allAgencies.length}</div><div class="lbl">Offices</div></div>
       <div class="admin-stat" style="border-left-color:#8b5cf6;"><div class="num">${allCompanies.length}</div><div class="lbl">Divisions</div></div>
       <div class="admin-stat" style="border-left-color:#3b82f6;"><div class="num">${totalContacts}</div><div class="lbl">Total Contacts</div></div>
-    </div>
-
-    <div class="card" style="margin-bottom:20px;">
-      <div style="font-weight:700;font-size:16px;margin-bottom:14px;">&#127970; Carriers &amp; Products</div>
-      ${carriersSection}
     </div>
 
     <div class="card" style="margin-bottom:20px;">
@@ -14803,9 +14816,11 @@ async function openCarrierReps(crId) {
   const cr = (window._allCarriers || []).find(x => x.id === crId);
   if (!cr) return;
 
-  // Which offices this person may write for. The system owner also owns the
-  // shared list, which is what the null option represents.
-  if (!_repsAgencies) {
+  /* Deliberately NOT cached. It depends on the active role, and the role can be
+     switched by the preview toggle mid-session — a cached list would then offer
+     a broker owner every office in the company, or hide offices from the system
+     owner. Two small queries when the dialog opens is the cheaper mistake. */
+  {
     const { data } = await supabaseClient.rpc('my_agency_ids');
     const ids = (data || []).map(r => (typeof r === 'string' ? r : r.my_agency_ids));
     const { data: ags } = await supabaseClient.from('agencies')
