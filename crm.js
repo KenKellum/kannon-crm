@@ -20887,9 +20887,19 @@ async function loadWorkspaceLine_(deal, employerId) {
 // the rep and the carrier under the agent's own visibility; this dialog says
 // WHICH carriers, never what goes to them.
 // ============================================================
+const MARKET_PRODUCTS = ['Medical', 'Dental', 'Vision', 'Life', 'Disability',
+                         'Accident', 'Critical Illness', 'Hospital Indemnity'];
+let _mktEmployer = {};
+
 async function openSendToMarket(employerId) {
-  const { data, error } = await supabaseClient.rpc('marketable_carriers', { p_employer: employerId });
+  const [{ data, error }, { data: emp }] = await Promise.all([
+    supabaseClient.rpc('marketable_carriers', { p_employer: employerId }),
+    supabaseClient.from('employers').select('current_carrier').eq('id', employerId).maybeSingle(),
+  ]);
   if (error) { showToast('Could not work out who can quote: ' + error.message); return; }
+  // Prefilled from the employer record rather than asked again — it is already
+  // on file from qualification, and retyping it is how the two drift apart.
+  _mktEmployer = emp || {};
 
   const list = (data && data.carriers) || [];
   const lives = data && data.eligible_lives;
@@ -20949,6 +20959,52 @@ async function openSendToMarket(employerId) {
     <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
       Carriers quote <em>to</em> a date. Without one they will ask.</div>
 
+    <label style="margin-top:14px;">What do you want quoted?</label>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
+      ${MARKET_PRODUCTS.map((p, i) => `
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0;font-size:12.5px;">
+          <input type="checkbox" id="m-prod-${i}" style="width:auto;" ${p === 'Medical' ? 'checked' : ''}/> ${p}
+        </label>`).join('')}
+    </div>
+
+    <!-- A carrier cannot price a replacement without knowing what it replaces.
+         This is the single most common reason a quote comes back as a question
+         instead of a number. -->
+    <div style="border-top:0.5px solid var(--border);margin-top:16px;padding-top:12px;">
+      <div style="font-weight:700;font-size:12.5px;">What they have today</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+        Underwriters price against the current plan. Leaving this blank is what turns
+        a quote into a round of questions.</div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label>Current carrier</label>
+        <input type="text" id="m-cur-carrier" value="${escWeb(_mktEmployer.current_carrier || '')}" placeholder="e.g. Allstate" /></div>
+      <div style="flex:1;"><label>How it is funded</label>
+        <select id="m-cur-funding">
+          <option value="unknown">Not sure</option>
+          <option value="fully_insured">Fully insured</option>
+          <option value="level_funded">Level funded</option>
+          <option value="self_funded">Self funded</option>
+          <option value="ichra">ICHRA</option>
+          <option value="none">Nothing in place</option>
+        </select></div>
+    </div>
+    <label>Current plan &mdash; deductible, out of pocket, network, anything relevant</label>
+    <textarea id="m-cur-note" rows="2" placeholder="$2,500 deductible, $6,000 MOOP, PPO. Renewal came in at +19%."></textarea>
+
+    <label style="margin-top:14px;">Brief for the carrier</label>
+    <textarea id="m-note" rows="3" placeholder="Match or beat the current plan, plus a buy-up option. They will move for a lower deductible. Dental is a nice-to-have."></textarea>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
+      Goes in the request email and sits at the top of their workspace.</div>
+
+    <label style="margin-top:14px;">Current plan documents</label>
+    <input type="file" id="m-files" multiple accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.png,.jpg" />
+    <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
+      Benefit summary, rate sheet, renewal letter, invoice. Uploaded to this employer's
+      file and shared with the carriers you pick.
+      <strong>Claims experience is not shared by default</strong> &mdash; set that per
+      document afterwards.</div>
+
     <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;
                 color:var(--text-muted);margin:16px 0 7px;">Ready to receive it</div>
     ${ready.length ? ready.map((c, i) => card(c, i)).join('')
@@ -20975,8 +21031,38 @@ async function openSendToMarket(employerId) {
     if (!picks.length) { showToast('Pick at least one carrier.'); return false; }
 
     const eff = document.getElementById('m-eff').value || null;
+    const prods = MARKET_PRODUCTS.filter((p, i) => document.getElementById('m-prod-' + i).checked);
+    if (!prods.length) { showToast('Say what you want quoted — at least one product.'); return false; }
+
+    /* Documents upload BEFORE the send, so a failed upload stops the whole thing
+       rather than leaving carriers invited to a brief whose attachments never
+       arrived. send_to_market then attaches anything not yet on a round. */
+    const files = (document.getElementById('m-files') || {}).files || [];
+    for (const f of files) {
+      const path = employerId + '/' + Date.now() + '-' + f.name.replace(/[^A-Za-z0-9._-]/g, '_');
+      const { error: upErr } = await supabaseClient.storage.from('group-docs')
+        .upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false });
+      if (upErr) { showToast('Upload failed for ' + f.name + ': ' + upErr.message); return false; }
+      /* Claims experience is the one an underwriter may see and nobody else, so
+         it is recognised by name and held back rather than shared by default. */
+      const claimsy = /claim|experience|loss.?run/i.test(f.name);
+      const { error: dErr } = await supabaseClient.from('marketing_documents').insert({
+        employer_id: employerId, storage_path: path, filename: f.name,
+        byte_size: f.size, kind: claimsy ? 'claims_experience' : 'current_benefits',
+        share_with_carriers: !claimsy, uploaded_by: currentAgent.id,
+      });
+      if (dErr) { showToast('Could not record ' + f.name + ': ' + dErr.message); return false; }
+    }
+
     const { data: out, error: err } = await supabaseClient.rpc('send_to_market', {
-      p_employer: employerId, p_effective: eff, p_products: null, p_picks: picks });
+      p_employer: employerId, p_effective: eff, p_products: prods, p_picks: picks,
+      p_note: document.getElementById('m-note').value.trim() || null,
+      p_current: {
+        carrier:   document.getElementById('m-cur-carrier').value.trim() || null,
+        funding:   document.getElementById('m-cur-funding').value,
+        plan_note: document.getElementById('m-cur-note').value.trim() || null,
+      },
+    });
     if (err) { showToast('Could not send: ' + err.message); return false; }
 
     const sent = (out && out.sent) || [];

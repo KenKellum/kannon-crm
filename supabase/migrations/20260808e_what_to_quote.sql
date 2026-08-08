@@ -1,0 +1,30 @@
+-- Ken: the rep needs to know WHAT to quote, what the employer has TODAY, and to
+-- see the current plan documents.
+--
+-- He is right, and a census without this is why carriers come back asking
+-- questions instead of quoting. A carrier cannot price a replacement without
+-- knowing what it replaces.
+--
+-- marketing_rounds gains: note_to_carriers (the agent's brief), current_carrier,
+-- current_plan_note, current_funding. products_wanted was already there and is
+-- now actually collected rather than left empty.
+--
+-- Documents go in their OWN bucket, group-docs. product-docs holds carrier
+-- brochures — sales literature, effectively public. An employer's benefit
+-- summary, rate sheet and claims experience are none of those things, and one
+-- bucket would mean one policy protecting two very different kinds of thing.
+--
+-- share_with_carriers lives on the DOCUMENT: claims experience often goes to a
+-- level-funded underwriter and nobody else, and that decision should not depend
+-- on the agent remembering which upload was which at send time. The CRM
+-- recognises loss runs by filename and holds them back by default.
+--
+-- Storage policies read the first path segment as the employer id and are
+-- guarded by a uuid regex — a hand-crafted object name would otherwise raise
+-- 22P02 rather than simply being refused.
+--
+-- PROBED as anon: marketing_documents 42501, send_to_market 42501, and an upload
+-- into group-docs refused with "new row violates row-level security policy".
+--
+-- (Applied via the Supabase migration of the same name; full body in the
+-- database. Recorded here so the repo shows what exists and why.)
